@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **App module converted from Java template to Kotlin + Jetpack Compose (Material 3) shell**
+  (Task3 Phase A): `app` now applies `org.jetbrains.kotlin.android` +
+  `org.jetbrains.kotlin.plugin.compose`, adds a Compose BOM-managed dependency set
+  (Compose UI, Material 3, activity-compose, lifecycle-runtime-compose,
+  navigation-compose — navigation wired into the catalog now for Phase C), and drops the
+  AppCompat/Material XML dependencies. `MainActivity` is a `ComponentActivity` rendering a
+  minimal `MediaTrackerTheme` (dynamic color on Android 12+, light/dark) placeholder screen;
+  the manifest theme is a bare framework `android:Theme.Material...NoActionBar` bootstrap
+  style with all real theming done in Compose. No feature screens or navigation graph yet —
+  shell only.
 
 ## [0.1.0] - 2026-08-01
 
