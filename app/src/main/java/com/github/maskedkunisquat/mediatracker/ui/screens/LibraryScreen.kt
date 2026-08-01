@@ -48,12 +48,15 @@ import kotlin.time.ExperimentalTime
  * @param appContainer The dependency container for creating ViewModels.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Callback to navigate to the add-book screen.
+ * @param onNavigateToBookDetail Callback invoked with a book's id when its card is tapped, to
+ *   navigate to the book detail screen (Task4 Phase C).
  */
 @Composable
 fun LibraryScreenRoute(
     appContainer: AppContainer,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
+    onNavigateToBookDetail: (String) -> Unit,
 ) {
     val viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModelFactory(appContainer),
@@ -64,6 +67,7 @@ fun LibraryScreenRoute(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
         onNavigateToAddBook = onNavigateToAddBook,
+        onBookClick = onNavigateToBookDetail,
         onDeleteBook = { bookId -> viewModel.deleteBook(bookId) },
     )
 }
@@ -79,6 +83,8 @@ fun LibraryScreenRoute(
  * @param uiState [LibraryUiState] containing the list of books and isEmpty flag.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Called when the FAB is pressed.
+ * @param onBookClick Called with the book ID when a card is tapped (outside the delete icon),
+ *   to open the book detail screen.
  * @param onDeleteBook Called with the book ID after deletion is confirmed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +93,7 @@ fun LibraryScreen(
     uiState: LibraryUiState,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
+    onBookClick: (String) -> Unit,
     onDeleteBook: (String) -> Unit,
 ) {
     var bookToDelete by remember { mutableStateOf<MediaItemEntity?>(null) }
@@ -140,6 +147,7 @@ fun LibraryScreen(
                         BookCard(
                             book = book,
                             coverStorageDir = coverStorageDir,
+                            onClick = { onBookClick(book.id) },
                             onDelete = { bookToDelete = book },
                         )
                     }
@@ -166,17 +174,20 @@ fun LibraryScreen(
 /**
  * A card displaying a single book.
  * Shows the cover thumbnail (left), title (top), and release year (bottom).
- * A delete icon button (right) opens the delete confirmation dialog.
+ * Tapping anywhere on the row (outside the delete button) calls [onClick] to open the book
+ * detail screen. A delete icon button (right) opens the delete confirmation dialog.
  */
 @Composable
 private fun BookCard(
     book: MediaItemEntity,
     coverStorageDir: String,
+    onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
@@ -286,6 +297,7 @@ private fun LibraryScreenPreview() {
             ),
             coverStorageDir = "/fake/path",
             onNavigateToAddBook = {},
+            onBookClick = {},
             onDeleteBook = {},
         )
     }

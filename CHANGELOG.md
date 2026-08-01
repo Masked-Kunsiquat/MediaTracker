@@ -53,6 +53,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   success clearing it, save validation failure keeping it, the no-pending no-op case, manual
   session logging, session deletion, and double-fire guards on every timer action never
   throwing).
+- **Book Detail screen** (Task4 Phase C, `app/.../ui/screens/BookDetailScreen.kt`): tap a library
+  card to open cover + metadata, a start/pause/resume/stop reading timer, manual session entry,
+  and session history for a single book. Route-level `BookDetailScreenRoute` wires
+  `BookDetailViewModel` (via the new `BookDetailViewModelFactory`) to the stateless
+  `BookDetailScreen`, auto-navigating back via `LaunchedEffect` if the book is deleted while the
+  screen is open (`BookDetailUiState.NotFound`). Header shows page-style ("Page 142 / 350") or
+  percent-style ("37%") current progress depending on whether `BookDetailsEntity.totalPages` is
+  known. The timer card's buttons are gated by `ReadingTimerState` (Idle/Running/Paused). A
+  finished timer run (`pendingSession`) opens a save dialog whose visibility is entirely
+  state-driven (`pendingSession != null`): a validation failure keeps it open with
+  `errorMessage` displayed for retry-without-re-timing, a success clears `pendingSession` and the
+  dialog closes itself — no local dismiss logic needed. Manual entry is a separate dialog with a
+  duration-minutes field; timestamps are derived as `end = now`, `start = end - duration`
+  (documented in `BookDetailScreenRoute`'s KDoc) rather than exposing a full date/time picker.
+  Position/duration/pages fields are digit-and-decimal-point filtered so a negative value (the
+  one thing `LogReadingSessionUseCase` rejects) can't be typed. Session history lists most-recent-
+  first with a delete icon per row and a confirmation dialog matching `LibraryScreen`'s pattern.
+  Dates render via `java.time` (not `kotlinx-datetime`, which isn't exposed to this Android-only
+  app module) since `java.time` is available unconditionally at `minSdk 28`. Previews cover
+  Ready-with-sessions, Ready-with-pending-session, and Loading.
+- **Navigation**: `Route.BookDetail` (`book_detail/{bookId}`) with a `createRoute(bookId)` helper;
+  wired into `AppNavigation`'s `NavHost` with a `navArgument`-typed `bookId`.
+- **`BookDetailViewModelFactory`** (`ui/ViewModelFactories.kt`): per-navigation-argument factory
+  (constructed fresh per book detail route, unlike the reused `LibraryViewModelFactory`/
+  `AddBookViewModelFactory`), wiring `BookDetailViewModel`'s repository/use-case dependencies
+  from `AppContainer` plus the route's `bookId`.
+- `delete_session_content_description` string resource for the session-row delete icon.
+
+### Changed
+
+- **`LibraryScreen`**: cards are now tappable (outside the delete button) to navigate to the new
+  book detail screen, via `Modifier.clickable` on the card row. `LibraryScreenRoute` gains an
+  `onNavigateToBookDetail: (String) -> Unit` parameter threaded through to a new `onBookClick`
+  callback on the stateless `LibraryScreen`; the existing delete-button confirmation-dialog flow
+  is unchanged.
 
 ## [0.2.0] - 2026-08-01
 
