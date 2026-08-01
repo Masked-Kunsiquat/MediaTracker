@@ -261,13 +261,27 @@ class BookDetailViewModelTest {
         viewModel.saveSession(startUnit = 10.0, endUnit = 42.0, deltaPages = 32, notes = "Ch. 3")
         viewModel.saveSession(startUnit = 10.0, endUnit = 42.0, deltaPages = 32, notes = "Ch. 3")
 
+        runCurrent()
+        // Wait on pendingSession clearing (the save's own completion signal) rather than
+        // `sessions.isNotEmpty()`: the DB write finishing (and thus `Resource.Success` clearing
+        // pendingSession synchronously) can race ahead of Room's separate invalidation-triggered
+        // re-query of `observeSessionsForMedia` that feeds `ready.sessions`, so waiting on
+        // `sessions.isNotEmpty()` could resolve this `.first` on a stale pre-insert-visible
+        // snapshot in principle.
         val ready = viewModel.uiState
-            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).pendingSession == null }
                 as BookDetailUiState.Ready
 
-        assertEquals(1, ready.sessions.size)
         assertNull(ready.pendingSession)
         assertNull(ready.errorMessage)
+        // Query the repository directly for the persisted count, rather than trusting
+        // `ready.sessions` (sourced from this same combined flow): pendingSession only clears
+        // after the guarded save's DB write has already committed, so a fresh query here reflects
+        // the true persisted state regardless of the uiState flow's own emission timing -- a
+        // regression that let the double-tap's second call also insert would show up here as 2,
+        // even if a uiState snapshot happened to be read before that second insert's row appeared.
+        val persisted = sessionRepository.observeSessionsForMedia(mediaId).first()
+        assertEquals(1, persisted.size, "double-tap on Save must persist exactly one session row")
     }
 
     @Test
@@ -308,6 +322,14 @@ class BookDetailViewModelTest {
      * resumption back onto Main can land slightly after any single `runCurrent()` call returns;
      * the polling loops below bridge that with tiny real (non-virtual) waits rather than a fixed
      * sleep, bounded so a genuine regression fails fast instead of hanging.
+     *
+     * There is no observable side effect distinguishing "save(A)'s completion ran and correctly
+     * no-op'd" from "save(A)'s completion hasn't run yet" -- a correct guard produces no visible
+     * change either way. So instead of draining a fixed, arbitrarily-chosen number of scheduler
+     * rounds and assuming that was enough time for it to have run, the final phase proves it ran
+     * (and cleared `saveInFlight`) by repeatedly attempting to save the still-pending session B
+     * and confirming it eventually persists -- something only possible once save(A)'s `finally`
+     * has actually executed. See the inline comment at that call site for the full reasoning.
      */
     @Test
     fun saveSession_staleCompletionDoesNotClobberNewerPendingSession() = runTest {
@@ -341,12 +363,19 @@ class BookDetailViewModelTest {
         viewModel.saveSession(startUnit = 10.0, endUnit = 42.0, notes = "A")
 
         // Discard A (allowed while a save for it is in flight -- see saveSession's KDoc) and
-        // start/stop a brand-new run -> pendingSession = B. Both are plain, synchronous
-        // MutableStateFlow updates with no coroutine dispatch, so they take effect immediately,
-        // strictly before save(A)'s still-unstarted coroutine gets a chance to run.
+        // start/stop a brand-new run -> pendingSession = B in the ViewModel's own `_local` state.
+        // These are plain, synchronous `MutableStateFlow` updates with no coroutine dispatch, so
+        // they take effect strictly before save(A)'s still-unstarted coroutine gets a chance to
+        // run -- but propagating them through `combine(...).stateIn(...)` into the externally-
+        // collected `latestReady` still needs the Main-dispatcher `StandardTestDispatcher` to
+        // actually run, hence the `runCurrentUntilOrTimeOut` below rather than reading
+        // `latestReady` immediately.
         viewModel.discardPendingSession()
         viewModel.startReading()
         viewModel.stopReading()
+        runCurrentUntilOrTimeOut { latestReady?.pendingSession !== pendingA }
+        val pendingB = assertNotNull(latestReady?.pendingSession)
+        assertTrue(pendingB !== pendingA, "pendingSession must have moved on to a new session B")
 
         // Let save(A) actually run and reach the database. Its row appearing is a real,
         // dispatcher-agnostic signal that the coroutine has passed the suspend point.
@@ -357,30 +386,46 @@ class BookDetailViewModelTest {
             sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "A" },
             "save(A) must have persisted its row before this assertion",
         )
+        // The DB row appearing is not the same moment as save(A)'s own coroutine resuming on Main
+        // to run its `when` branch + `finally { saveInFlight = false }` (Room's invalidation-
+        // triggered re-query and save(A)'s own continuation are two independent consequences of
+        // the same commit, racing on different dispatchers). pendingSession must still be B
+        // either way -- a correctly-guarded completion never touches it -- so this check alone
+        // can't yet distinguish "guard ran and correctly no-op'd" from "guard hasn't run yet".
+        assertTrue(
+            latestReady?.pendingSession === pendingB,
+            "stale completion of save(A) must not silently wipe or replace pendingSession = B",
+        )
 
-        // Drain a few more rounds (with tiny real waits) so save(A)'s post-insert completion
-        // handler -- which resumes back onto Main asynchronously -- has a chance to run its
-        // (correctly guarded) _local.update(...) and be reflected into the collected uiState above.
-        repeat(20) {
-            runCurrent()
-            withContext(Dispatchers.Default) { delay(5) }
+        // Prove save(A)'s completion actually ran -- and cleared `saveInFlight` -- rather than
+        // draining a fixed, arbitrarily-chosen number of scheduler rounds and hoping that was
+        // enough: repeatedly attempt to save the still-pending B and observe that it eventually
+        // persists. Per `saveSession`'s own contract, each attempt is a same-shape no-op while
+        // `saveInFlight` is still true (i.e. while save(A) hasn't reached its `finally` yet); the
+        // first attempt made after `saveInFlight` clears actually starts and persists B. Bounded
+        // via the same `runCurrentUntilOrTimeOut` helper used above so a genuine regression --
+        // `saveInFlight` stuck true, or (if the stale `===` guard were removed) save(A)'s
+        // completion wiping B's pendingSession to null before this can even attempt to save it --
+        // times out with a clear failure below instead of hanging.
+        runCurrentUntilOrTimeOut {
+            viewModel.saveSession(startUnit = 55.0, endUnit = 61.0, notes = "B")
+            sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "B" }
         }
-        runCurrent()
+        assertTrue(
+            sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "B" },
+            "save(B) must be accepted once save(A)'s stale completion clears saveInFlight, " +
+                "proving the ViewModel isn't left stuck and B's pendingSession wasn't corrupted",
+        )
 
-        // A's row persists even though its pending session was discarded mid-flight: the insert
-        // was already dispatched before the discard happened (documented in saveSession's KDoc).
+        // A's row must remain untouched by B's own (later, unrelated) save.
         assertTrue(sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "A" })
 
         val finalReady = assertNotNull(latestReady)
-        assertNotNull(
-            finalReady.pendingSession,
-            "stale completion of save(A) must not silently wipe pendingSession = B",
+        assertNull(finalReady.pendingSession, "save(B) succeeding must clear pendingSession")
+        assertNull(
+            finalReady.errorMessage,
+            "neither A's stale completion nor save(B)'s own completion should set an error",
         )
-        assertTrue(
-            finalReady.pendingSession !== pendingA,
-            "pendingSession must be the newer session B, not the stale A reference",
-        )
-        assertNull(finalReady.errorMessage, "stale completion of save(A) must not set an error either")
     }
 
     @Test
@@ -433,6 +478,32 @@ class BookDetailViewModelTest {
             .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isEmpty() }
                 as BookDetailUiState.Ready
         assertTrue(ready.sessions.isEmpty())
+    }
+
+    /**
+     * Regression test for the PR review finding that the delete-book action needs a shared-module
+     * success path: [BookDetailViewModel.deleteBook] deletes [BookDetailViewModel]'s own [bookId]
+     * and, on [Resource.Success], [uiState] must reactively become [BookDetailUiState.NotFound]
+     * once [BookRepository.observeBookDetail] emits null for the now-gone id -- the signal
+     * [BookDetailScreenRoute]'s `LaunchedEffect` uses to auto-navigate back.
+     *
+     * The [Resource.Error] branch (e.g. a DB failure surfaced via
+     * [BookDetailUiState.Ready.errorMessage]) is not covered here: producing a genuine delete
+     * failure against the real in-memory [AppDatabase] this test class uses would need a
+     * contrived fake repository (deleting an already-missing id is a no-op `Resource.Success` per
+     * [MediaItemDao.deleteById], not an error -- same reasoning as the [deleteSession] KDoc fix),
+     * which is out of scope for this file's real-DB test style.
+     */
+    @Test
+    fun deleteBook_removesBook_uiStateBecomesNotFound() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        viewModel.deleteBook()
+
+        val state = viewModel.uiState.first { it is BookDetailUiState.NotFound }
+        assertIs<BookDetailUiState.NotFound>(state)
     }
 
     @Test

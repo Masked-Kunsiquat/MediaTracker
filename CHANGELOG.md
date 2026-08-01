@@ -87,14 +87,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `Delete` icon in the TopAppBar actions slot (shown only for `BookDetailUiState.Ready`) opens a
   confirmation dialog (`delete_book_title`/`delete_book_body`/`delete_book_content_description`
   string resources, mirroring the wording the old `LibraryScreen` delete button used). On confirm,
-  the route wrapper's new `onDeleteBook: () -> Unit` parameter is invoked. `BookDetailViewModel`
-  has no delete method of its own and the shared module was not touched to add one; instead
-  `AppNavigation`'s `BookDetail` destination constructs a `LibraryViewModel` scoped to that
-  destination (via the existing `LibraryViewModelFactory`) purely to reuse
-  `LibraryViewModel.deleteBook(bookId)`, avoiding both a shared-module change and a composable
-  reaching directly into `AppContainer.bookRepository`. Deletion is reflected reactively via
+  the route wrapper's `onDeleteBook: () -> Unit` parameter is invoked, wired to the new
+  `BookDetailViewModel.deleteBook()` (see below) — a subsequent revision replaced an earlier
+  destination-scoped-`LibraryViewModel` workaround with this shared-module method once a
+  `Resource.Error` from deletion needed to surface to the screen (`BookDetailUiState.Ready.errorMessage`),
+  which the workaround had no path for. Deletion success is reflected reactively via
   `BookDetailUiState.NotFound`, which the existing `LaunchedEffect`-driven auto-navigate-back
   (Task4 Phase C) already handles, so no separate post-delete navigation logic was needed.
+- **`BookDetailViewModel.deleteBook()`** (`shared/.../ui/BookDetailViewModel.kt`): deletes the
+  book this screen was opened for via `BookRepository.deleteBook(bookId)`, mirroring
+  `deleteSession`'s pattern — fire-and-forget on `Resource.Success` (the resulting `NotFound`
+  state drives navigation as above), `Resource.Error` surfaced via
+  `BookDetailUiState.Ready.errorMessage` so a failed delete gives the user feedback instead of a
+  confirm tap that silently does nothing.
 - **Material 3 `TimePicker` for manual session entry** (Task4 Phase E,
   `app/.../ui/screens/BookDetailScreen.kt` `ManualSessionDialog`): the end-time field is now an
   `OutlinedButton` (label formatted via `android.text.format.DateFormat.getTimeFormat`, so it

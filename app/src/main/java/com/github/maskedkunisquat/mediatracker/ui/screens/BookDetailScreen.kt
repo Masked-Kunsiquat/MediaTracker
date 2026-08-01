@@ -86,13 +86,6 @@ import kotlin.time.Instant
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param bookId The media id this screen was opened for; forwarded to [BookDetailViewModelFactory].
  * @param onNavigateBack Callback to navigate back (back button, or automatic on [BookDetailUiState.NotFound]).
- * @param onDeleteBook Callback invoked after the delete-book confirmation dialog is confirmed
- *   (Task4 Phase E). [BookDetailViewModel] has no delete capability of its own -- deletion still
- *   lives on `LibraryViewModel.deleteBook` (shared module unchanged) -- so the caller (see
- *   `AppNavigation`) wires this from a `LibraryViewModel` instance scoped to this destination.
- *   Deletion drives [BookDetailUiState.NotFound] reactively, which the [LaunchedEffect] below
- *   already turns into an automatic [onNavigateBack] -- no separate post-delete navigation is
- *   needed here.
  */
 @Composable
 fun BookDetailScreenRoute(
@@ -100,7 +93,6 @@ fun BookDetailScreenRoute(
     coverStorageDir: String,
     bookId: String,
     onNavigateBack: () -> Unit,
-    onDeleteBook: () -> Unit,
 ) {
     val viewModel: BookDetailViewModel = viewModel(
         factory = BookDetailViewModelFactory(appContainer, bookId),
@@ -122,7 +114,7 @@ fun BookDetailScreenRoute(
         elapsedSeconds = elapsedSeconds,
         coverStorageDir = coverStorageDir,
         onNavigateBack = onNavigateBack,
-        onDeleteBook = onDeleteBook,
+        onDeleteBook = viewModel::deleteBook,
         onStartReading = viewModel::startReading,
         onPauseReading = viewModel::pauseReading,
         onResumeReading = viewModel::resumeReading,
@@ -169,7 +161,10 @@ fun BookDetailScreenRoute(
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateBack Called when the back icon is pressed.
  * @param onDeleteBook Called after the delete-book confirmation dialog (opened from the TopAppBar
- *   delete icon, only shown for [BookDetailUiState.Ready]) is confirmed (Task4 Phase E).
+ *   delete icon, only shown for [BookDetailUiState.Ready]) is confirmed. Wired by
+ *   [BookDetailScreenRoute] to [BookDetailViewModel.deleteBook], whose [Resource.Error][com.hub.media.core.util.Resource.Error]
+ *   surfaces via [BookDetailUiState.Ready.errorMessage] the same way a failed
+ *   [BookDetailViewModel.saveSession]/[BookDetailViewModel.deleteSession] does.
  * @param onStartReading Called to start a fresh timer run.
  * @param onPauseReading Called to pause the running timer.
  * @param onResumeReading Called to resume a paused timer.

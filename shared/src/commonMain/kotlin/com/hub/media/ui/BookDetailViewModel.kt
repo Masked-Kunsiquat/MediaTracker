@@ -294,13 +294,34 @@ public class BookDetailViewModel(
      * Deletes the session identified by [sessionId]. On [Resource.Success], fire-and-forget,
      * matching [LibraryViewModel.deleteBook]: [uiState] reflects the removal reactively via
      * [ReadingSessionRepository.observeSessionsForMedia] once the delete completes, with no
-     * explicit state update needed here. On [Resource.Error] (e.g. the id no longer exists, or a
-     * DB failure), sets [BookDetailUiState.Ready.errorMessage] using the same surfacing
-     * convention as [saveSession]/[logManualSession] so a failed delete isn't silently swallowed.
+     * explicit state update needed here. On [Resource.Error] (e.g. a DB failure/exception from
+     * [ReadingSessionRepository.deleteSession]'s underlying `deleteById` call), sets
+     * [BookDetailUiState.Ready.errorMessage] using the same surfacing convention as
+     * [saveSession]/[logManualSession] so a failed delete isn't silently swallowed.
      */
     public fun deleteSession(sessionId: String) {
         viewModelScope.launch {
             when (val result = readingSessionRepository.deleteSession(sessionId)) {
+                is Resource.Success -> Unit
+                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            }
+        }
+    }
+
+    /**
+     * Deletes [bookId] itself (the book this screen was opened for). On [Resource.Success],
+     * fire-and-forget: [uiState] reflects the removal reactively once
+     * [BookRepository.observeBookDetail] emits null for the now-gone media id, transitioning to
+     * [BookDetailUiState.NotFound] — which [BookDetailScreenRoute]'s existing `LaunchedEffect`
+     * already turns into an automatic navigate-back, so no separate post-delete navigation is
+     * needed here. On [Resource.Error] (e.g. a DB failure), sets
+     * [BookDetailUiState.Ready.errorMessage] using the same surfacing convention as
+     * [deleteSession]/[saveSession]/[logManualSession] so a failed delete isn't silently
+     * swallowed and the user gets feedback instead of a confirm tap that appears to do nothing.
+     */
+    public fun deleteBook() {
+        viewModelScope.launch {
+            when (val result = bookRepository.deleteBook(bookId)) {
                 is Resource.Success -> Unit
                 is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
             }
