@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
 import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -11,12 +12,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.maskedkunisquat.mediatracker.R
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private const val TAG = "CoverImage"
 
 /**
  * Renders a cover image for a media item.
@@ -44,7 +50,7 @@ fun CoverImage(
     }
 
     // Load the image off-thread via produceState.
-    val imageBitmap = produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+    val imageBitmap = produceState<ImageBitmap?>(
         initialValue = null,
         coverDir,
         coverImageHash,
@@ -56,6 +62,7 @@ fun CoverImage(
                     ?.asImageBitmap()
             } catch (e: Exception) {
                 // Decode failed or file missing; fall through to placeholder.
+                Log.w(TAG, "Failed to load cover image: $coverImageHash", e)
                 null
             }
         }
@@ -64,7 +71,7 @@ fun CoverImage(
     if (imageBitmap != null) {
         Image(
             bitmap = imageBitmap,
-            contentDescription = "Cover image",
+            contentDescription = stringResource(R.string.cover_image_content_description),
             modifier = modifier,
             contentScale = ContentScale.Crop,
         )

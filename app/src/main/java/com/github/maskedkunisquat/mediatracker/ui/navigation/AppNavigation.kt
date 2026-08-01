@@ -46,9 +46,7 @@ fun AppNavigation(
                     navController.navigateUp()
                 },
                 onNavigateToLibrary = {
-                    navController.navigate(Route.Library.route) {
-                        popUpTo(Route.Library.route) { inclusive = false }
-                    }
+                    navController.popBackStack()
                 },
             )
         }

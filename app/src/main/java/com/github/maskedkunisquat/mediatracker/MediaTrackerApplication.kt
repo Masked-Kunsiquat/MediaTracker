@@ -24,4 +24,16 @@ class MediaTrackerApplication : Application() {
     val appContainer: AppContainer by lazy {
         createAppContainer(this)
     }
+
+    /**
+     * Best-effort resource cleanup: [onTerminate] is documented by the Android framework as
+     * emulator/testing-only and is NOT called on real devices, where the OS simply reclaims the
+     * process (there is no reliable "app is shutting down" callback on Android). We still close
+     * the container here so the local emulator/dev-run case doesn't leak the HTTP client or
+     * database connection; production process teardown relies on the OS, not this method.
+     */
+    override fun onTerminate() {
+        super.onTerminate()
+        appContainer.close()
+    }
 }

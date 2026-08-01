@@ -12,7 +12,9 @@ import com.hub.media.core.storage.coverStorageDirectory
  * image store rooted at `filesDir/covers`, then wires them together.
  *
  * Intended to be called once per process (e.g. lazily from `Application` or a singleton holder)
- * and the result shared — this constructs a real database connection.
+ * and the result shared — this constructs a real database connection. The returned
+ * [AppContainer] owns this database (see [AppContainer]'s "Ownership" section) and closes it
+ * from [AppContainer.close].
  */
 public fun createAppContainer(context: Context): AppContainer {
     val database = buildAppDatabase(DatabaseFactory(context).create())

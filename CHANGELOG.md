@@ -31,9 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Application instance, passes to `MediaTrackerApp` which constructs a `NavController` and
   calls `AppNavigation` to set up the graph. Removed placeholder screen; all real navigation
   happens here.
-
-### Changed
-
 - **App module converted from Java template to Kotlin + Jetpack Compose (Material 3) shell**
   (Task3 Phase A): `app` now applies `org.jetbrains.kotlin.android` +
   `org.jetbrains.kotlin.plugin.compose`, adds a Compose BOM-managed dependency set

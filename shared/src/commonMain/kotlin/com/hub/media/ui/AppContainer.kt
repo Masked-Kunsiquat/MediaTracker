@@ -19,12 +19,22 @@ import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
  * only to hand ViewModels their dependencies), it has exactly one consumer package, and adding
  * it here avoids introducing an undocumented top-level package for a single small class.
  *
- * @param database The production (or test) [AppDatabase] instance. Callers own its lifecycle.
+ * ### Ownership
+ * [AppContainer] takes ownership of the resources it is handed for the lifetime of the
+ * container: both the internally-created [io.ktor.client.HttpClient] and the [database]
+ * passed in are closed together by [close]. This matches the one production caller
+ * ([com.hub.media.ui.createAppContainer] on Android), which constructs a fresh [AppDatabase]
+ * solely to hand it to this container — the database has no other owner. Call [close] exactly
+ * once, when the container itself is being torn down (see `MediaTrackerApplication.onTerminate`
+ * for the best-effort Android hook); do not close [database] separately after construction.
+ *
+ * @param database The production (or test) [AppDatabase] instance. Ownership transfers to this
+ *   container; it is closed by [close].
  * @param imageStorage Content-addressed cover image storage rooted at a platform-appropriate
  *   directory (see the platform `coverStorageDirectory` helpers).
  */
 public class AppContainer(
-    database: AppDatabase,
+    private val database: AppDatabase,
     imageStorage: LocalImageStorageManager,
 ) {
     private val httpClient = createHttpClient()
@@ -41,4 +51,15 @@ public class AppContainer(
         imageStorage = imageStorage,
         bookRepository = bookRepository,
     )
+
+    /**
+     * Releases resources owned by this container: closes the internally-created
+     * [io.ktor.client.HttpClient] and the [database] it was constructed with. Safe to call at
+     * most once (per the underlying HttpClient/RoomDatabase close semantics); intended for
+     * process-teardown paths where these connections should not be leaked.
+     */
+    public fun close() {
+        httpClient.close()
+        database.close()
+    }
 }
