@@ -24,4 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Media Tracker"
 include(":app")
+include(":shared")
  
