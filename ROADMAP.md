@@ -13,22 +13,12 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   Google Books fallback), cover downloader, repositories, atomic `AddBookByIsbnUseCase`.
 - **Task 3 — Compose UI shell** (`v0.2.0`): Kotlin + Compose app module, Material 3 theme,
   Library and Add Book screens, navigation, shared ViewModels, `AppContainer` manual DI.
+- **Task 4 — Reading tracking** (`v0.3.0`): coroutine/Flow-based reading timer and
+  `LogReadingSessionUseCase` (Phase A); `BookDetailViewModel` + UI state (Phase B); Book
+  Detail screen with timer, manual session entry, and session history (Phase C); field-level
+  cover fallback and manual-entry backdating via a session date/end-time picker (Phase D).
 
-## Task 4 — Reading tracking (next)
-
-Turn the dormant `ReadingSessions` table into a feature; the gap between "can add books"
-and "daily-drivable."
-
-- **Phase A (shared):** coroutine/Flow-based reading timer (stopwatch: start/pause/stop,
-  elapsed-time Flow) in `features/books`; `LogReadingSessionUseCase` connecting timer
-  output + page/percent bounds to `ReadingSessionRepository`. Virtual-time tests.
-- **Phase B (shared):** `BookDetailViewModel` + UI state — book metadata, session history,
-  current-progress derivation, timer integration. Tested against fakes.
-- **Phase C (app):** Book Detail screen — tap a library card to open; cover + metadata,
-  start/stop timer, manual session entry, session history list. Navigation route with
-  `bookId` argument.
-
-## Task 5 — Stats
+## Task 5 — Stats (next)
 
 - **Pre-phase: Room schema v2 — optional session duration.** Backlogged manual sessions
   don't always have a known duration (and users may not want the timer), but

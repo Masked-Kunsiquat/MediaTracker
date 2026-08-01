@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endUnit-less-than-startUnit allowed, 0-second/0-page edge cases, propagated repository
   validation errors).
 - **`BookDetailViewModel` + `BookDetailUiState`** (`shared/.../ui/`, Task4 Phase B): drives the
-  (not-yet-built) book-detail screen. `uiState` combines `BookRepository.observeBookDetail`
+  book-detail screen (see Task4 Phase C below). `uiState` combines `BookRepository.observeBookDetail`
   (new: book metadata + `BookDetailsEntity`, reactively) with
   `ReadingSessionRepository.observeSessionsForMedia` plus in-memory UI-only state into a single
   `StateFlow<BookDetailUiState>` (`Loading`/`NotFound`/`Ready`). `Ready.currentProgress` derives

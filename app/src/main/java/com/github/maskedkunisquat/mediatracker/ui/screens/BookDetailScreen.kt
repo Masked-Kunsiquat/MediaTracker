@@ -494,6 +494,11 @@ private fun TimerCard(
  * Start/end position and pages-read fields are digit-and-decimal-point filtered so a negative
  * value (the one input [LogReadingSessionUseCase][com.hub.media.features.books.domain.LogReadingSessionUseCase]
  * rejects) can never be typed in the first place.
+ *
+ * `onDismissRequest` is a no-op: this dialog represents a *finished, already-timed* run, so an
+ * accidental outside tap or back press must not silently discard it the way it would discard an
+ * un-started form. [onDiscard] (the explicit "Discard" button) is the only path that abandons the
+ * pending session -- see [BookDetailViewModel.discardPendingSession].
  */
 @Composable
 private fun PendingSessionDialog(
@@ -508,7 +513,7 @@ private fun PendingSessionDialog(
     var notesText by remember { mutableStateOf("") }
 
     AlertDialog(
-        onDismissRequest = onDiscard,
+        onDismissRequest = {}, // Incidental dismiss (outside tap / back) must not discard a finished run.
         title = { Text("Save reading session") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -630,8 +635,25 @@ private fun ManualSessionDialog(
         initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()) },
     )
     var showDatePicker by remember { mutableStateOf(false) }
-    var hourText by remember { mutableStateOf("%02d".format(nowForDefaults.hour)) }
-    var minuteText by remember { mutableStateOf("%02d".format(nowForDefaults.minute)) }
+    // Snapshot of datePickerState.selectedDateMillis taken when the picker is opened, so a
+    // picked-then-Cancelled date can be reverted rather than sticking (OK leaves the in-dialog
+    // selection unchanged; only Cancel restores this).
+    var dateBeforePickerOpen by remember { mutableStateOf<Long?>(null) }
+    // Locale.ROOT: ASCII-digit formatting regardless of device locale (some locales, e.g. Eastern
+    // Arabic, use non-ASCII decimal digits, which toIntOrNull() below could not parse back).
+    var hourText by remember {
+        mutableStateOf("%02d".format(java.util.Locale.ROOT, nowForDefaults.hour))
+    }
+    var minuteText by remember {
+        mutableStateOf("%02d".format(java.util.Locale.ROOT, nowForDefaults.minute))
+    }
+    // Blank is treated as invalid (not defaulted to 0) so an emptied field can't silently save as
+    // midnight -- the user must enter a value in range to enable Save.
+    val hourValue = hourText.toIntOrNull()
+    val minuteValue = minuteText.toIntOrNull()
+    val hourIsValid = hourValue != null && hourValue in 0..23
+    val minuteIsValid = minuteValue != null && minuteValue in 0..59
+    val timeIsValid = hourIsValid && minuteIsValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -642,7 +664,10 @@ private fun ManualSessionDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
-                    onClick = { showDatePicker = true },
+                    onClick = {
+                        dateBeforePickerOpen = datePickerState.selectedDateMillis
+                        showDatePicker = true
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Date: " + formatUtcMidnightMillis(datePickerState.selectedDateMillis))
@@ -654,6 +679,7 @@ private fun ManualSessionDialog(
                         label = { Text("Hour (0-23)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
+                        isError = !hourIsValid,
                         modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
@@ -662,6 +688,7 @@ private fun ManualSessionDialog(
                         label = { Text("Minute (0-59)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
+                        isError = !minuteIsValid,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -724,7 +751,8 @@ private fun ManualSessionDialog(
                 },
                 enabled = durationText.isNotBlank() &&
                     startUnitText.isNotBlank() &&
-                    endUnitText.isNotBlank(),
+                    endUnitText.isNotBlank() &&
+                    timeIsValid,
             ) {
                 Text("Save")
             }
@@ -743,7 +771,12 @@ private fun ManualSessionDialog(
                 TextButton(onClick = { showDatePicker = false }) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis = dateBeforePickerOpen
+                        showDatePicker = false
+                    },
+                ) { Text("Cancel") }
             },
         ) {
             DatePicker(state = datePickerState)
@@ -831,7 +864,7 @@ private fun formatElapsed(totalSeconds: Long): String {
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
-    return "%d:%02d:%02d".format(hours, minutes, seconds)
+    return "%d:%02d:%02d".format(java.util.Locale.ROOT, hours, minutes, seconds)
 }
 
 /**

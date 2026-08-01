@@ -195,6 +195,29 @@ class BookDetailViewModelTest {
     }
 
     @Test
+    fun saveSession_doubleTapBeforeCompletion_persistsExactlyOneSession() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        viewModel.startReading()
+        viewModel.stopReading()
+
+        // Simulate a double-tap on Save: two back-to-back calls, neither yielding in between,
+        // both racing to read the same pendingSession before the first persists it.
+        viewModel.saveSession(startUnit = 10.0, endUnit = 42.0, deltaPages = 32, notes = "Ch. 3")
+        viewModel.saveSession(startUnit = 10.0, endUnit = 42.0, deltaPages = 32, notes = "Ch. 3")
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+                as BookDetailUiState.Ready
+
+        assertEquals(1, ready.sessions.size)
+        assertNull(ready.pendingSession)
+        assertNull(ready.errorMessage)
+    }
+
+    @Test
     fun saveSession_withNoPendingSession_isNoOp() = runTest {
         insertBook()
         val viewModel = newViewModel()

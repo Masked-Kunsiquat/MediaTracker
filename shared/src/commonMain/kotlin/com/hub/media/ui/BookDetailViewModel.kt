@@ -82,6 +82,17 @@ public class BookDetailViewModel(
 
     private val _local = MutableStateFlow(LocalState())
 
+    /**
+     * In-flight guard shared by [saveSession] and [logManualSession]: set synchronously (before
+     * `launch`) the moment a save starts, cleared in that same coroutine's completion. A double-
+     * tap on Save fires the click handler twice before the first `launch`'s suspending
+     * [logReadingSessionUseCase] call completes; without this guard both calls would read the same
+     * pending/explicit session data and both persist, producing a duplicate row. Plain `var` is
+     * safe here (no atomics/mutex needed): [viewModelScope] dispatches on the main thread, so
+     * these reads/writes are never concurrent, just interleaved between suspension points.
+     */
+    private var saveInFlight: Boolean = false
+
     public val uiState: StateFlow<BookDetailUiState> = combine(
         bookRepository.observeBookDetail(bookId),
         readingSessionRepository.observeSessionsForMedia(bookId),
@@ -166,19 +177,25 @@ public class BookDetailViewModel(
         notes: String? = null,
     ) {
         val pending = _local.value.pendingSession ?: return
+        if (saveInFlight) return
+        saveInFlight = true
         viewModelScope.launch {
-            when (
-                val result = logReadingSessionUseCase.execute(
-                    mediaId = bookId,
-                    timerResult = pending,
-                    startUnit = startUnit,
-                    endUnit = endUnit,
-                    deltaPages = deltaPages,
-                    notes = notes,
-                )
-            ) {
-                is Resource.Success -> _local.update { LocalState() }
-                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            try {
+                when (
+                    val result = logReadingSessionUseCase.execute(
+                        mediaId = bookId,
+                        timerResult = pending,
+                        startUnit = startUnit,
+                        endUnit = endUnit,
+                        deltaPages = deltaPages,
+                        notes = notes,
+                    )
+                ) {
+                    is Resource.Success -> _local.update { LocalState() }
+                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                }
+            } finally {
+                saveInFlight = false
             }
         }
     }
@@ -197,21 +214,27 @@ public class BookDetailViewModel(
         deltaPages: Int? = null,
         notes: String? = null,
     ) {
+        if (saveInFlight) return
+        saveInFlight = true
         viewModelScope.launch {
-            when (
-                val result = logReadingSessionUseCase.execute(
-                    mediaId = bookId,
-                    timestampStart = timestampStart,
-                    timestampEnd = timestampEnd,
-                    durationSeconds = durationSeconds,
-                    startUnit = startUnit,
-                    endUnit = endUnit,
-                    deltaPages = deltaPages,
-                    notes = notes,
-                )
-            ) {
-                is Resource.Success -> _local.update { it.copy(errorMessage = null) }
-                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            try {
+                when (
+                    val result = logReadingSessionUseCase.execute(
+                        mediaId = bookId,
+                        timestampStart = timestampStart,
+                        timestampEnd = timestampEnd,
+                        durationSeconds = durationSeconds,
+                        startUnit = startUnit,
+                        endUnit = endUnit,
+                        deltaPages = deltaPages,
+                        notes = notes,
+                    )
+                ) {
+                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                }
+            } finally {
+                saveInFlight = false
             }
         }
     }
