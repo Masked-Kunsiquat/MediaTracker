@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Shared ViewModels + UI contracts** (Task3 Phase B, `shared/.../ui/`): `LibraryViewModel`
+  (books list + derived `isEmpty` as a `StateFlow<LibraryUiState>` via `observeAllBooks()` ->
+  `stateIn(WhileSubscribed(5s))`, plus `deleteBook`) and `AddBookViewModel`
+  (`StateFlow<AddBookUiState>` sealed as `Idle`/`Loading`/`Success`/`Error`, with a
+  concurrent-submission guard and `reset()`). Both extend the new KMP
+  `androidx.lifecycle:lifecycle-viewmodel` artifact (pinned to the existing 2.10.0 lifecycle
+  version) and use `viewModelScope` per AGENTS.md §2. `AddBookByIsbnUseCase` now implements a
+  new `BookIngestionUseCase` interface so `AddBookViewModel` can be tested against a hand-rolled
+  fake with no Ktor/Room/disk dependencies (AGENTS.md §5 — no mocking library).
+- **Production database + storage wiring**: `shared`'s `AppDatabase` previously had no real
+  construction path (only in-memory test builders). Added `DatabaseFactory` (`expect class` with
+  a no-arg `create()`, mirroring the official Room KMP pattern) — the Android `actual` resolves
+  the DB file via `Context.getDatabasePath`, the JVM `actual` writes to
+  `~/.mediatracker/media_tracker.db` — plus common `buildAppDatabase(builder)` applying the
+  bundled SQLite driver and `Dispatchers.IO` query execution. Added matching
+  `coverStorageDirectory` helpers per platform (`filesDir/covers` on Android,
+  `~/.mediatracker/covers` on JVM).
+- **`AppContainer`**: manual composition root (no DI framework, AGENTS.md §5) exposing
+  `BookRepository`, `ReadingSessionRepository`, and `AddBookByIsbnUseCase` from a database +
+  image storage pair; `createAppContainer(context)` is the Android convenience entry point.
+
 ### Changed
 
 - **App module converted from Java template to Kotlin + Jetpack Compose (Material 3) shell**
