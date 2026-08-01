@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-01
+
+First usable UI milestone: the app is now interactive end-to-end — browse the library,
+add a book by ISBN (with cover), and delete items, all through Jetpack Compose screens.
+
 ### Added
 
 - **Compose UI screens & navigation** (Task3 Phase C, `app/.../ui/`): `LibraryScreen` (stateless
