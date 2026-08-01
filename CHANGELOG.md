@@ -7,7 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Compose UI screens & navigation** (Task3 Phase C, `app/.../ui/`): `LibraryScreen` (stateless
+  card list, empty-state message, FloatingActionButton to add book, long-press/icon delete with
+  confirmation dialog wired to ViewModel) and `AddBookScreen` (OutlinedTextField for ISBN,
+  Loading/Error/Success state rendering, back navigation via TopAppBar icon, success triggers
+  LaunchedEffect to navigate to library and reset ViewModel). `CoverImage` off-thread composable
+  using `produceState` on `Dispatchers.IO` to load images from disk via `BitmapFactory.decodeFile`,
+  falling back to a book-icon placeholder on decode failure or null hash. Stateless/stateful split
+  honors AGENTS.md §5 (each screen has a route-level wrapper connecting ViewModel + navigation
+  callbacks, plus a @Preview-able stateless composable accepting state + callbacks). Navigation
+  via navigation-compose `NavHost` with sealed `Route` type-safe destinations (library start,
+  add_book), routes in `AppNavigation.kt`.
+- **`MediaTrackerApplication`**: Application subclass holding lazily-created `AppContainer` on
+  first access; retrieved by `MainActivity` via `(application as MediaTrackerApplication).appContainer`.
+- **ViewModel factories**: `LibraryViewModelFactory` and `AddBookViewModelFactory` (AGENTS.md §5 —
+  manual DI, no framework) wiring dependencies from `AppContainer` to ViewModel constructors.
+
+### Changed
+
+- **`MainActivity` wired to navigation + dependency injection**: Now reads `AppContainer` from
+  the Application instance, passes to `MediaTrackerApp` which constructs a `NavController` and
+  calls `AppNavigation` to set up the graph. Removed placeholder screen; all real navigation
+  happens here.
+- **App module converted from Java template to Kotlin + Jetpack Compose (Material 3) shell**
+  (Task3 Phase A): `app` now applies `org.jetbrains.kotlin.android` +
+  `org.jetbrains.kotlin.plugin.compose`, adds a Compose BOM-managed dependency set
+  (Compose UI, Material 3, activity-compose, lifecycle-runtime-compose,
+  navigation-compose — navigation wired into the catalog now for Phase C), and drops the
+  AppCompat/Material XML dependencies. `MainActivity` is a `ComponentActivity` rendering a
+  minimal `MediaTrackerTheme` (dynamic color on Android 12+, light/dark) placeholder screen;
+  the manifest theme is a bare framework `android:Theme.Material...NoActionBar` bootstrap
+  style with all real theming done in Compose. No feature screens or navigation graph yet —
+  shell only.
 
 ## [0.1.0] - 2026-08-01
 

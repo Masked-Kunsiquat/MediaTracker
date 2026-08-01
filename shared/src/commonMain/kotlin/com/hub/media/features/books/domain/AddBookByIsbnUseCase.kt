@@ -17,6 +17,18 @@ private val ISBN_10_REGEX = Regex("^\\d{9}[\\dX]$")
 private val ISBN_13_REGEX = Regex("^\\d{13}$")
 
 /**
+ * Abstraction over "ingest a book by ISBN" so callers (namely [com.hub.media.ui.AddBookViewModel])
+ * can depend on a narrow contract instead of the concrete [AddBookByIsbnUseCase]. This exists
+ * purely for testability without a mocking library (AGENTS.md §5 "No Unnecessary Dependencies"):
+ * shared/commonTest can hand-roll a fake implementation with no Ktor engine, no Room database,
+ * and no disk I/O.
+ */
+public interface BookIngestionUseCase {
+    /** See [AddBookByIsbnUseCase.execute]. */
+    public suspend fun execute(isbn: String): Resource<String>
+}
+
+/**
  * End-to-end "add a book by ISBN" workflow: looks up metadata, best-effort downloads and
  * content-addresses the cover image, and atomically persists the result.
  *
@@ -34,7 +46,7 @@ public class AddBookByIsbnUseCase(
     private val coverDownloader: CoverImageDownloader,
     private val imageStorage: LocalImageStorageManager,
     private val bookRepository: BookRepository,
-) {
+) : BookIngestionUseCase {
 
     /**
      * Runs the full ingestion flow for [isbn]:
@@ -63,7 +75,7 @@ public class AddBookByIsbnUseCase(
      * @return [Resource.Success] with the new media ID, or [Resource.Error] describing why
      *   ingestion failed. Never throws.
      */
-    public suspend fun execute(isbn: String): Resource<String> {
+    public override suspend fun execute(isbn: String): Resource<String> {
         val normalizedIsbn = normalizeIsbn(isbn)
         if (!isValidIsbn(normalizedIsbn)) {
             return Resource.Error("Invalid ISBN: '$isbn'")
