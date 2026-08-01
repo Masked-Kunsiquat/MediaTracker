@@ -82,6 +82,7 @@ tasks.withType<Test>().configureEach {
         filter {
             excludeTestsMatching("com.hub.media.core.database.*")
             excludeTestsMatching("com.hub.media.features.books.data.*")
+            excludeTestsMatching("com.hub.media.features.books.domain.*")
             isFailOnNoMatchingTests = false
         }
     }

@@ -17,6 +17,7 @@ internal fun sampleMediaItem(
     releaseYear: Int? = 2020,
     purchasePrice: Double? = 9.99,
     createdAt: Instant = Instant.fromEpochMilliseconds(1_700_000_000_000),
+    coverImageHash: String? = null,
 ): MediaItemEntity = MediaItemEntity(
     id = id,
     type = type,
@@ -24,6 +25,7 @@ internal fun sampleMediaItem(
     releaseYear = releaseYear,
     purchasePrice = purchasePrice,
     createdAt = createdAt,
+    coverImageHash = coverImageHash,
 )
 
 internal fun sampleBookDetails(

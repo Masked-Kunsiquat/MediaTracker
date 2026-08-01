@@ -17,4 +17,10 @@ data class MediaItemEntity(
     val releaseYear: Int?,
     val purchasePrice: Double?,
     val createdAt: Instant,
+    /**
+     * The `<sha256>.jpg` filename returned by
+     * [com.hub.media.core.storage.LocalImageStorageManager.saveImage] for this item's
+     * cover/poster, or null if no cover has been downloaded/stored yet (AGENTS.md §4).
+     */
+    val coverImageHash: String? = null,
 )

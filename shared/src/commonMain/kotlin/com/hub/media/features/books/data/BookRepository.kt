@@ -50,6 +50,9 @@ public class BookRepository(private val db: AppDatabase) {
      * @param format The book format (PHYSICAL, EBOOK, AUDIOBOOK).
      * @param totalPages Optional page count.
      * @param isbn Optional ISBN.
+     * @param coverImageHash Optional `<sha256>.jpg` filename (from
+     *   [com.hub.media.core.storage.LocalImageStorageManager.saveImage]) for the locally stored
+     *   cover image, per AGENTS.md §4.
      * @param externalIdentifiers Optional (provider, externalId) mappings to external catalogs.
      *   A duplicate provider in this list violates the composite primary key and fails the
      *   whole insert atomically.
@@ -62,6 +65,7 @@ public class BookRepository(private val db: AppDatabase) {
         format: BookFormat,
         totalPages: Int? = null,
         isbn: String? = null,
+        coverImageHash: String? = null,
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
     ): Resource<String> = try {
         val mediaId = newId()
@@ -74,6 +78,7 @@ public class BookRepository(private val db: AppDatabase) {
             releaseYear = releaseYear,
             purchasePrice = purchasePrice,
             createdAt = now,
+            coverImageHash = coverImageHash,
         )
 
         val bookDetails = BookDetailsEntity(

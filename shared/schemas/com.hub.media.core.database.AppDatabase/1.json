@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "30cc40de70f3a161242a21a715e2b34e",
+    "identityHash": "d1ac603b3d70eabf49fddebce21c78a9",
     "entities": [
       {
         "tableName": "media_items",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT NOT NULL, `releaseYear` INTEGER, `purchasePrice` REAL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT NOT NULL, `releaseYear` INTEGER, `purchasePrice` REAL, `createdAt` INTEGER NOT NULL, `coverImageHash` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -41,6 +41,11 @@
             "columnName": "createdAt",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "coverImageHash",
+            "columnName": "coverImageHash",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -243,7 +248,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '30cc40de70f3a161242a21a715e2b34e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd1ac603b3d70eabf49fddebce21c78a9')"
     ]
   }
 }
