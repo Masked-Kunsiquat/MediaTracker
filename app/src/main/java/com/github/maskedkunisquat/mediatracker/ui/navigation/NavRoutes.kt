@@ -34,9 +34,12 @@ sealed interface Route {
         /** NavHost argument key for the book id, used both here and by [createRoute]. */
         const val ARG_BOOK_ID: String = "bookId"
 
-        override val route: String = "book_detail/{$ARG_BOOK_ID}"
+        /** Base path segment shared by [route] and [createRoute]. */
+        private const val PATH: String = "book_detail"
+
+        override val route: String = "$PATH/{$ARG_BOOK_ID}"
 
         /** Builds a concrete, navigable route string for a specific [bookId]. */
-        fun createRoute(bookId: String): String = "book_detail/$bookId"
+        fun createRoute(bookId: String): String = "$PATH/$bookId"
     }
 }

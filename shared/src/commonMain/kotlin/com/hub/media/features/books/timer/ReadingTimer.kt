@@ -105,9 +105,12 @@ public data class ReadingTimerResult(
  * @param clock Wall-clock time source for [ReadingTimerResult] timestamps. Defaults to
  *   [Clock.System]; tests inject a fake tied to the coroutine test scheduler's virtual time so
  *   `timestampStart`/`timestampEnd` are deterministic.
- * @param scope Coroutine scope the internal tick loop runs on. Callers own its lifecycle (e.g. a
- *   ViewModel's `viewModelScope`); tests pass a `TestScope` (or its `backgroundScope`) to drive
- *   the loop with virtual time via `kotlinx-coroutines-test`.
+ * @param scope Coroutine scope the internal tick loop runs on. Must be single-threaded/
+ *   thread-confined (e.g. a main-dispatcher `viewModelScope`, or a test scheduler) — [state] and
+ *   [elapsedSeconds] are updated from this scope's tick loop with no additional synchronization,
+ *   so a multi-threaded scope could race those updates with concurrent calls to
+ *   [start]/[pause]/[resume]/[stop]. Callers own its lifecycle; tests pass a `TestScope` (or its
+ *   `backgroundScope`) to drive the loop with virtual time via `kotlinx-coroutines-test`.
  * @param tickInterval How often [elapsedSeconds] increments while [ReadingTimerState.Running].
  *   Defaults to one second per the ROADMAP's "elapsed-time Flow" ticking ~1/second.
  */
@@ -204,6 +207,10 @@ public class ReadingTimer(
     }
 
     private fun startTicking() {
+        // Defensive: the state machine above already prevents start()/resume() from being called
+        // while a tick job is running, but cancelling any leftover job first is free and rules out
+        // an accidental duplicate ticker if that invariant is ever loosened.
+        tickJob?.cancel()
         tickJob = scope.launch {
             while (isActive) {
                 delay(tickInterval)

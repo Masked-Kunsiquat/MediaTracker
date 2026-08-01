@@ -195,6 +195,31 @@ class BookDetailViewModelTest {
     }
 
     @Test
+    fun discardPendingSession_clearsPendingSessionAndError() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        viewModel.startReading()
+        viewModel.stopReading()
+        val pendingBeforeDiscard =
+            (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
+        assertNotNull(pendingBeforeDiscard)
+
+        // Negative startUnit fails LogReadingSessionUseCase validation without persisting, so
+        // errorMessage is populated before discardPendingSession is exercised.
+        viewModel.saveSession(startUnit = -1.0, endUnit = 10.0)
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+
+        viewModel.discardPendingSession()
+
+        val ready = viewModel.uiState.value as BookDetailUiState.Ready
+        assertNull(ready.pendingSession)
+        assertNull(ready.errorMessage)
+        assertTrue(ready.sessions.isEmpty())
+    }
+
+    @Test
     fun saveSession_doubleTapBeforeCompletion_persistsExactlyOneSession() = runTest {
         insertBook()
         val viewModel = newViewModel()

@@ -64,17 +64,17 @@ fun AppNavigation(
                 navArgument(Route.BookDetail.ARG_BOOK_ID) { type = NavType.StringType },
             ),
         ) { backStackEntry ->
-            val bookId = backStackEntry.arguments?.getString(Route.BookDetail.ARG_BOOK_ID)
-            if (bookId != null) {
-                BookDetailScreenRoute(
-                    appContainer = appContainer,
-                    coverStorageDir = coverStorageDir,
-                    bookId = bookId,
-                    onNavigateBack = {
-                        navController.navigateUp()
-                    },
-                )
+            val bookId = requireNotNull(backStackEntry.arguments?.getString(Route.BookDetail.ARG_BOOK_ID)) {
+                "Missing required argument: ${Route.BookDetail.ARG_BOOK_ID}"
             }
+            BookDetailScreenRoute(
+                appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
+                bookId = bookId,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+            )
         }
     }
 }

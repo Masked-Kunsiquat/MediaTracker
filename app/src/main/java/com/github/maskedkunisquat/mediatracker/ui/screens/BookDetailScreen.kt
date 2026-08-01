@@ -98,8 +98,9 @@ fun BookDetailScreenRoute(
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
     val elapsedSeconds by viewModel.elapsedSeconds.collectAsStateWithLifecycle()
 
-    LaunchedEffect(uiState) {
-        if (uiState is BookDetailUiState.NotFound) {
+    val notFound = uiState is BookDetailUiState.NotFound
+    LaunchedEffect(notFound) {
+        if (notFound) {
             onNavigateBack()
         }
     }
@@ -301,7 +302,7 @@ private fun BookDetailContent(
 
         item {
             TextButton(onClick = { showManualEntry = true }) {
-                Text("Log session manually")
+                Text(stringResource(R.string.log_session_manually))
             }
         }
 
@@ -321,13 +322,16 @@ private fun BookDetailContent(
         }
 
         item {
-            Text(text = "Session History", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(R.string.session_history_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
 
         if (state.sessions.isEmpty()) {
             item {
                 Text(
-                    text = "No sessions logged yet",
+                    text = stringResource(R.string.no_sessions_logged_yet),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -362,10 +366,11 @@ private fun BookDetailContent(
         )
     }
 
-    if (sessionToDelete != null) {
+    val session = sessionToDelete
+    if (session != null) {
         DeleteSessionConfirmationDialog(
             onConfirm = {
-                onDeleteSession(sessionToDelete!!.id)
+                onDeleteSession(session.id)
                 sessionToDelete = null
             },
             onDismiss = { sessionToDelete = null },
@@ -408,34 +413,51 @@ private fun BookHeader(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (book.releaseYear != null) {
+            val releaseYear = book.releaseYear
+            if (releaseYear != null) {
                 Text(
-                    text = "Released: ${book.releaseYear}",
+                    text = stringResource(R.string.released_prefix, releaseYear),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            if (details?.isbn != null) {
-                Text(text = "ISBN: ${details.isbn}", style = MaterialTheme.typography.bodySmall)
+            val isbn = details?.isbn
+            if (isbn != null) {
+                Text(
+                    text = stringResource(R.string.isbn_prefix, isbn),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             if (details != null) {
-                Text(text = "Format: ${details.format}", style = MaterialTheme.typography.bodySmall)
-            }
-            if (details?.totalPages != null) {
                 Text(
-                    text = "Total pages: ${details.totalPages}",
+                    text = stringResource(R.string.format_prefix, details.format.displayLabel()),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            val totalPages = details?.totalPages
+            if (totalPages != null) {
+                Text(
+                    text = stringResource(R.string.total_pages_prefix, totalPages),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             val progressText = formatProgress(currentProgress, details?.totalPages)
             if (progressText != null) {
                 Text(
-                    text = "Progress: $progressText",
+                    text = stringResource(R.string.progress_prefix, progressText),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
         }
     }
+}
+
+/** Maps [BookFormat] to its human-readable display label (e.g. [BookFormat.PHYSICAL] -> "Physical"). */
+@Composable
+private fun BookFormat.displayLabel(): String = when (this) {
+    BookFormat.PHYSICAL -> stringResource(R.string.book_format_physical)
+    BookFormat.EBOOK -> stringResource(R.string.book_format_ebook)
+    BookFormat.AUDIOBOOK -> stringResource(R.string.book_format_audiobook)
 }
 
 /**
@@ -467,15 +489,15 @@ private fun TimerCard(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (timerState) {
                     is ReadingTimerState.Idle -> {
-                        Button(onClick = onStart) { Text("Start reading") }
+                        Button(onClick = onStart) { Text(stringResource(R.string.start_reading_button)) }
                     }
                     is ReadingTimerState.Running -> {
-                        Button(onClick = onPause) { Text("Pause") }
-                        Button(onClick = onStop) { Text("Stop") }
+                        Button(onClick = onPause) { Text(stringResource(R.string.pause_button)) }
+                        Button(onClick = onStop) { Text(stringResource(R.string.stop_button)) }
                     }
                     is ReadingTimerState.Paused -> {
-                        Button(onClick = onResume) { Text("Resume") }
-                        Button(onClick = onStop) { Text("Stop") }
+                        Button(onClick = onResume) { Text(stringResource(R.string.resume_button)) }
+                        Button(onClick = onStop) { Text(stringResource(R.string.stop_button)) }
                     }
                 }
             }
@@ -514,17 +536,20 @@ private fun PendingSessionDialog(
 
     AlertDialog(
         onDismissRequest = {}, // Incidental dismiss (outside tap / back) must not discard a finished run.
-        title = { Text("Save reading session") },
+        title = { Text(stringResource(R.string.save_reading_session_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Duration: ${formatElapsed(pendingSession.durationSeconds)}",
+                    text = stringResource(
+                        R.string.session_duration_label,
+                        formatElapsed(pendingSession.durationSeconds),
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 OutlinedTextField(
                     value = startUnitText,
                     onValueChange = { startUnitText = it.filterDecimalInput() },
-                    label = { Text("Start position") },
+                    label = { Text(stringResource(R.string.start_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -532,7 +557,7 @@ private fun PendingSessionDialog(
                 OutlinedTextField(
                     value = endUnitText,
                     onValueChange = { endUnitText = it.filterDecimalInput() },
-                    label = { Text("End position") },
+                    label = { Text(stringResource(R.string.end_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -540,7 +565,7 @@ private fun PendingSessionDialog(
                 OutlinedTextField(
                     value = deltaPagesText,
                     onValueChange = { deltaPagesText = it.filterIntegerInput() },
-                    label = { Text("Pages read (optional)") },
+                    label = { Text(stringResource(R.string.pages_read_optional_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -548,7 +573,7 @@ private fun PendingSessionDialog(
                 OutlinedTextField(
                     value = notesText,
                     onValueChange = { notesText = it },
-                    label = { Text("Notes (optional)") },
+                    label = { Text(stringResource(R.string.notes_optional_label)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (errorMessage != null) {
@@ -572,12 +597,12 @@ private fun PendingSessionDialog(
                 },
                 enabled = startUnitText.isNotBlank() && endUnitText.isNotBlank(),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save_button))
             }
         },
         dismissButton = {
             Button(onClick = onDiscard) {
-                Text("Discard")
+                Text(stringResource(R.string.discard_button))
             }
         },
     )
@@ -657,7 +682,7 @@ private fun ManualSessionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Log session manually") },
+        title = { Text(stringResource(R.string.log_session_manually)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -670,7 +695,12 @@ private fun ManualSessionDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Date: " + formatUtcMidnightMillis(datePickerState.selectedDateMillis))
+                    Text(
+                        stringResource(
+                            R.string.date_label,
+                            formatUtcMidnightMillis(datePickerState.selectedDateMillis),
+                        ),
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -695,7 +725,7 @@ private fun ManualSessionDialog(
                 OutlinedTextField(
                     value = durationText,
                     onValueChange = { durationText = it.filterIntegerInput() },
-                    label = { Text("Duration (minutes)") },
+                    label = { Text(stringResource(R.string.duration_minutes_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -703,7 +733,7 @@ private fun ManualSessionDialog(
                 OutlinedTextField(
                     value = startUnitText,
                     onValueChange = { startUnitText = it.filterDecimalInput() },
-                    label = { Text("Start position") },
+                    label = { Text(stringResource(R.string.start_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -711,7 +741,7 @@ private fun ManualSessionDialog(
                 OutlinedTextField(
                     value = endUnitText,
                     onValueChange = { endUnitText = it.filterDecimalInput() },
-                    label = { Text("End position") },
+                    label = { Text(stringResource(R.string.end_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -719,7 +749,7 @@ private fun ManualSessionDialog(
                 OutlinedTextField(
                     value = deltaPagesText,
                     onValueChange = { deltaPagesText = it.filterIntegerInput() },
-                    label = { Text("Pages read (optional)") },
+                    label = { Text(stringResource(R.string.pages_read_optional_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -727,7 +757,7 @@ private fun ManualSessionDialog(
                 OutlinedTextField(
                     value = notesText,
                     onValueChange = { notesText = it },
-                    label = { Text("Notes (optional)") },
+                    label = { Text(stringResource(R.string.notes_optional_label)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -754,12 +784,12 @@ private fun ManualSessionDialog(
                     endUnitText.isNotBlank() &&
                     timeIsValid,
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save_button))
             }
         },
         dismissButton = {
             Button(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel_button))
             }
         },
     )
@@ -768,7 +798,7 @@ private fun ManualSessionDialog(
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("OK") }
+                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.ok_button)) }
             },
             dismissButton = {
                 TextButton(
@@ -776,7 +806,7 @@ private fun ManualSessionDialog(
                         datePickerState.selectedDateMillis = dateBeforePickerOpen
                         showDatePicker = false
                     },
-                ) { Text("Cancel") }
+                ) { Text(stringResource(R.string.cancel_button)) }
             },
         ) {
             DatePicker(state = datePickerState)
@@ -807,13 +837,18 @@ private fun SessionRow(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    text = "Duration: ${formatElapsed(session.durationSeconds)}  •  " +
-                        "${formatUnit(session.startUnit)} -> ${formatUnit(session.endUnit)}",
+                    text = stringResource(
+                        R.string.session_duration_positions,
+                        formatElapsed(session.durationSeconds),
+                        formatUnit(session.startUnit),
+                        formatUnit(session.endUnit),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (session.deltaPages != null) {
+                val deltaPages = session.deltaPages
+                if (deltaPages != null) {
                     Text(
-                        text = "Pages read: ${session.deltaPages}",
+                        text = stringResource(R.string.pages_read_count, deltaPages),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -844,16 +879,16 @@ private fun DeleteSessionConfirmationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete session?") },
-        text = { Text("Are you sure you want to delete this reading session? This cannot be undone.") },
+        title = { Text(stringResource(R.string.delete_session_title)) },
+        text = { Text(stringResource(R.string.delete_session_body)) },
         confirmButton = {
             Button(onClick = onConfirm) {
-                Text("Delete")
+                Text(stringResource(R.string.delete_button))
             }
         },
         dismissButton = {
             Button(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel_button))
             }
         },
     )
