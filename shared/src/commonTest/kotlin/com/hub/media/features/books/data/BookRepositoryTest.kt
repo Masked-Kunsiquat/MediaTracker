@@ -206,6 +206,55 @@ class BookRepositoryTest {
     }
 
     @Test
+    fun observeBookDetail_emitsMediaItemAndDetailsForInsertedBook() = runTest {
+        val result = repo.addBook(
+            title = "Project Hail Mary",
+            releaseYear = 2021,
+            purchasePrice = 27.99,
+            format = BookFormat.PHYSICAL,
+            totalPages = 496,
+            isbn = "9780593135204",
+        )
+        assertIs<Resource.Success<String>>(result)
+        val mediaId = result.data
+
+        val detail = repo.observeBookDetail(mediaId).first { it != null }
+        assertEquals("Project Hail Mary", detail?.mediaItem?.title)
+        assertEquals(2021, detail?.mediaItem?.releaseYear)
+        assertEquals(mediaId, detail?.details?.mediaId)
+        assertEquals("9780593135204", detail?.details?.isbn)
+        assertEquals(496, detail?.details?.totalPages)
+    }
+
+    @Test
+    fun observeBookDetail_emitsNullAfterDelete() = runTest {
+        val result = repo.addBook(title = "Deleted Detail Book", format = BookFormat.EBOOK)
+        assertIs<Resource.Success<String>>(result)
+        val mediaId = result.data
+
+        repo.observeBookDetail(mediaId).first { it != null }
+
+        repo.deleteBook(mediaId)
+
+        val afterDelete = repo.observeBookDetail(mediaId).first { it == null }
+        assertEquals(null, afterDelete)
+    }
+
+    @Test
+    fun observeBookDetail_mediaItemWithNoBookDetailsRow_emitsDetailsNull() = runTest {
+        // Bypass repo.addBook's atomic transaction (which always inserts both rows together) by
+        // inserting only a MediaItemEntity via the DAO directly. This is the data-integrity edge
+        // case called out in observeBookDetail's KDoc: BookWithDetails.details is independently
+        // nullable for exactly this "row exists but its detail relation doesn't" scenario.
+        val mediaId = newId()
+        db.mediaItemDao().insert(sampleMediaItem(id = mediaId, type = MediaType.BOOK, title = "Orphan Media Item"))
+
+        val detail = repo.observeBookDetail(mediaId).first { it != null }
+        assertEquals("Orphan Media Item", detail?.mediaItem?.title)
+        assertEquals(null, detail?.details)
+    }
+
+    @Test
     fun addBook_duplicateIsbn_doesNotCrash() = runTest {
         // First book
         val result1 = repo.addBook(

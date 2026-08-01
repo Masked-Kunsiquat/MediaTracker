@@ -163,10 +163,38 @@ public class BookDetailViewModel(
      * [BookDetailUiState.Ready.errorMessage] but leaves [BookDetailUiState.Ready.pendingSession]
      * intact so the user can correct their input and retry without re-timing the session.
      *
-     * @param startUnit Position (page or percent) at the start of the session. Must be `>= 0`
-     *   (see [LogReadingSessionUseCase]).
-     * @param endUnit Position at the end of the session. Must be `>= 0`; may be less than
-     *   [startUnit] (re-reading backward is valid, see [LogReadingSessionUseCase] KDoc).
+     * ### Stale-completion guard
+     * [saveInFlight] blocks a second *save* from starting while one is in flight, but
+     * [discardPendingSession] and [stopReading] are **not** gated by it (discarding or timing a
+     * new run while a save is still in flight is allowed) — so by the time this coroutine's
+     * suspending [logReadingSessionUseCase] call returns, [BookDetailUiState.Ready.pendingSession]
+     * may have moved on to a newer, unrelated session (call it `B`): the user discarded the one
+     * this save was for (`A`) and started/stopped a new timer run before `A`'s save finished.
+     * Applying `A`'s outcome unconditionally at that point would silently wipe `B` (on
+     * [Resource.Success], via the unconditional `LocalState()` reset) or mislabel it with `A`'s
+     * error (on [Resource.Error]). Both branches below therefore compare
+     * `_local.value.pendingSession` against the locally-captured [pending] (the exact session
+     * this coroutine was launched for) with **referential equality (`===`)**, not `==`: even
+     * though [ReadingTimerResult] is a data class, two independently-timed runs can be
+     * structurally equal (e.g. two 0-second sessions started/stopped in the same clock
+     * millisecond, which virtual-time tests and fast real hardware can both produce) while still
+     * being logically distinct sessions — `==` would then wrongly treat `B` as `A` and apply the
+     * stale result anyway. `===` identifies "the literal session object this coroutine closed
+     * over," which is the only correct match here. If the check fails, the result is dropped
+     * entirely and neither [BookDetailUiState.Ready.pendingSession] nor
+     * [BookDetailUiState.Ready.errorMessage] is touched.
+     *
+     * Note: dropping a stale *[Resource.Success]* result this way does **not** undo the write —
+     * [logReadingSessionUseCase] had already dispatched (and by this point, completed) the insert
+     * for `A` by the time this check runs, so `A`'s row still persists even though the discard
+     * happened first. That's accepted as correct: the user's *discard* only ever promised to
+     * abandon the unsaved *pending* state, not to cancel a save that had already been explicitly
+     * requested before the discard.
+     *
+     * @param startUnit Position (page or percent) at the start of the session. Must be finite and
+     *   `>= 0` (see [LogReadingSessionUseCase]).
+     * @param endUnit Position at the end of the session. Must be finite and `>= 0`; may be less
+     *   than [startUnit] (re-reading backward is valid, see [LogReadingSessionUseCase] KDoc).
      * @param deltaPages Optional page delta.
      * @param notes Optional free-text notes.
      */
@@ -191,8 +219,12 @@ public class BookDetailViewModel(
                         notes = notes,
                     )
                 ) {
-                    is Resource.Success -> _local.update { LocalState() }
-                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                    is Resource.Success -> _local.update {
+                        if (it.pendingSession === pending) LocalState() else it
+                    }
+                    is Resource.Error -> _local.update {
+                        if (it.pendingSession === pending) it.copy(errorMessage = result.message) else it
+                    }
                 }
             } finally {
                 saveInFlight = false
@@ -203,7 +235,10 @@ public class BookDetailViewModel(
     /**
      * Logs a session from explicit bounds with no live timer involved (a manual session-entry
      * form), via [LogReadingSessionUseCase]'s explicit-bounds overload. Independent of any
-     * [BookDetailUiState.Ready.pendingSession]; does not touch it either way.
+     * [BookDetailUiState.Ready.pendingSession]; does not touch it either way — neither completion
+     * branch below reads or writes [LocalState.pendingSession], only [LocalState.errorMessage], so
+     * this method has no stale-`pendingSession`-clobber risk analogous to [saveSession]'s and
+     * needs no referential-equality guard for it.
      */
     public fun logManualSession(
         timestampStart: Instant,
@@ -243,19 +278,32 @@ public class BookDetailViewModel(
      * Abandons the current [BookDetailUiState.Ready.pendingSession] without persisting it, and
      * clears any [BookDetailUiState.Ready.errorMessage]. The timed run is discarded entirely; the
      * user must start a new timer run (or use [logManualSession]) to log progress instead.
+     *
+     * Not gated by [saveInFlight]: calling this while a [saveSession] for the current
+     * [BookDetailUiState.Ready.pendingSession] is still in flight is allowed and takes effect
+     * immediately (unlike a second *save*, which [saveInFlight] blocks from starting). See
+     * [saveSession]'s KDoc ("Stale-completion guard") for how that in-flight save's eventual
+     * result is prevented from clobbering whatever [BookDetailUiState.Ready.pendingSession]
+     * becomes afterward.
      */
     public fun discardPendingSession() {
         _local.update { LocalState() }
     }
 
     /**
-     * Deletes the session identified by [sessionId]. Fire-and-forget, matching
-     * [LibraryViewModel.deleteBook]: [uiState] reflects the outcome reactively via
-     * [ReadingSessionRepository.observeSessionsForMedia] once the delete completes.
+     * Deletes the session identified by [sessionId]. On [Resource.Success], fire-and-forget,
+     * matching [LibraryViewModel.deleteBook]: [uiState] reflects the removal reactively via
+     * [ReadingSessionRepository.observeSessionsForMedia] once the delete completes, with no
+     * explicit state update needed here. On [Resource.Error] (e.g. the id no longer exists, or a
+     * DB failure), sets [BookDetailUiState.Ready.errorMessage] using the same surfacing
+     * convention as [saveSession]/[logManualSession] so a failed delete isn't silently swallowed.
      */
     public fun deleteSession(sessionId: String) {
         viewModelScope.launch {
-            readingSessionRepository.deleteSession(sessionId)
+            when (val result = readingSessionRepository.deleteSession(sessionId)) {
+                is Resource.Success -> Unit
+                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            }
         }
     }
 }

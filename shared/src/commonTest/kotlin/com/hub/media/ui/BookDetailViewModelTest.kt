@@ -23,11 +23,17 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 
 /**
  * [BookDetailViewModel] tests against a real in-memory [AppDatabase] (via `testAppDatabase()`,
@@ -71,6 +77,28 @@ class BookDetailViewModelTest {
     private suspend fun insertBook() {
         db.mediaItemDao().insert(sampleMediaItem(id = mediaId, type = MediaType.BOOK, title = "Dune"))
         db.bookDetailsDao().insert(sampleBookDetails(mediaId = mediaId))
+    }
+
+    /**
+     * Repeatedly drains the [TestScope.testScheduler] with [runCurrent] (never `advanceUntilIdle`
+     * — see [saveSession_staleCompletionDoesNotClobberNewerPendingSession]'s KDoc for why) and,
+     * between rounds, yields real (non-virtual) time so work dispatched to a genuinely different
+     * dispatcher (Room's own query/invalidation dispatching, entirely outside this test's virtual
+     * scheduler) gets a chance to run and re-enqueue its continuation back onto the (test-driven)
+     * Main dispatcher. Bounded so an actual regression fails with a clear assertion below instead
+     * of hanging.
+     */
+    private suspend fun TestScope.runCurrentUntilOrTimeOut(
+        maxAttempts: Int = 200,
+        condition: suspend () -> Boolean,
+    ) {
+        var attempts = 0
+        while (attempts < maxAttempts) {
+            runCurrent()
+            if (condition()) return
+            withContext(Dispatchers.Default) { delay(5) }
+            attempts++
+        }
     }
 
     private fun newViewModel(id: String = mediaId) =
@@ -253,6 +281,106 @@ class BookDetailViewModelTest {
         val ready = viewModel.uiState.value as BookDetailUiState.Ready
         assertTrue(ready.sessions.isEmpty())
         assertNull(ready.errorMessage)
+    }
+
+    /**
+     * Regression test for the stale-completion clobber fixed in [BookDetailViewModel.saveSession]:
+     * a save for a since-discarded pending session ("A") must not wipe (or mislabel with an error)
+     * a newer pending session ("B") that was started after A was discarded but before A's save
+     * actually completed.
+     *
+     * Unlike every other test in this file, [Dispatchers.Main] here is a [StandardTestDispatcher]
+     * rather than [UnconfinedTestDispatcher]: the race requires [BookDetailViewModel.saveSession]'s
+     * `viewModelScope.launch` to be enqueued and NOT run at all until explicitly driven, so that
+     * `discardPendingSession()` + a fresh start/stop are guaranteed (not just likely) to happen
+     * before any part of save(A)'s completion logic executes — `UnconfinedTestDispatcher` would run
+     * that launch eagerly up to its first real suspension point instead, which happens to still
+     * work for the double-tap guard test above but doesn't give the strict "queued, not run"
+     * ordering this test depends on.
+     *
+     * [runCurrent] (never `advanceUntilIdle()`) drives the scheduler throughout: [ReadingTimer]'s
+     * tick loop is also launched on this same `viewModelScope`/Main dispatcher as an unconditional
+     * `while (isActive) { delay(...); ... }` loop that never completes, and `advanceUntilIdle()`
+     * would spin forever trying to drain it. `runCurrent()` only runs work that's ready *now* and
+     * never touches the tick loop's still-pending future delay.
+     *
+     * The actual Room insert genuinely crosses to a real (non-test-scheduler) dispatcher, so its
+     * resumption back onto Main can land slightly after any single `runCurrent()` call returns;
+     * the polling loops below bridge that with tiny real (non-virtual) waits rather than a fixed
+     * sleep, bounded so a genuine regression fails fast instead of hanging.
+     */
+    @Test
+    fun saveSession_staleCompletionDoesNotClobberNewerPendingSession() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        insertBook()
+        val viewModel = newViewModel()
+
+        var latestReady: BookDetailUiState.Ready? = null
+        backgroundScope.launch(Dispatchers.Unconfined) {
+            viewModel.uiState.collect { state ->
+                if (state is BookDetailUiState.Ready) latestReady = state
+            }
+        }
+        // Room's own Flows (observeById/observeByMediaId/observeSessionsForMedia backing
+        // observeBookDetail/observeSessionsForMedia) emit via Room's real internal invalidation
+        // dispatching, not this test's virtual scheduler, so reaching the first Ready value also
+        // needs the same real-time-bridging poll as the save(A) completion below, not a single
+        // runCurrent().
+        runCurrentUntilOrTimeOut { latestReady != null }
+        assertNotNull(latestReady)
+        assertNull(latestReady?.pendingSession)
+
+        // Produce pending session A.
+        viewModel.startReading()
+        viewModel.stopReading()
+        runCurrentUntilOrTimeOut { latestReady?.pendingSession != null }
+        val pendingA = assertNotNull(latestReady?.pendingSession)
+
+        // Start saving A. Because Dispatchers.Main currently delegates to a StandardTestDispatcher,
+        // this only enqueues the coroutine -- it does not run until the scheduler is next driven.
+        viewModel.saveSession(startUnit = 10.0, endUnit = 42.0, notes = "A")
+
+        // Discard A (allowed while a save for it is in flight -- see saveSession's KDoc) and
+        // start/stop a brand-new run -> pendingSession = B. Both are plain, synchronous
+        // MutableStateFlow updates with no coroutine dispatch, so they take effect immediately,
+        // strictly before save(A)'s still-unstarted coroutine gets a chance to run.
+        viewModel.discardPendingSession()
+        viewModel.startReading()
+        viewModel.stopReading()
+
+        // Let save(A) actually run and reach the database. Its row appearing is a real,
+        // dispatcher-agnostic signal that the coroutine has passed the suspend point.
+        runCurrentUntilOrTimeOut {
+            sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "A" }
+        }
+        assertTrue(
+            sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "A" },
+            "save(A) must have persisted its row before this assertion",
+        )
+
+        // Drain a few more rounds (with tiny real waits) so save(A)'s post-insert completion
+        // handler -- which resumes back onto Main asynchronously -- has a chance to run its
+        // (correctly guarded) _local.update(...) and be reflected into the collected uiState above.
+        repeat(20) {
+            runCurrent()
+            withContext(Dispatchers.Default) { delay(5) }
+        }
+        runCurrent()
+
+        // A's row persists even though its pending session was discarded mid-flight: the insert
+        // was already dispatched before the discard happened (documented in saveSession's KDoc).
+        assertTrue(sessionRepository.observeSessionsForMedia(mediaId).first().any { it.notes == "A" })
+
+        val finalReady = assertNotNull(latestReady)
+        assertNotNull(
+            finalReady.pendingSession,
+            "stale completion of save(A) must not silently wipe pendingSession = B",
+        )
+        assertTrue(
+            finalReady.pendingSession !== pendingA,
+            "pendingSession must be the newer session B, not the stale A reference",
+        )
+        assertNull(finalReady.errorMessage, "stale completion of save(A) must not set an error either")
     }
 
     @Test

@@ -175,6 +175,72 @@ class LogReadingSessionUseCaseTest {
     }
 
     @Test
+    fun execute_nanStartUnit_returnsErrorAndPersistsNothing() = runTest {
+        // Double.NaN satisfies `NaN < 0.0 == false` (IEEE 754), so a plain `< 0.0` guard would let
+        // it through; the use case must reject non-finite values explicitly (see class KDoc).
+        val timerResult = ReadingTimerResult(start, start.plus(Duration.parse("1m")), 60)
+
+        val result = useCase.execute(
+            mediaId = mediaId,
+            timerResult = timerResult,
+            startUnit = Double.NaN,
+            endUnit = 10.0,
+        )
+
+        assertIs<Resource.Error>(result)
+        assertTrue(result.message.contains("startUnit"))
+        assertTrue(noSessionsPersisted())
+    }
+
+    @Test
+    fun execute_nanEndUnit_returnsErrorAndPersistsNothing() = runTest {
+        val timerResult = ReadingTimerResult(start, start.plus(Duration.parse("1m")), 60)
+
+        val result = useCase.execute(
+            mediaId = mediaId,
+            timerResult = timerResult,
+            startUnit = 5.0,
+            endUnit = Double.NaN,
+        )
+
+        assertIs<Resource.Error>(result)
+        assertTrue(result.message.contains("endUnit"))
+        assertTrue(noSessionsPersisted())
+    }
+
+    @Test
+    fun execute_positiveInfinityStartUnit_returnsErrorAndPersistsNothing() = runTest {
+        val timerResult = ReadingTimerResult(start, start.plus(Duration.parse("1m")), 60)
+
+        val result = useCase.execute(
+            mediaId = mediaId,
+            timerResult = timerResult,
+            startUnit = Double.POSITIVE_INFINITY,
+            endUnit = 10.0,
+        )
+
+        assertIs<Resource.Error>(result)
+        assertTrue(result.message.contains("startUnit"))
+        assertTrue(noSessionsPersisted())
+    }
+
+    @Test
+    fun execute_positiveInfinityEndUnit_returnsErrorAndPersistsNothing() = runTest {
+        val timerResult = ReadingTimerResult(start, start.plus(Duration.parse("1m")), 60)
+
+        val result = useCase.execute(
+            mediaId = mediaId,
+            timerResult = timerResult,
+            startUnit = 5.0,
+            endUnit = Double.POSITIVE_INFINITY,
+        )
+
+        assertIs<Resource.Error>(result)
+        assertTrue(result.message.contains("endUnit"))
+        assertTrue(noSessionsPersisted())
+    }
+
+    @Test
     fun execute_invalidTimestamps_propagatesRepositoryErrorAndPersistsNothing() = runTest {
         // Repository-level validation (timestampEnd >= timestampStart) still applies for the
         // explicit-bounds overload, e.g. a manual-entry form with bad input.

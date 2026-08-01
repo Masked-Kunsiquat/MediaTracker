@@ -1000,13 +1000,17 @@ private fun formatElapsed(totalSeconds: Long): String {
  * known, or percent-style ("37%") when [totalPages] is null -- e-reader/percentage tracking has
  * no fixed page count to show a denominator for. Returns null (nothing to show) when
  * [currentProgress] itself is null, i.e. no session has ever been logged.
+ *
+ * Note: This is a @Composable function that calls [stringResource] to fetch localized strings
+ * from resources rather than using hardcoded string literals.
  */
+@Composable
 private fun formatProgress(currentProgress: Double?, totalPages: Int?): String? {
     if (currentProgress == null) return null
     return if (totalPages != null) {
-        "Page ${currentProgress.roundToInt()} / $totalPages"
+        stringResource(R.string.progress_page_format, currentProgress.roundToInt(), totalPages)
     } else {
-        "${currentProgress.roundToInt()}%"
+        stringResource(R.string.progress_percent_format, currentProgress.roundToInt())
     }
 }
 

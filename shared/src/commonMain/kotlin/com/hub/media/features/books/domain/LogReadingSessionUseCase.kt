@@ -18,9 +18,14 @@ import kotlin.time.Instant
  * so the repository's checks still matter and are deliberately not duplicated here.
  *
  * This use case adds the one kind of validation the repository doesn't do: **position bounds**.
- * - **Negative [startUnit]/[endUnit] is always invalid** — a physical page number or e-reader
- *   percentage (AGENTS.md §3.5) cannot be negative — and returns [Resource.Error] without ever
- *   calling the repository, so nothing is persisted.
+ * - **Negative, `NaN`, or infinite [startUnit]/[endUnit] is always invalid** — a physical page
+ *   number or e-reader percentage (AGENTS.md §3.5) must be a finite, non-negative value — and
+ *   returns [Resource.Error] without ever calling the repository, so nothing is persisted.
+ *   `Double.NaN` in particular satisfies `NaN < 0.0 == false` (per IEEE 754, every comparison
+ *   involving `NaN` other than `!=` is `false`), so a plain `< 0.0` check silently lets `NaN`
+ *   through to persist and then poison any downstream progress math (e.g. `currentProgress`
+ *   comparisons/formatting) that reads it back out. [isFinite] rejects both `NaN` and
+ *   `±Infinity` up front.
  * - **`endUnit < startUnit` is allowed, on purpose.** Position isn't like time: time can't run
  *   backward, but reading position legitimately can. Flipping back mid-session to reread an
  *   earlier chapter, or a session that starts by resuming from a bookmark that was itself a
@@ -41,9 +46,10 @@ public class LogReadingSessionUseCase(
      *
      * @param mediaId The book the session belongs to.
      * @param timerResult The result returned by [ReadingTimer.stop].
-     * @param startUnit Position (page or percent) at the start of the session. Must be `>= 0`.
-     * @param endUnit Position at the end of the session. Must be `>= 0`; may be less than
-     *   [startUnit] (see class KDoc).
+     * @param startUnit Position (page or percent) at the start of the session. Must be finite and
+     *   `>= 0`.
+     * @param endUnit Position at the end of the session. Must be finite and `>= 0`; may be less
+     *   than [startUnit] (see class KDoc).
      * @param deltaPages Optional page delta. `0` is a valid edge case (AGENTS.md §7), as is `null`
      *   for percentage/e-reader tracking where a page count doesn't apply.
      * @param notes Optional free-text notes.
@@ -83,11 +89,11 @@ public class LogReadingSessionUseCase(
         deltaPages: Int? = null,
         notes: String? = null,
     ): Resource<String> {
-        if (startUnit < 0.0) {
-            return Resource.Error("startUnit must be >= 0 (was $startUnit)")
+        if (!startUnit.isFinite() || startUnit < 0.0) {
+            return Resource.Error("startUnit must be finite and >= 0 (was $startUnit)")
         }
-        if (endUnit < 0.0) {
-            return Resource.Error("endUnit must be >= 0 (was $endUnit)")
+        if (!endUnit.isFinite() || endUnit < 0.0) {
+            return Resource.Error("endUnit must be finite and >= 0 (was $endUnit)")
         }
 
         return repository.logSession(
