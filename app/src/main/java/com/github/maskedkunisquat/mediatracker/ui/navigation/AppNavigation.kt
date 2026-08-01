@@ -1,15 +1,18 @@
 package com.github.maskedkunisquat.mediatracker.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.LibraryViewModel
 
 /**
  * Sets up the NavHost with routes and navigation graph for the entire app.
@@ -67,12 +70,22 @@ fun AppNavigation(
             val bookId = requireNotNull(backStackEntry.arguments?.getString(Route.BookDetail.ARG_BOOK_ID)) {
                 "Missing required argument: ${Route.BookDetail.ARG_BOOK_ID}"
             }
+            // BookDetailViewModel has no delete capability of its own (Task4 Phase E deliberately
+            // avoids any shared-module change), so deletion reuses the existing
+            // LibraryViewModel.deleteBook via a LibraryViewModel instance scoped to this
+            // destination -- zero shared-module changes, no repository access from a composable.
+            val libraryViewModel: LibraryViewModel = viewModel(
+                factory = LibraryViewModelFactory(appContainer),
+            )
             BookDetailScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
                 bookId = bookId,
                 onNavigateBack = {
                     navController.navigateUp()
+                },
+                onDeleteBook = {
+                    libraryViewModel.deleteBook(bookId)
                 },
             )
         }

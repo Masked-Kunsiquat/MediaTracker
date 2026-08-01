@@ -66,14 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `errorMessage` displayed for retry-without-re-timing, a success clears `pendingSession` and the
   dialog closes itself — no local dismiss logic needed. Manual entry is a separate dialog with a
   duration-minutes field plus a session date/end-time selection (Material 3 `DatePickerDialog`
-  for the date, digit-filtered hour/minute fields for the time — see Task4 Phase D below);
-  `timestampEnd` is derived from that selection and `timestampStart = timestampEnd - duration`.
-  Position/duration/pages fields are digit-and-decimal-point filtered so a negative value (the
-  one thing `LogReadingSessionUseCase` rejects) can't be typed. Session history lists most-recent-
-  first with a delete icon per row and a confirmation dialog matching `LibraryScreen`'s pattern.
-  Dates render via `java.time` (not `kotlinx-datetime`, which isn't exposed to this Android-only
-  app module) since `java.time` is available unconditionally at `minSdk 28`. Previews cover
-  Ready-with-sessions, Ready-with-pending-session, and Loading.
+  for the date — see Task4 Phase D below — and, as of Phase E, a Material 3 `TimePicker` for the
+  end time, see Phase E below); `timestampEnd` is derived from that selection and
+  `timestampStart = timestampEnd - duration`. Position/duration/pages fields are
+  digit-and-decimal-point filtered so a negative value (the one thing `LogReadingSessionUseCase`
+  rejects) can't be typed. Session history lists most-recent-first with a delete icon per row and
+  a confirmation dialog matching `LibraryScreen`'s original pattern (deletion itself later moved
+  to a book-level action — see Phase E below). Dates render via `java.time` (not
+  `kotlinx-datetime`, which isn't exposed to this Android-only app module) since `java.time` is
+  available unconditionally at `minSdk 28`. Previews cover Ready-with-sessions,
+  Ready-with-pending-session, and Loading.
 - **Navigation**: `Route.BookDetail` (`book_detail/{bookId}`) with a `createRoute(bookId)` helper;
   wired into `AppNavigation`'s `NavHost` with a `navArgument`-typed `bookId`.
 - **`BookDetailViewModelFactory`** (`ui/ViewModelFactories.kt`): per-navigation-argument factory
@@ -81,14 +83,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AddBookViewModelFactory`), wiring `BookDetailViewModel`'s repository/use-case dependencies
   from `AppContainer` plus the route's `bookId`.
 - `delete_session_content_description` string resource for the session-row delete icon.
+- **Delete-book action on Book Detail screen** (Task4 Phase E, `app/.../ui/screens/BookDetailScreen.kt`):
+  a `Delete` icon in the TopAppBar actions slot (shown only for `BookDetailUiState.Ready`) opens a
+  confirmation dialog (`delete_book_title`/`delete_book_body`/`delete_book_content_description`
+  string resources, mirroring the wording the old `LibraryScreen` delete button used). On confirm,
+  the route wrapper's new `onDeleteBook: () -> Unit` parameter is invoked. `BookDetailViewModel`
+  has no delete method of its own and the shared module was not touched to add one; instead
+  `AppNavigation`'s `BookDetail` destination constructs a `LibraryViewModel` scoped to that
+  destination (via the existing `LibraryViewModelFactory`) purely to reuse
+  `LibraryViewModel.deleteBook(bookId)`, avoiding both a shared-module change and a composable
+  reaching directly into `AppContainer.bookRepository`. Deletion is reflected reactively via
+  `BookDetailUiState.NotFound`, which the existing `LaunchedEffect`-driven auto-navigate-back
+  (Task4 Phase C) already handles, so no separate post-delete navigation logic was needed.
+- **Material 3 `TimePicker` for manual session entry** (Task4 Phase E,
+  `app/.../ui/screens/BookDetailScreen.kt` `ManualSessionDialog`): the end-time field is now an
+  `OutlinedButton` (label formatted via `android.text.format.DateFormat.getTimeFormat`, so it
+  renders in the device's locale and respects its 12h/24h display preference) that opens a
+  `TimePicker` hosted in a custom `AlertDialog` with OK/Cancel — this Material3 version has no
+  built-in `TimePickerDialog` wrapper analogous to `DatePickerDialog`. `is24Hour` on
+  `rememberTimePickerState` is likewise sourced from `android.text.format.DateFormat.is24HourFormat`.
+  Cancel restores the hour/minute selected before the picker was opened (mirroring the date
+  picker's existing cancel-restore behavior); OK keeps the in-dialog selection. `TimePickerState`
+  always exposes `hour` in 0-23 regardless of `is24Hour`, so the old hour/minute range validation
+  (and the `timeIsValid`/enabled-gating on it) is gone entirely — there is no invalid time state
+  to guard against anymore. `time_label`/`select_time_title` string resources added; no
+  hour/minute label string resources existed to remove (they were deliberately left as inline
+  labels, never extracted).
+- **Start-position autofill** (Task4 Phase E, `app/.../ui/screens/BookDetailScreen.kt`
+  `PendingSessionDialog` + `ManualSessionDialog`): both session-entry dialogs now prefill their
+  start-position field from `BookDetailUiState.Ready.currentProgress` (formatted via the existing
+  `formatUnit` helper, dropping a trailing `.0`; `null` progress — no session logged yet — leaves
+  the field empty as before), as a "resume where you left off" convenience. The user can still
+  freely edit or clear the field.
+- **`INTERNET` permission** declared explicitly in `AndroidManifest.xml` (Task4 Phase E): previously
+  relied entirely on Ktor's OkHttp engine (`ktor-client-okhttp`, via its `okhttp-android`
+  transitive dependency) merging the permission into the final manifest, so a future engine swap
+  away from OkHttp could have silently dropped network access with no manifest-level signal.
 
 ### Changed
 
-- **`LibraryScreen`**: cards are now tappable (outside the delete button) to navigate to the new
-  book detail screen, via `Modifier.clickable` on the card row. `LibraryScreenRoute` gains an
+- **`LibraryScreen`**: cards are now tappable to navigate to the book detail screen, via
+  `Modifier.clickable` on the card row. `LibraryScreenRoute` gains an
   `onNavigateToBookDetail: (String) -> Unit` parameter threaded through to a new `onBookClick`
-  callback on the stateless `LibraryScreen`; the existing delete-button confirmation-dialog flow
-  is unchanged.
+  callback on the stateless `LibraryScreen`. The per-card delete `IconButton`, its confirmation
+  dialog, and the `onDeleteBook` callback have been removed from this screen entirely (Task4
+  Phase E) — deletion now lives on the Book Detail screen instead (see Added, above);
+  `LibraryViewModel.deleteBook` itself is unchanged and unmoved, just no longer wired into this
+  screen directly.
 
 ### Fixed
 
@@ -106,9 +147,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   primary-success-with-cover "secondary never called" case.
 - **Manual session entry backdating** (Task4 Phase D, `app/.../ui/screens/BookDetailScreen.kt`
   `ManualSessionDialog`): the manual-entry dialog now has a session date field (Material 3
-  `DatePickerDialog`) and hour/minute end-time fields, both defaulting to today/now so the
-  zero-extra-tap "I just finished reading" flow is unchanged, but a session can now be backdated
-  to a past date/time instead of always timestamping at the moment Save is pressed.
+  `DatePickerDialog`) and an end-time selection (initially two digit-filtered hour/minute text
+  fields, replaced by a Material 3 `TimePicker` in Phase E above), both defaulting to today/now so
+  the zero-extra-tap "I just finished reading" flow is unchanged, but a session can now be
+  backdated to a past date/time instead of always timestamping at the moment Save is pressed.
   `onLogManualSession`/`ManualSessionDialog.onSave` gain a `timestampEnd: Instant` parameter
   derived from the selection via the same `java.time`-based local-timezone conversion already
   used for session-history date display; `timestampStart` is still `timestampEnd - duration`. No

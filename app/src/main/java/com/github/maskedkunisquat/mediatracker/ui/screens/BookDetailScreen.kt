@@ -37,7 +37,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +86,13 @@ import kotlin.time.Instant
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param bookId The media id this screen was opened for; forwarded to [BookDetailViewModelFactory].
  * @param onNavigateBack Callback to navigate back (back button, or automatic on [BookDetailUiState.NotFound]).
+ * @param onDeleteBook Callback invoked after the delete-book confirmation dialog is confirmed
+ *   (Task4 Phase E). [BookDetailViewModel] has no delete capability of its own -- deletion still
+ *   lives on `LibraryViewModel.deleteBook` (shared module unchanged) -- so the caller (see
+ *   `AppNavigation`) wires this from a `LibraryViewModel` instance scoped to this destination.
+ *   Deletion drives [BookDetailUiState.NotFound] reactively, which the [LaunchedEffect] below
+ *   already turns into an automatic [onNavigateBack] -- no separate post-delete navigation is
+ *   needed here.
  */
 @Composable
 fun BookDetailScreenRoute(
@@ -90,6 +100,7 @@ fun BookDetailScreenRoute(
     coverStorageDir: String,
     bookId: String,
     onNavigateBack: () -> Unit,
+    onDeleteBook: () -> Unit,
 ) {
     val viewModel: BookDetailViewModel = viewModel(
         factory = BookDetailViewModelFactory(appContainer, bookId),
@@ -111,6 +122,7 @@ fun BookDetailScreenRoute(
         elapsedSeconds = elapsedSeconds,
         coverStorageDir = coverStorageDir,
         onNavigateBack = onNavigateBack,
+        onDeleteBook = onDeleteBook,
         onStartReading = viewModel::startReading,
         onPauseReading = viewModel::pauseReading,
         onResumeReading = viewModel::resumeReading,
@@ -156,6 +168,8 @@ fun BookDetailScreenRoute(
  * @param elapsedSeconds Live elapsed seconds for the running/paused timer display.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateBack Called when the back icon is pressed.
+ * @param onDeleteBook Called after the delete-book confirmation dialog (opened from the TopAppBar
+ *   delete icon, only shown for [BookDetailUiState.Ready]) is confirmed (Task4 Phase E).
  * @param onStartReading Called to start a fresh timer run.
  * @param onPauseReading Called to pause the running timer.
  * @param onResumeReading Called to resume a paused timer.
@@ -176,6 +190,7 @@ fun BookDetailScreen(
     elapsedSeconds: Long,
     coverStorageDir: String,
     onNavigateBack: () -> Unit,
+    onDeleteBook: () -> Unit,
     onStartReading: () -> Unit,
     onPauseReading: () -> Unit,
     onResumeReading: () -> Unit,
@@ -192,6 +207,8 @@ fun BookDetailScreen(
     ) -> Unit,
     onDeleteSession: (String) -> Unit,
 ) {
+    var showDeleteBookDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -208,6 +225,16 @@ fun BookDetailScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.navigate_back),
                         )
+                    }
+                },
+                actions = {
+                    if (uiState is BookDetailUiState.Ready) {
+                        IconButton(onClick = { showDeleteBookDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = stringResource(R.string.delete_book_content_description),
+                            )
+                        }
                     }
                 },
             )
@@ -244,6 +271,45 @@ fun BookDetailScreen(
             }
         }
     }
+
+    if (showDeleteBookDialog && uiState is BookDetailUiState.Ready) {
+        DeleteBookConfirmationDialog(
+            bookTitle = uiState.book.title,
+            onConfirm = {
+                showDeleteBookDialog = false
+                onDeleteBook()
+            },
+            onDismiss = { showDeleteBookDialog = false },
+        )
+    }
+}
+
+/**
+ * Delete-book confirmation dialog (Task4 Phase E), opened from the TopAppBar delete icon.
+ * Mirrors the wording of the confirmation dialog that used to live on `LibraryScreen`'s book
+ * cards before deletion moved here.
+ */
+@Composable
+private fun DeleteBookConfirmationDialog(
+    bookTitle: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_book_title)) },
+        text = { Text(stringResource(R.string.delete_book_body, bookTitle)) },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.delete_button))
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel_button))
+            }
+        },
+    )
 }
 
 /**
@@ -351,6 +417,7 @@ private fun BookDetailContent(
         PendingSessionDialog(
             pendingSession = pendingSession,
             errorMessage = state.errorMessage,
+            currentProgress = state.currentProgress,
             onSave = onSaveSession,
             onDiscard = onDiscardPendingSession,
         )
@@ -358,6 +425,7 @@ private fun BookDetailContent(
 
     if (showManualEntry) {
         ManualSessionDialog(
+            currentProgress = state.currentProgress,
             onSave = { durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
                 onLogManualSession(durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
                 showManualEntry = false
@@ -521,15 +589,19 @@ private fun TimerCard(
  * accidental outside tap or back press must not silently discard it the way it would discard an
  * un-started form. [onDiscard] (the explicit "Discard" button) is the only path that abandons the
  * pending session -- see [BookDetailViewModel.discardPendingSession].
+ *
+ * [currentProgress] (Task4 Phase E) prefills the start-position field with the book's last-known
+ * progress as a "resume where you left off" convenience -- the user can freely edit or clear it.
  */
 @Composable
 private fun PendingSessionDialog(
     pendingSession: ReadingTimerResult,
     errorMessage: String?,
+    currentProgress: Double?,
     onSave: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscard: () -> Unit,
 ) {
-    var startUnitText by remember { mutableStateOf("") }
+    var startUnitText by remember { mutableStateOf(currentProgress?.let(::formatUnit) ?: "") }
     var endUnitText by remember { mutableStateOf("") }
     var deltaPagesText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
@@ -613,19 +685,27 @@ private fun PendingSessionDialog(
  * (minutes), start/end position, optional pages-read and notes.
  *
  * The date field defaults to today and is edited via a [DatePickerDialog] (opened by tapping the
- * "Date:" button); the end time defaults to the current time and is edited via two small
- * digit-filtered hour/minute [OutlinedTextField]s rather than a full `TimePicker` dial --
- * this dialog already stacks five other fields (duration, two positions, pages, notes), and a
- * full `TimePicker` (dial or spinner) would push its total height well past what comfortably fits
- * above the keyboard on a phone; a compact "HH" / "MM" pair reuses the same digit-filtering
- * pattern already used elsewhere in this dialog and keeps everything on one screen (the field
- * column also scrolls, as a safety net on small displays). Because both date and time default to
- * "now," the zero-extra-tap "I just finished reading" path is unchanged -- picking a date/time is
- * purely opt-in, for backdating a session that happened in the past.
+ * "Date:" button). The end time defaults to the current time and is edited via a Material 3
+ * [TimePicker] (Task4 Phase E; replaces the earlier digit-filtered hour/minute text fields), hosted
+ * in a custom [AlertDialog] with OK/Cancel buttons since this Material 3 version has no built-in
+ * `TimePickerDialog` wrapper analogous to [DatePickerDialog] -- Cancel restores the
+ * previously-selected time, mirroring the date picker's cancel-restore pattern below. Because both
+ * date and time default to "now," the zero-extra-tap "I just finished reading" path is unchanged --
+ * picking a date/time is purely opt-in, for backdating a session that happened in the past.
+ * [TimePickerState] always exposes `hour` in 0-23 regardless of `is24Hour` (that flag only controls
+ * the dial/input display), so unlike the old text fields there is no invalid-range state to guard
+ * against -- the Save button's `enabled` condition no longer needs a time-validity check.
+ *
+ * The time button's label is formatted via `android.text.format.DateFormat.getTimeFormat`, which
+ * renders in the device's locale and respects its 12h/24h display preference (the same preference
+ * drives `is24Hour` on the [TimePicker] itself, via `DateFormat.is24HourFormat`).
  *
  * [timestampEnd] passed to [onSave] is derived from the selected date + hour/minute in the
  * device's local timezone (same `java.time` conversion approach as [formatSessionDate]); the
  * caller derives `timestampStart` by subtracting the entered duration from it.
+ *
+ * [currentProgress] (Task4 Phase E) prefills the start-position field with the book's last-known
+ * progress as a "resume where you left off" convenience -- the user can freely edit or clear it.
  *
  * Unlike [PendingSessionDialog], this dialog closes optimistically as soon as Save is tapped
  * rather than waiting on a success/failure signal. There is no shared-state flag analogous to
@@ -639,6 +719,7 @@ private fun PendingSessionDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualSessionDialog(
+    currentProgress: Double?,
     onSave: (
         durationMinutes: Long,
         timestampEnd: Instant,
@@ -650,11 +731,12 @@ private fun ManualSessionDialog(
     onDismiss: () -> Unit,
 ) {
     var durationText by remember { mutableStateOf("") }
-    var startUnitText by remember { mutableStateOf("") }
+    var startUnitText by remember { mutableStateOf(currentProgress?.let(::formatUnit) ?: "") }
     var endUnitText by remember { mutableStateOf("") }
     var deltaPagesText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
 
+    val context = LocalContext.current
     val nowForDefaults = remember { java.time.LocalDateTime.now() }
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()) },
@@ -664,21 +746,18 @@ private fun ManualSessionDialog(
     // picked-then-Cancelled date can be reverted rather than sticking (OK leaves the in-dialog
     // selection unchanged; only Cancel restores this).
     var dateBeforePickerOpen by remember { mutableStateOf<Long?>(null) }
-    // Locale.ROOT: ASCII-digit formatting regardless of device locale (some locales, e.g. Eastern
-    // Arabic, use non-ASCII decimal digits, which toIntOrNull() below could not parse back).
-    var hourText by remember {
-        mutableStateOf("%02d".format(java.util.Locale.ROOT, nowForDefaults.hour))
-    }
-    var minuteText by remember {
-        mutableStateOf("%02d".format(java.util.Locale.ROOT, nowForDefaults.minute))
-    }
-    // Blank is treated as invalid (not defaulted to 0) so an emptied field can't silently save as
-    // midnight -- the user must enter a value in range to enable Save.
-    val hourValue = hourText.toIntOrNull()
-    val minuteValue = minuteText.toIntOrNull()
-    val hourIsValid = hourValue != null && hourValue in 0..23
-    val minuteIsValid = minuteValue != null && minuteValue in 0..59
-    val timeIsValid = hourIsValid && minuteIsValid
+
+    val is24Hour = remember { android.text.format.DateFormat.is24HourFormat(context) }
+    val timePickerState = rememberTimePickerState(
+        initialHour = nowForDefaults.hour,
+        initialMinute = nowForDefaults.minute,
+        is24Hour = is24Hour,
+    )
+    var showTimePicker by remember { mutableStateOf(false) }
+    // Snapshot of the selected hour/minute taken when the picker is opened, so a
+    // picked-then-Cancelled time can be reverted rather than sticking (OK leaves the in-dialog
+    // selection unchanged; only Cancel restores this) -- mirrors dateBeforePickerOpen above.
+    var timeBeforePickerOpen by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -702,24 +781,18 @@ private fun ManualSessionDialog(
                         ),
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = hourText,
-                        onValueChange = { hourText = it.filterIntegerInput().take(2) },
-                        label = { Text("Hour (0-23)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        isError = !hourIsValid,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = minuteText,
-                        onValueChange = { minuteText = it.filterIntegerInput().take(2) },
-                        label = { Text("Minute (0-59)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        isError = !minuteIsValid,
-                        modifier = Modifier.weight(1f),
+                OutlinedButton(
+                    onClick = {
+                        timeBeforePickerOpen = timePickerState.hour to timePickerState.minute
+                        showTimePicker = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            R.string.time_label,
+                            formatTimeOfDay(context, timePickerState.hour, timePickerState.minute),
+                        ),
                     )
                 }
                 OutlinedTextField(
@@ -770,8 +843,8 @@ private fun ManualSessionDialog(
                         deriveTimestampEnd(
                             dateUtcMidnightMillis = datePickerState.selectedDateMillis
                                 ?: localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()),
-                            hour = hourText.toIntOrNull() ?: 0,
-                            minute = minuteText.toIntOrNull() ?: 0,
+                            hour = timePickerState.hour,
+                            minute = timePickerState.minute,
                         ),
                         startUnitText.toDoubleOrNull() ?: 0.0,
                         endUnitText.toDoubleOrNull() ?: 0.0,
@@ -781,8 +854,7 @@ private fun ManualSessionDialog(
                 },
                 enabled = durationText.isNotBlank() &&
                     startUnitText.isNotBlank() &&
-                    endUnitText.isNotBlank() &&
-                    timeIsValid,
+                    endUnitText.isNotBlank(),
             ) {
                 Text(stringResource(R.string.save_button))
             }
@@ -811,6 +883,27 @@ private fun ManualSessionDialog(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    if (showTimePicker) {
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            title = { Text(stringResource(R.string.select_time_title)) },
+            text = { TimePicker(state = timePickerState) },
+            confirmButton = {
+                TextButton(onClick = { showTimePicker = false }) { Text(stringResource(R.string.ok_button)) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        val (hour, minute) = timeBeforePickerOpen ?: (nowForDefaults.hour to nowForDefaults.minute)
+                        timePickerState.hour = hour
+                        timePickerState.minute = minute
+                        showTimePicker = false
+                    },
+                ) { Text(stringResource(R.string.cancel_button)) }
+            },
+        )
     }
 }
 
@@ -920,6 +1013,22 @@ private fun formatProgress(currentProgress: Double?, totalPages: Int?): String? 
 /** Formats a [Double] position value, dropping a trailing `.0` for whole-number pages. */
 private fun formatUnit(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+
+/**
+ * Formats [hour]/[minute] (a [androidx.compose.material3.TimePickerState]'s always-24h `hour` and
+ * `minute`, Task4 Phase E) as a time-of-day string using [android.text.format.DateFormat], which
+ * renders in the device's locale and respects its 12h/24h display preference -- the same
+ * preference [android.text.format.DateFormat.is24HourFormat] supplies to the `TimePicker`'s
+ * `is24Hour` at the call site. The wrapping date value is irrelevant; only the time-of-day is
+ * ever read back out via the formatter.
+ */
+private fun formatTimeOfDay(context: android.content.Context, hour: Int, minute: Int): String {
+    val calendar = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, hour)
+        set(java.util.Calendar.MINUTE, minute)
+    }
+    return android.text.format.DateFormat.getTimeFormat(context).format(calendar.time)
+}
 
 /**
  * Formats [instant] for session history display as a local date/time. Converted through
@@ -1048,6 +1157,7 @@ private fun BookDetailScreenReadyPreview() {
             elapsedSeconds = 0,
             coverStorageDir = "/fake/path",
             onNavigateBack = {},
+            onDeleteBook = {},
             onStartReading = {},
             onPauseReading = {},
             onResumeReading = {},
@@ -1080,6 +1190,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             elapsedSeconds = 0,
             coverStorageDir = "/fake/path",
             onNavigateBack = {},
+            onDeleteBook = {},
             onStartReading = {},
             onPauseReading = {},
             onResumeReading = {},
@@ -1103,6 +1214,7 @@ private fun BookDetailScreenLoadingPreview() {
             elapsedSeconds = 0,
             coverStorageDir = "/fake/path",
             onNavigateBack = {},
+            onDeleteBook = {},
             onStartReading = {},
             onPauseReading = {},
             onResumeReading = {},

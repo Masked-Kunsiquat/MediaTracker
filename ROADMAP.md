@@ -16,7 +16,9 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
 - **Task 4 — Reading tracking** (`v0.3.0`): coroutine/Flow-based reading timer and
   `LogReadingSessionUseCase` (Phase A); `BookDetailViewModel` + UI state (Phase B); Book
   Detail screen with timer, manual session entry, and session history (Phase C); field-level
-  cover fallback and manual-entry backdating via a session date/end-time picker (Phase D).
+  cover fallback and manual-entry backdating via a session date/end-time picker (Phase D);
+  delete-book moved to the Book Detail screen, a Material 3 `TimePicker` for manual-entry end
+  time, and start-position autofill from current progress (Phase E).
 
 ## Task 5 — Stats (next)
 
@@ -29,6 +31,14 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   manual-entry UI; define stats semantics around it up front (sum only known durations;
   session counts and page progress unaffected). Do this before the stat queries so Task 5
   doesn't ship assumptions v2 breaks.
+  **Note:** session gaps are NOT auto-reconciled -- sessions are independent facts recorded
+  as start/end position pairs, not a continuous log, so stats must sum per-session deltas
+  rather than assume continuity between one session's end and the next session's start.
+  Start-position autofill from current progress (landed in Task 4 Phase E) mitigates
+  accidental gaps by defaulting the next session's start to where the last one left off, but
+  the user can still edit or clear it. A "gap detected" nudge (comparing a new session's
+  start position against the prior session's end) is a possible later nicety, not required
+  for correct stats.
 
 Aggregate queries in `features/stats`: time read per week/month, books finished, streaks.
 Depends on Task 4 producing session data.
@@ -41,6 +51,19 @@ Depends on Task 4 producing session data.
   assuming the Task 5 pre-phase lands v2 first) under the §8 schema-freeze rule (version
   bump + tested `Migration`).
 - Library/media-type UI generalization (type filter, non-book detail screens).
+
+## Task 7 — Search & discovery
+
+- Title/author type-ahead search of external providers when adding a book: Open Library's
+  search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
+  minimum before querying, cancel-previous-request-on-new-keystroke, and an in-memory LRU
+  cache for repeated prefixes (typing then backspacing shouldn't re-hit the network). Google
+  Books is consulted only on selection or as a fallback, not for every keystroke -- its
+  keyless per-IP quota is limited and 429s have already been observed against it. Typed
+  result styling (author vs. title vs. collection) driven by Open Library's typed `docs`
+  results, so the dropdown can visually distinguish match kinds.
+- Local library search as part of the same task: filter/search the user's own already-added
+  books by title/author, independent of the external-provider search above.
 
 ## Backlog / tech debt
 
@@ -60,3 +83,13 @@ Depends on Task 4 producing session data.
   further fallback via Open Library's ISBN-keyed cover URL with `?default=false` (which
   404s instead of serving a placeholder image, making it safely probeable) for cases where
   both providers' records are coverless.
+- Additional legitimate cover sources: try all Google Books image sizes (currently only
+  thumbnail is used, when larger sizes may be available); an optional user-supplied Google
+  Custom Search API key (100 free queries/day) for image search, following the same
+  user-supplied-key pattern already planned for TMDB (Task 6); manual cover entry (paste a
+  URL, or pick a local image from the device). Scraping Google Images or DuckDuckGo image
+  results is a ToS violation and is ruled out as an option.
+- Book Detail screen tab separation: once purchase/borrow tracking exists, split the screen
+  into tabs (details / reading history / purchase & borrow info) -- it's a single scrolling
+  column today and is already getting crowded with header, timer, manual-entry, and session
+  history all stacked together.

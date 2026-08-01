@@ -37,4 +37,9 @@
     <string name="book_format_physical">Physical</string>
     <string name="book_format_ebook">E-book</string>
     <string name="book_format_audiobook">Audiobook</string>
+    <string name="delete_book_content_description">Delete book</string>
+    <string name="delete_book_title">Delete book?</string>
+    <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
+    <string name="time_label">Time: %1$s</string>
+    <string name="select_time_title">Select time</string>
 </resources>
