@@ -29,6 +29,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LogReadingSessionUseCase` (happy path via both overloads, negative-unit validation,
   endUnit-less-than-startUnit allowed, 0-second/0-page edge cases, propagated repository
   validation errors).
+- **`BookDetailViewModel` + `BookDetailUiState`** (`shared/.../ui/`, Task4 Phase B): drives the
+  (not-yet-built) book-detail screen. `uiState` combines `BookRepository.observeBookDetail`
+  (new: book metadata + `BookDetailsEntity`, reactively) with
+  `ReadingSessionRepository.observeSessionsForMedia` plus in-memory UI-only state into a single
+  `StateFlow<BookDetailUiState>` (`Loading`/`NotFound`/`Ready`). `Ready.currentProgress` derives
+  the latest session's `endUnit` on read (never stored, so it can't drift via `copy()`); `Ready`
+  also carries a `pendingSession` (a finished timer run awaiting user-entered position bounds)
+  and an `errorMessage`, chosen over separate `StateFlow`s so the screen always renders from one
+  state object. Owns a `ReadingTimer` on `viewModelScope`; `startReading`/`pauseReading`/
+  `resumeReading`/`stopReading` gate on the timer's current state first so a UI double-fire
+  no-ops instead of hitting `ReadingTimer`'s throw-on-bad-transition contract. `saveSession`
+  persists the pending timer result via `LogReadingSessionUseCase`, clearing it on success and
+  keeping it (with `errorMessage` set) on validation failure so the user can retry without
+  re-timing; `logManualSession` is the explicit-bounds path with no timer involved;
+  `discardPendingSession` abandons a pending result; `deleteSession` removes a logged session.
+- `BookRepository.observeBookDetail`: reactive `MediaItemEntity` + `BookDetailsEntity` combo
+  (as `BookWithDetails`), composed from two existing DAO Flows via `combine` — no DAO/entity
+  changes (Room schema v1 stays frozen).
+- `AppContainer` now also wires `LogReadingSessionUseCase`, consumed by `BookDetailViewModel`.
+- 10 tests for `BookDetailViewModel` against a real in-memory `AppDatabase` (Loading->Ready with
+  derived progress, unknown-id NotFound, timer start/stop producing a pending session, save
+  success clearing it, save validation failure keeping it, the no-pending no-op case, manual
+  session logging, session deletion, and double-fire guards on every timer action never
+  throwing).
 
 ## [0.2.0] - 2026-08-01
 

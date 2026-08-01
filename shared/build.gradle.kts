@@ -78,12 +78,12 @@ dependencies {
 // project (see TestDatabaseBuilder.android.kt). Excluding these packages here — rather than
 // weakening the tests themselves — keeps `testDebugUnitTest`/`testReleaseUnitTest` green while
 // `:shared:jvmTest` remains the real gate for the data layer.
-// LibraryViewModelTest builds a real AppDatabase via testAppDatabase() (see above) to verify
-// the Flow -> StateFlow wiring against actual DAO behavior, so it hits the same
-// android.content.Context gap as the DAO/repository tests and is excluded here by exact class
-// name rather than by package: AddBookViewModelTest lives in the same com.hub.media.ui package
-// but only depends on a hand-rolled BookIngestionUseCase fake (no Room), so it stays runnable
-// on the android unit-test variant instead of being swept up by a package-wide exclusion.
+// LibraryViewModelTest and BookDetailViewModelTest build a real AppDatabase via testAppDatabase()
+// (see above) to verify the Flow -> StateFlow wiring against actual DAO behavior, so they hit the
+// same android.content.Context gap as the DAO/repository tests and are excluded here by exact
+// class name rather than by package: AddBookViewModelTest lives in the same com.hub.media.ui
+// package but only depends on a hand-rolled BookIngestionUseCase fake (no Room), so it stays
+// runnable on the android unit-test variant instead of being swept up by a package-wide exclusion.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
@@ -91,6 +91,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.features.books.data.*")
             excludeTestsMatching("com.hub.media.features.books.domain.*")
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
             isFailOnNoMatchingTests = false
         }
     }
