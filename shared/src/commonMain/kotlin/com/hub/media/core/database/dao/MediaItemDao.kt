@@ -28,6 +28,9 @@ interface MediaItemDao {
     @Query("SELECT * FROM media_items WHERE id = :id")
     suspend fun getById(id: String): MediaItemEntity?
 
+    @Query("SELECT * FROM media_items WHERE id = :id")
+    fun observeById(id: String): Flow<MediaItemEntity?>
+
     @Query("SELECT * FROM media_items ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<MediaItemEntity>>
 

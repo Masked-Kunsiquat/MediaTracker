@@ -66,20 +66,21 @@ dependencies {
     add("kspJvm", libs.androidx.room.compiler)
 }
 
-// The Room KMP DAO tests under com.hub.media.core.database build an in-memory AppDatabase.
+// The Room KMP tests (DAO tests and Repository integration tests) build an in-memory AppDatabase.
 // On the JVM target (:shared:jvmTest) that works via Room.inMemoryDatabaseBuilder() + the
 // bundled SQLite driver with no platform handle required — that's the authoritative test run.
 // On the android unit test target the equivalent android actual needs a real
 // android.content.Context (Room reads it during build() for journal-mode resolution and
 // multi-instance invalidation), which local androidUnitTest tasks cannot supply since they run
 // on the host JVM against Android's stub android.jar with no Robolectric wired into this
-// project (see TestDatabaseBuilder.android.kt). Excluding the package here — rather than
+// project (see TestDatabaseBuilder.android.kt). Excluding these packages here — rather than
 // weakening the tests themselves — keeps `testDebugUnitTest`/`testReleaseUnitTest` green while
-// `:shared:jvmTest` remains the real gate for this DAO layer.
+// `:shared:jvmTest` remains the real gate for the data layer.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
             excludeTestsMatching("com.hub.media.core.database.*")
+            excludeTestsMatching("com.hub.media.features.books.data.*")
             isFailOnNoMatchingTests = false
         }
     }
