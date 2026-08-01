@@ -19,26 +19,26 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   cover fallback and manual-entry backdating via a session date/end-time picker (Phase D);
   delete-book moved to the Book Detail screen, a Material 3 `TimePicker` for manual-entry end
   time, and start-position autofill from current progress (Phase E).
+- **Task 5 pre-phase — Room schema v2, optional session duration.** Backlogged manual sessions
+  don't always have a known duration, but `ReadingSessionEntity.durationSeconds` was non-nullable
+  in frozen schema v1, and storing 0 as "unknown" would have collided with the legitimate
+  0-second-session edge case and silently corrupted time-read stats. Bumped Room to schema v2
+  making `durationSeconds` nullable (null = unknown), with a tested `Migration_1_2` per
+  AGENTS.md §8; duration is now optional in the manual-entry UI. Session-gap semantics for the
+  upcoming stat queries remain as documented below.
 
 ## Task 5 — Stats (next)
 
-- **Pre-phase: Room schema v2 — optional session duration.** Backlogged manual sessions
-  don't always have a known duration (and users may not want the timer), but
-  `ReadingSessionEntity.durationSeconds` is non-nullable in frozen schema v1, and storing
-  0 as "unknown" would collide with the legitimate 0-second-session edge case and silently
-  corrupt time-read stats. Bump Room to schema v2 making `durationSeconds` nullable (null =
-  unknown), with a tested Migration per AGENTS.md §8; make duration optional in the
-  manual-entry UI; define stats semantics around it up front (sum only known durations;
-  session counts and page progress unaffected). Do this before the stat queries so Task 5
-  doesn't ship assumptions v2 breaks.
-  **Note:** session gaps are NOT auto-reconciled -- sessions are independent facts recorded
+- **Note:** session gaps are NOT auto-reconciled -- sessions are independent facts recorded
   as start/end position pairs, not a continuous log, so stats must sum per-session deltas
   rather than assume continuity between one session's end and the next session's start.
   Start-position autofill from current progress (landed in Task 4 Phase E) mitigates
   accidental gaps by defaulting the next session's start to where the last one left off, but
   the user can still edit or clear it. A "gap detected" nudge (comparing a new session's
   start position against the prior session's end) is a possible later nicety, not required
-  for correct stats.
+  for correct stats. Stats must also sum only *known* durations (a null `durationSeconds`
+  contributes nothing to time-read totals but does not otherwise affect session counts or page
+  progress, per the schema v2 pre-phase above).
 
 Aggregate queries in `features/stats`: time read per week/month, books finished, streaks.
 Depends on Task 4 producing session data.

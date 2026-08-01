@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Room schema v2 — optional reading-session duration** (ROADMAP Task 5 pre-phase,
+  `shared/.../core/database/`): `ReadingSessionEntity.durationSeconds` is now `Long?` (`null` =
+  duration unknown) instead of non-nullable `Long`. Storing `0` for "unknown" would have
+  collided with the legitimate 0-second-session edge case and silently corrupted future
+  time-read stats, so `AppDatabase`'s Room version bumps `1 -> 2` (schema v1 was frozen as of
+  `v0.1.0` per AGENTS.md §8) with a hand-written `MIGRATION_1_2` (`Migrations.kt`, commonMain):
+  the standard SQLite table-rebuild (create `reading_sessions_new` with the v2 shape verified
+  against the Room-exported `shared/schemas/.../2.json`, copy every row across, drop the old
+  table, rename, re-create the `mediaId` index). No existing rows are lost — every v1 row already
+  had a real duration, so the migration only relaxes the constraint going forward. Wired into both
+  platform `DatabaseFactory` actuals via the single shared `buildAppDatabase` function. Validated
+  by `MigrationTest` (`shared/src/jvmTest/.../core/database/`, 3 tests) using Room KMP's
+  `androidx.room.testing.MigrationTestHelper` against the real exported schemas — no fallback to
+  hand-rolled raw-SQL setup was needed, since `room-testing`'s JVM artifact works directly on
+  `:shared:jvmTest` with a plain file path and `SQLiteDriver` (no Android instrumentation
+  required). Tests cover: both a real-duration row and a legitimate 0-duration row surviving the
+  migration with values intact, the rebuilt table genuinely accepting a `NULL` insert (which the
+  v1 `NOT NULL` column would have rejected), and the `mediaId` index surviving the rebuild.
+  `androidx.room:room-testing` (test-only, androidx toolchain) added to the version catalog and
+  `shared`'s `jvmTest` dependencies.
+- **Manual reading-session duration is now optional** (`app/.../ui/screens/BookDetailScreen.kt`
+  `ManualSessionDialog`, `shared/.../features/books/data/ReadingSessionRepository.kt`,
+  `LogReadingSessionUseCase`, `BookDetailViewModel.logManualSession`): the duration-minutes field
+  can be left blank for a backlogged manual entry with no known duration — the Save button no
+  longer requires it (only start/end position are required, matching `PendingSessionDialog`).
+  When left blank, `timestampStart` is set equal to `timestampEnd` (a zero-length interval — the
+  session is still date/time-anchored via `timestampEnd`, only its true time-span is
+  unrepresented, consistent with a `null` duration). `ReadingSessionRepository.logSession` and
+  `LogReadingSessionUseCase`'s explicit-bounds overload now take `durationSeconds: Long?`,
+  validating `>= 0` only when non-null; the timer-backed path is unchanged (a live
+  `ReadingTimerResult` always has a real duration). Session history (`SessionRow`) renders the
+  positions line without a duration segment (new `session_positions` string resource) when
+  `durationSeconds` is null, instead of a misleading "0:00:00".
+
 ## [0.3.0] - 2026-08-01
 
 Reading tracking milestone: the dormant `ReadingSessions` table becomes a feature — live

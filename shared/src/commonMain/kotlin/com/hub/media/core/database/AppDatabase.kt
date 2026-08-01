@@ -18,9 +18,13 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
 
 /**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,
- * zero required external cloud sync"). Version 1 — schema is exported to `shared/schemas` per
- * the `room { schemaDirectory(...) }` config in shared/build.gradle.kts so future migrations
- * can be verified against a real history.
+ * zero required external cloud sync"). Schema is exported to `shared/schemas` per the
+ * `room { schemaDirectory(...) }` config in shared/build.gradle.kts so future migrations can be
+ * verified against a real history.
+ *
+ * Version 1 froze at `v0.1.0` (AGENTS.md §8). Version 2 (ROADMAP Task 5 pre-phase) makes
+ * [ReadingSessionEntity.durationSeconds] nullable — see its KDoc — via [Migration_1_2]
+ * (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
  */
 @Database(
     entities = [
@@ -29,7 +33,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
         ExternalIdentifierEntity::class,
         ReadingSessionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

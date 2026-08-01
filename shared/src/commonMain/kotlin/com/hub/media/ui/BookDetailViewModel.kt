@@ -239,11 +239,16 @@ public class BookDetailViewModel(
      * branch below reads or writes [LocalState.pendingSession], only [LocalState.errorMessage], so
      * this method has no stale-`pendingSession`-clobber risk analogous to [saveSession]'s and
      * needs no referential-equality guard for it.
+     *
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2, ROADMAP
+     *   Task 5 pre-phase) — a backlogged manual entry need not invent a duration. See
+     *   [com.hub.media.core.database.entities.ReadingSessionEntity]'s KDoc for why `null` (not
+     *   `0`) is the "unknown" sentinel.
      */
     public fun logManualSession(
         timestampStart: Instant,
         timestampEnd: Instant,
-        durationSeconds: Long,
+        durationSeconds: Long?,
         startUnit: Double,
         endUnit: Double,
         deltaPages: Int? = null,

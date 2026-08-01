@@ -42,6 +42,12 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
         }
+        jvmTest.dependencies {
+            // Room KMP's MigrationTestHelper (test-only, androidx toolchain) for MigrationTest —
+            // validates the Migration_1_2 table rebuild against real exported schemas. See
+            // shared/src/jvmTest/.../core/database/MigrationTest.kt.
+            implementation(libs.androidx.room.testing)
+        }
     }
 }
 

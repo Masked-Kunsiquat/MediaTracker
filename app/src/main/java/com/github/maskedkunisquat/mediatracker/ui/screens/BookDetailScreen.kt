@@ -130,11 +130,17 @@ fun BookDetailScreenRoute(
             // that selection -- see ManualSessionDialog. timestampStart is then simply the
             // entered duration subtracted from timestampEnd, which supports backdating an entry
             // to an arbitrary past date/time as well as the zero-extra-tap "just now" case.
-            val start = timestampEnd - durationMinutes.minutes
+            //
+            // durationMinutes is null when the duration field was left blank (schema v2, ROADMAP
+            // Task 5 pre-phase -- backlogged manual sessions don't always have a known duration).
+            // With no duration to subtract, timestampStart is set equal to timestampEnd: a
+            // zero-length interval that anchors the session to its date without asserting a false
+            // span -- see ManualSessionDialog's KDoc.
+            val start = if (durationMinutes != null) timestampEnd - durationMinutes.minutes else timestampEnd
             viewModel.logManualSession(
                 timestampStart = start,
                 timestampEnd = timestampEnd,
-                durationSeconds = durationMinutes * 60,
+                durationSeconds = durationMinutes?.let { it * 60 },
                 startUnit = startUnit,
                 endUnit = endUnit,
                 deltaPages = deltaPages,
@@ -175,6 +181,8 @@ fun BookDetailScreenRoute(
  * @param onLogManualSession Called with (durationMinutes, timestampEnd, startUnit, endUnit,
  *   deltaPages, notes) from the manual-entry form; timestampEnd reflects the session date/time
  *   the user picked in the dialog (defaulting to now, but backdatable to a past date/time).
+ *   durationMinutes is `null` when the duration field was left blank (schema v2, ROADMAP Task 5
+ *   pre-phase) -- duration is optional for manual entries.
  * @param onDeleteSession Called with a session id after its delete is confirmed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -193,7 +201,7 @@ fun BookDetailScreen(
     onSaveSession: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscardPendingSession: () -> Unit,
     onLogManualSession: (
-        durationMinutes: Long,
+        durationMinutes: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -324,7 +332,7 @@ private fun BookDetailContent(
     onSaveSession: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscardPendingSession: () -> Unit,
     onLogManualSession: (
-        durationMinutes: Long,
+        durationMinutes: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -697,10 +705,25 @@ private fun PendingSessionDialog(
  *
  * [timestampEnd] passed to [onSave] is derived from the selected date + hour/minute in the
  * device's local timezone (same `java.time` conversion approach as [formatSessionDate]); the
- * caller derives `timestampStart` by subtracting the entered duration from it.
+ * caller derives `timestampStart` by subtracting the entered duration from it -- or, when the
+ * duration field is left blank (see below), by setting `timestampStart = timestampEnd` instead.
  *
  * [currentProgress] (Task4 Phase E) prefills the start-position field with the book's last-known
  * progress as a "resume where you left off" convenience -- the user can freely edit or clear it.
+ *
+ * ### Duration is optional (schema v2, ROADMAP Task 5 pre-phase)
+ * The duration field may be left blank: `durationMinutes` is then `null`, forwarded all the way
+ * to [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds] as `null` rather
+ * than `0` -- see that entity's KDoc for why `0` cannot double as "unknown" without corrupting
+ * future time-read stats. A backlogged manual session (e.g. "I read some of this book last
+ * month, I don't remember for how long") is the motivating case; a live timer run always has a
+ * real duration and never takes this path. Because there is then no duration to subtract from
+ * `timestampEnd`, the caller sets `timestampStart = timestampEnd`: a zero-length interval. This
+ * only affects the *interval*, not the *session* -- the session is still date/time-anchored via
+ * `timestampEnd` and its position bounds (`startUnit`/`endUnit`) are entered exactly as normal;
+ * only its true time-span is unrepresented, which is exactly what a `null` duration already says.
+ * The Save button's `enabled` condition therefore no longer requires the duration field to be
+ * filled in -- only start/end position are required, same as [PendingSessionDialog].
  *
  * Unlike [PendingSessionDialog], this dialog closes optimistically as soon as Save is tapped
  * rather than waiting on a success/failure signal. There is no shared-state flag analogous to
@@ -716,7 +739,7 @@ private fun PendingSessionDialog(
 private fun ManualSessionDialog(
     currentProgress: Double?,
     onSave: (
-        durationMinutes: Long,
+        durationMinutes: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -834,7 +857,10 @@ private fun ManualSessionDialog(
             Button(
                 onClick = {
                     onSave(
-                        durationText.toLongOrNull() ?: 0L,
+                        // Blank duration => null ("unknown"), not 0 -- see class KDoc's
+                        // "Duration is optional" section. durationText is digit-filtered, so a
+                        // non-blank value always parses.
+                        durationText.toLongOrNull(),
                         deriveTimestampEnd(
                             dateUtcMidnightMillis = datePickerState.selectedDateMillis
                                 ?: localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()),
@@ -847,9 +873,7 @@ private fun ManualSessionDialog(
                         notesText.ifBlank { null },
                     )
                 },
-                enabled = durationText.isNotBlank() &&
-                    startUnitText.isNotBlank() &&
-                    endUnitText.isNotBlank(),
+                enabled = startUnitText.isNotBlank() && endUnitText.isNotBlank(),
             ) {
                 Text(stringResource(R.string.save_button))
             }
@@ -903,8 +927,14 @@ private fun ManualSessionDialog(
 }
 
 /**
- * A single row in the session history list: date, duration, start->end positions, optional
- * pages-read/notes, and a delete icon button.
+ * A single row in the session history list: date, duration (when known), start->end positions,
+ * optional pages-read/notes, and a delete icon button.
+ *
+ * [ReadingSessionEntity.durationSeconds] is nullable (schema v2, ROADMAP Task 5 pre-phase): a
+ * backlogged manual entry may have been saved with no known duration. When `null`, this renders
+ * the positions line ([R.string.session_positions]) without a duration segment, rather than a
+ * misleading "0:00:00" -- see that entity's KDoc for why `null` and `0` must stay visually and
+ * semantically distinct.
  */
 @Composable
 private fun SessionRow(
@@ -924,13 +954,22 @@ private fun SessionRow(
                     text = formatSessionDate(session.timestampStart),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                val durationSeconds = session.durationSeconds
                 Text(
-                    text = stringResource(
-                        R.string.session_duration_positions,
-                        formatElapsed(session.durationSeconds),
-                        formatUnit(session.startUnit),
-                        formatUnit(session.endUnit),
-                    ),
+                    text = if (durationSeconds != null) {
+                        stringResource(
+                            R.string.session_duration_positions,
+                            formatElapsed(durationSeconds),
+                            formatUnit(session.startUnit),
+                            formatUnit(session.endUnit),
+                        )
+                    } else {
+                        stringResource(
+                            R.string.session_positions,
+                            formatUnit(session.startUnit),
+                            formatUnit(session.endUnit),
+                        )
+                    },
                     style = MaterialTheme.typography.bodySmall,
                 )
                 val deltaPages = session.deltaPages

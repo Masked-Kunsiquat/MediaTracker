@@ -104,6 +104,28 @@ class LogReadingSessionUseCaseTest {
     }
 
     @Test
+    fun execute_explicitBoundsOverload_nullDuration_persistsWithNullDuration() = runTest {
+        // Schema v2 (ROADMAP Task 5 pre-phase): the explicit-bounds overload (manual entry) may
+        // omit duration entirely -- null means "unknown", not 0. The timerResult overload never
+        // exercises this path since ReadingTimerResult.durationSeconds is a non-null Long.
+        val timestampEnd = start.plus(Duration.parse("1h"))
+
+        val result = useCase.execute(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = null,
+            startUnit = 0.0,
+            endUnit = 50.5,
+        )
+
+        assertIs<Resource.Success<String>>(result)
+        val session = db.readingSessionDao().getById(result.data)
+        assertTrue(session?.durationSeconds == null)
+        assertTrue(session?.endUnit == 50.5)
+    }
+
+    @Test
     fun execute_negativeStartUnit_returnsErrorAndPersistsNothing() = runTest {
         val timerResult = ReadingTimerResult(start, start.plus(Duration.parse("1m")), 60)
 

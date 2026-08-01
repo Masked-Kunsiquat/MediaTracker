@@ -23,11 +23,15 @@ public expect class DatabaseFactory {
 /**
  * Applies the shared production configuration to a platform-supplied [builder] and builds the
  * database: the bundled SQLite driver (AGENTS.md §1 "single local SQLite database" — no
- * separate native driver dependency to manage per platform) and query execution on
- * [Dispatchers.IO] so database work never runs on the caller's dispatcher.
+ * separate native driver dependency to manage per platform), query execution on
+ * [Dispatchers.IO] so database work never runs on the caller's dispatcher, and every tested
+ * schema [Migration][androidx.room.migration.Migration] (currently just [MIGRATION_1_2]). Both
+ * platform [DatabaseFactory] actuals (android/jvm) route through this single function, so a
+ * migration only ever needs to be registered here once.
  */
 public fun buildAppDatabase(builder: RoomDatabase.Builder<AppDatabase>): AppDatabase =
     builder
         .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(Dispatchers.IO)
+        .addMigrations(MIGRATION_1_2)
         .build()

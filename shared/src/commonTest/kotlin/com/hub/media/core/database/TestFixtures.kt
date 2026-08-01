@@ -55,7 +55,7 @@ internal fun sampleReadingSession(
     id: String = newId(),
     timestampStart: Instant = Instant.fromEpochMilliseconds(1_700_000_000_000),
     timestampEnd: Instant = Instant.fromEpochMilliseconds(1_700_000_600_000),
-    durationSeconds: Long = 600,
+    durationSeconds: Long? = 600,
     startUnit: Double = 10.0,
     endUnit: Double = 25.0,
     deltaPages: Int? = 15,
