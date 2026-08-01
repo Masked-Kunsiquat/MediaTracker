@@ -65,8 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state-driven (`pendingSession != null`): a validation failure keeps it open with
   `errorMessage` displayed for retry-without-re-timing, a success clears `pendingSession` and the
   dialog closes itself — no local dismiss logic needed. Manual entry is a separate dialog with a
-  duration-minutes field; timestamps are derived as `end = now`, `start = end - duration`
-  (documented in `BookDetailScreenRoute`'s KDoc) rather than exposing a full date/time picker.
+  duration-minutes field plus a session date/end-time selection (Material 3 `DatePickerDialog`
+  for the date, digit-filtered hour/minute fields for the time — see Task4 Phase D below);
+  `timestampEnd` is derived from that selection and `timestampStart = timestampEnd - duration`.
   Position/duration/pages fields are digit-and-decimal-point filtered so a negative value (the
   one thing `LogReadingSessionUseCase` rejects) can't be typed. Session history lists most-recent-
   first with a delete icon per row and a confirmation dialog matching `LibraryScreen`'s pattern.
@@ -88,6 +89,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `onNavigateToBookDetail: (String) -> Unit` parameter threaded through to a new `onBookClick`
   callback on the stateless `LibraryScreen`; the existing delete-button confirmation-dialog flow
   is unchanged.
+
+### Fixed
+
+- **Field-level cover fallback** (Task4 Phase D, `shared/.../features/books/network/`
+  `FallbackBookMetadataProvider`): Open Library edition records can succeed with `covers: null`
+  (e.g. ISBN 9798217298976 / edition OL61570965M), and previously the secondary provider
+  (Google Books) was only ever consulted after a primary *failure*, so a coverless-but-otherwise-
+  valid primary success meant no cover was ever fetched. Now, a primary success with a null
+  `coverImageUrl` also probes the secondary as a cover-only lookup: a secondary success with a
+  cover is merged in (primary's `BookMetadata` `.copy()`'d with only `coverImageUrl` replaced —
+  every other field still wins from the primary); a secondary error or another coverless result
+  leaves the primary's result unchanged. A cover is a nice-to-have and this probe can never turn
+  a primary success into a failure. 4 new tests added to `FallbackBookMetadataProviderTest`
+  covering the merge, no-op, and secondary-error branches, alongside the existing (renamed)
+  primary-success-with-cover "secondary never called" case.
+- **Manual session entry backdating** (Task4 Phase D, `app/.../ui/screens/BookDetailScreen.kt`
+  `ManualSessionDialog`): the manual-entry dialog now has a session date field (Material 3
+  `DatePickerDialog`) and hour/minute end-time fields, both defaulting to today/now so the
+  zero-extra-tap "I just finished reading" flow is unchanged, but a session can now be backdated
+  to a past date/time instead of always timestamping at the moment Save is pressed.
+  `onLogManualSession`/`ManualSessionDialog.onSave` gain a `timestampEnd: Instant` parameter
+  derived from the selection via the same `java.time`-based local-timezone conversion already
+  used for session-history date display; `timestampStart` is still `timestampEnd - duration`. No
+  shared-module or ViewModel changes were needed — `logManualSession` already accepted explicit
+  timestamps.
 
 ## [0.2.0] - 2026-08-01
 

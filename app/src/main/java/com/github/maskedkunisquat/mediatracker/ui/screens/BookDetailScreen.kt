@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -23,15 +25,19 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,7 +68,6 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailUiState
 import com.hub.media.ui.BookDetailViewModel
 import kotlin.math.roundToInt
-import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
@@ -113,19 +118,17 @@ fun BookDetailScreenRoute(
             viewModel.saveSession(startUnit, endUnit, deltaPages, notes)
         },
         onDiscardPendingSession = viewModel::discardPendingSession,
-        onLogManualSession = { durationMinutes, startUnit, endUnit, deltaPages, notes ->
-            // Manual entry has no live timer to read timestamps from, and asking the user to pick
-            // both a start and end date/time for a single-field "how long did you read" form would
-            // be disproportionate UI for this phase. Instead: timestampEnd is "now" (the moment
-            // Save is pressed) and timestampStart is backdated by the entered duration. This
-            // assumes the common case -- "I just read for 20 minutes, let me log it" -- rather
-            // than backdating to an arbitrary past date; a full date/time picker for historical
-            // entry is left for a future iteration.
-            val end = Clock.System.now()
-            val start = end - durationMinutes.minutes
+        onLogManualSession = { durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+            // Manual entry has no live timer to read timestamps from, so the dialog itself
+            // collects a session date + end time (defaulting to today/now, so the common "I just
+            // finished reading" case still takes zero extra taps) and derives timestampEnd from
+            // that selection -- see ManualSessionDialog. timestampStart is then simply the
+            // entered duration subtracted from timestampEnd, which supports backdating an entry
+            // to an arbitrary past date/time as well as the zero-extra-tap "just now" case.
+            val start = timestampEnd - durationMinutes.minutes
             viewModel.logManualSession(
                 timestampStart = start,
-                timestampEnd = end,
+                timestampEnd = timestampEnd,
                 durationSeconds = durationMinutes * 60,
                 startUnit = startUnit,
                 endUnit = endUnit,
@@ -159,8 +162,9 @@ fun BookDetailScreenRoute(
  * @param onSaveSession Called with (startUnit, endUnit, deltaPages, notes) to persist the pending
  *   timer-backed session.
  * @param onDiscardPendingSession Called to abandon the pending timer-backed session.
- * @param onLogManualSession Called with (durationMinutes, startUnit, endUnit, deltaPages, notes)
- *   from the manual-entry form.
+ * @param onLogManualSession Called with (durationMinutes, timestampEnd, startUnit, endUnit,
+ *   deltaPages, notes) from the manual-entry form; timestampEnd reflects the session date/time
+ *   the user picked in the dialog (defaulting to now, but backdatable to a past date/time).
  * @param onDeleteSession Called with a session id after its delete is confirmed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -179,6 +183,7 @@ fun BookDetailScreen(
     onDiscardPendingSession: () -> Unit,
     onLogManualSession: (
         durationMinutes: Long,
+        timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
         deltaPages: Int?,
@@ -258,6 +263,7 @@ private fun BookDetailContent(
     onDiscardPendingSession: () -> Unit,
     onLogManualSession: (
         durationMinutes: Long,
+        timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
         deltaPages: Int?,
@@ -348,8 +354,8 @@ private fun BookDetailContent(
 
     if (showManualEntry) {
         ManualSessionDialog(
-            onSave = { durationMinutes, startUnit, endUnit, deltaPages, notes ->
-                onLogManualSession(durationMinutes, startUnit, endUnit, deltaPages, notes)
+            onSave = { durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+                onLogManualSession(durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
                 showManualEntry = false
             },
             onDismiss = { showManualEntry = false },
@@ -573,8 +579,23 @@ private fun PendingSessionDialog(
 }
 
 /**
- * Dialog for logging a session with no live timer involved: duration (minutes) plus start/end
- * position, optional pages-read and notes.
+ * Dialog for logging a session with no live timer involved: session date + end time, duration
+ * (minutes), start/end position, optional pages-read and notes.
+ *
+ * The date field defaults to today and is edited via a [DatePickerDialog] (opened by tapping the
+ * "Date:" button); the end time defaults to the current time and is edited via two small
+ * digit-filtered hour/minute [OutlinedTextField]s rather than a full `TimePicker` dial --
+ * this dialog already stacks five other fields (duration, two positions, pages, notes), and a
+ * full `TimePicker` (dial or spinner) would push its total height well past what comfortably fits
+ * above the keyboard on a phone; a compact "HH" / "MM" pair reuses the same digit-filtering
+ * pattern already used elsewhere in this dialog and keeps everything on one screen (the field
+ * column also scrolls, as a safety net on small displays). Because both date and time default to
+ * "now," the zero-extra-tap "I just finished reading" path is unchanged -- picking a date/time is
+ * purely opt-in, for backdating a session that happened in the past.
+ *
+ * [timestampEnd] passed to [onSave] is derived from the selected date + hour/minute in the
+ * device's local timezone (same `java.time` conversion approach as [formatSessionDate]); the
+ * caller derives `timestampStart` by subtracting the entered duration from it.
  *
  * Unlike [PendingSessionDialog], this dialog closes optimistically as soon as Save is tapped
  * rather than waiting on a success/failure signal. There is no shared-state flag analogous to
@@ -585,10 +606,12 @@ private fun PendingSessionDialog(
  * real failure in practice. The rare case of some other persistence failure is still surfaced via
  * `state.errorMessage` as a banner in [BookDetailContent] once this dialog has closed.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualSessionDialog(
     onSave: (
         durationMinutes: Long,
+        timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
         deltaPages: Int?,
@@ -602,11 +625,46 @@ private fun ManualSessionDialog(
     var deltaPagesText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
 
+    val nowForDefaults = remember { java.time.LocalDateTime.now() }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()) },
+    )
+    var showDatePicker by remember { mutableStateOf(false) }
+    var hourText by remember { mutableStateOf("%02d".format(nowForDefaults.hour)) }
+    var minuteText by remember { mutableStateOf("%02d".format(nowForDefaults.minute)) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Log session manually") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Date: " + formatUtcMidnightMillis(datePickerState.selectedDateMillis))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = hourText,
+                        onValueChange = { hourText = it.filterIntegerInput().take(2) },
+                        label = { Text("Hour (0-23)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = minuteText,
+                        onValueChange = { minuteText = it.filterIntegerInput().take(2) },
+                        label = { Text("Minute (0-59)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 OutlinedTextField(
                     value = durationText,
                     onValueChange = { durationText = it.filterIntegerInput() },
@@ -652,6 +710,12 @@ private fun ManualSessionDialog(
                 onClick = {
                     onSave(
                         durationText.toLongOrNull() ?: 0L,
+                        deriveTimestampEnd(
+                            dateUtcMidnightMillis = datePickerState.selectedDateMillis
+                                ?: localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()),
+                            hour = hourText.toIntOrNull() ?: 0,
+                            minute = minuteText.toIntOrNull() ?: 0,
+                        ),
                         startUnitText.toDoubleOrNull() ?: 0.0,
                         endUnitText.toDoubleOrNull() ?: 0.0,
                         deltaPagesText.toIntOrNull(),
@@ -671,6 +735,20 @@ private fun ManualSessionDialog(
             }
         },
     )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }
 
 /**
@@ -790,6 +868,42 @@ private fun formatSessionDate(instant: Instant): String {
 private val SESSION_DATE_FORMATTER: java.time.format.DateTimeFormatter =
     java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
 
+private val DATE_ONLY_FORMATTER: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")
+
+/**
+ * Converts a [java.time.LocalDate] to the UTC-midnight epoch millis that Material 3's
+ * `DatePickerState` represents dates as (a date picker selection is timezone-agnostic, always
+ * anchored to midnight UTC, regardless of the device's local timezone).
+ */
+private fun localDateToUtcMidnightMillis(date: java.time.LocalDate): Long =
+    date.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+
+/** Formats a `DatePickerState.selectedDateMillis`-style UTC-midnight millis value for display. */
+private fun formatUtcMidnightMillis(utcMidnightMillis: Long?): String {
+    if (utcMidnightMillis == null) return "-"
+    val localDate = java.time.Instant.ofEpochMilli(utcMidnightMillis)
+        .atZone(java.time.ZoneOffset.UTC)
+        .toLocalDate()
+    return DATE_ONLY_FORMATTER.format(localDate)
+}
+
+/**
+ * Derives a [kotlin.time.Instant] end-of-session timestamp from a `DatePickerState`-style
+ * UTC-midnight date millis plus an hour/minute of day, combined in the device's local timezone
+ * (same conversion approach as [formatSessionDate], just inverted). [hour]/[minute] are clamped
+ * to valid ranges so out-of-range typed input (e.g. "99") can't throw.
+ */
+private fun deriveTimestampEnd(dateUtcMidnightMillis: Long, hour: Int, minute: Int): Instant {
+    val localDate = java.time.Instant.ofEpochMilli(dateUtcMidnightMillis)
+        .atZone(java.time.ZoneOffset.UTC)
+        .toLocalDate()
+    val zonedDateTime = localDate
+        .atTime(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
+        .atZone(java.time.ZoneId.systemDefault())
+    return Instant.fromEpochMilliseconds(zonedDateTime.toInstant().toEpochMilli())
+}
+
 /** Keeps only digits and at most one decimal point, e.g. for [Double] position input fields. */
 private fun String.filterDecimalInput(): String {
     val builder = StringBuilder()
@@ -872,7 +986,7 @@ private fun BookDetailScreenReadyPreview() {
             onStopReading = {},
             onSaveSession = { _, _, _, _ -> },
             onDiscardPendingSession = {},
-            onLogManualSession = { _, _, _, _, _ -> },
+            onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
         )
     }
@@ -904,7 +1018,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             onStopReading = {},
             onSaveSession = { _, _, _, _ -> },
             onDiscardPendingSession = {},
-            onLogManualSession = { _, _, _, _, _ -> },
+            onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
         )
     }
@@ -927,7 +1041,7 @@ private fun BookDetailScreenLoadingPreview() {
             onStopReading = {},
             onSaveSession = { _, _, _, _ -> },
             onDiscardPendingSession = {},
-            onLogManualSession = { _, _, _, _, _ -> },
+            onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
         )
     }
