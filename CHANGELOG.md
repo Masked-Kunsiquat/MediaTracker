@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ReadingTimer`** (`shared/.../features/books/timer/`, Task4 Phase A): coroutine/Flow-based
+  reading stopwatch — `start()`/`pause()`/`resume()`/`stop()`, a `StateFlow<Long>` of elapsed
+  seconds ticking ~1/second while running, and a `StateFlow<ReadingTimerState>`
+  (Idle/Running/Paused) for UI. `stop()` returns a `ReadingTimerResult` (timestampStart,
+  timestampEnd, durationSeconds) with duration accumulated by counting ticks rather than
+  subtracting clock readings, so paused time is never counted and the class is exactly
+  reproducible under `kotlinx-coroutines-test` virtual time. Invalid state transitions (e.g.
+  `stop()` while Idle) throw `IllegalStateException`. Pure common Kotlin — injects a
+  `kotlin.time.Clock` and an external `CoroutineScope`, no Android dependency.
+- **`LogReadingSessionUseCase`** (`shared/.../features/books/domain/`): connects a finished
+  `ReadingTimerResult` (or explicit start/end/duration bounds, for manual session entry) plus
+  page/percent position bounds to `ReadingSessionRepository.logSession`. Validates that
+  `startUnit`/`endUnit` are non-negative; `endUnit < startUnit` is allowed (flipping back to
+  reread a chapter is a legitimate input, not an error). Returns `Resource<String>` per the
+  existing use-case convention.
+- 14 virtual-time tests for `ReadingTimer` (ticking, pause/resume, stop result, 0-second
+  sessions, invalid-transition contract, reuse after stop) and 7 tests for
+  `LogReadingSessionUseCase` (happy path via both overloads, negative-unit validation,
+  endUnit-less-than-startUnit allowed, 0-second/0-page edge cases, propagated repository
+  validation errors).
+
 ## [0.2.0] - 2026-08-01
 
 First usable UI milestone: the app is now interactive end-to-end — browse the library,
