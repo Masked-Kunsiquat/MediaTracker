@@ -14,8 +14,13 @@ android {
         applicationId = "com.github.maskedkunisquat.mediatracker"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+
+        // Version comes from [versions] app in gradle/libs.versions.toml (AGENTS.md §8).
+        // versionCode must only ever increase across installs, so it is derived from
+        // SemVer rather than hand-edited: major*10000 + minor*100 + patch.
+        val (vMajor, vMinor, vPatch) = libs.versions.app.get().split(".").map { it.toInt() }
+        versionCode = vMajor * 10000 + vMinor * 100 + vPatch
+        versionName = libs.versions.app.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

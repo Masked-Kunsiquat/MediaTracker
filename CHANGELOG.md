@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.1.0] - 2026-08-01
+
+First tagged milestone: complete data foundation — database, storage, networking, and the
+end-to-end book ingestion pipeline. No UI yet. **Room schema v1 is frozen as of this
+release**; all future schema changes require a version bump plus a tested migration.
+
 ### Added
 
 - **Book ingestion pipeline** (`AddBookByIsbnUseCase`): ISBN in, fully persisted book out —

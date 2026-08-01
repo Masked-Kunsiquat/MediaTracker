@@ -1,4 +1,6 @@
 [versions]
+# App version — single source of truth (SemVer). See AGENTS.md §8 for the release process.
+app = "0.1.0"
 agp = "9.1.1"
 coreKtx = "1.17.0"
 junit = "4.13.2"

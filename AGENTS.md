@@ -88,3 +88,12 @@ androidApp/                   <-- Android Jetpack Compose Screens & Entry Point
   - Test edge cases: 0-page books, 0-second timers, missing API metadata fields, corrupt image byte arrays.
 * **Test Location:** Place unit tests in `shared/src/commonTest/kotlin/`.
 * **Verification Command:** AI agents MUST run `./gradlew test` to ensure all tests pass before completing any task.
+---
+
+## 8. Versioning & Release Standards
+
+* **Scheme:** Semantic Versioning `0.y.z` pre-1.0. Minor bump per feature milestone, patch for fixes. `1.0.0` when the app is daily-drivable.
+* **Single Source of Truth:** The app version lives ONLY in `[versions] app` in `gradle/libs.versions.toml`. `app/build.gradle.kts` reads `versionName` from it and derives `versionCode` as `major*10000 + minor*100 + patch`. NEVER hand-edit `versionCode` or duplicate the version string elsewhere.
+* **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase.
+* **Release Ritual:** (1) move `[Unreleased]` content into a dated `## [x.y.z] - YYYY-MM-DD` section, (2) bump `[versions] app`, (3) commit as `Release vX.Y.Z`, (4) `git tag vX.Y.Z`.
+* **Room Schema Freeze Rule:** Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration (`Migration` object + migration test). In-place edits of the current schema version are permitted ONLY for schema versions that have never been part of a tagged release. Schema v1 froze at `v0.1.0`.
