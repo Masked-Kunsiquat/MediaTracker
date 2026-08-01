@@ -9,26 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Shared ViewModels + UI contracts** (Task3 Phase B, `shared/.../ui/`): `LibraryViewModel`
-  (books list + derived `isEmpty` as a `StateFlow<LibraryUiState>` via `observeAllBooks()` ->
-  `stateIn(WhileSubscribed(5s))`, plus `deleteBook`) and `AddBookViewModel`
-  (`StateFlow<AddBookUiState>` sealed as `Idle`/`Loading`/`Success`/`Error`, with a
-  concurrent-submission guard and `reset()`). Both extend the new KMP
-  `androidx.lifecycle:lifecycle-viewmodel` artifact (pinned to the existing 2.10.0 lifecycle
-  version) and use `viewModelScope` per AGENTS.md §2. `AddBookByIsbnUseCase` now implements a
-  new `BookIngestionUseCase` interface so `AddBookViewModel` can be tested against a hand-rolled
-  fake with no Ktor/Room/disk dependencies (AGENTS.md §5 — no mocking library).
-- **Production database + storage wiring**: `shared`'s `AppDatabase` previously had no real
-  construction path (only in-memory test builders). Added `DatabaseFactory` (`expect class` with
-  a no-arg `create()`, mirroring the official Room KMP pattern) — the Android `actual` resolves
-  the DB file via `Context.getDatabasePath`, the JVM `actual` writes to
-  `~/.mediatracker/media_tracker.db` — plus common `buildAppDatabase(builder)` applying the
-  bundled SQLite driver and `Dispatchers.IO` query execution. Added matching
-  `coverStorageDirectory` helpers per platform (`filesDir/covers` on Android,
-  `~/.mediatracker/covers` on JVM).
-- **`AppContainer`**: manual composition root (no DI framework, AGENTS.md §5) exposing
-  `BookRepository`, `ReadingSessionRepository`, and `AddBookByIsbnUseCase` from a database +
-  image storage pair; `createAppContainer(context)` is the Android convenience entry point.
+- **Compose UI screens & navigation** (Task3 Phase C, `app/.../ui/`): `LibraryScreen` (stateless
+  card list, empty-state message, FloatingActionButton to add book, long-press/icon delete with
+  confirmation dialog wired to ViewModel) and `AddBookScreen` (OutlinedTextField for ISBN,
+  Loading/Error/Success state rendering, back navigation via TopAppBar icon, success triggers
+  LaunchedEffect to navigate to library and reset ViewModel). `CoverImage` off-thread composable
+  using `produceState` on `Dispatchers.IO` to load images from disk via `BitmapFactory.decodeFile`,
+  falling back to a book-icon placeholder on decode failure or null hash. Stateless/stateful split
+  honors AGENTS.md §5 (each screen has a route-level wrapper connecting ViewModel + navigation
+  callbacks, plus a @Preview-able stateless composable accepting state + callbacks). Navigation
+  via navigation-compose `NavHost` with sealed `Route` type-safe destinations (library start,
+  add_book), routes in `AppNavigation.kt`.
+- **`MediaTrackerApplication`**: Application subclass holding lazily-created `AppContainer` on
+  first access; retrieved by `MainActivity` via `(application as MediaTrackerApplication).appContainer`.
+- **ViewModel factories**: `LibraryViewModelFactory` and `AddBookViewModelFactory` (AGENTS.md §5 —
+  manual DI, no framework) wiring dependencies from `AppContainer` to ViewModel constructors.
+
+### Changed
+
+- **`MainActivity` wired to navigation + dependency injection**: Now reads `AppContainer` from
+  the Application instance, passes to `MediaTrackerApp` which constructs a `NavController` and
+  calls `AppNavigation` to set up the graph. Removed placeholder screen; all real navigation
+  happens here.
 
 ### Changed
 
