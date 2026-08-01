@@ -13,22 +13,32 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   Google Books fallback), cover downloader, repositories, atomic `AddBookByIsbnUseCase`.
 - **Task 3 — Compose UI shell** (`v0.2.0`): Kotlin + Compose app module, Material 3 theme,
   Library and Add Book screens, navigation, shared ViewModels, `AppContainer` manual DI.
+- **Task 4 — Reading tracking** (`v0.3.0`): coroutine/Flow-based reading timer and
+  `LogReadingSessionUseCase` (Phase A); `BookDetailViewModel` + UI state (Phase B); Book
+  Detail screen with timer, manual session entry, and session history (Phase C); field-level
+  cover fallback and manual-entry backdating via a session date/end-time picker (Phase D);
+  delete-book moved to the Book Detail screen, a Material 3 `TimePicker` for manual-entry end
+  time, and start-position autofill from current progress (Phase E).
 
-## Task 4 — Reading tracking (next)
+## Task 5 — Stats (next)
 
-Turn the dormant `ReadingSessions` table into a feature; the gap between "can add books"
-and "daily-drivable."
-
-- **Phase A (shared):** coroutine/Flow-based reading timer (stopwatch: start/pause/stop,
-  elapsed-time Flow) in `features/books`; `LogReadingSessionUseCase` connecting timer
-  output + page/percent bounds to `ReadingSessionRepository`. Virtual-time tests.
-- **Phase B (shared):** `BookDetailViewModel` + UI state — book metadata, session history,
-  current-progress derivation, timer integration. Tested against fakes.
-- **Phase C (app):** Book Detail screen — tap a library card to open; cover + metadata,
-  start/stop timer, manual session entry, session history list. Navigation route with
-  `bookId` argument.
-
-## Task 5 — Stats
+- **Pre-phase: Room schema v2 — optional session duration.** Backlogged manual sessions
+  don't always have a known duration (and users may not want the timer), but
+  `ReadingSessionEntity.durationSeconds` is non-nullable in frozen schema v1, and storing
+  0 as "unknown" would collide with the legitimate 0-second-session edge case and silently
+  corrupt time-read stats. Bump Room to schema v2 making `durationSeconds` nullable (null =
+  unknown), with a tested Migration per AGENTS.md §8; make duration optional in the
+  manual-entry UI; define stats semantics around it up front (sum only known durations;
+  session counts and page progress unaffected). Do this before the stat queries so Task 5
+  doesn't ship assumptions v2 breaks.
+  **Note:** session gaps are NOT auto-reconciled -- sessions are independent facts recorded
+  as start/end position pairs, not a continuous log, so stats must sum per-session deltas
+  rather than assume continuity between one session's end and the next session's start.
+  Start-position autofill from current progress (landed in Task 4 Phase E) mitigates
+  accidental gaps by defaulting the next session's start to where the last one left off, but
+  the user can still edit or clear it. A "gap detected" nudge (comparing a new session's
+  start position against the prior session's end) is a possible later nicety, not required
+  for correct stats.
 
 Aggregate queries in `features/stats`: time read per week/month, books finished, streaks.
 Depends on Task 4 producing session data.
@@ -37,15 +47,49 @@ Depends on Task 4 producing session data.
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
-- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → **Room schema v2**: first real
-  migration under the §8 schema-freeze rule (version bump + tested `Migration`).
+- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v3,
+  assuming the Task 5 pre-phase lands v2 first) under the §8 schema-freeze rule (version
+  bump + tested `Migration`).
 - Library/media-type UI generalization (type filter, non-book detail screens).
+
+## Task 7 — Search & discovery
+
+- Title/author type-ahead search of external providers when adding a book: Open Library's
+  search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
+  minimum before querying, cancel-previous-request-on-new-keystroke, and an in-memory LRU
+  cache for repeated prefixes (typing then backspacing shouldn't re-hit the network). Google
+  Books is consulted only on selection or as a fallback, not for every keystroke -- its
+  keyless per-IP quota is limited and 429s have already been observed against it. Typed
+  result styling (author vs. title vs. collection) driven by Open Library's typed `docs`
+  results, so the dropdown can visually distinguish match kinds.
+- Local library search as part of the same task: filter/search the user's own already-added
+  books by title/author, independent of the external-provider search above.
 
 ## Backlog / tech debt
 
 - AGP 9 workaround: remove `android.builtInKotlin=false` + `android.newDsl=false` once KSP
   supports `com.android.kotlin.multiplatform.library` (google/ksp#2476); flags die in AGP 10.
-- `BookFormat` defaults to `PHYSICAL` on ingestion — needs a user-facing correction flow.
+- Edit-book-metadata screen: no UI for correcting title, release year, purchase price,
+  total pages, or format after ingestion (`BookFormat` also defaults to `PHYSICAL` and has
+  no correction path). Provider edition records can carry wrong values — e.g. Open Library
+  reports 384 pages for an edition that's physically 366 — so a user-facing correction flow
+  covering all five fields is needed, not just format.
 - On-device smoke test of the full add-book flow (only exercised via JVM tests so far).
 - Lifecycle pinned to 2.10.0 and core-ktx to 1.17.0 until compileSdk 37.
-- Edit-book screen (title/year/price corrections) — no UI for updates yet.
+- Cover re-fetch for pre-fix books: the field-level cover fallback (secondary provider's
+  cover merged into a coverless primary success) only runs at ingestion time, so books added
+  before that fix have no stored cover and no re-fetch path. Needs a "re-fetch cover"
+  affordance (per-book, or a bulk backfill over existing library entries). Could also add a
+  further fallback via Open Library's ISBN-keyed cover URL with `?default=false` (which
+  404s instead of serving a placeholder image, making it safely probeable) for cases where
+  both providers' records are coverless.
+- Additional legitimate cover sources: try all Google Books image sizes (currently only
+  thumbnail is used, when larger sizes may be available); an optional user-supplied Google
+  Custom Search API key (100 free queries/day) for image search, following the same
+  user-supplied-key pattern already planned for TMDB (Task 6); manual cover entry (paste a
+  URL, or pick a local image from the device). Scraping Google Images or DuckDuckGo image
+  results is a ToS violation and is ruled out as an option.
+- Book Detail screen tab separation: once purchase/borrow tracking exists, split the screen
+  into tabs (details / reading history / purchase & borrow info) -- it's a single scrolling
+  column today and is already getting crowded with header, timer, manual-entry, and session
+  history all stacked together.

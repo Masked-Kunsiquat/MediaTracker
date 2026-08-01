@@ -11,6 +11,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 
 /**
  * Repository for managing book-related data operations. Encapsulates all direct database
@@ -34,6 +35,26 @@ public class BookRepository(private val db: AppDatabase) {
      */
     public fun observeBook(id: String): Flow<MediaItemEntity?> =
         db.mediaItemDao().observeById(id)
+
+    /**
+     * Observes a single book together with its [BookDetailsEntity] as a reactive stream (ROADMAP
+     * Task 4 Phase B: `BookDetailViewModel` metadata). Combines [observeBook] with
+     * [com.hub.media.core.database.dao.BookDetailsDao.observeByMediaId] rather than a Room
+     * `@Relation` query (no DAO changes per the Room schema freeze) — [BookWithDetails] is reused
+     * as the wrapper shape purely because it already exists.
+     *
+     * Emits null once [id]'s [MediaItemEntity] is missing (never created, or deleted), matching
+     * [observeBook]'s null-on-delete semantics; [BookWithDetails.details] itself may independently
+     * be null if no [BookDetailsEntity] row exists for the media id (data-integrity edge case,
+     * never expected via [addBook]'s atomic insert).
+     */
+    public fun observeBookDetail(id: String): Flow<BookWithDetails?> =
+        combine(
+            db.mediaItemDao().observeById(id),
+            db.bookDetailsDao().observeByMediaId(id),
+        ) { mediaItem, details ->
+            mediaItem?.let { BookWithDetails(mediaItem = it, details = details) }
+        }
 
     /**
      * Adds a new book with details and optional external identifiers in a single atomic

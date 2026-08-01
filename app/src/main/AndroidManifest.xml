@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Ktor's OkHttp engine (okhttp-android) previously merged this permission into the final
+         manifest transitively, so it was never declared here explicitly. Declaring it directly
+         means a future engine swap (e.g. away from OkHttp) can't silently drop network access. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".MediaTrackerApplication"
         android:allowBackup="true"

@@ -25,4 +25,21 @@ sealed interface Route {
     data object AddBook : Route {
         override val route: String = "add_book"
     }
+
+    /**
+     * Book detail screen: cover + metadata, reading timer, session history, for a single book
+     * identified by [ARG_BOOK_ID] (Task4 Phase C).
+     */
+    data object BookDetail : Route {
+        /** NavHost argument key for the book id, used both here and by [createRoute]. */
+        const val ARG_BOOK_ID: String = "bookId"
+
+        /** Base path segment shared by [route] and [createRoute]. */
+        private const val PATH: String = "book_detail"
+
+        override val route: String = "$PATH/{$ARG_BOOK_ID}"
+
+        /** Builds a concrete, navigable route string for a specific [bookId]. */
+        fun createRoute(bookId: String): String = "$PATH/$bookId"
+    }
 }

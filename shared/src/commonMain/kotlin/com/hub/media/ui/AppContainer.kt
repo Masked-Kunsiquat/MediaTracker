@@ -6,6 +6,7 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
+import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 
 /**
@@ -44,6 +45,13 @@ public class AppContainer(
 
     /** Reading session logging/history, shared by future reading-session screens. */
     public val readingSessionRepository: ReadingSessionRepository = ReadingSessionRepository(database)
+
+    /**
+     * Connects timer/manual reading-session results plus position bounds to
+     * [readingSessionRepository], consumed by [BookDetailViewModel] (ROADMAP Task 4 Phase B).
+     */
+    public val logReadingSessionUseCase: LogReadingSessionUseCase =
+        LogReadingSessionUseCase(readingSessionRepository)
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */
     public val addBookByIsbnUseCase: AddBookByIsbnUseCase = createDefaultAddBookByIsbnUseCase(

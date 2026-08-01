@@ -2,4 +2,46 @@
     <string name="app_name">Media Tracker</string>
     <string name="cover_image_content_description">Book cover image</string>
     <string name="navigate_back">Navigate back</string>
+    <string name="delete_session_content_description">Delete session</string>
+
+    <!-- BookDetailScreen -->
+    <string name="log_session_manually">Log session manually</string>
+    <string name="session_history_title">Session History</string>
+    <string name="no_sessions_logged_yet">No sessions logged yet</string>
+    <string name="start_reading_button">Start reading</string>
+    <string name="pause_button">Pause</string>
+    <string name="resume_button">Resume</string>
+    <string name="stop_button">Stop</string>
+    <string name="save_reading_session_title">Save reading session</string>
+    <string name="session_duration_label">Duration: %1$s</string>
+    <string name="start_position_label">Start position</string>
+    <string name="end_position_label">End position</string>
+    <string name="pages_read_optional_label">Pages read (optional)</string>
+    <string name="notes_optional_label">Notes (optional)</string>
+    <string name="save_button">Save</string>
+    <string name="discard_button">Discard</string>
+    <string name="date_label">Date: %1$s</string>
+    <string name="duration_minutes_label">Duration (minutes)</string>
+    <string name="cancel_button">Cancel</string>
+    <string name="ok_button">OK</string>
+    <string name="session_duration_positions">Duration: %1$s  •  %2$s -> %3$s</string>
+    <string name="pages_read_count">Pages read: %1$d</string>
+    <string name="delete_session_title">Delete session?</string>
+    <string name="delete_session_body">Are you sure you want to delete this reading session? This cannot be undone.</string>
+    <string name="delete_button">Delete</string>
+    <string name="released_prefix">Released: %1$d</string>
+    <string name="isbn_prefix">ISBN: %1$s</string>
+    <string name="format_prefix">Format: %1$s</string>
+    <string name="total_pages_prefix">Total pages: %1$d</string>
+    <string name="progress_page_format">Page %1$d / %2$d</string>
+    <string name="progress_percent_format">%1$d%%</string>
+    <string name="progress_prefix">Progress: %1$s</string>
+    <string name="book_format_physical">Physical</string>
+    <string name="book_format_ebook">E-book</string>
+    <string name="book_format_audiobook">Audiobook</string>
+    <string name="delete_book_content_description">Delete book</string>
+    <string name="delete_book_title">Delete book?</string>
+    <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
+    <string name="time_label">Time: %1$s</string>
+    <string name="select_time_title">Select time</string>
 </resources>

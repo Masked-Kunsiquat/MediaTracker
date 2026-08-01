@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ReadingTimer`** (`shared/.../features/books/timer/`, Task4 Phase A): coroutine/Flow-based
+  reading stopwatch — `start()`/`pause()`/`resume()`/`stop()`, a `StateFlow<Long>` of elapsed
+  seconds ticking ~1/second while running, and a `StateFlow<ReadingTimerState>`
+  (Idle/Running/Paused) for UI. `stop()` returns a `ReadingTimerResult` (timestampStart,
+  timestampEnd, durationSeconds) with duration accumulated by counting ticks rather than
+  subtracting clock readings, so paused time is never counted and the class is exactly
+  reproducible under `kotlinx-coroutines-test` virtual time. Invalid state transitions (e.g.
+  `stop()` while Idle) throw `IllegalStateException`. Pure common Kotlin — injects a
+  `kotlin.time.Clock` and an external `CoroutineScope`, no Android dependency.
+- **`LogReadingSessionUseCase`** (`shared/.../features/books/domain/`): connects a finished
+  `ReadingTimerResult` (or explicit start/end/duration bounds, for manual session entry) plus
+  page/percent position bounds to `ReadingSessionRepository.logSession`. Validates that
+  `startUnit`/`endUnit` are non-negative; `endUnit < startUnit` is allowed (flipping back to
+  reread a chapter is a legitimate input, not an error). Returns `Resource<String>` per the
+  existing use-case convention.
+- 14 virtual-time tests for `ReadingTimer` (ticking, pause/resume, stop result, 0-second
+  sessions, invalid-transition contract, reuse after stop) and 7 tests for
+  `LogReadingSessionUseCase` (happy path via both overloads, negative-unit validation,
+  endUnit-less-than-startUnit allowed, 0-second/0-page edge cases, propagated repository
+  validation errors).
+- **`BookDetailViewModel` + `BookDetailUiState`** (`shared/.../ui/`, Task4 Phase B): drives the
+  book-detail screen (see Task4 Phase C below). `uiState` combines `BookRepository.observeBookDetail`
+  (new: book metadata + `BookDetailsEntity`, reactively) with
+  `ReadingSessionRepository.observeSessionsForMedia` plus in-memory UI-only state into a single
+  `StateFlow<BookDetailUiState>` (`Loading`/`NotFound`/`Ready`). `Ready.currentProgress` derives
+  the latest session's `endUnit` on read (never stored, so it can't drift via `copy()`); `Ready`
+  also carries a `pendingSession` (a finished timer run awaiting user-entered position bounds)
+  and an `errorMessage`, chosen over separate `StateFlow`s so the screen always renders from one
+  state object. Owns a `ReadingTimer` on `viewModelScope`; `startReading`/`pauseReading`/
+  `resumeReading`/`stopReading` gate on the timer's current state first so a UI double-fire
+  no-ops instead of hitting `ReadingTimer`'s throw-on-bad-transition contract. `saveSession`
+  persists the pending timer result via `LogReadingSessionUseCase`, clearing it on success and
+  keeping it (with `errorMessage` set) on validation failure so the user can retry without
+  re-timing; `logManualSession` is the explicit-bounds path with no timer involved;
+  `discardPendingSession` abandons a pending result; `deleteSession` removes a logged session.
+- `BookRepository.observeBookDetail`: reactive `MediaItemEntity` + `BookDetailsEntity` combo
+  (as `BookWithDetails`), composed from two existing DAO Flows via `combine` — no DAO/entity
+  changes (Room schema v1 stays frozen).
+- `AppContainer` now also wires `LogReadingSessionUseCase`, consumed by `BookDetailViewModel`.
+- 10 tests for `BookDetailViewModel` against a real in-memory `AppDatabase` (Loading->Ready with
+  derived progress, unknown-id NotFound, timer start/stop producing a pending session, save
+  success clearing it, save validation failure keeping it, the no-pending no-op case, manual
+  session logging, session deletion, and double-fire guards on every timer action never
+  throwing).
+- **Book Detail screen** (Task4 Phase C, `app/.../ui/screens/BookDetailScreen.kt`): tap a library
+  card to open cover + metadata, a start/pause/resume/stop reading timer, manual session entry,
+  and session history for a single book. Route-level `BookDetailScreenRoute` wires
+  `BookDetailViewModel` (via the new `BookDetailViewModelFactory`) to the stateless
+  `BookDetailScreen`, auto-navigating back via `LaunchedEffect` if the book is deleted while the
+  screen is open (`BookDetailUiState.NotFound`). Header shows page-style ("Page 142 / 350") or
+  percent-style ("37%") current progress depending on whether `BookDetailsEntity.totalPages` is
+  known. The timer card's buttons are gated by `ReadingTimerState` (Idle/Running/Paused). A
+  finished timer run (`pendingSession`) opens a save dialog whose visibility is entirely
+  state-driven (`pendingSession != null`): a validation failure keeps it open with
+  `errorMessage` displayed for retry-without-re-timing, a success clears `pendingSession` and the
+  dialog closes itself — no local dismiss logic needed. Manual entry is a separate dialog with a
+  duration-minutes field plus a session date/end-time selection (Material 3 `DatePickerDialog`
+  for the date — see Task4 Phase D below — and, as of Phase E, a Material 3 `TimePicker` for the
+  end time, see Phase E below); `timestampEnd` is derived from that selection and
+  `timestampStart = timestampEnd - duration`. Position/duration/pages fields are
+  digit-and-decimal-point filtered so a negative value (the one thing `LogReadingSessionUseCase`
+  rejects) can't be typed. Session history lists most-recent-first with a delete icon per row and
+  a confirmation dialog matching `LibraryScreen`'s original pattern (deletion itself later moved
+  to a book-level action — see Phase E below). Dates render via `java.time` (not
+  `kotlinx-datetime`, which isn't exposed to this Android-only app module) since `java.time` is
+  available unconditionally at `minSdk 28`. Previews cover Ready-with-sessions,
+  Ready-with-pending-session, and Loading.
+- **Navigation**: `Route.BookDetail` (`book_detail/{bookId}`) with a `createRoute(bookId)` helper;
+  wired into `AppNavigation`'s `NavHost` with a `navArgument`-typed `bookId`.
+- **`BookDetailViewModelFactory`** (`ui/ViewModelFactories.kt`): per-navigation-argument factory
+  (constructed fresh per book detail route, unlike the reused `LibraryViewModelFactory`/
+  `AddBookViewModelFactory`), wiring `BookDetailViewModel`'s repository/use-case dependencies
+  from `AppContainer` plus the route's `bookId`.
+- `delete_session_content_description` string resource for the session-row delete icon.
+- **Delete-book action on Book Detail screen** (Task4 Phase E, `app/.../ui/screens/BookDetailScreen.kt`):
+  a `Delete` icon in the TopAppBar actions slot (shown only for `BookDetailUiState.Ready`) opens a
+  confirmation dialog (`delete_book_title`/`delete_book_body`/`delete_book_content_description`
+  string resources, mirroring the wording the old `LibraryScreen` delete button used). On confirm,
+  the route wrapper's `onDeleteBook: () -> Unit` parameter is invoked, wired to the new
+  `BookDetailViewModel.deleteBook()` (see below) — a subsequent revision replaced an earlier
+  destination-scoped-`LibraryViewModel` workaround with this shared-module method once a
+  `Resource.Error` from deletion needed to surface to the screen (`BookDetailUiState.Ready.errorMessage`),
+  which the workaround had no path for. Deletion success is reflected reactively via
+  `BookDetailUiState.NotFound`, which the existing `LaunchedEffect`-driven auto-navigate-back
+  (Task4 Phase C) already handles, so no separate post-delete navigation logic was needed.
+- **`BookDetailViewModel.deleteBook()`** (`shared/.../ui/BookDetailViewModel.kt`): deletes the
+  book this screen was opened for via `BookRepository.deleteBook(bookId)`, mirroring
+  `deleteSession`'s pattern — fire-and-forget on `Resource.Success` (the resulting `NotFound`
+  state drives navigation as above), `Resource.Error` surfaced via
+  `BookDetailUiState.Ready.errorMessage` so a failed delete gives the user feedback instead of a
+  confirm tap that silently does nothing.
+- **Material 3 `TimePicker` for manual session entry** (Task4 Phase E,
+  `app/.../ui/screens/BookDetailScreen.kt` `ManualSessionDialog`): the end-time field is now an
+  `OutlinedButton` (label formatted via `android.text.format.DateFormat.getTimeFormat`, so it
+  renders in the device's locale and respects its 12h/24h display preference) that opens a
+  `TimePicker` hosted in a custom `AlertDialog` with OK/Cancel — this Material3 version has no
+  built-in `TimePickerDialog` wrapper analogous to `DatePickerDialog`. `is24Hour` on
+  `rememberTimePickerState` is likewise sourced from `android.text.format.DateFormat.is24HourFormat`.
+  Cancel restores the hour/minute selected before the picker was opened (mirroring the date
+  picker's existing cancel-restore behavior); OK keeps the in-dialog selection. `TimePickerState`
+  always exposes `hour` in 0-23 regardless of `is24Hour`, so the old hour/minute range validation
+  (and the `timeIsValid`/enabled-gating on it) is gone entirely — there is no invalid time state
+  to guard against anymore. `time_label`/`select_time_title` string resources added; no
+  hour/minute label string resources existed to remove (they were deliberately left as inline
+  labels, never extracted).
+- **Start-position autofill** (Task4 Phase E, `app/.../ui/screens/BookDetailScreen.kt`
+  `PendingSessionDialog` + `ManualSessionDialog`): both session-entry dialogs now prefill their
+  start-position field from `BookDetailUiState.Ready.currentProgress` (formatted via the existing
+  `formatUnit` helper, dropping a trailing `.0`; `null` progress — no session logged yet — leaves
+  the field empty as before), as a "resume where you left off" convenience. The user can still
+  freely edit or clear the field.
+- **`INTERNET` permission** declared explicitly in `AndroidManifest.xml` (Task4 Phase E): previously
+  relied entirely on Ktor's OkHttp engine (`ktor-client-okhttp`, via its `okhttp-android`
+  transitive dependency) merging the permission into the final manifest, so a future engine swap
+  away from OkHttp could have silently dropped network access with no manifest-level signal.
+
+### Changed
+
+- **`LibraryScreen`**: cards are now tappable to navigate to the book detail screen, via
+  `Modifier.clickable` on the card row. `LibraryScreenRoute` gains an
+  `onNavigateToBookDetail: (String) -> Unit` parameter threaded through to a new `onBookClick`
+  callback on the stateless `LibraryScreen`. The per-card delete `IconButton`, its confirmation
+  dialog, and the `onDeleteBook` callback have been removed from this screen entirely (Task4
+  Phase E) — deletion now lives on the Book Detail screen instead (see Added, above);
+  `LibraryViewModel.deleteBook` itself is unchanged and unmoved, just no longer wired into this
+  screen directly.
+
+### Fixed
+
+- **Field-level cover fallback** (Task4 Phase D, `shared/.../features/books/network/`
+  `FallbackBookMetadataProvider`): Open Library edition records can succeed with `covers: null`
+  (e.g. ISBN 9798217298976 / edition OL61570965M), and previously the secondary provider
+  (Google Books) was only ever consulted after a primary *failure*, so a coverless-but-otherwise-
+  valid primary success meant no cover was ever fetched. Now, a primary success with a null
+  `coverImageUrl` also probes the secondary as a cover-only lookup: a secondary success with a
+  cover is merged in (primary's `BookMetadata` `.copy()`'d with only `coverImageUrl` replaced —
+  every other field still wins from the primary); a secondary error or another coverless result
+  leaves the primary's result unchanged. A cover is a nice-to-have and this probe can never turn
+  a primary success into a failure. 4 new tests added to `FallbackBookMetadataProviderTest`
+  covering the merge, no-op, and secondary-error branches, alongside the existing (renamed)
+  primary-success-with-cover "secondary never called" case.
+- **Manual session entry backdating** (Task4 Phase D, `app/.../ui/screens/BookDetailScreen.kt`
+  `ManualSessionDialog`): the manual-entry dialog now has a session date field (Material 3
+  `DatePickerDialog`) and an end-time selection (initially two digit-filtered hour/minute text
+  fields, replaced by a Material 3 `TimePicker` in Phase E above), both defaulting to today/now so
+  the zero-extra-tap "I just finished reading" flow is unchanged, but a session can now be
+  backdated to a past date/time instead of always timestamping at the moment Save is pressed.
+  `onLogManualSession`/`ManualSessionDialog.onSave` gain a `timestampEnd: Instant` parameter
+  derived from the selection via the same `java.time`-based local-timezone conversion already
+  used for session-history date display; `timestampStart` is still `timestampEnd - duration`. No
+  shared-module or ViewModel changes were needed — `logManualSession` already accepted explicit
+  timestamps.
+
 ## [0.2.0] - 2026-08-01
 
 First usable UI milestone: the app is now interactive end-to-end — browse the library,
