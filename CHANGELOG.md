@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-01
+
+Reading tracking milestone: the dormant `ReadingSessions` table becomes a feature — live
+reading timer, session logging (timer-backed or manual with backdating), session history,
+and a full Book Detail screen. Also hardens the cover-fetch fallback chain and survives
+two external review rounds plus an internal multi-agent review.
+
 ### Added
 
 - **`ReadingTimer`** (`shared/.../features/books/timer/`, Task4 Phase A): coroutine/Flow-based
