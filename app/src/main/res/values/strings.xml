@@ -22,6 +22,7 @@
     <string name="discard_button">Discard</string>
     <string name="date_label">Date: %1$s</string>
     <string name="duration_minutes_label">Duration in minutes (optional)</string>
+    <string name="duration_minutes_invalid">Enter a valid duration, up to %1$d minutes</string>
     <string name="cancel_button">Cancel</string>
     <string name="ok_button">OK</string>
     <string name="session_duration_positions">Duration: %1$s  •  %2$s -> %3$s</string>

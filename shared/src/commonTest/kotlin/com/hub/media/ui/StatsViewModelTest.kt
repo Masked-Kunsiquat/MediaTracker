@@ -133,4 +133,30 @@ class StatsViewModelTest {
         assertEquals(null, populated.week.pagesRead)
         assertEquals(1, populated.currentStreakDays)
     }
+
+    @Test
+    fun uiState_sessionOutsideWeekBoundsButInsideMonth_excludedFromWeekIncludedInMonth() = runTest {
+        insertBook()
+        // Insert a session on June 10 (before the week starting June 17, but within June)
+        // now is June 19, 2024 (Wednesday); the ISO week runs Monday June 17 through Sunday June 23
+        val earlyMonthInstant = LocalDateTime(2024, 6, 10, 12, 0).toInstant(timeZone)
+        val weekSessionInstant = now
+
+        db.readingSessionDao().insert(
+            sampleReadingSession(mediaId = mediaId, timestampStart = earlyMonthInstant, durationSeconds = 200, deltaPages = 5),
+        )
+        db.readingSessionDao().insert(
+            sampleReadingSession(mediaId = mediaId, timestampStart = weekSessionInstant, durationSeconds = 300, deltaPages = 8),
+        )
+
+        val viewModel = newViewModel()
+        val populated = viewModel.uiState.first { !it.isLoading }
+
+        assertEquals(1, populated.week.sessionCount, "only the June 19 session is in this week")
+        assertEquals(300L, populated.week.timeReadSeconds)
+        assertEquals(8, populated.week.pagesRead)
+        assertEquals(2, populated.month.sessionCount, "both June 10 and June 19 sessions are in this month")
+        assertEquals(500L, populated.month.timeReadSeconds, "200 + 300")
+        assertEquals(13, populated.month.pagesRead, "5 + 8")
+    }
 }

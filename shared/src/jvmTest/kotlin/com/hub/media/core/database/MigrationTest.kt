@@ -102,7 +102,7 @@ class MigrationTest {
                 while (stmt.step()) {
                     val id = stmt.getText(0)
                     durations[id] = if (stmt.isNull(1)) null else stmt.getLong(1)
-                    assertEquals(if (id == "session-real") 10.0 else 10.0, stmt.getDouble(2), "startUnit for $id")
+                    assertEquals(10.0, stmt.getDouble(2), "startUnit for $id")
                     assertEquals(if (id == "session-real") 25.0 else 10.0, stmt.getDouble(3), "endUnit for $id")
                     assertEquals(if (id == "session-real") 15 else 0, stmt.getInt(4), "deltaPages for $id")
                 }

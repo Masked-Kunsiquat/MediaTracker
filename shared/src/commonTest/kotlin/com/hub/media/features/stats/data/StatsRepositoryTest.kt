@@ -274,6 +274,18 @@ class StatsRepositoryTest {
     }
 
     @Test
+    fun thisWeekBounds_sundayYieldsWeekStartingPrecedingMonday() {
+        // 2024-06-23 is a Sunday (day 7 of ISO week); the containing ISO week runs Monday
+        // 2024-06-17 through (exclusive) Monday 2024-06-24.
+        val sunday = LocalDateTime(2024, 6, 23, 15, 0).toInstant(TimeZone.UTC)
+
+        val (from, to) = StatsRepository.thisWeekBounds(TimeZone.UTC, fixedClock(sunday))
+
+        assertEquals(LocalDate(2024, 6, 17).atStartOfDayIn(TimeZone.UTC), from)
+        assertEquals(LocalDate(2024, 6, 24).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    @Test
     fun thisMonthBounds_spansFirstOfMonthThroughFirstOfNextMonth() {
         val juneDate = LocalDateTime(2024, 6, 19, 15, 0).toInstant(TimeZone.UTC)
 
@@ -281,5 +293,15 @@ class StatsRepositoryTest {
 
         assertEquals(LocalDate(2024, 6, 1).atStartOfDayIn(TimeZone.UTC), from)
         assertEquals(LocalDate(2024, 7, 1).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    @Test
+    fun thisMonthBounds_decemberYieldsUpperBoundInJanuaryOfFollowingYear() {
+        val decemberDate = LocalDateTime(2024, 12, 15, 15, 0).toInstant(TimeZone.UTC)
+
+        val (from, to) = StatsRepository.thisMonthBounds(TimeZone.UTC, fixedClock(decemberDate))
+
+        assertEquals(LocalDate(2024, 12, 1).atStartOfDayIn(TimeZone.UTC), from)
+        assertEquals(LocalDate(2025, 1, 1).atStartOfDayIn(TimeZone.UTC), to)
     }
 }

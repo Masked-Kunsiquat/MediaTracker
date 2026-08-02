@@ -67,7 +67,7 @@ class StatsDaoTest {
 
         val total = db.statsDao().observeTotalKnownDurationInRange(from, to).first()
 
-        assertEquals(800L, total, "null-duration session must contribute 0, not be excluded from other sums")
+        assertEquals(800L, total, "null-duration session is excluded from sum, not treated as 0")
     }
 
     @Test

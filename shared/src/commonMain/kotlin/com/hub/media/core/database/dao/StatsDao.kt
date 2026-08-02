@@ -74,8 +74,7 @@ interface StatsDao {
     fun observePagesReadInRange(from: Instant, to: Instant): Flow<Int?>
 
     /**
-     * Raw `timestampStart` values (one per session, in no particular order, duplicates and
-     * same-day repeats included) for every session whose `timestampStart` falls in `[from, to)`.
+     * Distinct `timestampStart` values for every session whose `timestampStart` falls in `[from, to)`.
      * Deliberately NOT bucketed into calendar days in SQL: SQLite has no timezone-aware date
      * function over an epoch-millis column, so grouping by "day" here would silently mean
      * whatever timezone SQLite's build defaults to (effectively UTC), not the user's actual
@@ -83,6 +82,6 @@ interface StatsDao {
      * an explicit, injected `TimeZone` instead — see
      * [com.hub.media.features.stats.data.StatsRepository.observeReadingStreak].
      */
-    @Query("SELECT timestampStart FROM reading_sessions WHERE timestampStart >= :from AND timestampStart < :to")
+    @Query("SELECT DISTINCT timestampStart FROM reading_sessions WHERE timestampStart >= :from AND timestampStart < :to")
     fun observeSessionStartTimestampsInRange(from: Instant, to: Instant): Flow<List<Instant>>
 }

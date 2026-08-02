@@ -725,6 +725,19 @@ private fun PendingSessionDialog(
  * The Save button's `enabled` condition therefore no longer requires the duration field to be
  * filled in -- only start/end position are required, same as [PendingSessionDialog].
  *
+ * ### Duration validation
+ * `durationText` is digit-filtered ([filterIntegerInput]) so it can never contain a sign or
+ * decimal point, but a long-enough digit string still overflows [String.toLongOrNull] (returns
+ * `null`) the same way a genuinely blank field does -- left unguarded, a mistyped 25-digit
+ * duration would silently save as "unknown" instead of being rejected. `durationIsValid`
+ * (computed once, above the fields, rather than inline at Save time) distinguishes that case from
+ * an intentional blank: blank is always valid (`null` duration), a non-blank value is only valid
+ * when it parses *and* is no larger than [MAX_MANUAL_DURATION_MINUTES]. That bound also protects
+ * the caller's `durationMinutes * 60` seconds conversion and `timestampEnd - durationMinutes.minutes`
+ * arithmetic in [BookDetailRoute] -- both saturate rather than throw on overflow, so an
+ * unreasonably large-but-parseable value would otherwise persist a nonsense `durationSeconds`
+ * rather than fail loudly.
+ *
  * Unlike [PendingSessionDialog], this dialog closes optimistically as soon as Save is tapped
  * rather than waiting on a success/failure signal. There is no shared-state flag analogous to
  * `pendingSession` for the manual path that this dialog could stay bound to, and the one
@@ -734,6 +747,16 @@ private fun PendingSessionDialog(
  * real failure in practice. The rare case of some other persistence failure is still surfaced via
  * `state.errorMessage` as a banner in [BookDetailContent] once this dialog has closed.
  */
+/**
+ * Practical upper bound for [ManualSessionDialog]'s duration field, in minutes: 10 years
+ * (`10 * 365 * 24 * 60`). A manually-backlogged single reading session in the tens of years is
+ * never legitimate, so this exists to catch fat-fingered/overflowing input (see the duration
+ * field's KDoc on [ManualSessionDialog]) -- it is not derived from `Long.MAX_VALUE / 60` (the
+ * true limit before `durationMinutes * 60` overflows), which is astronomically larger and would
+ * let obviously-bogus values like a 12-digit minute count through unrejected.
+ */
+private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualSessionDialog(
@@ -753,6 +776,16 @@ private fun ManualSessionDialog(
     var endUnitText by remember { mutableStateOf("") }
     var deltaPagesText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
+
+    // Parsed once, above the fields, rather than inline at Save time -- see the "Duration
+    // validation" section of this function's KDoc. `parsedDurationMinutes` is the raw parse
+    // (`null` for both "blank" and "unparseable/overflowed"); `durationIsValid` disambiguates
+    // those two `null` causes; `validatedDurationMinutes` is the only value that ever reaches
+    // [onSave], and only when `durationIsValid` (which also gates the Save button below).
+    val parsedDurationMinutes = durationText.toLongOrNull()
+    val durationIsValid = durationText.isBlank() ||
+        (parsedDurationMinutes != null && parsedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
+    val validatedDurationMinutes = if (durationText.isBlank()) null else parsedDurationMinutes
 
     val context = LocalContext.current
     val nowForDefaults = remember { java.time.LocalDateTime.now() }
@@ -819,6 +852,12 @@ private fun ManualSessionDialog(
                     label = { Text(stringResource(R.string.duration_minutes_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    isError = !durationIsValid,
+                    supportingText = if (!durationIsValid) {
+                        { Text(stringResource(R.string.duration_minutes_invalid, MAX_MANUAL_DURATION_MINUTES)) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -858,9 +897,11 @@ private fun ManualSessionDialog(
                 onClick = {
                     onSave(
                         // Blank duration => null ("unknown"), not 0 -- see class KDoc's
-                        // "Duration is optional" section. durationText is digit-filtered, so a
-                        // non-blank value always parses.
-                        durationText.toLongOrNull(),
+                        // "Duration is optional" section. validatedDurationMinutes is hoisted
+                        // above the fields and gated by durationIsValid (below), so an
+                        // unparseable/overflowing non-blank value can never reach here -- see the
+                        // "Duration validation" section of this function's KDoc.
+                        validatedDurationMinutes,
                         deriveTimestampEnd(
                             dateUtcMidnightMillis = datePickerState.selectedDateMillis
                                 ?: localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()),
@@ -873,7 +914,7 @@ private fun ManualSessionDialog(
                         notesText.ifBlank { null },
                     )
                 },
-                enabled = startUnitText.isNotBlank() && endUnitText.isNotBlank(),
+                enabled = startUnitText.isNotBlank() && endUnitText.isNotBlank() && durationIsValid,
             ) {
                 Text(stringResource(R.string.save_button))
             }
