@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -86,6 +87,8 @@ import kotlin.time.Instant
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param bookId The media id this screen was opened for; forwarded to [BookDetailViewModelFactory].
  * @param onNavigateBack Callback to navigate back (back button, or automatic on [BookDetailUiState.NotFound]).
+ * @param onNavigateToEditBook Callback to navigate to the edit-metadata screen (ROADMAP Task 6
+ *   Phase A), invoked from the TopAppBar edit icon (only shown for [BookDetailUiState.Ready]).
  */
 @Composable
 fun BookDetailScreenRoute(
@@ -93,6 +96,7 @@ fun BookDetailScreenRoute(
     coverStorageDir: String,
     bookId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToEditBook: () -> Unit,
 ) {
     val viewModel: BookDetailViewModel = viewModel(
         factory = BookDetailViewModelFactory(appContainer, bookId),
@@ -148,6 +152,7 @@ fun BookDetailScreenRoute(
             )
         },
         onDeleteSession = viewModel::deleteSession,
+        onEditBook = onNavigateToEditBook,
     )
 }
 
@@ -184,6 +189,8 @@ fun BookDetailScreenRoute(
  *   durationMinutes is `null` when the duration field was left blank (schema v2, ROADMAP Task 5
  *   pre-phase) -- duration is optional for manual entries.
  * @param onDeleteSession Called with a session id after its delete is confirmed.
+ * @param onEditBook Called when the TopAppBar edit icon is tapped (only shown for
+ *   [BookDetailUiState.Ready]), to navigate to the edit-metadata screen (ROADMAP Task 6 Phase A).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,6 +216,7 @@ fun BookDetailScreen(
         notes: String?,
     ) -> Unit,
     onDeleteSession: (String) -> Unit,
+    onEditBook: () -> Unit,
 ) {
     var showDeleteBookDialog by remember { mutableStateOf(false) }
 
@@ -232,6 +240,12 @@ fun BookDetailScreen(
                 },
                 actions = {
                     if (uiState is BookDetailUiState.Ready) {
+                        IconButton(onClick = onEditBook) {
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = stringResource(R.string.edit_book_content_description),
+                            )
+                        }
                         IconButton(onClick = { showDeleteBookDialog = true }) {
                             Icon(
                                 imageVector = Icons.Filled.Delete,
@@ -521,14 +535,6 @@ private fun BookHeader(
             }
         }
     }
-}
-
-/** Maps [BookFormat] to its human-readable display label (e.g. [BookFormat.PHYSICAL] -> "Physical"). */
-@Composable
-private fun BookFormat.displayLabel(): String = when (this) {
-    BookFormat.PHYSICAL -> stringResource(R.string.book_format_physical)
-    BookFormat.EBOOK -> stringResource(R.string.book_format_ebook)
-    BookFormat.AUDIOBOOK -> stringResource(R.string.book_format_audiobook)
 }
 
 /**
@@ -1089,8 +1095,11 @@ private fun formatProgress(currentProgress: Double?, totalPages: Int?): String? 
     }
 }
 
-/** Formats a [Double] position value, dropping a trailing `.0` for whole-number pages. */
-private fun formatUnit(value: Double): String =
+/**
+ * Formats a [Double] position value, dropping a trailing `.0` for whole-number pages. Also reused
+ * by `EditBookScreen` (same package, ROADMAP Task 6 Phase A) to prefill the purchase-price field.
+ */
+internal fun formatUnit(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
 /**
@@ -1160,8 +1169,11 @@ private fun deriveTimestampEnd(dateUtcMidnightMillis: Long, hour: Int, minute: I
     return Instant.fromEpochMilliseconds(zonedDateTime.toInstant().toEpochMilli())
 }
 
-/** Keeps only digits and at most one decimal point, e.g. for [Double] position input fields. */
-private fun String.filterDecimalInput(): String {
+/**
+ * Keeps only digits and at most one decimal point, e.g. for [Double] position input fields. Also
+ * reused by `EditBookScreen` (same package, ROADMAP Task 6 Phase A) for its purchase-price field.
+ */
+internal fun String.filterDecimalInput(): String {
     val builder = StringBuilder()
     var seenDot = false
     for (char in this) {
@@ -1176,8 +1188,12 @@ private fun String.filterDecimalInput(): String {
     return builder.toString()
 }
 
-/** Keeps only digits, e.g. for [Int]/[Long] input fields (duration minutes, pages read). */
-private fun String.filterIntegerInput(): String = filter { it.isDigit() }
+/**
+ * Keeps only digits, e.g. for [Int]/[Long] input fields (duration minutes, pages read). Also
+ * reused by `EditBookScreen` (same package, ROADMAP Task 6 Phase A) for its release-year and
+ * total-pages fields.
+ */
+internal fun String.filterIntegerInput(): String = filter { it.isDigit() }
 
 private val PREVIEW_BOOK = MediaItemEntity(
     id = "book-1",
@@ -1245,6 +1261,7 @@ private fun BookDetailScreenReadyPreview() {
             onDiscardPendingSession = {},
             onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
+            onEditBook = {},
         )
     }
 }
@@ -1278,6 +1295,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             onDiscardPendingSession = {},
             onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
+            onEditBook = {},
         )
     }
 }
@@ -1302,6 +1320,7 @@ private fun BookDetailScreenLoadingPreview() {
             onDiscardPendingSession = {},
             onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
+            onEditBook = {},
         )
     }
 }

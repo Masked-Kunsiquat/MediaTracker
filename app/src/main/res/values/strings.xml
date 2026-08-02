@@ -41,11 +41,26 @@
     <string name="book_format_physical">Physical</string>
     <string name="book_format_ebook">E-book</string>
     <string name="book_format_audiobook">Audiobook</string>
+    <string name="book_format_paperback">Paperback</string>
+    <string name="book_format_hardcover">Hardcover</string>
     <string name="delete_book_content_description">Delete book</string>
     <string name="delete_book_title">Delete book?</string>
     <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
     <string name="time_label">Time: %1$s</string>
     <string name="select_time_title">Select time</string>
+    <string name="edit_book_content_description">Edit book</string>
+
+    <!-- EditBookScreen -->
+    <string name="edit_book_title_bar">Edit book</string>
+    <string name="edit_title_label">Title</string>
+    <string name="edit_release_year_label">Release year (optional)</string>
+    <string name="edit_purchase_price_label">Purchase price (optional)</string>
+    <string name="edit_total_pages_label">Total pages (optional)</string>
+    <string name="edit_format_label">Format</string>
+    <string name="edit_title_required_error">Title is required</string>
+    <string name="edit_release_year_invalid_error">Enter a year between %1$d and %2$d</string>
+    <string name="edit_purchase_price_invalid_error">Enter a valid non-negative price</string>
+    <string name="edit_total_pages_invalid_error">Enter a positive page count</string>
 
     <!-- StatsScreen -->
     <string name="stats_title">Stats</string>

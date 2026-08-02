@@ -144,34 +144,119 @@ public class BookRepository(private val db: AppDatabase) {
     }
 
     /**
-     * Updates an existing book's metadata.
+     * Atomically corrects an existing book's metadata (ROADMAP Task 6 Phase A): title,
+     * releaseYear, and purchasePrice on [MediaItemEntity], plus totalPages and format on
+     * [BookDetailsEntity], updated together in [db.bookWriteDao]'s
+     * [com.hub.media.core.database.dao.BookWriteDao.updateBookMetadataAtomically] transaction
+     * rather than as two sequential awaits — a failure partway through (e.g. process death) can
+     * never leave the two tables individually correct but mutually inconsistent (e.g. a new title
+     * with a stale page count).
      *
-     * @param id The media ID to update.
+     * The motivating real-world case: provider (Open Library/Google Books) edition records
+     * regularly get physical details wrong — e.g. Open Library reporting 384 pages for an edition
+     * that physically has 366 — with no user-facing correction path until now. [isbn] is
+     * deliberately NOT a parameter: it is an identity/lookup key tying this row to its external
+     * provider record, not user-facing descriptive metadata, so it stays out of this edit surface
+     * entirely (ROADMAP Task 6 Phase A scope).
+     *
+     * ### Validation (checked before any DB access; a violation never touches the database)
+     * - [title] must not be blank.
+     * - [purchasePrice], if non-null, must be `>= 0`.
+     * - [totalPages], if non-null, must be `> 0` (`null` means "page count unknown," which is
+     *   valid; `0` or negative is never a valid page count for a real book).
+     * - [releaseYear], if non-null, must fall within [MIN_RELEASE_YEAR]..[MAX_RELEASE_YEAR].
+     *
+     * ### No existing [BookDetailsEntity] row (data-integrity edge case)
+     * [observeBookDetail]'s KDoc documents that [BookWithDetails.details] can independently be
+     * null even though [addBook] always inserts both rows atomically (a hand-rolled or corrupted
+     * row could still produce this). If [mediaId] resolves to a [MediaItemEntity] but has no
+     * [BookDetailsEntity] row, this method self-heals: it still updates [MediaItemEntity] as
+     * normal, and INSERTs a fresh [BookDetailsEntity] with the given [format]/[totalPages] and a
+     * `null` [BookDetailsEntity.isbn] (there is nothing to recover the original ISBN from) rather
+     * than silently discarding the format/totalPages input or failing the whole update outright —
+     * title/releaseYear/purchasePrice are meaningful and updatable on [MediaItemEntity] alone, and
+     * creating the missing row is strictly better than leaving the inconsistency in place.
+     *
+     * @param mediaId The media id to update.
      * @param title New title.
-     * @param releaseYear New release year.
-     * @param purchasePrice New purchase price.
-     * @return [Resource.Success] if updated, or [Resource.Error] on failure.
+     * @param releaseYear New release year, or null to clear it.
+     * @param purchasePrice New purchase price, or null to clear it.
+     * @param totalPages New page count, or null for "unknown."
+     * @param format New [BookFormat].
+     * @return [Resource.Success] if updated, or [Resource.Error] if [mediaId] does not exist or a
+     *   validation rule above is violated (never throws).
      */
-    public suspend fun updateBook(
-        id: String,
+    public suspend fun updateBookMetadata(
+        mediaId: String,
         title: String,
         releaseYear: Int? = null,
         purchasePrice: Double? = null,
-    ): Resource<Unit> = try {
-        val existing = db.mediaItemDao().getById(id)
-            ?: return Resource.Error("Book with id=$id not found")
+        totalPages: Int? = null,
+        format: BookFormat,
+    ): Resource<Unit> {
+        if (title.isBlank()) {
+            return Resource.Error("Title must not be blank")
+        }
+        if (purchasePrice != null && purchasePrice < 0.0) {
+            return Resource.Error("Purchase price must not be negative")
+        }
+        if (totalPages != null && totalPages <= 0) {
+            return Resource.Error("Total pages must be a positive number")
+        }
+        if (releaseYear != null && releaseYear !in MIN_RELEASE_YEAR..MAX_RELEASE_YEAR) {
+            return Resource.Error(
+                "Release year must be between $MIN_RELEASE_YEAR and $MAX_RELEASE_YEAR",
+            )
+        }
 
-        val updated = existing.copy(
-            title = title,
-            releaseYear = releaseYear,
-            purchasePrice = purchasePrice,
-        )
-        db.mediaItemDao().update(updated)
-        Resource.Success(Unit)
-    } catch (e: Exception) {
-        Resource.Error(
-            message = "Failed to update book: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
+        return try {
+            val existingMediaItem = db.mediaItemDao().getById(mediaId)
+                ?: return Resource.Error("Book with id=$mediaId not found")
+            val existingDetails = db.bookDetailsDao().getByMediaId(mediaId)
+
+            val updatedMediaItem = existingMediaItem.copy(
+                title = title,
+                releaseYear = releaseYear,
+                purchasePrice = purchasePrice,
+            )
+            val updatedDetails = (
+                existingDetails ?: BookDetailsEntity(
+                    mediaId = mediaId,
+                    isbn = null,
+                    format = format,
+                    totalPages = totalPages,
+                )
+                ).copy(format = format, totalPages = totalPages)
+
+            db.bookWriteDao().updateBookMetadataAtomically(
+                mediaItem = updatedMediaItem,
+                bookDetails = updatedDetails,
+                hasExistingBookDetails = existingDetails != null,
+            )
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(
+                message = "Failed to update book metadata: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
+    }
+
+    public companion object {
+        /**
+         * Lower bound for [updateBookMetadata]'s [BookRepository.updateBookMetadata] `releaseYear`
+         * validation: the Gutenberg Bible (~1455) is the conventional start of the printed-book
+         * era, so nothing this app tracks should legitimately predate it by much; chosen as a
+         * round, generous floor rather than a precise historical cutoff.
+         */
+        public const val MIN_RELEASE_YEAR: Int = 1450
+
+        /**
+         * Upper bound for `releaseYear` validation: a static far-future year (rather than deriving
+         * "current year + N" from a [kotlin.time.Clock]) so the bound is deterministic for tests
+         * and callers alike, while still comfortably covering forthcoming/pre-order release years
+         * for decades without needing to be revisited.
+         */
+        public const val MAX_RELEASE_YEAR: Int = 2100
     }
 }

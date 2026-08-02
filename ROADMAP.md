@@ -44,7 +44,7 @@ v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no 
 correct them, redundant form fields, no session editing, no reading status) to justify
 going wide. Movies & TV move to Task 7.
 
-- **Phase A — Edit book metadata.** User-facing correction flow for title, release year,
+- **Phase A — Edit book metadata (done).** User-facing correction flow for title, release year,
   purchase price (in the schema since v1 but never displayed or editable anywhere), total
   pages, and format. Provider edition records carry wrong values — e.g. Open Library reports
   384 pages for an edition that's physically 366. Includes expanding `BookFormat` with
@@ -108,3 +108,12 @@ going wide. Movies & TV move to Task 7.
 - Orphaned cover files: deleting a book leaves its content-addressed cover on disk
   (dedup means the file may be shared by other books, so deletion needs a reference check
   or a periodic sweep).
+- Selectable/copyable text: no text in the app is currently selectable or copyable. Wants
+  tap-to-copy on the ISBN (the identifier users re-use elsewhere) and a `SelectionContainer`
+  around the Book Detail metadata block so titles/notes/etc. can be long-press selected. On
+  Android 13+ (API 33+) the system shows its own "copied" confirmation, so an in-app
+  toast/snackbar must be suppressed there to avoid a doubled message (minSdk is 28, so both
+  paths matter); the Compose clipboard API has shifted from `LocalClipboardManager` to
+  `LocalClipboard`/`ClipEntry`, so use whichever is current in the project's Compose BOM;
+  `SelectionContainer` must be applied narrowly, since long-press selection conflicts with
+  the clickable library cards and session rows (`DisableSelection` carves out exceptions).

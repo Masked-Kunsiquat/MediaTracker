@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Edit book metadata** (ROADMAP Task 6 Phase A) — a user-facing correction flow for provider
+  metadata that's wrong in a specific edition (the motivating real case: Open Library reports 384
+  pages for an edition that physically has 366):
+  - `BookFormat` gains `PAPERBACK` and `HARDCOVER` (`shared/.../core/database/entities/BookFormat.kt`).
+    `format` is a `TEXT` column and Room's exported schema records only column type/nullability,
+    never an enum's set of allowed values, so this required **no schema version bump and no
+    migration** — verified by building and confirming `git status --porcelain shared/schemas/` is
+    empty. `Converters.bookFormatToName`/`nameToBookFormat` persist by `name` already, so the new
+    constants round-trip with no code change there. `PHYSICAL` stays the generic/legacy value —
+    ISBN metadata rarely distinguishes binding, so ingestion keeps defaulting to it; existing rows
+    and new per-book corrections upgrade to `PAPERBACK`/`HARDCOVER` only via this edit flow.
+  - `BookRepository.updateBookMetadata` (`shared/.../features/books/data/BookRepository.kt`):
+    atomically updates `media_items` (title/releaseYear/purchasePrice) and `book_details`
+    (totalPages/format) in ONE transaction via a new `BookWriteDao.updateBookMetadataAtomically`
+    (`@Transaction` default-body method, same pattern as `insertBookAtomically`), rather than two
+    sequential awaits. Takes field parameters (not a whole-entity overload) since the two entities
+    being merged come from different concerns (universal vs. book-specific); ISBN is intentionally
+    NOT a parameter — it's an identity/lookup key, out of scope for this edit surface. Validates:
+    blank title rejected; negative purchasePrice rejected; totalPages must be `> 0` when non-null
+    (`null` = unknown, valid); releaseYear must fall within new `BookRepository.MIN_RELEASE_YEAR`
+    (1450, the Gutenberg-era floor) .. `MAX_RELEASE_YEAR` (2100, a static far-future ceiling chosen
+    over a `Clock`-derived "current year + N" so the bound stays deterministic for tests). A book
+    with no `BookDetailsEntity` row (the data-integrity edge case documented on
+    `observeBookDetail`) self-heals: the `MediaItemEntity` update still applies, and a fresh
+    `BookDetailsEntity` is INSERTed with the given format/totalPages and a null isbn, rather than
+    silently discarding the input or failing the whole update. 13 new `BookRepositoryTest` cases
+    cover the happy path (both tables updated, `observeBookDetail` emits the new values), a null
+    `totalPages` update, each validation rejection (persisting nothing), the unknown-id error, and
+    the no-existing-`BookDetails`-row self-heal; a forced-mid-transaction-failure test analogous to
+    `addBook`'s rollback test wasn't constructible (documented inline) since the two writes share
+    no independently-triggerable constraint — atomicity is structural, via the same `@Transaction`
+    mechanism `insertBookAtomically` already uses.
+  - `EditBookViewModel` + `EditBookUiState` (`shared/.../ui/`): a dedicated ViewModel rather than
+    extending `BookDetailViewModel`, since `Route.EditBook` is a separate Compose Navigation
+    destination with its own `ViewModelStoreOwner` — sharing one `BookDetailViewModel` (with its
+    live `ReadingTimer`) across two destinations would need nav-graph-scoped ViewModel wiring this
+    project doesn't otherwise use. `uiState` combines `BookRepository.observeBookDetail` with
+    in-memory local state (`errorMessage`/`isSaving`/`saved`) into
+    `Loading`/`NotFound`/`Ready`/`Saved`, matching `BookDetailViewModel`'s combine-based shape;
+    `save(...)` calls `updateBookMetadata`, has a `saveInFlight` double-tap guard mirroring
+    `saveSession`'s, and settles `uiState` into `Saved` for good once a save succeeds (checked
+    first in the `combine` lambda, so a later unrelated DB re-emission can't flip it back to
+    `Ready`). 9 new `EditBookViewModelTest` cases (Room-backed, excluded from the android
+    unit-test variant by exact class name in `shared/build.gradle.kts` alongside
+    `BookDetailViewModelTest`/`StatsViewModelTest`).
+  - **Edit Book screen** (`app/.../ui/screens/EditBookScreen.kt`): a full screen (five fields plus
+    a format picker), not a dialog. Prefilled from the book's current title/release
+    year/purchase price/total pages/format; a radio-button group covers all five `BookFormat`
+    values via the (now shared, `BookFormatDisplay.kt`) `displayLabel()` extension, exhaustive over
+    the enum so a future format addition is a compile error here until a label is added. Each
+    optional numeric field is parsed once, above the fields (the same fix `ManualSessionDialog`'s
+    duration field already has): blank, unparseable, and out-of-range are kept distinct rather than
+    collapsing to a silent `null`, and only the validated value ever reaches `onSave`. Release-year
+    bounds are read from `BookRepository.MIN_RELEASE_YEAR`/`MAX_RELEASE_YEAR` rather than a second
+    hardcoded copy. Save is disabled while any field is invalid or a save is in flight; a failed
+    save surfaces `errorMessage` inline and stays on the form; a successful save navigates back via
+    the route wrapper's `LaunchedEffect` on `EditBookUiState.Saved`. Reachable from a new `Edit`
+    icon (`Icons.Filled.Edit` — present in `material-icons-core`'s curated set, unlike the missing
+    chart glyph noted in v0.4.0) in `BookDetailScreen`'s TopAppBar actions, next to the existing
+    delete icon. **Navigation**: `Route.EditBook` (`edit_book/{bookId}`), mirroring
+    `Route.BookDetail`'s own-`PATH`-constant pattern as a separate destination; wired into
+    `AppNavigation`'s `NavHost` with a `navArgument`-typed `bookId`, and a new
+    `EditBookViewModelFactory` (per-navigation-argument, like `BookDetailViewModelFactory`).
+    Previews cover Ready (prefilled), an inline error message, and Loading.
+
 ## [0.4.0] - 2026-08-01
 
 Stats milestone, plus the project's first Room schema migration. Schema v2 makes manual

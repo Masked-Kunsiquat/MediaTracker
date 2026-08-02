@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailViewModel
+import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.StatsViewModel
 
@@ -60,6 +61,30 @@ class BookDetailViewModelFactory(
                     bookRepository = appContainer.bookRepository,
                     readingSessionRepository = appContainer.readingSessionRepository,
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,
+                ) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [EditBookViewModel] with its [bookId] and
+ * [com.hub.media.features.books.data.BookRepository] dependency from the [AppContainer]
+ * (ROADMAP Task 6 Phase A). Per-navigation-argument like [BookDetailViewModelFactory]: constructed
+ * fresh in the route wrapper for each `Route.EditBook` navigation rather than reused.
+ */
+class EditBookViewModelFactory(
+    private val appContainer: AppContainer,
+    private val bookId: String,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(EditBookViewModel::class.java) -> {
+                EditBookViewModel(
+                    bookId = bookId,
+                    bookRepository = appContainer.bookRepository,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")

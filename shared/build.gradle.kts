@@ -93,8 +93,8 @@ dependencies {
 // StatsRepositoryTest (ROADMAP Task 5) is likewise Room-backed and excluded by package
 // (com.hub.media.features.stats.*, mirroring com.hub.media.features.books.data.*); StatsDaoTest
 // lives under com.hub.media.core.database and is already covered by that package's exclusion.
-// StatsViewModelTest is excluded by exact class name for the same reason as
-// LibraryViewModelTest/BookDetailViewModelTest above.
+// StatsViewModelTest and EditBookViewModelTest (ROADMAP Task 6 Phase A) are excluded by exact
+// class name for the same reason as LibraryViewModelTest/BookDetailViewModelTest above.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
@@ -105,6 +105,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
             isFailOnNoMatchingTests = false
         }
     }
