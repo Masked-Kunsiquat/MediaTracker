@@ -29,13 +29,16 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
      * Logs a new reading session with validation per AGENTS.md §7.
      * Validates that:
      * - [timestampEnd] >= [timestampStart] (non-negative duration)
-     * - [durationSeconds] >= 0
+     * - [durationSeconds] >= 0, when non-null
      * - Edge cases: 0-page deltas and 0-second sessions are allowed (valid edge cases)
      *
      * @param mediaId The ID of the book being read.
      * @param timestampStart When the session started.
      * @param timestampEnd When the session ended.
-     * @param durationSeconds Elapsed time in seconds.
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2, ROADMAP
+     *   Task 5 pre-phase — see [com.hub.media.core.database.entities.ReadingSessionEntity]'s
+     *   KDoc). A timer-backed session always has a real value here; only a manual entry may pass
+     *   `null`. `null` skips the `>= 0` check entirely (there is nothing to validate).
      * @param startUnit Start position (page or percentage).
      * @param endUnit End position (page or percentage).
      * @param deltaPages Optional change in pages (can be null for ebook/percentage-based tracking).
@@ -46,7 +49,7 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
         mediaId: String,
         timestampStart: Instant,
         timestampEnd: Instant,
-        durationSeconds: Long,
+        durationSeconds: Long?,
         startUnit: Double,
         endUnit: Double,
         deltaPages: Int? = null,
@@ -57,8 +60,8 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
             return Resource.Error("timestampEnd must be >= timestampStart")
         }
 
-        // Validation: durationSeconds must be >= 0
-        if (durationSeconds < 0) {
+        // Validation: durationSeconds must be >= 0 when known; null (unknown) always passes.
+        if (durationSeconds != null && durationSeconds < 0) {
             return Resource.Error("durationSeconds must be >= 0")
         }
 

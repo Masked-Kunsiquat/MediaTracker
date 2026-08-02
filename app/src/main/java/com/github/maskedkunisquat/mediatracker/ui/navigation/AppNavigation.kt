@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.hub.media.ui.AppContainer
 
 /**
@@ -18,6 +19,7 @@ import com.hub.media.ui.AppContainer
  * - [Route.Library]: The library screen (start destination).
  * - [Route.AddBook]: The add-book-by-ISBN screen.
  * - [Route.BookDetail]: The book detail screen, parameterized by [Route.BookDetail.ARG_BOOK_ID].
+ * - [Route.Stats]: The stats screen (ROADMAP Task 5 Phase C).
  *
  * @param navController The navigation controller managing back stack and route transitions.
  * @param appContainer The dependency container for creating ViewModels.
@@ -42,6 +44,9 @@ fun AppNavigation(
                 },
                 onNavigateToBookDetail = { bookId ->
                     navController.navigate(Route.BookDetail.createRoute(bookId))
+                },
+                onNavigateToStats = {
+                    navController.navigate(Route.Stats.route)
                 },
             )
         }
@@ -74,6 +79,15 @@ fun AppNavigation(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
                 bookId = bookId,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+            )
+        }
+
+        composable(Route.Stats.route) {
+            StatsScreenRoute(
+                appContainer = appContainer,
                 onNavigateBack = {
                     navController.navigateUp()
                 },

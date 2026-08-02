@@ -78,12 +78,17 @@ public class LogReadingSessionUseCase(
      * Logs a session from explicit bounds rather than a [ReadingTimerResult], e.g. a manual
      * session-entry form. See the [timerResult] overload and class KDoc for the full validation
      * contract.
+     *
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2, ROADMAP
+     *   Task 5 pre-phase) — e.g. a backlogged manual entry the user doesn't want to invent a
+     *   duration for. Forwarded as-is to [ReadingSessionRepository.logSession], which only
+     *   validates `>= 0` when non-null.
      */
     public suspend fun execute(
         mediaId: String,
         timestampStart: Instant,
         timestampEnd: Instant,
-        durationSeconds: Long,
+        durationSeconds: Long?,
         startUnit: Double,
         endUnit: Double,
         deltaPages: Int? = null,

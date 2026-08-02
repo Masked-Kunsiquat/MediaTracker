@@ -21,10 +21,12 @@
     <string name="save_button">Save</string>
     <string name="discard_button">Discard</string>
     <string name="date_label">Date: %1$s</string>
-    <string name="duration_minutes_label">Duration (minutes)</string>
+    <string name="duration_minutes_label">Duration in minutes (optional)</string>
+    <string name="duration_minutes_invalid">Enter a valid duration, up to %1$d minutes</string>
     <string name="cancel_button">Cancel</string>
     <string name="ok_button">OK</string>
     <string name="session_duration_positions">Duration: %1$s  •  %2$s -> %3$s</string>
+    <string name="session_positions">%1$s -> %2$s</string>
     <string name="pages_read_count">Pages read: %1$d</string>
     <string name="delete_session_title">Delete session?</string>
     <string name="delete_session_body">Are you sure you want to delete this reading session? This cannot be undone.</string>
@@ -44,4 +46,19 @@
     <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
     <string name="time_label">Time: %1$s</string>
     <string name="select_time_title">Select time</string>
+
+    <!-- StatsScreen -->
+    <string name="stats_title">Stats</string>
+    <string name="stats_content_description">View stats</string>
+    <string name="stats_this_week_title">This week</string>
+    <string name="stats_this_month_title">This month</string>
+    <string name="stats_time_read_label">Time read: %1$s</string>
+    <string name="stats_sessions_label">Sessions: %1$d</string>
+    <string name="stats_pages_read_label">Pages read: %1$s</string>
+    <string name="stats_unknown_value">—</string>
+    <string name="stats_no_streak">No current streak</string>
+    <plurals name="stats_streak_days">
+        <item quantity="one">%1$d day streak</item>
+        <item quantity="other">%1$d day streak</item>
+    </plurals>
 </resources>

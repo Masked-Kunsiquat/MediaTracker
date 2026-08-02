@@ -453,6 +453,32 @@ class BookDetailViewModelTest {
     }
 
     @Test
+    fun logManualSession_nullDuration_persistsSessionWithNullDuration() = runTest {
+        // Schema v2 (ROADMAP Task 5 pre-phase): a backlogged manual entry may omit duration
+        // entirely; it must persist as null (unknown), never coerced to 0 (see
+        // ReadingSessionEntity's KDoc on why 0 and null must stay distinct).
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        viewModel.logManualSession(
+            timestampStart = start,
+            timestampEnd = start,
+            durationSeconds = null,
+            startUnit = 20.0,
+            endUnit = 20.0,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+                as BookDetailUiState.Ready
+
+        assertEquals(1, ready.sessions.size)
+        assertNull(ready.sessions.first().durationSeconds)
+    }
+
+    @Test
     fun deleteSession_removesItFromHistory() = runTest {
         insertBook()
         val viewModel = newViewModel()

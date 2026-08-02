@@ -10,9 +10,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -20,11 +24,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -45,6 +51,8 @@ import kotlin.time.ExperimentalTime
  * @param onNavigateToAddBook Callback to navigate to the add-book screen.
  * @param onNavigateToBookDetail Callback invoked with a book's id when its card is tapped, to
  *   navigate to the book detail screen (Task4 Phase C).
+ * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C),
+ *   wired to the TopAppBar's stats icon.
  */
 @Composable
 fun LibraryScreenRoute(
@@ -52,6 +60,7 @@ fun LibraryScreenRoute(
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
     onNavigateToBookDetail: (String) -> Unit,
+    onNavigateToStats: () -> Unit,
 ) {
     val viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModelFactory(appContainer),
@@ -63,6 +72,7 @@ fun LibraryScreenRoute(
         coverStorageDir = coverStorageDir,
         onNavigateToAddBook = onNavigateToAddBook,
         onBookClick = onNavigateToBookDetail,
+        onNavigateToStats = onNavigateToStats,
     )
 }
 
@@ -80,6 +90,8 @@ fun LibraryScreenRoute(
  * @param onNavigateToAddBook Called when the FAB is pressed.
  * @param onBookClick Called with the book ID when a card is tapped, to open the book detail
  *   screen.
+ * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped, to open the stats
+ *   screen (ROADMAP Task 5 Phase C).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,10 +100,21 @@ fun LibraryScreen(
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
     onBookClick: (String) -> Unit,
+    onNavigateToStats: () -> Unit,
 ) {
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(title = { Text("Library") })
+            CenterAlignedTopAppBar(
+                title = { Text("Library") },
+                actions = {
+                    IconButton(onClick = onNavigateToStats) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = stringResource(R.string.stats_content_description),
+                        )
+                    }
+                },
+            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onNavigateToAddBook) {
@@ -239,6 +262,7 @@ private fun LibraryScreenPreview() {
             coverStorageDir = "/fake/path",
             onNavigateToAddBook = {},
             onBookClick = {},
+            onNavigateToStats = {},
         )
     }
 }

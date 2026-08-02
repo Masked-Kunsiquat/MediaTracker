@@ -88,6 +88,29 @@ class ReadingSessionRepositoryTest {
     }
 
     @Test
+    fun logSession_nullDuration_persistsWithNullDuration() = runTest {
+        // Schema v2 (ROADMAP Task 5 pre-phase): null durationSeconds means "unknown", distinct
+        // from a legitimate 0-second session (see logSession_zeroSeconds_succeeds above and
+        // ReadingSessionEntity's KDoc). A backlogged manual entry is the motivating case.
+        val now = Clock.System.now()
+
+        val result = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = now,
+            timestampEnd = now,
+            durationSeconds = null,
+            startUnit = 10.0,
+            endUnit = 15.0,
+            deltaPages = 5,
+        )
+
+        assertIs<Resource.Success<String>>(result)
+        val session = db.readingSessionDao().getById(result.data)
+        assertTrue(session != null)
+        assertTrue(session.durationSeconds == null, "null duration must be persisted as null, not coerced to 0")
+    }
+
+    @Test
     fun logSession_negativePages_succeeds() = runTest {
         // Per AGENTS.md §7: edge cases are allowed (0-page and negative progress are valid)
         val now = Clock.System.now()

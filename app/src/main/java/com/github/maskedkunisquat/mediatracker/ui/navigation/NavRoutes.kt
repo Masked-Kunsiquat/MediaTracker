@@ -42,4 +42,12 @@ sealed interface Route {
         /** Builds a concrete, navigable route string for a specific [bookId]. */
         fun createRoute(bookId: String): String = "$PATH/$bookId"
     }
+
+    /**
+     * Stats screen: aggregate reading stats for this week/month plus the current streak
+     * (ROADMAP Task 5 Phase C).
+     */
+    data object Stats : Route {
+        override val route: String = "stats"
+    }
 }

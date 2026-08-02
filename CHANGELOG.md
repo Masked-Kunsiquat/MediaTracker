@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Stats layer (ROADMAP Task 5 Phase B)** — reactive reading-statistics queries and shared
+  `StatsRepository`/`StatsViewModel`, laid down in `shared/` ahead of the stats screen itself
+  (Phase C):
+  - `StatsDao` (`shared/.../core/database/dao/StatsDao.kt`), registered on `AppDatabase` with no
+    schema/version change (a new DAO does not alter the exported schema, which is derived solely
+    from `@Entity` tables — confirmed via `git status` on `shared/schemas/` after building).
+    Provides four `Flow`-based aggregate queries over `reading_sessions`, all bucketed by a
+    session's `timestampStart` over a half-open `[from, to)` range (a session starting exactly at
+    `to` is excluded, at `from` is included): total known duration (`SUM` over non-null
+    `durationSeconds`), total session count (all sessions, null-duration included), total pages
+    read (`SUM` over non-null `deltaPages`), and raw `timestampStart` values for streak
+    computation. SQLite's `SUM()` over zero/all-null matches returns `NULL`, surfaced faithfully
+    as `Long?`/`Int?` rather than coerced to `0` — see the DAO's KDoc for the full null-vs-`0`
+    rationale.
+  - `StatsRepository` (`shared/.../features/stats/data/`) wraps the DAO with the ROADMAP Task 5
+    domain semantics: time-read and pages-read totals sum only *known* values (a null
+    `durationSeconds`/`deltaPages` contributes nothing to its respective total but still counts
+    toward the session count — the entire point of schema v2), and page totals are always summed
+    per-session, never inferred from position continuity between sessions ("no gap
+    reconciliation"). Adds `observeReadingStreak(timeZone, clock)`: the current consecutive-day
+    reading streak, day-bucketed in Kotlin via kotlinx-datetime with an explicitly injected
+    `TimeZone` (never SQL/UTC-default — SQLite has no timezone-aware date function), counting
+    backward from today; a streak that ran through yesterday survives a today-with-no-session-yet,
+    but any other gap day stops the count. `timeZone`/`clock` are both injected parameters
+    (defaulting to the real system zone/`Clock.System`) so the day-math is deterministic under
+    test. Also adds `thisWeekBounds`/`thisMonthBounds` helpers computing `[from, to)` `Instant`
+    bounds for the current ISO week (Monday start) and calendar month in an injected timezone.
+  - `StatsUiState`/`StatsViewModel` (`shared/.../ui/`): a single `StateFlow` (via
+    `stateIn`/`WhileSubscribed`, matching `LibraryViewModel`/`BookDetailViewModel`) combining
+    week/month time-read, session-count, and pages-read totals (grouped into a reused
+    `StatsUiState.Period`) with the current streak. Period bounds are computed once at
+    construction, not re-derived as real time crosses midnight/week/month boundaries while a
+    `StatsViewModel` instance stays alive — an accepted simplification documented on the class,
+    matching the assumption that the stats screen gets a fresh ViewModel per visit.
+  - `AppContainer` now exposes `statsRepository`, wired the same way as `bookRepository`/
+    `readingSessionRepository`; the ViewModel factory wiring for the stats screen itself is
+    deferred to Phase C.
+  - Tests: `StatsDaoTest` (10, direct SQL semantics), `StatsRepositoryTest` (15, including
+    deterministic fixed-`Clock`/`TimeZone` streak cases — a 3-day streak, a gap breaking it,
+    today-without-a-session preserving yesterday's streak, zero sessions, a single today-only
+    session, and a timezone edge case proving late-evening sessions are bucketed by local calendar
+    date rather than UTC), and `StatsViewModelTest` (4, Loading → populated, reacting to a new
+    session insert, and null-duration non-contribution to time). The Room-backed classes
+    (`StatsRepositoryTest`, `StatsViewModelTest`) are excluded from the android unit-test variant
+    in `shared/build.gradle.kts` (package/exact-class-name filters), mirroring the existing books
+    DAO/repository/ViewModel test exclusions — `:shared:jvmTest` remains the authoritative gate.
+- **Stats screen** (ROADMAP Task 5 Phase C, `app/.../ui/screens/StatsScreen.kt`): a new screen
+  showing "This week"/"This month" cards (time read, session count, pages read) plus a current
+  reading streak card. Route-level `StatsScreenRoute` wires `StatsViewModel` (via the new
+  `StatsViewModelFactory`, `ui/ViewModelFactories.kt`) to the stateless `StatsScreen`, following
+  the same route-wrapper/stateless-screen split as `LibraryScreen`/`BookDetailScreen`.
+  `StatsUiState.isLoading` renders a centered `CircularProgressIndicator`; otherwise, each period's
+  `timeReadSeconds`/`pagesRead` render the real value when known, or the `stats_unknown_value`
+  ("—") marker string when `null` — a `null` sum means no session in the period has a known value
+  at all (schema v2), which must stay visually distinct from a legitimate `0` (e.g. a session
+  logged with 0 pages read); `sessionCount` is always a real, non-negative count and is never
+  shown with the unknown marker, including when it is legitimately `0`. Time read is formatted
+  `H:MM` (hours unpadded, minutes zero-padded) — no seconds, unlike the book detail timer's
+  `H:MM:SS`, since this is an aggregate total rather than a live-ticking display. The streak card
+  uses a new `stats_streak_days` `<plurals>` resource (`one`/`other`, both rendering "N day
+  streak" — "day" stays a singular noun-adjunct regardless of count, e.g. "a 5-day streak", not "a
+  5-days streak") for a positive streak, or `stats_no_streak` ("No current streak") when the streak
+  is `0`. Previews cover Loading, a populated week/month/streak, and an all-null/zero/empty state.
+  **Navigation**: new `Route.Stats` ("stats"), wired into `AppNavigation`'s `NavHost` with a
+  `navigateUp()` back callback; entry point is a new `IconButton` (`Icons.Filled.Info` —
+  `material-icons-core`'s curated ~49-icon set has no chart/analytics/bar-graph icon, so `Info` is
+  the closest available fit) in `LibraryScreen`'s TopAppBar actions slot, wired through a new
+  `onNavigateToStats: () -> Unit` parameter threaded through `LibraryScreenRoute` per AGENTS.md §5
+  state hoisting.
+
+### Changed
+
+- **Room schema v2 — optional reading-session duration** (ROADMAP Task 5 pre-phase,
+  `shared/.../core/database/`): `ReadingSessionEntity.durationSeconds` is now `Long?` (`null` =
+  duration unknown) instead of non-nullable `Long`. Storing `0` for "unknown" would have
+  collided with the legitimate 0-second-session edge case and silently corrupted future
+  time-read stats, so `AppDatabase`'s Room version bumps `1 -> 2` (schema v1 was frozen as of
+  `v0.1.0` per AGENTS.md §8) with a hand-written `MIGRATION_1_2` (`Migrations.kt`, commonMain):
+  the standard SQLite table-rebuild (create `reading_sessions_new` with the v2 shape verified
+  against the Room-exported `shared/schemas/.../2.json`, copy every row across, drop the old
+  table, rename, re-create the `mediaId` index). No existing rows are lost — every v1 row already
+  had a real duration, so the migration only relaxes the constraint going forward. Wired into both
+  platform `DatabaseFactory` actuals via the single shared `buildAppDatabase` function. Validated
+  by `MigrationTest` (`shared/src/jvmTest/.../core/database/`, 3 tests) using Room KMP's
+  `androidx.room.testing.MigrationTestHelper` against the real exported schemas — no fallback to
+  hand-rolled raw-SQL setup was needed, since `room-testing`'s JVM artifact works directly on
+  `:shared:jvmTest` with a plain file path and `SQLiteDriver` (no Android instrumentation
+  required). Tests cover: both a real-duration row and a legitimate 0-duration row surviving the
+  migration with values intact, the rebuilt table genuinely accepting a `NULL` insert (which the
+  v1 `NOT NULL` column would have rejected), and the `mediaId` index surviving the rebuild.
+  `androidx.room:room-testing` (test-only, androidx toolchain) added to the version catalog and
+  `shared`'s `jvmTest` dependencies.
+- **Manual reading-session duration is now optional** (`app/.../ui/screens/BookDetailScreen.kt`
+  `ManualSessionDialog`, `shared/.../features/books/data/ReadingSessionRepository.kt`,
+  `LogReadingSessionUseCase`, `BookDetailViewModel.logManualSession`): the duration-minutes field
+  can be left blank for a backlogged manual entry with no known duration — the Save button no
+  longer requires it (only start/end position are required, matching `PendingSessionDialog`).
+  When left blank, `timestampStart` is set equal to `timestampEnd` (a zero-length interval — the
+  session is still date/time-anchored via `timestampEnd`, only its true time-span is
+  unrepresented, consistent with a `null` duration). `ReadingSessionRepository.logSession` and
+  `LogReadingSessionUseCase`'s explicit-bounds overload now take `durationSeconds: Long?`,
+  validating `>= 0` only when non-null; the timer-backed path is unchanged (a live
+  `ReadingTimerResult` always has a real duration). Session history (`SessionRow`) renders the
+  positions line without a duration segment (new `session_positions` string resource) when
+  `durationSeconds` is null, instead of a misleading "0:00:00".
+
 ## [0.3.0] - 2026-08-01
 
 Reading tracking milestone: the dormant `ReadingSessions` table becomes a feature — live
