@@ -10,6 +10,7 @@ import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.portability.domain.ExportDataUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.stats.data.StatsRepository
 
@@ -89,6 +90,15 @@ public class AppContainer(
         httpClient = httpClient,
         imageStorage = imageStorage,
         bookRepository = bookRepository,
+    )
+
+    /**
+     * CSV data-export workflow (ROADMAP Task 8 Phase A), consumed by [ExportViewModel] from the
+     * Settings screen. Pure Kotlin -- see [ExportDataUseCase]'s KDoc.
+     */
+    public val exportDataUseCase: ExportDataUseCase = ExportDataUseCase(
+        bookRepository = bookRepository,
+        readingSessionRepository = readingSessionRepository,
     )
 
     /**

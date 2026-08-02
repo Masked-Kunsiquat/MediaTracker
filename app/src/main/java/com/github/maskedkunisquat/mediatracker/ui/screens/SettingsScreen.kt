@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,11 +9,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,22 +25,36 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
+import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.features.portability.domain.CsvExportBundle
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.ExportUiState
+import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Route-level composable for the Settings screen (ROADMAP Task 7 Phase B).
@@ -52,11 +71,80 @@ fun SettingsScreenRoute(
     val viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModelFactory(appContainer),
     )
+    val exportViewModel: ExportViewModel = viewModel(
+        factory = ExportViewModelFactory(appContainer),
+    )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val exportUiState by exportViewModel.uiState.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val exportSuccessMessage = stringResource(R.string.export_success_message)
+    val exportFailureMessage = stringResource(R.string.export_failure_message)
+    val exportCancelledMessage = stringResource(R.string.export_cancelled_message)
+
+    // Holds the generated bundle between the two sequential SAF "create document" picks below --
+    // see SettingsScreen.kt's class-level export section KDoc for why both files are written from
+    // one cached bundle rather than two independent ExportDataUseCase runs.
+    var pendingBundle by remember { mutableStateOf<CsvExportBundle?>(null) }
+
+    val readingLogsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        val bundle = pendingBundle
+        pendingBundle = null
+        exportViewModel.reset()
+        coroutineScope.launch {
+            val message = when {
+                uri == null -> exportCancelledMessage
+                bundle == null -> exportFailureMessage
+                writeCsvToUri(context, uri, bundle.readingLogsCsv) -> exportSuccessMessage
+                else -> exportFailureMessage
+            }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    val libraryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        val bundle = pendingBundle
+        if (uri == null || bundle == null) {
+            pendingBundle = null
+            exportViewModel.reset()
+            coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
+        } else if (writeCsvToUri(context, uri, bundle.libraryCsv)) {
+            // First file written; immediately prompt for the second file's destination so both
+            // documents come from the exact same generated snapshot.
+            readingLogsLauncher.launch("reading_logs_export.csv")
+        } else {
+            pendingBundle = null
+            exportViewModel.reset()
+            coroutineScope.launch { snackbarHostState.showSnackbar(exportFailureMessage) }
+        }
+    }
+
+    LaunchedEffect(exportUiState) {
+        when (val state = exportUiState) {
+            is ExportUiState.Success -> {
+                pendingBundle = state.bundle
+                libraryLauncher.launch("library_export.csv")
+            }
+            is ExportUiState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+                exportViewModel.reset()
+            }
+            ExportUiState.Idle, ExportUiState.Loading -> Unit
+        }
+    }
 
     SettingsScreen(
         uiState = uiState,
         onWeekStartDayChange = viewModel::setWeekStartDay,
+        exportInProgress = exportUiState is ExportUiState.Loading,
+        onExportClick = exportViewModel::exportData,
+        snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -75,6 +163,15 @@ fun SettingsScreenRoute(
  * @param uiState Current [SettingsUiState].
  * @param onWeekStartDayChange Called with the newly selected [WeekStartDay] when the week-start-day
  *   control is changed, wired to [SettingsViewModel.setWeekStartDay].
+ * @param exportInProgress Whether a CSV export is currently being generated (ROADMAP Task 8 Phase
+ *   A) -- wired to `ExportUiState.Loading`, disables the export button and shows a progress
+ *   indicator so a double-tap can't fire two concurrent exports.
+ * @param onExportClick Called when the export button is tapped, wired to
+ *   `ExportViewModel.exportData`. The actual SAF file-picker/write sequence happens in the route
+ *   composable, not here -- this stateless screen only ever emits the request.
+ * @param snackbarHostState Hosts the success/failure/cancelled Snackbar the route composable shows
+ *   once the export (and subsequent SAF writes) finish -- a silently failed export would be worse
+ *   than no export button at all (this phase's task brief).
  * @param onNavigateBack Called when the back icon is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,6 +179,9 @@ fun SettingsScreenRoute(
 fun SettingsScreen(
     uiState: SettingsUiState,
     onWeekStartDayChange: (WeekStartDay) -> Unit,
+    exportInProgress: Boolean,
+    onExportClick: () -> Unit,
+    snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
 ) {
     Scaffold(
@@ -98,6 +198,7 @@ fun SettingsScreen(
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -114,6 +215,14 @@ fun SettingsScreen(
                         WeekStartDaySetting(
                             selected = uiState.weekStartDay,
                             onSelectedChange = onWeekStartDayChange,
+                        )
+                    }
+                }
+                item {
+                    SettingsSection(title = stringResource(R.string.settings_section_data)) {
+                        ExportDataSetting(
+                            exportInProgress = exportInProgress,
+                            onExportClick = onExportClick,
                         )
                     }
                 }
@@ -196,6 +305,52 @@ private fun WeekStartDaySetting(
     }
 }
 
+/**
+ * The data-export setting row (ROADMAP Task 8 Phase A): a label, a short description of what it
+ * produces, and a single button that generates both `library_export.csv` and
+ * `reading_logs_export.csv` from one consistent snapshot and then prompts (via the route
+ * composable's SAF `ActivityResultContracts.CreateDocument` launchers) for where to save each one
+ * in turn.
+ *
+ * ### Why one button for two files, rather than two independent export actions
+ * Exporting library metadata and reading-session history separately would let a book added or
+ * edited between the two exports leave the two files describing different moments in time --
+ * `ExportDataUseCase` deliberately reads both in one snapshot, so the UI offers exactly one
+ * request that produces both, rather than two buttons that could be tapped independently and
+ * reintroduce that inconsistency. Zipping the two files into one download was considered and
+ * rejected: it would need either a hand-rolled ZIP writer or a new dependency (AGENTS.md §5),
+ * for a two-small-CSV-files case that doesn't need it -- two sequential "save as" prompts is a
+ * users-already-know-this-pattern tradeoff instead.
+ */
+@Composable
+private fun ExportDataSetting(
+    exportInProgress: Boolean,
+    onExportClick: () -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_export_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_export_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Button(onClick = onExportClick, enabled = !exportInProgress) {
+            if (exportInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(stringResource(R.string.settings_export_button))
+            }
+        }
+    }
+}
+
 /** Preview of the Settings screen with the default (Monday) week-start-day selected. */
 @Preview(showBackground = true)
 @Composable
@@ -204,6 +359,9 @@ private fun SettingsScreenMondayPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            exportInProgress = false,
+            onExportClick = {},
+            snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
     }
@@ -217,6 +375,25 @@ private fun SettingsScreenSundayPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.SUNDAY),
             onWeekStartDayChange = {},
+            exportInProgress = false,
+            onExportClick = {},
+            snackbarHostState = remember { SnackbarHostState() },
+            onNavigateBack = {},
+        )
+    }
+}
+
+/** Preview of the Settings screen mid-export (progress indicator on the export button). */
+@Preview(showBackground = true)
+@Composable
+private fun SettingsScreenExportingPreview() {
+    MediaTrackerTheme {
+        SettingsScreen(
+            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
+            onWeekStartDayChange = {},
+            exportInProgress = true,
+            onExportClick = {},
+            snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
     }

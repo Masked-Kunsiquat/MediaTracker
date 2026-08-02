@@ -87,6 +87,18 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         }
 
     /**
+     * Observes every [ExternalIdentifierEntity] in the database as a reactive stream (ROADMAP
+     * Task 8 Phase A: `library_export.csv`'s `external_identifiers` column needs every book's
+     * provider mappings, not just one book's — see
+     * [com.hub.media.features.portability.domain.ExportDataUseCase]). Unfiltered by media type for
+     * the same reason [db.bookDetailsDao] queries are: only [com.hub.media.core.database.entities.MediaType.BOOK]
+     * rows exist in the database today, so no join/filter is needed to make this book-scoped in
+     * practice.
+     */
+    public fun observeAllExternalIdentifiers(): Flow<List<ExternalIdentifierEntity>> =
+        db.externalIdentifierDao().observeAll()
+
+    /**
      * Adds a new book with details and optional external identifiers in a single atomic
      * database transaction ([com.hub.media.core.database.dao.BookWriteDao.insertBookAtomically],
      * a `@Transaction` DAO method). If any of the inserts fails — including a duplicate

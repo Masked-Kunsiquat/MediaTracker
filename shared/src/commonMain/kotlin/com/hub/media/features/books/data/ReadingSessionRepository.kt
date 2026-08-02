@@ -26,6 +26,14 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
         db.readingSessionDao().observeSessionsForMedia(mediaId)
 
     /**
+     * Observes every reading session across the whole library as a reactive stream (ROADMAP
+     * Task 8 Phase A: `reading_logs_export.csv` needs every session, not just one book's — see
+     * [com.hub.media.features.portability.domain.ExportDataUseCase]).
+     */
+    public fun observeAllSessions(): Flow<List<ReadingSessionEntity>> =
+        db.readingSessionDao().observeAll()
+
+    /**
      * Logs a new reading session with validation per AGENTS.md §7.
      * Validates that:
      * - [timestampEnd] >= [timestampStart] (non-negative duration)

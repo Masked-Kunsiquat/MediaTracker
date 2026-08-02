@@ -193,9 +193,15 @@ scheduled ahead of search. (`android:allowBackup="true"` means Android Auto Back
 snapshotting the database to Google Drive, but that is invisible, size-capped, not restorable on
 demand, and depends on exactly the cloud this app's premise rejects — it is not the answer.)
 
-- **CSV export**: `library_export.csv` and `reading_logs_export.csv` per the vision doc. Must
-  round-trip everything the schema holds, including nullable `durationSeconds` (unknown must not
-  export as `0`), reading status, `finishedAt`, and formats.
+- **CSV export (Phase A — done)**: `library_export.csv` and `reading_logs_export.csv`, generated
+  via a new `features/portability/` module (pure Kotlin CSV formatting + `ExportDataUseCase`) and
+  written to user-picked locations from the Settings screen via SAF `ActivityResultContracts.
+  CreateDocument` (no new permission). Round-trips everything the schema holds — every
+  `MediaItemEntity`/`BookDetailsEntity`/`ExternalIdentifierEntity` field for books, every
+  `ReadingSessionEntity` field for sessions — including nullable `durationSeconds` (exports as an
+  empty field, never `0`), reading status, `finishedAt`, and formats (enums by name). Hand-rolled
+  RFC 4180 escaping, no CSV dependency. A `csv_schema_version` column on every row is the version
+  marker Phase B's importer will read. No schema change.
 - **CSV import**: the harder half. Needs a duplicate policy (match on ISBN? on title+year?
   skip/merge/replace), validation mirroring the use-case layer rather than a second divergent
   copy, and an all-or-nothing transaction so a malformed row can't half-import a library. The

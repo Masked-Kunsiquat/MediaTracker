@@ -145,4 +145,13 @@
     <string name="settings_week_start_day_description">Controls the boundaries of \"This week\" on the Stats screen.</string>
     <string name="settings_week_start_day_monday">Monday</string>
     <string name="settings_week_start_day_sunday">Sunday</string>
+
+    <!-- SettingsScreen: data export (ROADMAP Task 8 Phase A) -->
+    <string name="settings_section_data">Data</string>
+    <string name="settings_export_label">Export library</string>
+    <string name="settings_export_description">Save your library and reading history as CSV files you choose the location for.</string>
+    <string name="settings_export_button">Export to CSV</string>
+    <string name="export_success_message">Export saved successfully</string>
+    <string name="export_failure_message">Export failed — nothing was saved</string>
+    <string name="export_cancelled_message">Export cancelled</string>
 </resources>

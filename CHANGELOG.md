@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CSV export** (ROADMAP Task 8 Phase A) — the app's first data-portability feature: a "Data"
+  section on the Settings screen generates `library_export.csv` (every `MediaItemEntity` +
+  `BookDetailsEntity` field, plus each book's `ExternalIdentifierEntity` rows packed into one
+  `external_identifiers` column) and `reading_logs_export.csv` (every `ReadingSessionEntity`
+  field), from one consistent database snapshot, and writes them to two user-picked locations via
+  the Storage Access Framework (`ActivityResultContracts.CreateDocument`) — no new permission, and
+  this is exactly the SAF plumbing the deferred "manual cover entry" backlog item was waiting on.
+  - Hand-rolled RFC 4180 CSV escaping (`shared/.../features/portability/csv/CsvUtil.kt`, no
+    third-party CSV dependency per AGENTS.md §5): a field is quoted (with embedded quotes doubled)
+    only when it contains a comma, quote, or newline, so free-text titles and session notes
+    round-trip unambiguously.
+  - **Nullable `durationSeconds` exports as an empty field, never `0`** — the one rule this phase
+    treats as load-bearing, since schema v2 made that column nullable specifically so "unknown
+    duration" and "a real zero-second session" would never collide; exporting `null` as `0` would
+    silently reintroduce that exact collision one layer up.
+  - A `csv_schema_version` column (currently `1`) is written on every row of both files rather than
+    a dedicated first line, so a Phase B importer can detect a file it doesn't understand while a
+    bare `.csv` still opens as an ordinary, uniform table in a spreadsheet. `Instant` fields export
+    as ISO-8601 UTC (`kotlin.time.Instant.toString()`), never a locale-dependent format.
+  - New `features/portability/` module (justified against AGENTS.md §6's blueprint as a
+    cross-cutting concern alongside `features/stats/`, not book-specific): pure Kotlin/KMP-clean
+    CSV generation (`csv/`) plus an `ExportDataUseCase`/`ExportUseCase` (`domain/`) wired through a
+    new `ExportViewModel` (`Idle`/`Loading`/`Success`/`Error`, mirroring `AddBookViewModel`'s
+    existing shape) — the app module owns all file I/O, per AGENTS.md §6.
+  - No schema change; Room stays at v4.
+
 ## [0.6.0] - 2026-08-02
 
 UI revamp and settings. Every book-facing surface — Details, reading history, Edit Book, and
