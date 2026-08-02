@@ -5,6 +5,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import kotlin.time.Instant
 
 /**
@@ -45,4 +46,10 @@ object Converters {
 
     @TypeConverter
     fun nameToReadingStatus(value: String): ReadingStatus = ReadingStatus.valueOf(value)
+
+    @TypeConverter
+    fun trackingModeToName(value: TrackingMode): String = value.name
+
+    @TypeConverter
+    fun nameToTrackingMode(value: String): TrackingMode = TrackingMode.valueOf(value)
 }

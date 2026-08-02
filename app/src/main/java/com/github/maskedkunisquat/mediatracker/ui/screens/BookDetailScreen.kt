@@ -95,6 +95,7 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
 import com.hub.media.ui.AppContainer
@@ -566,7 +567,7 @@ private fun BookDetailContent(
             pendingSession = pendingSession,
             errorMessage = state.errorMessage,
             currentProgress = state.currentProgress,
-            totalPages = state.details?.totalPages,
+            trackingMode = state.details?.trackingMode,
             onSave = onSaveSession,
             onDiscard = onDiscardPendingSession,
         )
@@ -575,7 +576,7 @@ private fun BookDetailContent(
     if (showManualEntry) {
         ManualSessionDialog(
             currentProgress = state.currentProgress,
-            totalPages = state.details?.totalPages,
+            trackingMode = state.details?.trackingMode,
             sessionToEdit = sessionToEdit,
             onSave = { durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes ->
                 val editing = sessionToEdit
@@ -821,7 +822,7 @@ private fun BookHeader(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            val progressText = formatProgress(currentProgress, details?.totalPages)
+            val progressText = formatProgress(currentProgress, details?.totalPages, details?.trackingMode)
             if (progressText != null) {
                 Text(
                     text = stringResource(R.string.progress_prefix, progressText),
@@ -1082,12 +1083,16 @@ private fun TimerCard(
  * still not flagged as an error (it's simply incomplete, not invalid input), consistent with the
  * pre-existing Save-disabled-while-blank behavior.
  *
- * ### Page vs. percent mode ([totalPages])
- * See [ManualSessionDialog]'s KDoc for the full rationale -- the same [totalPages]-based signal is
- * used here: when non-null (page-mode), pages read is derived as `endUnit - startUnit` and shown
- * read-only rather than asked for; when null (percent-mode), the manual pages-read field is shown,
- * now with the same parse-once + isError treatment as the position fields (blank stays legitimately
- * `null`; a non-blank unparseable value is rejected rather than silently discarded).
+ * ### Page vs. percent mode ([trackingMode])
+ * See [ManualSessionDialog]'s KDoc for the full rationale -- the same explicit
+ * [com.hub.media.core.database.entities.TrackingMode] field is used here (ROADMAP Task 7 Phase A;
+ * this dialog previously inferred the mode from `totalPages != null`, which is exactly the
+ * invisible-flip problem this field replaces): [TrackingMode.PAGES][com.hub.media.core.database.entities.TrackingMode.PAGES]
+ * derives pages read as `endUnit - startUnit` and shows it read-only rather than asking for it;
+ * anything else (`PERCENT`, or `null` when this book has no [BookDetailsEntity] row) shows the
+ * manual pages-read field, with the same parse-once + isError treatment as the position fields
+ * (blank stays legitimately `null`; a non-blank unparseable value is rejected rather than silently
+ * discarded).
  *
  * `onDismissRequest` is a no-op: this dialog represents a *finished, already-timed* run, so an
  * accidental outside tap or back press must not silently discard it the way it would discard an
@@ -1102,7 +1107,7 @@ private fun PendingSessionDialog(
     pendingSession: ReadingTimerResult,
     errorMessage: String?,
     currentProgress: Double?,
-    totalPages: Int?,
+    trackingMode: TrackingMode?,
     onSave: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscard: () -> Unit,
 ) {
@@ -1111,7 +1116,7 @@ private fun PendingSessionDialog(
     var deltaPagesText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
 
-    val isPageMode = totalPages != null
+    val isPageMode = trackingMode == TrackingMode.PAGES
 
     val parsedStartUnit = startUnitText.toDoubleOrNull()
     val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
@@ -1318,23 +1323,22 @@ private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
  * progress as a "resume where you left off" convenience in create mode -- the user can freely edit
  * or clear it. Ignored in edit mode ([sessionToEdit] wins).
  *
- * ### Page vs. percent mode ([totalPages])
+ * ### Page vs. percent mode ([trackingMode])
  * `deltaPages` is redundant to ask for whenever positions are page numbers -- it's fully
  * determined by `endUnit - startUnit`, which the user is already entering (ROADMAP Task 6 Phase
- * B). This project's data model has no explicit "tracking mode" flag (schema stays frozen at v2
- * for this phase; a first-class reading-mode concept is Task 6 Phase C's job), so a signal has to
- * be chosen rather than invented as new schema: [totalPages] (from
- * [com.hub.media.core.database.entities.BookDetailsEntity.totalPages]) being non-null is reused
- * here as that signal, because it is **already** this exact signal elsewhere on this same screen --
- * [formatProgress] renders "Page 142 / 350" when `totalPages != null` and a bare percentage
- * otherwise. Reusing it keeps exactly one source of truth for "is this book tracked by page or by
- * percent" across the whole screen, rather than a second, parallel notion (a per-dialog toggle, or
- * inferring from position magnitude -- which would misfire for, say, a 100-page book at 100%
- * complete). In page mode (`totalPages != null`) the pages-read field is replaced by a read-only
- * derived-value [Text] ("Pages read (auto): N") computed from the position fields, making which
- * mode is active visually obvious; in percent mode (`totalPages == null`, no fixed denominator to
- * derive a page count from) the manual field is shown exactly as before, just with the same
- * parse-once + isError validation now applied to every other numeric field (see below).
+ * B). **As of ROADMAP Task 7 Phase A**, the mode this dialog operates in is read directly from
+ * [com.hub.media.core.database.entities.BookDetailsEntity.trackingMode] rather than inferred from
+ * `totalPages != null` (the pre-Phase-A behavior, kept only in this paragraph's history for
+ * context): that inference was invisible to the user and flipped silently the moment `totalPages`
+ * was edited, which is exactly the problem [com.hub.media.core.database.entities.TrackingMode]
+ * exists to fix -- see its KDoc. [formatProgress] (this same screen) reads the identical field, so
+ * there remains exactly one source of truth for "is this book tracked by page or by percent"
+ * across the whole screen. In page mode ([TrackingMode.PAGES]) the pages-read field is replaced by
+ * a read-only derived-value [Text] ("Pages read (auto): N") computed from the position fields,
+ * making which mode is active visually obvious; in percent mode ([TrackingMode.PERCENT], or `null`
+ * when this book has no [BookDetailsEntity] row) the manual field is shown exactly as before, just
+ * with the same parse-once + isError validation now applied to every other numeric field (see
+ * below).
  *
  * ### Duration is optional (schema v2, ROADMAP Task 5 pre-phase)
  * The duration field may be left blank: the effective `durationSeconds` emitted to [onSave] is
@@ -1392,7 +1396,7 @@ private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
 @Composable
 private fun ManualSessionDialog(
     currentProgress: Double?,
-    totalPages: Int?,
+    trackingMode: TrackingMode?,
     sessionToEdit: ReadingSessionEntity?,
     onSave: (
         durationSeconds: Long?,
@@ -1404,7 +1408,7 @@ private fun ManualSessionDialog(
     ) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val isPageMode = totalPages != null
+    val isPageMode = trackingMode == TrackingMode.PAGES
 
     // The session's original per-second-precision duration, when editing one that had a known
     // duration -- `null` in create mode, and `null` when the session being edited itself had an
@@ -1849,21 +1853,36 @@ private fun formatElapsed(totalSeconds: Long): String {
 }
 
 /**
- * Formats [currentProgress] for display: page-style ("Page 142 / 350") when [totalPages] is
- * known, or percent-style ("37%") when [totalPages] is null -- e-reader/percentage tracking has
- * no fixed page count to show a denominator for. Returns null (nothing to show) when
- * [currentProgress] itself is null, i.e. no session has ever been logged.
+ * Formats [currentProgress] for display, keyed off the book's explicit
+ * [com.hub.media.core.database.entities.TrackingMode] (ROADMAP Task 7 Phase A) rather than
+ * inferring it from [totalPages] being non-null (the pre-Phase-A behavior) -- see that enum's KDoc
+ * for why that inference was replaced: [totalPages] is now used purely as an optional denominator,
+ * never as the mode signal itself.
+ *
+ * - [TrackingMode.PAGES][com.hub.media.core.database.entities.TrackingMode.PAGES]: page-style
+ *   ("Page 142 / 350") when [totalPages] is also known, or a bare page number ("Page 142") when a
+ *   book is explicitly tracked by page but has no recorded total (an edge case the old
+ *   totalPages-only inference could never produce, since a null total always meant percent mode
+ *   then -- now that the two fields are independent, this dialog must not mislabel a raw page
+ *   number as a percentage).
+ * - [TrackingMode.PERCENT][com.hub.media.core.database.entities.TrackingMode.PERCENT] or `null`
+ *   (this book has no [BookDetailsEntity] row): percent-style ("37%").
+ *
+ * Returns null (nothing to show) when [currentProgress] itself is null, i.e. no session has ever
+ * been logged.
  *
  * Note: This is a @Composable function that calls [stringResource] to fetch localized strings
  * from resources rather than using hardcoded string literals.
  */
 @Composable
-private fun formatProgress(currentProgress: Double?, totalPages: Int?): String? {
+private fun formatProgress(currentProgress: Double?, totalPages: Int?, trackingMode: TrackingMode?): String? {
     if (currentProgress == null) return null
-    return if (totalPages != null) {
-        stringResource(R.string.progress_page_format, currentProgress.roundToInt(), totalPages)
-    } else {
-        stringResource(R.string.progress_percent_format, currentProgress.roundToInt())
+    return when {
+        trackingMode == TrackingMode.PAGES && totalPages != null ->
+            stringResource(R.string.progress_page_format, currentProgress.roundToInt(), totalPages)
+        trackingMode == TrackingMode.PAGES ->
+            stringResource(R.string.progress_page_only_format, currentProgress.roundToInt())
+        else -> stringResource(R.string.progress_percent_format, currentProgress.roundToInt())
     }
 }
 

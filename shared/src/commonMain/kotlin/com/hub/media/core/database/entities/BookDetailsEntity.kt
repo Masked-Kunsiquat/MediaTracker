@@ -63,4 +63,21 @@ data class BookDetailsEntity(
      * carries no timestamp.
      */
     val finishedAt: Instant? = null,
+    /**
+     * How this book's reading progress is measured (schema v4, ROADMAP Task 7 Phase A). See
+     * [TrackingMode]'s KDoc for the full rationale for making this an explicit, user-controlled
+     * field rather than continuing to infer it from [totalPages] being non-null.
+     *
+     * Pre-existing rows (added before this column existed) are backfilled by `MIGRATION_3_4`
+     * ([com.hub.media.core.database.MIGRATION_3_4]) to **exactly match the behavior the app already
+     * exhibited** pre-v4: [TrackingMode.PAGES] for a row whose [totalPages] is non-null,
+     * [TrackingMode.PERCENT] otherwise — so no existing book's tracking mode changes as an observable
+     * side effect of upgrading, only its representation (explicit column instead of inferred). Freshly-
+     * ingested books ([com.hub.media.features.books.data.BookRepository.addBook] /
+     * [com.hub.media.features.books.domain.AddBookByIsbnUseCase]) apply the identical rule at
+     * insert time: a known page count defaults to [TrackingMode.PAGES], otherwise
+     * [TrackingMode.PERCENT] — see [com.hub.media.features.books.data.BookRepository.addBook]'s
+     * KDoc.
+     */
+    val trackingMode: TrackingMode = TrackingMode.PAGES,
 )

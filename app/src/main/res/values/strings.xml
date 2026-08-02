@@ -36,6 +36,7 @@
     <string name="format_prefix">Format: %1$s</string>
     <string name="total_pages_prefix">Total pages: %1$d</string>
     <string name="progress_page_format">Page %1$d / %2$d</string>
+    <string name="progress_page_only_format">Page %1$d</string>
     <string name="progress_percent_format">%1$d%%</string>
     <string name="progress_prefix">Progress: %1$s</string>
     <string name="book_format_physical">Physical</string>
@@ -76,6 +77,10 @@
     <string name="reading_status_finished">Finished</string>
     <string name="reading_status_dnf">Did not finish</string>
 
+    <!-- TrackingMode display labels (shared by BookDetailScreen, EditBookScreen) -->
+    <string name="tracking_mode_pages">Pages</string>
+    <string name="tracking_mode_percent">Percent</string>
+
     <!-- EditBookScreen -->
     <string name="edit_book_title_bar">Edit book</string>
     <string name="edit_title_label">Title</string>
@@ -84,6 +89,7 @@
     <string name="edit_total_pages_label">Total pages (optional)</string>
     <string name="edit_format_label">Format</string>
     <string name="edit_status_label">Reading status</string>
+    <string name="edit_tracking_mode_label">Progress tracking</string>
     <string name="edit_title_required_error">Title is required</string>
     <string name="edit_release_year_invalid_error">Enter a year between %1$d and %2$d</string>
     <string name="edit_purchase_price_invalid_error">Enter a valid non-negative price</string>

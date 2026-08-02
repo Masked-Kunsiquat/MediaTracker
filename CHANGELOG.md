@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Explicit per-book tracking mode** (ROADMAP Task 7 Phase A) — replaces the old silent
+  `totalPages != null` inference (page-based vs. percent-based progress) with an explicit
+  `TrackingMode` (`PAGES`/`PERCENT`) field on `BookDetailsEntity`, editable on the Edit Book screen
+  alongside format/status. Ships **Room schema v4** with a tested `MIGRATION_3_4`
+  (`shared/.../core/database/Migrations.kt`): an `ALTER TABLE ... ADD COLUMN trackingMode TEXT NOT
+  NULL DEFAULT 'PAGES'` followed by `UPDATE ... SET trackingMode = 'PERCENT' WHERE totalPages IS
+  NULL`, chosen specifically to reproduce the app's pre-v4 inferred behavior exactly (no existing
+  book's mode changes as an observable side effect of upgrading). Ingestion
+  (`BookRepository.addBook` / `AddBookByIsbnUseCase`) defaults new books the same way: a known page
+  count -> `PAGES`, otherwise `PERCENT`. `BookDetailScreen`'s progress formatting and its
+  pending/manual session dialogs (`isPageMode`, the Task 6 Phase B auto-derived `deltaPages`
+  behavior) now all read this explicit field instead of re-deriving the mode from `totalPages`,
+  closing the "two competing notions of mode" gap the old inference left open.
+- **App settings store** (ROADMAP Task 7 Phase A) — a new `app_settings` key-value table (`key TEXT
+  PRIMARY KEY, value TEXT NOT NULL`), added in the same schema v4 migration above since it's a
+  small, additive, unrelated change bundled into one migration rather than two. A key-value shape
+  was chosen over a single-row typed settings table specifically so that adding a future setting
+  (e.g. the week-start-day preference ROADMAP Task 7 Phase B will add) needs no further schema
+  migration. `AppSettingsDao` plus a typed `SettingsRepository`
+  (`shared/.../features/settings/data/`) expose reactive `String`/`Int`/`Boolean` accessors with
+  the raw key-value mechanics hidden; no setting has defined semantics yet — Phase B is the first
+  consumer.
+
 ## [0.5.0] - 2026-08-02
 
 Books polish: the book domain becomes correctable and navigable rather than just functional.

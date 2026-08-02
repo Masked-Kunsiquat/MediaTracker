@@ -48,6 +48,7 @@ import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditBookUiState
@@ -87,7 +88,7 @@ fun EditBookScreenRoute(
     EditBookScreen(
         uiState = uiState,
         onNavigateBack = onNavigateBack,
-        onSave = { title, releaseYear, purchasePrice, totalPages, format, status ->
+        onSave = { title, releaseYear, purchasePrice, totalPages, format, status, trackingMode ->
             viewModel.save(
                 title = title,
                 releaseYear = releaseYear,
@@ -95,6 +96,7 @@ fun EditBookScreenRoute(
                 totalPages = totalPages,
                 format = format,
                 status = status,
+                trackingMode = trackingMode,
             )
         },
     )
@@ -112,7 +114,8 @@ fun EditBookScreenRoute(
  * @param uiState Current [EditBookUiState].
  * @param onNavigateBack Called when the back icon or Cancel button is pressed.
  * @param onSave Called with the edited (title, releaseYear, purchasePrice, totalPages, format,
- *   status) once the form passes client-side validation, wired to [EditBookViewModel.save].
+ *   status, trackingMode) once the form passes client-side validation, wired to
+ *   [EditBookViewModel.save].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +129,7 @@ fun EditBookScreen(
         totalPages: Int?,
         format: BookFormat,
         status: ReadingStatus,
+        trackingMode: TrackingMode,
     ) -> Unit,
 ) {
     Scaffold(
@@ -211,6 +215,7 @@ private fun EditBookForm(
         totalPages: Int?,
         format: BookFormat,
         status: ReadingStatus,
+        trackingMode: TrackingMode,
     ) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -220,6 +225,7 @@ private fun EditBookForm(
     var totalPagesText by remember { mutableStateOf(state.totalPages?.toString() ?: "") }
     var format by remember { mutableStateOf(state.format) }
     var status by remember { mutableStateOf(state.status) }
+    var trackingMode by remember { mutableStateOf(state.trackingMode) }
 
     val titleIsValid = titleText.isNotBlank()
 
@@ -375,6 +381,40 @@ private fun EditBookForm(
             }
         }
 
+        // Tracking mode (schema v4, ROADMAP Task 7 Phase A): an explicit, user-controlled
+        // pages-vs-percent choice replacing the old totalPages != null inference -- see
+        // TrackingMode's KDoc. Purely functional here, mirroring the format/status radio groups
+        // above verbatim; Phase D revamps this screen's visuals, so no extra polish is invested
+        // in this control beyond matching the existing pattern.
+        Text(
+            text = stringResource(R.string.edit_tracking_mode_label),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Column(modifier = Modifier.selectableGroup()) {
+            TrackingMode.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = trackingMode == option,
+                            onClick = { trackingMode = option },
+                            enabled = !state.isSaving,
+                            role = Role.RadioButton,
+                        )
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = trackingMode == option,
+                        onClick = null,
+                        enabled = !state.isSaving,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(option.displayLabel())
+                }
+            }
+        }
+
         val errorMessage = state.errorMessage
         if (errorMessage != null) {
             Text(
@@ -394,6 +434,7 @@ private fun EditBookForm(
                         validatedTotalPages,
                         format,
                         status,
+                        trackingMode,
                     )
                 },
                 enabled = formIsValid && !state.isSaving,
@@ -423,7 +464,7 @@ private fun EditBookScreenReadyPreview() {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE,
             onNavigateBack = {},
-            onSave = { _, _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _, _ -> },
         )
     }
 }
@@ -436,7 +477,7 @@ private fun EditBookScreenErrorPreview() {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE.copy(errorMessage = "Total pages must be a positive number"),
             onNavigateBack = {},
-            onSave = { _, _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _, _ -> },
         )
     }
 }
@@ -449,7 +490,7 @@ private fun EditBookScreenLoadingPreview() {
         EditBookScreen(
             uiState = EditBookUiState.Loading,
             onNavigateBack = {},
-            onSave = { _, _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _, _ -> },
         )
     }
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import kotlin.time.Duration.Companion.seconds
@@ -83,6 +84,7 @@ public class EditBookViewModel(
                 totalPages = bookDetail.details?.totalPages,
                 format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
                 status = bookDetail.details?.status ?: ReadingStatus.TO_READ,
+                trackingMode = bookDetail.details?.trackingMode ?: TrackingMode.PAGES,
                 errorMessage = local.errorMessage,
                 isSaving = local.isSaving,
             )
@@ -110,6 +112,7 @@ public class EditBookViewModel(
         totalPages: Int?,
         format: BookFormat,
         status: ReadingStatus,
+        trackingMode: TrackingMode,
     ) {
         if (saveInFlight) return
         saveInFlight = true
@@ -125,6 +128,7 @@ public class EditBookViewModel(
                         totalPages = totalPages,
                         format = format,
                         status = status,
+                        trackingMode = trackingMode,
                     )
                 ) {
                     is Resource.Success -> _local.update { it.copy(isSaving = false, saved = true) }
