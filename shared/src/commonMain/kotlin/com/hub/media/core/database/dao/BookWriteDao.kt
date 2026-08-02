@@ -10,6 +10,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import kotlin.time.Instant
 
 /**
@@ -54,8 +55,8 @@ interface BookWriteDao {
 
     /**
      * Targeted single-row update of [BookDetailsEntity]'s user-editable metadata columns only
-     * (format/totalPages/status/finishedAt) -- see [updateBookMetadataAtomically]'s KDoc. Leaves
-     * [BookDetailsEntity.isbn] (and the row's identity) completely untouched.
+     * (format/totalPages/status/finishedAt/trackingMode) -- see [updateBookMetadataAtomically]'s
+     * KDoc. Leaves [BookDetailsEntity.isbn] (and the row's identity) completely untouched.
      *
      * @return The number of rows affected: `1` if a [BookDetailsEntity] row exists for [mediaId],
      *   `0` otherwise -- the in-transaction signal [updateBookMetadataAtomically] uses to decide
@@ -63,7 +64,7 @@ interface BookWriteDao {
      */
     @Query(
         "UPDATE book_details SET format = :format, totalPages = :totalPages, " +
-            "status = :status, finishedAt = :finishedAt WHERE mediaId = :mediaId",
+            "status = :status, finishedAt = :finishedAt, trackingMode = :trackingMode WHERE mediaId = :mediaId",
     )
     suspend fun updateBookDetailsMetadata(
         mediaId: String,
@@ -71,6 +72,7 @@ interface BookWriteDao {
         totalPages: Int?,
         status: ReadingStatus,
         finishedAt: Instant?,
+        trackingMode: TrackingMode,
     ): Int
 
     /**
@@ -94,7 +96,7 @@ interface BookWriteDao {
      * before the transaction opened, which could already be stale by the time this method runs
      * (concurrent insert/delete of that row). Zero rows affected means no [BookDetailsEntity] row
      * exists yet, so this self-heals by inserting a fresh one with the given format/totalPages/
-     * status/finishedAt and a `null` isbn (see
+     * status/finishedAt/trackingMode and a `null` isbn (see
      * [com.hub.media.features.books.data.BookRepository.updateBookMetadata] KDoc for the full
      * data-integrity edge case this covers).
      *
@@ -112,11 +114,13 @@ interface BookWriteDao {
         totalPages: Int?,
         status: ReadingStatus,
         finishedAt: Instant?,
+        trackingMode: TrackingMode,
     ): Int {
         val mediaRowsAffected = updateMediaItemMetadata(mediaId, title, releaseYear, purchasePrice)
         if (mediaRowsAffected == 0) return 0
 
-        val detailsRowsAffected = updateBookDetailsMetadata(mediaId, format, totalPages, status, finishedAt)
+        val detailsRowsAffected =
+            updateBookDetailsMetadata(mediaId, format, totalPages, status, finishedAt, trackingMode)
         if (detailsRowsAffected == 0) {
             insertBookDetails(
                 BookDetailsEntity(
@@ -126,6 +130,7 @@ interface BookWriteDao {
                     totalPages = totalPages,
                     status = status,
                     finishedAt = finishedAt,
+                    trackingMode = trackingMode,
                 ),
             )
         }

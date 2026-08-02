@@ -7,6 +7,7 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.LibraryViewModel
+import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
 
 /**
@@ -94,9 +95,11 @@ class EditBookViewModelFactory(
 }
 
 /**
- * Factory for creating [StatsViewModel] with its [com.hub.media.features.stats.data.StatsRepository]
- * dependency from the [AppContainer] (ROADMAP Task 5 Phase C). Reused across navigations to the
- * stats screen the same way [LibraryViewModelFactory]/[AddBookViewModelFactory] are (unlike the
+ * Factory for creating [StatsViewModel] with its [com.hub.media.features.stats.data.StatsRepository]/
+ * [com.hub.media.features.settings.data.SettingsRepository] dependencies from the [AppContainer]
+ * (ROADMAP Task 5 Phase C; the settings dependency was added in Task 7 Phase B so `StatsViewModel`
+ * can react to the week-start-day preference — see that class's KDoc). Reused across navigations to
+ * the stats screen the same way [LibraryViewModelFactory]/[AddBookViewModelFactory] are (unlike the
  * per-navigation-argument [BookDetailViewModelFactory]).
  */
 class StatsViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
@@ -105,7 +108,26 @@ class StatsViewModelFactory(private val appContainer: AppContainer) : ViewModelP
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return when {
             modelClass.isAssignableFrom(StatsViewModel::class.java) -> {
-                StatsViewModel(appContainer.statsRepository) as T
+                StatsViewModel(appContainer.statsRepository, appContainer.settingsRepository) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [SettingsViewModel] with its
+ * [com.hub.media.features.settings.data.SettingsRepository] dependency from the [AppContainer]
+ * (ROADMAP Task 7 Phase B). Reused across navigations to the Settings screen the same way
+ * [StatsViewModelFactory]/[LibraryViewModelFactory] are (unlike the per-navigation-argument
+ * [BookDetailViewModelFactory]/[EditBookViewModelFactory]).
+ */
+class SettingsViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(SettingsViewModel::class.java) -> {
+                SettingsViewModel(appContainer.settingsRepository) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

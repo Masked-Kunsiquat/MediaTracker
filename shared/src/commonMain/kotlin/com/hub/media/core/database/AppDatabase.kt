@@ -6,12 +6,14 @@ import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import androidx.room.TypeConverters
 import com.hub.media.core.database.converters.Converters
+import com.hub.media.core.database.dao.AppSettingsDao
 import com.hub.media.core.database.dao.BookDetailsDao
 import com.hub.media.core.database.dao.BookWriteDao
 import com.hub.media.core.database.dao.ExternalIdentifierDao
 import com.hub.media.core.database.dao.MediaItemDao
 import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
+import com.hub.media.core.database.entities.AppSettingEntity
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -35,6 +37,11 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * Version 3 (ROADMAP Task 6 Phase C) adds [BookDetailsEntity.status] and
  * [BookDetailsEntity.finishedAt] — see those properties' KDoc — via [MIGRATION_2_3]
  * (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
+ *
+ * Version 4 (ROADMAP Task 7 Phase A) adds [BookDetailsEntity.trackingMode] (see
+ * [com.hub.media.core.database.entities.TrackingMode]'s KDoc) and the new [AppSettingEntity]
+ * key-value settings table (see its KDoc for why that shape was chosen over a typed table), both
+ * via [MIGRATION_3_4] (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
  */
 @Database(
     entities = [
@@ -42,8 +49,9 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
         BookDetailsEntity::class,
         ExternalIdentifierEntity::class,
         ReadingSessionEntity::class,
+        AppSettingEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -55,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun readingSessionDao(): ReadingSessionDao
     abstract fun bookWriteDao(): BookWriteDao
     abstract fun statsDao(): StatsDao
+    abstract fun appSettingsDao(): AppSettingsDao
 }
 
 /**

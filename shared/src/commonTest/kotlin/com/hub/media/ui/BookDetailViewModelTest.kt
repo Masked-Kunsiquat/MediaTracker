@@ -37,12 +37,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 
 /**
@@ -54,10 +52,11 @@ import kotlinx.coroutines.withContext
  * authoritative gate.
  *
  * The timer's tick loop is not driven with virtual time here (unlike `ReadingTimerTest`, which
- * owns that coverage): `Dispatchers.Main` is an [UnconfinedTestDispatcher] with its own scheduler,
- * independent of each test's `runTest` scheduler, so `delay()` inside the tick loop never actually
- * advances. That's fine — these tests only assert lifecycle/state-transition and persistence
- * behavior, and a 0-second-elapsed timer run is an explicitly valid result (AGENTS.md §7).
+ * owns that coverage): `Dispatchers.Main` is installed via [ViewModelRegistry.installMain] (an
+ * eager unconfined-style test dispatcher, by default) with its own scheduler, independent of each
+ * test's `runTest` scheduler, so `delay()` inside the tick loop never actually advances. That's
+ * fine — these tests only assert lifecycle/state-transition and persistence behavior, and a
+ * 0-second-elapsed timer run is an explicitly valid result (AGENTS.md §7).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class BookDetailViewModelTest {
@@ -72,10 +71,11 @@ class BookDetailViewModelTest {
     private lateinit var useCase: LogReadingSessionUseCase
     private lateinit var refetchCoverUseCase: RefetchCoverUseCase
     private lateinit var mediaId: String
+    private val viewModels = ViewModelRegistry()
 
     @BeforeTest
     fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
         db = testAppDatabase()
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
@@ -99,6 +99,10 @@ class BookDetailViewModelTest {
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope (and its stateIn/WhileSubscribed sharing
+        // coroutine) before closing the database or resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters.
+        viewModels.clearAll()
         db.close()
         Dispatchers.resetMain()
     }
@@ -131,12 +135,14 @@ class BookDetailViewModelTest {
     }
 
     private fun newViewModel(id: String = mediaId) =
-        BookDetailViewModel(
-            bookId = id,
-            bookRepository = bookRepository,
-            readingSessionRepository = sessionRepository,
-            logReadingSessionUseCase = useCase,
-            refetchCoverUseCase = refetchCoverUseCase,
+        viewModels.track(
+            BookDetailViewModel(
+                bookId = id,
+                bookRepository = bookRepository,
+                readingSessionRepository = sessionRepository,
+                logReadingSessionUseCase = useCase,
+                refetchCoverUseCase = refetchCoverUseCase,
+            ),
         )
 
     @Test
@@ -363,7 +369,11 @@ class BookDetailViewModelTest {
      */
     @Test
     fun saveSession_staleCompletionDoesNotClobberNewerPendingSession() = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        // Reinstalls Main through the registry (not Dispatchers.setMain directly) so
+        // ViewModelRegistry.clearAll drains *this* scheduler at teardown, not the one setUp()
+        // installed -- see ViewModelRegistry's KDoc on why that distinction matters specifically
+        // for a StandardTestDispatcher (nothing else will ever drain a resumption it queues).
+        viewModels.installMain(StandardTestDispatcher(testScheduler))
         insertBook()
         val viewModel = newViewModel()
 

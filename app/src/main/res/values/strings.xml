@@ -6,14 +6,12 @@
 
     <!-- BookDetailScreen -->
     <string name="log_session_manually">Log session manually</string>
-    <string name="session_history_title">Session History</string>
     <string name="no_sessions_logged_yet">No sessions logged yet</string>
     <string name="start_reading_button">Start reading</string>
     <string name="pause_button">Pause</string>
     <string name="resume_button">Resume</string>
     <string name="stop_button">Stop</string>
     <string name="save_reading_session_title">Save reading session</string>
-    <string name="session_duration_label">Duration: %1$s</string>
     <string name="start_position_label">Start position</string>
     <string name="end_position_label">End position</string>
     <string name="pages_read_optional_label">Pages read (optional)</string>
@@ -21,23 +19,17 @@
     <string name="save_button">Save</string>
     <string name="discard_button">Discard</string>
     <string name="date_label">Date: %1$s</string>
-    <string name="duration_minutes_label">Duration in minutes (optional)</string>
+    <string name="duration_minutes_label">Duration (optional)</string>
+    <string name="duration_minutes_suffix">min</string>
     <string name="duration_minutes_invalid">Enter a valid duration, up to %1$d minutes</string>
     <string name="cancel_button">Cancel</string>
     <string name="ok_button">OK</string>
-    <string name="session_duration_positions">Duration: %1$s  •  %2$s -> %3$s</string>
-    <string name="session_positions">%1$s -> %2$s</string>
-    <string name="pages_read_count">Pages read: %1$d</string>
     <string name="delete_session_title">Delete session?</string>
     <string name="delete_session_body">Are you sure you want to delete this reading session? This cannot be undone.</string>
     <string name="delete_button">Delete</string>
-    <string name="released_prefix">Released: %1$d</string>
-    <string name="isbn_prefix">ISBN: %1$s</string>
-    <string name="format_prefix">Format: %1$s</string>
-    <string name="total_pages_prefix">Total pages: %1$d</string>
     <string name="progress_page_format">Page %1$d / %2$d</string>
+    <string name="progress_page_only_format">Page %1$d</string>
     <string name="progress_percent_format">%1$d%%</string>
-    <string name="progress_prefix">Progress: %1$s</string>
     <string name="book_format_physical">Physical</string>
     <string name="book_format_ebook">E-book</string>
     <string name="book_format_audiobook">Audiobook</string>
@@ -54,7 +46,9 @@
     <string name="manual_entry_section_when">When</string>
     <string name="manual_entry_section_how_long">How long</string>
     <string name="manual_entry_section_progress">Progress</string>
+    <string name="manual_entry_section_notes">Notes</string>
     <string name="position_invalid_error">Enter a valid, non-negative number</string>
+    <string name="position_percent_suffix">%</string>
     <string name="pages_read_invalid_error">Enter a valid page count</string>
     <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
     <string name="pages_read_derived_placeholder">—</string>
@@ -70,11 +64,36 @@
     <string name="cover_view_action_label">View enlarged cover</string>
     <string name="cover_options_action_label">Cover options</string>
 
+    <!-- BookDetailScreen: Details tab (books-polish pass revamp) -->
+    <string name="detail_published_year">Published %1$d</string>
+    <string name="detail_label_isbn">ISBN</string>
+    <string name="detail_label_format">Format</string>
+    <string name="detail_label_total_pages">Total pages</string>
+    <string name="detail_label_tracking_mode">Tracking</string>
+    <string name="detail_value_unknown">—</string>
+    <string name="detail_progress_title">Progress</string>
+    <string name="detail_progress_not_started">No progress logged yet</string>
+    <string name="timer_card_title">Reading timer</string>
+
+    <!-- BookDetailScreen: Reading history timeline (books-polish pass revamp) -->
+    <string name="timeline_today">Today</string>
+    <string name="timeline_yesterday">Yesterday</string>
+    <string name="session_stat_duration_label">Duration</string>
+    <string name="session_stat_progress_label">Progress</string>
+    <string name="session_stat_pages_label">Pages</string>
+    <string name="session_duration_unknown">Duration unknown</string>
+    <string name="session_position_range">%1$s → %2$s</string>
+    <string name="session_pages_delta">+%1$d pages</string>
+
     <!-- ReadingStatus display labels (shared by BookDetailScreen, EditBookScreen, LibraryScreen) -->
     <string name="reading_status_to_read">To read</string>
     <string name="reading_status_reading">Reading</string>
     <string name="reading_status_finished">Finished</string>
     <string name="reading_status_dnf">Did not finish</string>
+
+    <!-- TrackingMode display labels (shared by BookDetailScreen, EditBookScreen) -->
+    <string name="tracking_mode_pages">Pages</string>
+    <string name="tracking_mode_percent">Percent</string>
 
     <!-- EditBookScreen -->
     <string name="edit_book_title_bar">Edit book</string>
@@ -84,10 +103,19 @@
     <string name="edit_total_pages_label">Total pages (optional)</string>
     <string name="edit_format_label">Format</string>
     <string name="edit_status_label">Reading status</string>
+    <string name="edit_tracking_mode_label">Progress tracking</string>
     <string name="edit_title_required_error">Title is required</string>
     <string name="edit_release_year_invalid_error">Enter a year between %1$d and %2$d</string>
     <string name="edit_purchase_price_invalid_error">Enter a valid non-negative price</string>
     <string name="edit_total_pages_invalid_error">Enter a positive page count</string>
+
+    <!-- EditBookScreen: section headings + field affordances (ROADMAP Task 7 Phase D revamp) -->
+    <string name="edit_section_book_details">Book details</string>
+    <string name="edit_section_physical">Physical</string>
+    <string name="edit_section_status">Status</string>
+    <string name="edit_section_purchase">Purchase</string>
+    <string name="edit_purchase_price_prefix">$</string>
+    <string name="edit_total_pages_suffix">pages</string>
 
     <!-- LibraryScreen status filter -->
     <string name="library_filter_all">All</string>
@@ -108,4 +136,13 @@
         <item quantity="one">%1$d day streak</item>
         <item quantity="other">%1$d day streak</item>
     </plurals>
+
+    <!-- SettingsScreen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_content_description">Open settings</string>
+    <string name="settings_section_stats">Stats</string>
+    <string name="settings_week_start_day_label">Week starts on</string>
+    <string name="settings_week_start_day_description">Controls the boundaries of \"This week\" on the Stats screen.</string>
+    <string name="settings_week_start_day_monday">Monday</string>
+    <string name="settings_week_start_day_sunday">Sunday</string>
 </resources>

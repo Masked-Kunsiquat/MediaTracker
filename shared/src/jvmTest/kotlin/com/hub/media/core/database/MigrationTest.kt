@@ -24,6 +24,10 @@ import org.junit.Rule
  *   [com.hub.media.core.database.entities.BookDetailsEntity.status]/
  *   [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] — see that migration's KDoc
  *   (`Migrations.kt`) for the derivation rules its tests below assert.
+ * - `MIGRATION_3_4` (ROADMAP Task 7 Phase A): the schema v3 -> v4 `ALTER TABLE` that adds
+ *   [com.hub.media.core.database.entities.BookDetailsEntity.trackingMode] plus the new
+ *   `app_settings` table — see that migration's KDoc (`Migrations.kt`) for the derivation rules its
+ *   tests below assert.
  *
  * Uses Room KMP's [MigrationTestHelper] against the real exported schemas in `shared/schemas`
  * (the `room { schemaDirectory(...) }` config in `shared/build.gradle.kts`) rather than
@@ -291,6 +295,169 @@ class MigrationTest {
             db.prepare("SELECT COUNT(*) FROM book_details").use { stmt ->
                 assertTrue(stmt.step())
                 assertEquals(0, stmt.getInt(0))
+            }
+        }
+    }
+
+    // ==========================================================================================
+    // MIGRATION_3_4 (ROADMAP Task 7 Phase A): adds `book_details.trackingMode` and the new
+    // `app_settings` table. See that migration's KDoc (`Migrations.kt`) for the full `ALTER TABLE`/
+    // `CREATE TABLE`/derivation rationale.
+    // ==========================================================================================
+
+    /**
+     * The core deliverable (task requirement): a v3 database seeded with one book that has a known
+     * `totalPages` and one that doesn't must, after migrating to v4, land the former on
+     * `trackingMode = 'PAGES'` and the latter on `'PERCENT'` — reproducing exactly the mode the app
+     * already inferred for each pre-v4 (`totalPages != null`) — while every pre-existing
+     * `book_details` column (`isbn`/`format`/`totalPages`/`status`/`finishedAt`) and every
+     * `media_items` row from the v3 seed survives completely untouched.
+     *
+     * ### Kill-test performed while writing this test (per task instructions), then reverted
+     * Two deliberate breaks were verified by hand and both failed as expected:
+     * 1. Replacing the derivation `UPDATE ... WHERE totalPages IS NULL` with a no-op (every row
+     *    keeps the blanket `'PAGES'` default from the column's own `DEFAULT` regardless of
+     *    `totalPages`) made the `"PERCENT" to true` assertion below fail directly, since
+     *    `media-no-total-pages` incorrectly still read `'PAGES'`.
+     * 2. Swapping the `trackingMode` column definition to omit `NOT NULL DEFAULT 'PAGES'` (an
+     *    intentionally invalid `ALTER TABLE` for a table with existing rows and no default) made
+     *    `runMigrationsAndValidate` throw before either assertion below could run at all.
+     *
+     * Both were reverted immediately after confirming the failure, restoring `MIGRATION_3_4` to its
+     * committed shape.
+     */
+    @Test
+    fun migrate3To4_derivesPagesForKnownTotalPages_percentForUnknown() {
+        helper.createDatabase(3).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-with-total-pages', 'BOOK', 'Has Total Pages', 2020, 9.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt) " +
+                    "VALUES ('media-with-total-pages', '9780000000000', 'PHYSICAL', 300, 'READING', NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-no-total-pages', 'BOOK', 'No Total Pages', 2019, 5.0, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt) " +
+                    "VALUES ('media-no-total-pages', '9780000000001', 'EBOOK', NULL, 'TO_READ', NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(4, listOf(MIGRATION_3_4)).use { db ->
+            val results = mutableMapOf<String, Pair<String, Boolean>>()
+            db.prepare(
+                "SELECT mediaId, trackingMode, totalPages, isbn, format, status " +
+                    "FROM book_details ORDER BY mediaId",
+            ).use { stmt ->
+                while (stmt.step()) {
+                    val mediaId = stmt.getText(0)
+                    results[mediaId] = stmt.getText(1) to stmt.isNull(2)
+                    // Pre-existing columns must survive untouched.
+                    if (mediaId == "media-with-total-pages") {
+                        assertEquals("9780000000000", stmt.getText(3))
+                        assertEquals("PHYSICAL", stmt.getText(4))
+                        assertEquals("READING", stmt.getText(5))
+                    } else {
+                        assertEquals("9780000000001", stmt.getText(3))
+                        assertEquals("EBOOK", stmt.getText(4))
+                        assertEquals("TO_READ", stmt.getText(5))
+                    }
+                }
+            }
+
+            assertEquals(
+                setOf("media-with-total-pages", "media-no-total-pages"),
+                results.keys,
+                "both v3 book_details rows must survive",
+            )
+            assertEquals(
+                "PAGES" to false,
+                results["media-with-total-pages"],
+                "a book with a known totalPages must derive PAGES (totalPages IS NULL == false)",
+            )
+            assertEquals(
+                "PERCENT" to true,
+                results["media-no-total-pages"],
+                "a book with an unknown totalPages must derive PERCENT (totalPages IS NULL == true)",
+            )
+        }
+    }
+
+    /**
+     * Proves the migration actually relaxed the schema to accept an explicit `trackingMode` value
+     * independent of `totalPages` going forward (not just that it left v3 data alone) — mirroring
+     * [migrate2To3_newColumnsAcceptFinishedStatusAndFinishedAt]'s "new capability" shape.
+     */
+    @Test
+    fun migrate3To4_newColumnAcceptsExplicitTrackingModeIndependentOfTotalPages() {
+        helper.createDatabase(3).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-1', 'BOOK', 'Test Book', 2020, 9.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt) " +
+                    "VALUES ('media-1', '9780000000000', 'PHYSICAL', 300, 'TO_READ', NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(4, listOf(MIGRATION_3_4)).use { db ->
+            // A book with a known totalPages can still be explicitly set to PERCENT -- the whole
+            // point of decoupling trackingMode from totalPages inference.
+            db.execSQL("UPDATE book_details SET trackingMode = 'PERCENT' WHERE mediaId = 'media-1'")
+            db.prepare("SELECT trackingMode, totalPages FROM book_details WHERE mediaId = 'media-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals("PERCENT", stmt.getText(0))
+                assertEquals(300, stmt.getInt(1))
+            }
+        }
+    }
+
+    /** A book with zero rows around it still gets the blanket default, same shape as [migrate2To3_emptyDatabase_validatesCleanly]. */
+    @Test
+    fun migrate3To4_emptyDatabase_validatesCleanly() {
+        helper.createDatabase(3).use { }
+
+        helper.runMigrationsAndValidate(4, listOf(MIGRATION_3_4)).use { db ->
+            db.prepare("SELECT COUNT(*) FROM book_details").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0))
+            }
+        }
+    }
+
+    /**
+     * The new `app_settings` table (task requirement: "the settings table exists and is
+     * writable") must exist post-migration and accept a real insert/read-back, even though the
+     * pre-v4 database it migrated from never had this table at all.
+     */
+    @Test
+    fun migrate3To4_appSettingsTableExistsAndIsWritable() {
+        helper.createDatabase(3).use { }
+
+        helper.runMigrationsAndValidate(4, listOf(MIGRATION_3_4)).use { db ->
+            db.execSQL(
+                "INSERT INTO app_settings (`key`, `value`) VALUES ('week_start_day', 'MONDAY')",
+            )
+            db.prepare("SELECT `value` FROM app_settings WHERE `key` = 'week_start_day'").use { stmt ->
+                assertTrue(stmt.step(), "the inserted setting must be queryable back")
+                assertEquals("MONDAY", stmt.getText(0))
+            }
+
+            // The key is the primary key: re-inserting under the same key must replace, not
+            // duplicate (mirroring AppSettingsDao.upsert's ON CONFLICT REPLACE semantics, checked
+            // here at the raw-SQL level via `INSERT OR REPLACE` since this test seeds via SQL, not
+            // through the DAO).
+            db.execSQL(
+                "INSERT OR REPLACE INTO app_settings (`key`, `value`) VALUES ('week_start_day', 'SUNDAY')",
+            )
+            db.prepare("SELECT COUNT(*) FROM app_settings WHERE `key` = 'week_start_day'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(1, stmt.getInt(0), "re-inserting under the same key must replace, not duplicate")
             }
         }
     }

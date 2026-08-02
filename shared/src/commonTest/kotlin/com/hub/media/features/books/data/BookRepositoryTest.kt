@@ -9,6 +9,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import kotlin.test.AfterTest
@@ -242,6 +243,7 @@ class BookRepositoryTest {
             totalPages = 366,
             format = BookFormat.HARDCOVER,
             status = ReadingStatus.READING,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -254,6 +256,7 @@ class BookRepositoryTest {
         assertEquals(366, details?.totalPages)
         assertEquals(BookFormat.HARDCOVER, details?.format)
         assertEquals(ReadingStatus.READING, details?.status)
+        assertEquals(TrackingMode.PERCENT, details?.trackingMode)
         // ISBN is not editable in this phase -- must be untouched.
         assertEquals("9780593135204", details?.isbn)
 
@@ -277,6 +280,7 @@ class BookRepositoryTest {
             totalPages = null,
             format = BookFormat.EBOOK,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -301,6 +305,7 @@ class BookRepositoryTest {
             totalPages = 999,
             format = BookFormat.EBOOK,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
         assertIs<Resource.Error>(result)
 
@@ -323,6 +328,7 @@ class BookRepositoryTest {
             purchasePrice = -0.01,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Error>(result)
 
@@ -342,6 +348,7 @@ class BookRepositoryTest {
             totalPages = 0,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
         assertIs<Resource.Error>(result)
 
@@ -361,6 +368,7 @@ class BookRepositoryTest {
             totalPages = -5,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
         assertIs<Resource.Error>(result)
 
@@ -380,6 +388,7 @@ class BookRepositoryTest {
             releaseYear = 1000,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Error>(result)
 
@@ -399,6 +408,7 @@ class BookRepositoryTest {
             releaseYear = 9999,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Error>(result)
 
@@ -413,6 +423,7 @@ class BookRepositoryTest {
             title = "Any Title",
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Error>(result)
         assertTrue(result.message.contains("not found"))
@@ -432,19 +443,22 @@ class BookRepositoryTest {
             totalPages = 150,
             format = BookFormat.PAPERBACK,
             status = ReadingStatus.READING,
+            trackingMode = TrackingMode.PAGES,
         )
         assertIs<Resource.Success<Unit>>(result)
 
         val mediaItem = db.mediaItemDao().getById(mediaId)
         assertEquals("Repaired Title", mediaItem?.title)
 
-        // The missing row is self-healed: created with the given format/totalPages and a null isbn.
+        // The missing row is self-healed: created with the given format/totalPages/trackingMode
+        // and a null isbn.
         val details = db.bookDetailsDao().getByMediaId(mediaId)
         assertEquals(mediaId, details?.mediaId)
         assertEquals(null, details?.isbn)
         assertEquals(150, details?.totalPages)
         assertEquals(BookFormat.PAPERBACK, details?.format)
         assertEquals(ReadingStatus.READING, details?.status)
+        assertEquals(TrackingMode.PAGES, details?.trackingMode)
     }
 
     @Test
@@ -458,6 +472,7 @@ class BookRepositoryTest {
             title = "Finish Me",
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.FINISHED,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -476,6 +491,7 @@ class BookRepositoryTest {
             title = "Already Finished",
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.FINISHED,
+            trackingMode = TrackingMode.PERCENT,
         )
         val firstFinishedAt = db.bookDetailsDao().getByMediaId(mediaId)?.finishedAt
 
@@ -484,6 +500,7 @@ class BookRepositoryTest {
             title = "Already Finished (edited)",
             format = BookFormat.HARDCOVER,
             status = ReadingStatus.FINISHED,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -501,6 +518,7 @@ class BookRepositoryTest {
             title = "Reopened",
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.FINISHED,
+            trackingMode = TrackingMode.PERCENT,
         )
 
         val result = repo.updateBookMetadata(
@@ -508,6 +526,7 @@ class BookRepositoryTest {
             title = "Reopened",
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.READING,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -550,6 +569,7 @@ class BookRepositoryTest {
             title = "Clocked Book",
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.FINISHED,
+            trackingMode = TrackingMode.PERCENT,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -612,5 +632,97 @@ class BookRepositoryTest {
         // Both books exist
         val allBooks = db.mediaItemDao().observeByType(MediaType.BOOK).first()
         assertEquals(2, allBooks.size)
+    }
+
+    // ==========================================================================================
+    // TrackingMode (ROADMAP Task 7 Phase A): schema v4's explicit pages-vs-percent field,
+    // replacing the old totalPages != null inference. See BookDetailsEntity.trackingMode's and
+    // TrackingMode's KDoc for the full rationale.
+    // ==========================================================================================
+
+    @Test
+    fun addBook_knownTotalPages_defaultsTrackingModeToPages() = runTest {
+        val result = repo.addBook(title = "Paged Book", format = BookFormat.PHYSICAL, totalPages = 300)
+        assertIs<Resource.Success<String>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(result.data)
+        assertEquals(TrackingMode.PAGES, details?.trackingMode)
+    }
+
+    @Test
+    fun addBook_unknownTotalPages_defaultsTrackingModeToPercent() = runTest {
+        val result = repo.addBook(title = "Percent Book", format = BookFormat.EBOOK)
+        assertIs<Resource.Success<String>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(result.data)
+        assertEquals(null, details?.totalPages)
+        assertEquals(TrackingMode.PERCENT, details?.trackingMode)
+    }
+
+    @Test
+    fun addBook_explicitTrackingModeOverridesTotalPagesDerivedDefault() = runTest {
+        // A book can legitimately have both a known page count AND be tracked by percent (e.g. an
+        // ebook whose page count is known from the print edition but whose reader only reports
+        // percent) -- trackingMode is fully independent of totalPages once set explicitly.
+        val result = repo.addBook(
+            title = "Explicit Percent Despite Pages",
+            format = BookFormat.EBOOK,
+            totalPages = 300,
+            trackingMode = TrackingMode.PERCENT,
+        )
+        assertIs<Resource.Success<String>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(result.data)
+        assertEquals(300, details?.totalPages)
+        assertEquals(TrackingMode.PERCENT, details?.trackingMode)
+    }
+
+    @Test
+    fun updateBookMetadata_trackingModePages_persistsAndReadsBack() = runTest {
+        val addResult = repo.addBook(title = "Mode Switch Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+        // Sanity: no totalPages given, so the default derivation landed on PERCENT.
+        assertEquals(TrackingMode.PERCENT, db.bookDetailsDao().getByMediaId(mediaId)?.trackingMode)
+
+        val result = repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Mode Switch Book",
+            totalPages = 250,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
+        )
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(TrackingMode.PAGES, details?.trackingMode)
+
+        val detail = repo.observeBookDetail(mediaId).first { it?.details?.trackingMode == TrackingMode.PAGES }
+        assertEquals(TrackingMode.PAGES, detail?.details?.trackingMode)
+    }
+
+    @Test
+    fun updateBookMetadata_trackingModePercent_persistsIndependentlyOfTotalPages() = runTest {
+        // The whole point of this phase: trackingMode no longer flips as a side effect of editing
+        // totalPages. A book with a known page count can still be explicitly set to PERCENT.
+        val addResult = repo.addBook(title = "Independent Fields Book", format = BookFormat.PHYSICAL, totalPages = 400)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+        assertEquals(TrackingMode.PAGES, db.bookDetailsDao().getByMediaId(mediaId)?.trackingMode)
+
+        val result = repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Independent Fields Book",
+            totalPages = 400,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
+        )
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(400, details?.totalPages, "totalPages must be untouched by a trackingMode-only intent")
+        assertEquals(TrackingMode.PERCENT, details?.trackingMode)
     }
 }

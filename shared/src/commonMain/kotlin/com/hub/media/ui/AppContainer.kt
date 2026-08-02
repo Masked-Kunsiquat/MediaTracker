@@ -10,6 +10,7 @@ import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.stats.data.StatsRepository
 
 /**
@@ -56,6 +57,14 @@ public class AppContainer(
      * ahead of their consuming screens.
      */
     public val statsRepository: StatsRepository = StatsRepository(database)
+
+    /**
+     * Typed access to the app-wide `app_settings` key-value store (schema v4, ROADMAP Task 7 Phase
+     * A), consumed by `SettingsViewModel` (Phase B, the first concrete setting) and by
+     * `StatsViewModel` (which reads the week-start-day preference this repository holds to drive
+     * its "this week" bounds — see that class's KDoc).
+     */
+    public val settingsRepository: SettingsRepository = SettingsRepository(database.appSettingsDao())
 
     /**
      * Connects timer/manual reading-session results plus position bounds to

@@ -7,6 +7,222 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Explicit per-book tracking mode** (ROADMAP Task 7 Phase A) — replaces the old silent
+  `totalPages != null` inference (page-based vs. percent-based progress) with an explicit
+  `TrackingMode` (`PAGES`/`PERCENT`) field on `BookDetailsEntity`, editable on the Edit Book screen
+  alongside format/status. Ships **Room schema v4** with a tested `MIGRATION_3_4`
+  (`shared/.../core/database/Migrations.kt`): an `ALTER TABLE ... ADD COLUMN trackingMode TEXT NOT
+  NULL DEFAULT 'PAGES'` followed by `UPDATE ... SET trackingMode = 'PERCENT' WHERE totalPages IS
+  NULL`, chosen specifically to reproduce the app's pre-v4 inferred behavior exactly (no existing
+  book's mode changes as an observable side effect of upgrading). Ingestion
+  (`BookRepository.addBook` / `AddBookByIsbnUseCase`) defaults new books the same way: a known page
+  count -> `PAGES`, otherwise `PERCENT`. `BookDetailScreen`'s progress formatting and its
+  pending/manual session dialogs (`isPageMode`, the Task 6 Phase B auto-derived `deltaPages`
+  behavior) now all read this explicit field instead of re-deriving the mode from `totalPages`,
+  closing the "two competing notions of mode" gap the old inference left open.
+- **App settings store** (ROADMAP Task 7 Phase A) — a new `app_settings` key-value table (`key TEXT
+  PRIMARY KEY, value TEXT NOT NULL`), added in the same schema v4 migration above since it's a
+  small, additive, unrelated change bundled into one migration rather than two. A key-value shape
+  was chosen over a single-row typed settings table specifically so that adding a future setting
+  (e.g. the week-start-day preference ROADMAP Task 7 Phase B will add) needs no further schema
+  migration. `AppSettingsDao` plus a typed `SettingsRepository`
+  (`shared/.../features/settings/data/`) expose reactive `String`/`Int`/`Boolean` accessors with
+  the raw key-value mechanics hidden; no setting has defined semantics yet — Phase B is the first
+  consumer.
+- **Settings screen + week-start-day preference** (ROADMAP Task 7 Phase B) — the first concrete
+  setting to occupy the store Phase A built, and the app's first Settings screen:
+  - **`WeekStartDay`** (`MONDAY`/`SUNDAY`, `shared/.../features/settings/data/WeekStartDay.kt`):
+    persisted via `SettingsRepository` under a single `week_start_day` key, stored by the enum
+    constant's *name* (not ordinal) so a future reordering/insertion can't silently corrupt an
+    existing stored value — a deliberate refinement over the ordinal-`Int` approach Phase A's own
+    `SettingsRepository` KDoc had speculated a setting like this might use. `observeWeekStartDay`/
+    `getWeekStartDay` default to `MONDAY` — ISO-8601, matching the app's pre-Phase-B hardcoded
+    behavior exactly — whenever the key is unset *or* holds a value that no longer maps to a
+    constant, so nothing changes for a user who never opens Settings.
+  - **`StatsRepository.thisWeekBounds`** gains a `weekStartDay: WeekStartDay = WeekStartDay.MONDAY`
+    parameter (defaulted, so no existing call site needed updating for the default behavior) and
+    now computes `daysSinceStart` as `(today's ISO day number - weekStartDay's ISO day number) mod
+    7`, replacing the old Monday-only subtraction. `thisMonthBounds` is unchanged (calendar month,
+    per the ROADMAP's decision). **`observeReadingStreak` finding**: checked and confirmed
+    unaffected by this preference — it walks backward one calendar day at a time via `computeStreak`
+    with no notion of "week" at all, so there is no week boundary for the setting to shift; this is
+    documented on the method directly rather than left implicit. New `StatsRepositoryTest` cases
+    cover both start days including the awkward boundary cases: a Sunday date under a `MONDAY`
+    start maps back to the *preceding* Monday, the same Sunday under a `SUNDAY` start maps to
+    *itself*, plus a Wednesday and a Monday under a `SUNDAY` start.
+  - **`SettingsViewModel` + `SettingsUiState`** (`shared/.../ui/`): a single `StateFlow` (`map` over
+    `SettingsRepository.observeWeekStartDay`, `stateIn`/`WhileSubscribed`, matching
+    `LibraryViewModel`/`StatsViewModel`'s convention) exposing the current week-start-day preference
+    plus a `setWeekStartDay(...)` action. `AppContainer` now wires a `settingsRepository`
+    (previously unexposed since Phase A defined no concrete setting). 4 new `SettingsViewModelTest`
+    cases (Room-backed, added to `shared/build.gradle.kts`'s android-unit-test exclusion filter by
+    exact class name, mirroring `StatsViewModelTest`/`EditBookViewModelTest`) plus 7 new
+    `WeekStartDayTest` cases (default-when-unset, persistence round-trip, malformed-value handling).
+  - **`StatsViewModel` reactivity decision**: its "this week" period now **re-buckets immediately**
+    when the week-start-day setting changes while the Stats screen is open, via
+    `settingsRepository.observeWeekStartDay().flatMapLatest { ... }` feeding the existing week
+    `combine` chain — straightforward to add without restructuring the ViewModel's shape, so it was
+    done rather than left stale. `"This month"`'s bounds and `today` itself are still resolved once
+    at construction (unchanged, already-documented staleness — a real midnight/month rollover still
+    needs a fresh ViewModel; only the *setting* is now live). 2 new `StatsViewModelTest` cases prove
+    a week-start-day change re-buckets "this week" without recreating the ViewModel, and that "this
+    month" stays untouched by it.
+  - **Settings screen** (`app/.../ui/screens/SettingsScreen.kt`): a `LazyColumn` of titled,
+    card-backed `SettingsSection`s — built this way specifically because the ROADMAP expects more
+    settings to land here later, so a future one is a new row/section rather than a screen
+    restructure. The week-start-day choice renders as a two-option Material 3
+    `SingleChoiceSegmentedButtonRow` (chosen over `EditBookScreen`'s vertical radio rows: segmented
+    buttons fit a small, fixed, side-by-side binary choice better than a list built for longer,
+    unrelated option sets). `Route.Settings`/`SettingsScreenRoute`/stateless `SettingsScreen` follow
+    the established route-wrapper/stateless-screen split; reachable from a new
+    `Icons.Filled.Settings` icon in `LibraryScreen`'s TopAppBar, alongside the existing stats icon —
+    confirmed present in the curated `material-icons-core` set (unlike the stats/chart icon gap
+    noted in `v0.4.0`), so no local vector drawable was needed this time. All new user-visible text
+    added via string resources; previews cover both week-start-day selections.
+
+### Changed
+
+- **Details tab and Reading history tab visual revamp** (ROADMAP Task 7 Phase C,
+  `app/.../ui/screens/BookDetailScreen.kt`) — both tabs were "functionally complete but visually
+  plain" going into this task; this phase is layout/hierarchy only, no new state and no ViewModel
+  changes.
+  - **Details tab**: the old single stack of prefix-string `Text` rows ("Released: …", "ISBN: …",
+    "Format: …", "Progress: …") is replaced with a considered hierarchy: `BookHeader` now renders
+    just the cover, a proper heading block (title as `headlineSmall`/bold, release year as a muted
+    subtitle via new `detail_published_year`), and the reading-status chip; a new `ProgressSection`
+    card is promoted directly below the header with the current progress as a large, primary-colored
+    headline plus a `LinearProgressIndicator` whenever a completion fraction is derivable (new
+    `progressFraction` helper, mirroring `formatProgress`'s own page/percent-mode precedence, and
+    degrading to text-only when tracking by page with no known `totalPages`, or to a muted "No
+    progress logged yet" message when nothing has ever been logged); `TimerCard` is restyled with a
+    `primaryContainer` background and full-width buttons so it reads as *the* primary action on the
+    tab rather than another stacked card of equal weight; a new `MetadataCard` renders ISBN (keeping
+    its existing copy `IconButton`)/format/total-pages/tracking-mode as a compact two-column
+    key/value grid (`MetadataRow`) instead of concatenated prefix strings. `released_prefix`/
+    `isbn_prefix`/`format_prefix`/`total_pages_prefix`/`progress_prefix` are deleted from
+    `strings.xml` (superseded by dedicated `detail_*` strings/labels now that each fact has its own
+    UI element) rather than left dangling.
+  - **Reading history tab**: the flat `LazyColumn` of `SessionRow`s (each concatenating
+    `"Duration: 0:31:00  •  42 -> 78"` into one line) is replaced with a **timeline**, built entirely
+    from Compose primitives per AGENTS.md §5 (no chart/timeline library added). `buildTimelineEntries`
+    flattens the existing most-recent-first session list into date-grouped `TimelineEntry` values (a
+    `DateHeader` — "Today"/"Yesterday"/full date — whenever the calendar day changes, since sessions
+    are already time-sorted so simple adjacency is sufficient, no re-sort needed); `TimelineRow`
+    renders each entry against one continuous rail (a plain `Canvas` line + dot, suppressed only at
+    the list's very first/last entry) so the spine runs unbroken through both date separators and
+    session cards. Each session's facts render as distinct `StatBadge` chips (`SessionEventCard`) —
+    duration, start→end position range, pages read — instead of one run-on string; the unknown-
+    duration case (nullable `ReadingSessionEntity.durationSeconds`, schema v2) now shows an explicit
+    muted/italic "Duration unknown" badge rather than omitting the segment silently, and still never
+    renders a misleading `0:00:00`. `session_duration_positions`/`session_positions`/
+    `pages_read_count`/`session_history_title` are deleted (superseded by the new
+    `session_stat_*`/`session_position_range`/`session_pages_delta`/`session_duration_unknown`/
+    `timeline_*` strings and the timeline structure itself, which makes the redundant "Session
+    History" heading unnecessary next to the tab bar's own "Reading history" label). Every existing
+    capability is preserved: per-session edit/delete icons and the delete confirmation dialog, the
+    "Log session manually" affordance, and the empty state.
+  - **State hoisting verified unchanged**: `sessionToDelete`/`showManualEntry`/`sessionToEdit`/
+    `selectedTabIndex` stay hoisted in `BookDetailContent` above the `when (selectedTabIndex)` branch
+    exactly as Task 6 Phase D established — this phase only changed what renders *inside* each tab's
+    composable, not where dialog-triggering state lives. `SelectionContainer`/`DisableSelection`
+    scoping and `InteractiveCoverBox`'s tap-to-enlarge/long-press-to-refetch behavior are unchanged
+    (now wrapping `BookHeader` and `MetadataCard` as two separate `SelectionContainer`s instead of
+    one spanning the old single metadata block, so the timer's live-ticking elapsed time is never
+    inside a selectable region).
+  - New `@Preview`s cover both tabs in light and dark theme (`MediaTrackerTheme(darkTheme = true,
+    dynamicColor = false)`), plus the awkward states: no cover, an unusually long title, unknown
+    total pages, no progress logged, an empty session list, and a session with unknown duration.
+  - **Deferred to Phase D**: the Edit Book screen's own visual revamp (ROADMAP Task 7's separate
+    "Edit screen revamp" bullet) is out of scope for this phase.
+- **Edit Book screen visual revamp** (ROADMAP Task 7 Phase D — final phase of Task 7,
+  `app/.../ui/screens/EditBookScreen.kt`) — the last screen still presenting as one undifferentiated
+  scrolling column of text fields and vertical radio groups; brought in line with the `SettingsScreen`/
+  `BookDetailScreen` visual language established in Phases B/C. Layout/control choices only — no
+  ViewModel, validation-bound, or `EditBookUiState` shape changes.
+  - **Four titled, card-backed sections** replace the flat field list, reusing `SettingsScreen`'s
+    "`Text` title above a `Card`" convention verbatim via a new private `FormSection`: **Book
+    details** (title, release year), **Physical** (format, total pages, tracking mode), **Status**
+    (reading status), **Purchase** (purchase price).
+  - **Each enum picker now uses the Material 3 control that fits its option count**, replacing three
+    identical vertical radio-button groups: `TrackingMode` (2 values) is a
+    `SingleChoiceSegmentedButtonRow`, matching `SettingsScreen`'s week-start-day control exactly;
+    `BookFormat` (5 values) is a read-only `ExposedDropdownMenuBox` dropdown, collapsing what used to
+    be five stacked radios for an infrequently-changed field into one closed field opened on demand;
+    `ReadingStatus` (4 values) is a `FilterChip` row, mirroring `LibraryScreen`'s existing
+    `StatusFilterRow` shape for the same enum so it renders consistently wherever it appears in the
+    app.
+  - **Save/Cancel move to a persistent, non-scrolling bottom action bar** (new `EditBookBottomBar`,
+    on an elevated `Surface` at the default `BottomAppBar` tonal elevation) instead of two inline
+    buttons at the end of the scrolling content, reading as one committed action pair that's always
+    reachable. The Save button shows an inline `CircularProgressIndicator` in place of its label
+    while `EditBookUiState.Ready.isSaving` is true, in addition to the existing disabled-fields
+    behavior.
+  - **Purchase price gets a "$" prefix and total pages a "pages" suffix** (`OutlinedTextField`'s
+    `prefix`/`suffix` slots) so each numeric field reads as the unit it represents; keyboard types
+    (`Decimal`/`Number`) are unchanged.
+  - **Parse-once validation is untouched**: title (non-blank), release year
+    (`BookRepository.MIN_RELEASE_YEAR`..`MAX_RELEASE_YEAR`), purchase price (`>= 0`), and total pages
+    (`> 0`) are still each parsed exactly once above the fields, with `isError`/`supportingText`
+    disambiguating blank/unparseable/out-of-range and gating the bottom bar's Save button — only the
+    surrounding layout changed. Two new strings (`edit_purchase_price_prefix`, `edit_total_pages_suffix`)
+    plus four new section-title strings (`edit_section_book_details`/`edit_section_physical`/
+    `edit_section_status`/`edit_section_purchase`) were added; no existing `EditBookScreen` string was
+    orphaned by the revamp. Previews cover light and dark theme, a validation error, a save in
+    progress, unknown total pages (with no purchase price on record), and a very long title.
+- **Session-logging dialogs visual revamp** (ROADMAP Task 7 Phase E — final phase of Task 7,
+  `app/.../ui/screens/BookDetailScreen.kt`) — `ManualSessionDialog`/`PendingSessionDialog` were the
+  last surface still in the pre-revamp style: Task 6 Phase B had already made them functionally
+  solid (grouped fields, auto-derived pages, full parse-once validation) but never gave them a
+  visual pass, and both launch directly from the screens Phases B/C/D just restyled. Layout only —
+  every validation rule, precision-preservation behavior, and dismissal rule from Task 6 Phase B is
+  unchanged.
+  - **Presentation: full-screen `Dialog`, not a bigger `AlertDialog`.** `ManualSessionDialog` alone
+    carries date, time, duration, start/end position, optional pages, and notes — enough that the
+    old `AlertDialog` already needed an internal scroll on a phone. Material 3's own guidance favors
+    a full-screen dialog over `AlertDialog`/`ModalBottomSheet` once a form is this involved on a
+    compact screen, so both dialogs now render through a new shared `SessionDialogFrame`: a plain
+    `Dialog` (`DialogProperties.usePlatformDefaultWidth = false`, not a nav-graph destination, since
+    the dialogs are still opened from hoisted boolean/nullable state in `BookDetailContent` per
+    AGENTS.md §5) hosting a `CenterAlignedTopAppBar`, a scrollable body of new card-backed
+    `SessionFormSection`s (the same "title `Text` above a `Card`" convention as `EditBookScreen`'s
+    `FormSection`/`SettingsScreen`'s `SettingsSection`), and a pinned `SessionDialogBottomBar`
+    (elevated `Surface`, two full-width buttons) mirroring `EditBookBottomBar` exactly — the pair now
+    reads as one system with the rest of the app rather than a fourth style.
+  - **`ManualSessionDialog`**: "When" (date/time buttons, now side by side), "How long" (duration,
+    new "min" suffix), "Progress" (start/end position, page-mode auto-derived pages read or
+    percent-mode's manual field, now with a "%" suffix on the position fields in percent mode), and
+    a new "Notes" section (previously a bare field with no section of its own) — plus a top-bar close
+    icon alongside the bottom bar's Cancel, both wired to the same `onDismiss`.
+  - **`PendingSessionDialog`**: the finished run's duration is now a small `primaryContainer` stat
+    card echoing `TimerCard` (the control that produced the run), above the same "Progress"/"Notes"
+    sections. **Still not dismissible by outside tap or back press** — `showCloseIcon = false`,
+    `dismissOnBackPress`/`dismissOnClickOutside = false`, `onDismissRequest = {}` — Discard remains
+    the only path that abandons a finished timed run, and a failed Save still leaves the dialog open
+    with the error shown (now pinned above the bottom bar, outside the scrollable body) and the
+    pending session intact for retry.
+  - **Every Task 6 Phase B non-negotiable verified unchanged**: parse-once validation
+    (blank/unparseable/out-of-range) on every numeric field with `isError`/`supportingText` gating
+    Save; a session's original per-second `durationSeconds` is still re-emitted verbatim when its
+    duration field is untouched (never recomputed from rounded minutes); `MAX_MANUAL_DURATION_MINUTES`
+    still bounds the duration field and a blank duration still saves as a legitimate `null`; page vs.
+    percent mode still reads the stored `TrackingMode` rather than re-inferring it from `totalPages`;
+    the date/time pickers' Cancel button still reverts to the selection captured when each was
+    opened; the start-position field still prefills from `currentProgress` in both dialogs; edit mode
+    still prefills every field from the session being edited.
+  - Three new strings (`manual_entry_section_notes`, `duration_minutes_suffix`,
+    `position_percent_suffix`); `session_duration_label` is deleted (its one call site now composes
+    `timer_card_title` + the formatted duration directly inside the new stat card) — the only string
+    this revamp orphaned. `duration_minutes_label`'s text was shortened now that a "min" suffix
+    carries the unit. New `@Preview`s (light/dark) cover `ManualSessionDialog` in page mode, percent
+    mode, edit mode (prefilled from an existing session), a validation error (duration past the max),
+    and `PendingSessionDialog`'s ready and failed-save states.
+
+**Task 7 is now complete** — UI revamp & settings work across the Details/Reading-history/Edit
+screens, the session-logging dialogs, plus the new Settings screen, explicit tracking mode, and Room
+schema v4 all landed above.
+
 ## [0.5.0] - 2026-08-02
 
 Books polish: the book domain becomes correctable and navigable rather than just functional.

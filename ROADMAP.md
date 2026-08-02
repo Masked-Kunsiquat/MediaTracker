@@ -117,31 +117,72 @@ going wide. Movies & TV move to Task 13.
     one-book-at-a-time re-fetch affordance, but explicitly NOT used in any bulk/loop context this
     phase (see backlog for the deferred bulk-backfill item this constrains).
 
-## Task 7 — UI revamp & settings (next)
+## Task 7 — UI revamp & settings (done — ready for release)
 
 Task 6 made the book domain functionally complete; this task makes it pleasant. Prioritized
 ahead of search because these are the screens in daily use, and the rough edges were reported
 from real use rather than inferred.
 
-- **Details tab revamp.** Currently a plain metadata list plus the timer. Needs a considered
-  layout/visual hierarchy rather than stacked `Text` rows.
-- **Reading history revamp.** A timeline view rather than a flat list, with the individual
-  session events rendered more cleanly (dates, durations, progress deltas as visual elements
-  instead of concatenated strings).
-- **Edit screen revamp.** Same treatment — it is currently a bare column of text fields.
+- **Details tab revamp (done).** Replaced the plain metadata list plus the timer with a considered
+  layout/visual hierarchy: a title/release-year heading block, a promoted `ProgressSection` card,
+  `TimerCard` restyled as the tab's primary action, and metadata (ISBN/format/total pages/tracking
+  mode) as a two-column key/value grid instead of stacked prefix-string `Text` rows.
+- **Reading history revamp (done).** Replaced the flat list with a timeline view (a continuous
+  Canvas-drawn rail with per-day date separators and per-session nodes), with each session's
+  duration/position-range/pages-read rendered as distinct visual chips instead of one concatenated
+  string.
+- **Edit screen revamp (done).** Replaced the bare column of text fields and vertical radio groups
+  with four titled cards (Book details / Physical / Status / Purchase, matching `SettingsScreen`'s
+  card convention) and a per-enum control choice instead of three identical radio groups: a
+  `SingleChoiceSegmentedButtonRow` for the two-value tracking mode, a read-only
+  `ExposedDropdownMenuBox` for the five-value format, and a `FilterChip` row (matching
+  `LibraryScreen`'s status filter) for the four-value reading status. Save/Cancel moved to a
+  persistent bottom action bar. Parse-once validation (blank/unparseable/out-of-range, mirroring
+  `BookRepository`'s real bounds) is unchanged.
 - **Explicit per-book tracking mode (pages vs percent).** Today the mode is *inferred* from
   whether `totalPages` is known, which is invisible to the user and flips silently the moment
   total pages is edited. Replace with an explicit per-book field, editable on the Edit screen,
   defaulted intelligently on ingestion (known page count → pages; ebook without one → percent).
   Requires **Room schema v4** (tracking-mode column + tested `Migration_3_4` per AGENTS.md §8).
-- **Settings screen** — the app has no home for app-wide preferences and now needs one. First
-  occupant: **week start day** (Monday per ISO-8601, or Sunday per US convention), which drives
-  the Stats screen's period bounds.
+- **Settings screen (done).** The app's first home for app-wide preferences. First occupant:
+  **week start day** (Monday per ISO-8601, or Sunday per US convention), which drives the Stats
+  screen's period bounds. `WeekStartDay` (`MONDAY`/`SUNDAY`), persisted by name (not ordinal) via
+  `SettingsRepository` under a `week_start_day` key added in `shared/.../features/settings/data/
+  WeekStartDay.kt`; default (unset or malformed) is `MONDAY`, matching the app's pre-Phase-B
+  hardcoded behavior exactly. `StatsRepository.thisWeekBounds` gained a `weekStartDay` parameter
+  (default `MONDAY`, so no existing call site broke); `thisMonthBounds` is unchanged (calendar
+  month, per the decision below). `observeReadingStreak` was checked and confirmed **unaffected**:
+  it walks backward one calendar day at a time with no notion of "week" at all, so there is no
+  week boundary for the preference to shift. `SettingsViewModel` (new) exposes the current
+  preference reactively and a `setWeekStartDay` action; `StatsViewModel` was extended (not just
+  wired) to *react* to the setting live — its week period now re-buckets via `flatMapLatest` over
+  `observeWeekStartDay()` the moment the preference changes, rather than only on the next
+  ViewModel recreation (the existing "this month"/`today`-fixed-at-construction staleness is
+  otherwise unchanged and remains documented). Settings screen built as an extensible list of
+  titled sections (one `SettingsSection` per group of related rows) rather than hardcoded around
+  this one preference, so a future setting is a new row/section, not a restructure; the
+  week-start-day choice is a two-option `SingleChoiceSegmentedButtonRow` (Material 3's fit for a
+  small, fixed, side-by-side binary choice, versus the vertical radio rows `EditBookScreen` uses
+  for its longer option lists). Reachable via a new `Icons.Filled.Settings` icon in `LibraryScreen`'s
+  TopAppBar — confirmed present in the curated `material-icons-core` set, no local vector drawable
+  needed.
   - Stats period semantics decided: "this week"/"this month" stay **calendar** periods (week =
     the chosen start day 00:00 → same weekday next week; month = 1st → 1st, local timezone),
-    NOT rolling 7/30-day windows. Only the week's start day becomes configurable. Note the
-    existing documented staleness: period bounds are computed when the ViewModel is constructed,
-    so a session spanning midnight/Monday rollover needs a re-subscribe to re-bucket.
+    NOT rolling 7/30-day windows. Only the week's start day becomes configurable. The previously
+    documented staleness (bounds computed once at ViewModel construction) is now *partially*
+    resolved: a live week-start-day change re-buckets immediately; a real midnight/week rollover
+    while the screen stays open still needs a re-subscribe, as before.
+- **Session-logging dialogs revamp (done).** The manual-entry and save-after-timer dialogs were the
+  last surface still in the pre-revamp style — Task 6 Phase B made them functionally solid but never
+  gave them a visual pass, and both launch from the screens the phases above just restyled. Both now
+  render as a full-screen `Dialog` (Material 3's own guidance for a form this involved on a compact
+  screen, over a bigger `AlertDialog`/`ModalBottomSheet`) through a shared `SessionDialogFrame`:
+  card-backed titled sections (matching `EditBookScreen`/`SettingsScreen`'s convention) and a pinned
+  bottom action bar. Every Task 6 Phase B validation/precision/dismissal rule (parse-once validation,
+  duration-precision preservation on untouched edits, the `MAX_MANUAL_DURATION_MINUTES` bound,
+  `TrackingMode`-driven page/percent mode, date/time picker cancel-restore, `currentProgress`
+  prefill, edit-mode prefill, and `PendingSessionDialog`'s not-dismissible-except-by-Discard rule)
+  is unchanged — layout only.
 
 ## Task 8 — Data portability
 
@@ -157,12 +198,49 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   export as `0`), reading status, `finishedAt`, and formats.
 - **CSV import**: the harder half. Needs a duplicate policy (match on ISBN? on title+year?
   skip/merge/replace), validation mirroring the use-case layer rather than a second divergent
-  copy, and an all-or-nothing transaction so a malformed row can't half-import a library.
+  copy, and an all-or-nothing transaction so a malformed row can't half-import a library. The
+  duplicate policy must support **merging into an existing book**, not only skip-or-replace — the
+  Goodreads import below depends on merge being available so a later re-import can backfill fields
+  the model doesn't have a home for yet, rather than needing a staging table now or blocking on
+  Task 12.
 - **`.sqlite` backup + restore**: whole-database file copy out, and restore back in. Restore must
   refuse a file whose `user_version` is newer than the running app understands, rather than
   letting Room fail obscurely at open time.
 - Establishes the Storage Access Framework / file-picker plumbing the app has never needed
   before — which also makes the deferred **manual cover entry** backlog item cheap afterward.
+- **Goodreads CSV import** (`goodreads_library_export.csv`), scheduled as the final phase of this
+  task, after the generic export/import/backup phases above exist. It is the same machinery those
+  phases already build — SAF file picking, CSV parsing, duplicate policy, validation, all-or-nothing
+  transaction — with only a column-mapping layer on top; building it separately later would mean
+  duplicating or retrofitting that pipeline.
+  - Mapping is largely clean against the current model: `Title`; `Number of Pages` →
+    `totalPages`; `Binding` → `BookFormat` (the `PAPERBACK`/`HARDCOVER` values Task 6 added);
+    `Exclusive Shelf` (`read`/`currently-reading`/`to-read`) → `ReadingStatus`; `Date Read` →
+    `finishedAt`. Goodreads exports both `Year Published` and `Original Publication Year` — the
+    edition-vs-work distinction that made a 2026 anniversary printing display instead of the 2016
+    original — so which one `releaseYear` takes must be decided and documented when this phase is
+    implemented.
+  - **Three columns have no home yet and would be silently dropped**: `Bookshelves` → genres
+    (Task 12), `Read Count` → read-throughs (Task 10), and `My Rating` → nothing at all, since the
+    model has no rating field. Mitigated by the merge duplicate policy required above: a later
+    re-import (once Task 10/12 land) can backfill shelves and read counts into books already
+    imported today, instead of staging the data or delaying this import until after Task 12.
+  - Parsing gotcha to record: Goodreads armors ISBNs against Excel as `="9780593135204"`, so a
+    naive parser reads that literal string and every ISBN match fails — strip the `="` / `"`
+    wrapper before validation. Verify the exact column set against a real export file rather than
+    trusting this list.
+  - **Handling the columns with no home yet — import staging, not speculative columns.** The
+    tempting fix is to migrate `rating`/shelves/read-count columns in now and leave them as
+    unread "shadow data" until their features ship. Rejected: under the §8 freeze rule every
+    shipped column is permanent, so that commits the schema to shapes for features not yet
+    designed — and it demonstrably gets them wrong, since ratings turn out to belong on the
+    read-through entity (Task 10), not on the book. The honest version is a generic
+    **import-staging table** holding unmapped columns as raw key/value pairs keyed by book id: it
+    commits to no shape, keeps the import lossless, and lets Task 10 (ratings, read counts) and
+    Task 12 (shelves → genres) backfill from it when those features land. The alternative — simply
+    sequencing the Goodreads import after Tasks 10 and 12 so everything maps first-class — is
+    cleaner still and needs no staging table at all; pick between them when this phase is
+    scheduled, based on how soon the import is actually wanted.
 
 ## Task 9 — Search & discovery
 
@@ -225,6 +303,14 @@ individual session histories per read-through."
 - **Room schema v5** (read-through table or session grouping column + tested `Migration_4_5`),
   with the migration assigning every existing session to read-through #1 so no history is lost.
 - Per-read stats become possible (duration per read, pages/day per read) and feed Task 11.
+- **Ratings belong here, per read-through** (user decision), not as a standalone book column.
+  The model has no rating field today and Goodreads exports one, so it is tempting to add
+  `rating` to `book_details` early — but a rating is per *read* ("loved it the first time, dragged
+  the second"), so a book-level column added now would have to be migrated onto the read-through
+  entity by this task anyway. Adding it as a column on the read-through table the migration
+  already creates costs one migration instead of two and puts it on the right entity first time.
+  This also means the Goodreads importer must not land before this task without a plan for its
+  `My Rating` column — see Task 8's import-staging note.
 
 ## Task 11 — Analytics & stats revamp
 
@@ -304,6 +390,9 @@ numbered task rather than left to be rediscovered.
   local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
   scoped storage considerations) — Task 8 establishes exactly that plumbing for CSV/backup, so
   this becomes cheap once Task 8 lands and should be picked up right after it.
+- **No book rating field.** The schema has nothing to hold a per-book rating today, which is also
+  why the Goodreads import (Task 8) has no home for the `My Rating` column. Worth considering on
+  its own merits independent of that import, not only as an import-completeness gap.
 
 ## Unscheduled features
 

@@ -69,4 +69,12 @@ sealed interface Route {
     data object Stats : Route {
         override val route: String = "stats"
     }
+
+    /**
+     * Settings screen: app-wide preferences, starting with the week-start-day preference that
+     * drives [Stats]'s period bounds (ROADMAP Task 7 Phase B).
+     */
+    data object Settings : Route {
+        override val route: String = "settings"
+    }
 }

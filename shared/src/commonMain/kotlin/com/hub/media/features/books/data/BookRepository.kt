@@ -8,6 +8,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import kotlin.time.Clock
@@ -111,6 +112,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
      *   yet; [com.hub.media.features.books.domain.AddBookByIsbnUseCase] relies on this default
      *   rather than passing it explicitly, since ISBN metadata carries no signal about whether the
      *   user has already started/finished the physical copy they're cataloguing.
+     * @param trackingMode Initial [TrackingMode] (schema v4, ROADMAP Task 7 Phase A). Defaults to
+     *   [TrackingMode.PAGES] when [totalPages] is known, [TrackingMode.PERCENT] otherwise — the
+     *   same rule `MIGRATION_3_4` applies retroactively to pre-v4 rows (see that migration's KDoc),
+     *   so a freshly-ingested book and a migrated pre-existing one are governed by identical logic.
+     *   [com.hub.media.features.books.domain.AddBookByIsbnUseCase] relies on this default rather
+     *   than passing it explicitly: ISBN metadata's page count (or lack of one) is exactly the
+     *   signal this default is defined in terms of.
      * @return [Resource.Success] with the new media ID, or [Resource.Error] on failure.
      */
     public suspend fun addBook(
@@ -123,6 +131,7 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         coverImageHash: String? = null,
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
         status: ReadingStatus = ReadingStatus.TO_READ,
+        trackingMode: TrackingMode = if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT,
     ): Resource<String> = try {
         val mediaId = newId()
         val now = Clock.System.now()
@@ -143,6 +152,7 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
             format = format,
             totalPages = totalPages,
             status = status,
+            trackingMode = trackingMode,
         )
 
         val identifierEntities = externalIdentifiers.map { (provider, externalId) ->
@@ -181,8 +191,9 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
 
     /**
      * Atomically corrects an existing book's metadata (ROADMAP Task 6 Phase A): title,
-     * releaseYear, and purchasePrice on [MediaItemEntity], plus totalPages and format on
-     * [BookDetailsEntity], updated together in [db.bookWriteDao]'s
+     * releaseYear, and purchasePrice on [MediaItemEntity], plus totalPages, format, and (schema v4,
+     * ROADMAP Task 7 Phase A) trackingMode on [BookDetailsEntity], updated together in
+     * [db.bookWriteDao]'s
      * [com.hub.media.core.database.dao.BookWriteDao.updateBookMetadataAtomically] transaction
      * rather than as two sequential awaits — a failure partway through (e.g. process death) can
      * never leave the two tables individually correct but mutually inconsistent (e.g. a new title
@@ -207,9 +218,10 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
      * null even though [addBook] always inserts both rows atomically (a hand-rolled or corrupted
      * row could still produce this). If [mediaId] resolves to a [MediaItemEntity] but has no
      * [BookDetailsEntity] row, this method self-heals: it still updates [MediaItemEntity] as
-     * normal, and INSERTs a fresh [BookDetailsEntity] with the given [format]/[totalPages] and a
-     * `null` [BookDetailsEntity.isbn] (there is nothing to recover the original ISBN from) rather
-     * than silently discarding the format/totalPages input or failing the whole update outright —
+     * normal, and INSERTs a fresh [BookDetailsEntity] with the given [format]/[totalPages]/
+     * [trackingMode] and a `null` [BookDetailsEntity.isbn] (there is nothing to recover the
+     * original ISBN from) rather than silently discarding the format/totalPages input or failing
+     * the whole update outright —
      * title/releaseYear/purchasePrice are meaningful and updatable on [MediaItemEntity] alone, and
      * creating the missing row is strictly better than leaving the inconsistency in place.
      *
@@ -221,6 +233,10 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
      * @param format New [BookFormat].
      * @param status New [ReadingStatus] (ROADMAP Task 6 Phase C). [BookDetailsEntity.finishedAt] is
      *   derived from the transition, not taken as a separate parameter — see [resolveFinishedAt].
+     * @param trackingMode New [TrackingMode] (schema v4, ROADMAP Task 7 Phase A) — no default,
+     *   same as [format]/[status]: this is a deliberate full-form edit, and the whole point of this
+     *   phase is that tracking mode is no longer silently re-derived from [totalPages] on every
+     *   save, so a caller must state it explicitly here exactly as it must state [format]/[status].
      * @return [Resource.Success] if updated, or [Resource.Error] if [mediaId] does not exist or a
      *   validation rule above is violated (never throws).
      */
@@ -232,6 +248,7 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         totalPages: Int? = null,
         format: BookFormat,
         status: ReadingStatus,
+        trackingMode: TrackingMode,
     ): Resource<Unit> {
         if (title.isBlank()) {
             return Resource.Error("Title must not be blank")
@@ -271,6 +288,7 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
                 totalPages = totalPages,
                 status = status,
                 finishedAt = finishedAt,
+                trackingMode = trackingMode,
             )
             if (mediaRowsAffected == 0) {
                 return Resource.Error("Book with id=$mediaId not found")

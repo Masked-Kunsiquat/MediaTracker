@@ -6,6 +6,9 @@ import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.WeekStartDay
+import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.stats.data.StatsRepository
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -17,10 +20,8 @@ import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -30,10 +31,13 @@ import kotlinx.datetime.toInstant
  * [LibraryViewModelTest]/[BookDetailViewModelTest]), so the `combine` -> `stateIn` wiring over
  * [StatsRepository]'s reactive queries is exercised end to end.
  *
- * [timeZone]/[clock] are fixed so "this week"/"this month" bounds (computed once at
- * [StatsViewModel] construction — see its KDoc) are deterministic and every inserted session in
- * these tests deliberately falls inside them, matching [StatsRepository]'s "sum only known
- * values" semantics already covered directly by [com.hub.media.features.stats.data.StatsRepositoryTest].
+ * [timeZone]/[clock] are fixed so "this week"/"this month" bounds are deterministic and every
+ * inserted session in these tests deliberately falls inside them, matching [StatsRepository]'s
+ * "sum only known values" semantics already covered directly by
+ * [com.hub.media.features.stats.data.StatsRepositoryTest]. `"This month"`'s bounds and `now` itself
+ * are still computed once at construction (see [StatsViewModel]'s KDoc); `"this week"`'s bounds are
+ * now reactive to [settingsRepository]'s week-start-day preference (ROADMAP Task 7 Phase B) — see
+ * the `uiState_weekStartDayChange_*` tests below for that reactivity specifically.
  *
  * Room-backed, so this class is excluded from the android unit-test variant by exact class name
  * in shared/build.gradle.kts, same as [LibraryViewModelTest]/[BookDetailViewModelTest].
@@ -43,7 +47,9 @@ class StatsViewModelTest {
 
     private lateinit var db: AppDatabase
     private lateinit var repository: StatsRepository
+    private lateinit var settingsRepository: SettingsRepository
     private lateinit var mediaId: String
+    private val viewModels = ViewModelRegistry()
 
     private val timeZone = TimeZone.UTC
     private val now: Instant = LocalDateTime(2024, 6, 19, 15, 0).toInstant(timeZone)
@@ -56,14 +62,19 @@ class StatsViewModelTest {
         // viewModelScope dispatches on Dispatchers.Main; UnconfinedTestDispatcher runs launched
         // coroutines eagerly so uiState updates are observable without manually pumping a
         // TestCoroutineScheduler (same convention as LibraryViewModelTest).
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
         db = testAppDatabase()
         repository = StatsRepository(db)
+        settingsRepository = SettingsRepository(db.appSettingsDao())
         mediaId = "media-1"
     }
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope (and its stateIn/WhileSubscribed sharing
+        // coroutine) before closing the database or resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters.
+        viewModels.clearAll()
         db.close()
         Dispatchers.resetMain()
     }
@@ -72,7 +83,14 @@ class StatsViewModelTest {
         db.mediaItemDao().insert(sampleMediaItem(id = mediaId))
     }
 
-    private fun newViewModel() = StatsViewModel(statsRepository = repository, timeZone = timeZone, clock = clock)
+    private fun newViewModel() = viewModels.track(
+        StatsViewModel(
+            statsRepository = repository,
+            settingsRepository = settingsRepository,
+            timeZone = timeZone,
+            clock = clock,
+        ),
+    )
 
     @Test
     fun uiState_initialValue_isLoading() {
@@ -193,5 +211,42 @@ class StatsViewModelTest {
         assertEquals(1, populated.lifetimeBooksFinished, "lifetime total is unaffected by any period bound")
         assertEquals(0, populated.week.booksFinished, "June 10 falls outside the June 17-23 week")
         assertEquals(1, populated.month.booksFinished, "June 10 is still within June")
+    }
+
+    // ---- week-start-day reactivity (ROADMAP Task 7 Phase B) ------------------------------------
+
+    @Test
+    fun uiState_weekStartDayChange_reBucketsWeekPeriodButNotMonth() = runTest {
+        insertBook()
+        // now = June 19, 2024 (Wednesday). Under the default MONDAY start, "this week" is
+        // June 17 (Mon) - June 24 (exclusive); a session on June 16 (Sunday) falls just outside it.
+        // Under a SUNDAY start, "this week" instead runs June 16 (Sun) - June 23 (exclusive), which
+        // *includes* that same June 16 session -- see StatsRepositoryTest's
+        // thisWeekBounds_sundayStart_wednesdayMapsToPrecedingSunday for the bound math this relies
+        // on. A second, June 10 session is never in *either* week window (before or after the
+        // change) but is always within "this month" -- proving the setting reshapes "this week"
+        // only, per the ROADMAP's decided semantics, never "this month".
+        val juneSixteenInstant = LocalDateTime(2024, 6, 16, 12, 0).toInstant(timeZone)
+        val juneTenInstant = LocalDateTime(2024, 6, 10, 12, 0).toInstant(timeZone)
+        db.readingSessionDao().insert(
+            sampleReadingSession(mediaId = mediaId, timestampStart = juneSixteenInstant, durationSeconds = 400, deltaPages = 7),
+        )
+        db.readingSessionDao().insert(
+            sampleReadingSession(mediaId = mediaId, timestampStart = juneTenInstant, durationSeconds = 250, deltaPages = 4),
+        )
+
+        val viewModel = newViewModel()
+        val beforeChange = viewModel.uiState.first { !it.isLoading }
+        assertEquals(0, beforeChange.week.sessionCount, "June 16 must be excluded from the default MONDAY-start week")
+        assertEquals(2, beforeChange.month.sessionCount, "both June 10 and June 16 fall within June")
+
+        settingsRepository.setWeekStartDay(WeekStartDay.SUNDAY)
+
+        val afterChange = viewModel.uiState.first { it.week.sessionCount > 0 }
+        assertEquals(1, afterChange.week.sessionCount, "June 16 must be included once the week starts on Sunday")
+        assertEquals(400L, afterChange.week.timeReadSeconds)
+        assertEquals(7, afterChange.week.pagesRead)
+        assertEquals(2, afterChange.month.sessionCount, "the month period must be unaffected by the week-start-day setting")
+        assertEquals(650L, afterChange.month.timeReadSeconds, "400 + 250, unchanged by the setting change")
     }
 }

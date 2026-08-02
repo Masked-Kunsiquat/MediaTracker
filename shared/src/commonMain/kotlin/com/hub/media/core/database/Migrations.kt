@@ -126,3 +126,70 @@ public val MIGRATION_2_3: Migration = object : Migration(2, 3) {
         )
     }
 }
+
+/**
+ * Schema v3 -> v4 (ROADMAP Task 7 Phase A): bundles two independent schema changes into one
+ * migration rather than two, since both land in the same release —
+ * [com.hub.media.core.database.entities.BookDetailsEntity.trackingMode] (see
+ * [com.hub.media.core.database.entities.TrackingMode]'s KDoc) and the new `app_settings` key-value
+ * table (see [com.hub.media.core.database.entities.AppSettingEntity]'s KDoc).
+ *
+ * ### `ALTER TABLE ... ADD COLUMN`, not a table rebuild — same reasoning as [MIGRATION_2_3]
+ * `trackingMode` is added `NOT NULL` with a constant `DEFAULT`, which SQLite's `ALTER TABLE ADD
+ * COLUMN` supports directly (verified against the Room-generated `shared/schemas/.../4.json`,
+ * which records exactly this shape as `book_details`'s only column-level delta from v3) — no
+ * create-copy-drop-rename rebuild needed, exactly as [MIGRATION_2_3] didn't need one for `status`/
+ * `finishedAt`.
+ *
+ * ### `trackingMode`: `NOT NULL DEFAULT 'PAGES'`, then derived to `'PERCENT'` where `totalPages IS NULL`
+ * **The derivation rule is chosen to exactly reproduce the app's pre-v4 *inferred* behavior, not to
+ * introduce a new one.** Before this column existed, every place on the Book Detail screen that
+ * needed to distinguish page-based from percent-based tracking (progress formatting, and the
+ * manual/pending-session dialogs' derived-`deltaPages` behavior from ROADMAP Task 6 Phase B) used
+ * `totalPages != null` as that signal. If this migration derived `trackingMode` any other way, an
+ * existing book could silently flip which mode its own history is displayed/edited under the moment
+ * the user upgrades — the exact invisible-flip problem this whole phase exists to fix, just moved
+ * from "editing total pages" to "upgrading the app." So: `ADD COLUMN ... DEFAULT 'PAGES'`
+ * back-fills every existing row to `'PAGES'` for free, then a second statement
+ * (`UPDATE ... WHERE totalPages IS NULL`) demotes exactly the rows that were being treated as
+ * percent-based under the old inference to `'PERCENT'` — a row with a non-null `totalPages` needs
+ * no second statement, it already landed on the correct value from the column default alone. This
+ * mirrors [MIGRATION_2_3]'s two-statement shape (`ALTER ... DEFAULT` + a targeted `UPDATE` for the
+ * subset that needs a different value) exactly.
+ *
+ * ### Ingestion default going forward (not this migration's concern, documented for completeness)
+ * Freshly-ingested books apply the identical rule at insert time — see
+ * [com.hub.media.features.books.data.BookRepository.addBook]'s KDoc — so the same "known page count
+ * -> PAGES, otherwise -> PERCENT" logic governs both a pre-v4 row's one-time migration outcome and
+ * every new row's initial value, without being duplicated as separate reasoning in two places.
+ *
+ * ### `app_settings`: a brand-new table, created empty
+ * Unlike `book_details`'s column additions, `app_settings` did not exist in any prior schema
+ * version, so there is no existing data to preserve or derive into it — this is a plain `CREATE
+ * TABLE`, matching the Room-generated `shared/schemas/.../4.json` shape for this table exactly
+ * (`key TEXT NOT NULL PRIMARY KEY`, `value TEXT NOT NULL`, no indices/foreign keys). See
+ * [com.hub.media.core.database.entities.AppSettingEntity]'s KDoc for why a key-value shape was
+ * chosen over a typed single-row table, and
+ * [com.hub.media.features.settings.data.SettingsRepository] for the typed accessors built on top of
+ * it. No setting has defined semantics yet (ROADMAP Task 7 Phase B is the first consumer) — this
+ * migration only needs to make the table exist and be writable.
+ *
+ * See `MigrationTest` (jvmTest) for a test that seeds a v3 database with a book that has a
+ * `totalPages` value and one that doesn't, runs this migration, and asserts the former lands on
+ * `trackingMode = 'PAGES'` and the latter on `'PERCENT'`, with every pre-existing column intact and
+ * `app_settings` present and insertable.
+ */
+public val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "ALTER TABLE `book_details` ADD COLUMN `trackingMode` TEXT NOT NULL DEFAULT 'PAGES'",
+        )
+        connection.execSQL(
+            "UPDATE `book_details` SET `trackingMode` = 'PERCENT' WHERE `totalPages` IS NULL",
+        )
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `app_settings` (" +
+                "`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        )
+    }
+}

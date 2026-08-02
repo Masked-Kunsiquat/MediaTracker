@@ -8,6 +8,7 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
@@ -36,6 +37,7 @@ internal fun sampleBookDetails(
     totalPages: Int? = 300,
     status: ReadingStatus = ReadingStatus.TO_READ,
     finishedAt: Instant? = null,
+    trackingMode: TrackingMode = TrackingMode.PAGES,
 ): BookDetailsEntity = BookDetailsEntity(
     mediaId = mediaId,
     isbn = isbn,
@@ -43,6 +45,7 @@ internal fun sampleBookDetails(
     totalPages = totalPages,
     status = status,
     finishedAt = finishedAt,
+    trackingMode = trackingMode,
 )
 
 internal fun sampleExternalIdentifier(

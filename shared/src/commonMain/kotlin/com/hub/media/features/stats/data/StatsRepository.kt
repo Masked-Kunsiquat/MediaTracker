@@ -2,6 +2,7 @@ package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.features.settings.data.WeekStartDay
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -137,6 +138,13 @@ public class StatsRepository(private val db: AppDatabase) {
      * restarted) — the same accepted staleness documented on `StatsViewModel`'s period bounds.
      * Re-invoke this method (e.g. re-create the owning ViewModel) to pick up a new "today".
      *
+     * ### Not affected by the week-start-day preference (ROADMAP Task 7 Phase B finding)
+     * This method takes no [WeekStartDay] parameter, unlike [thisWeekBounds]. The streak walks
+     * backward one calendar **day** at a time from `today` via [computeStreak] — it has no notion
+     * of "week" at all, so there is no week boundary for a start-day preference to shift. Confirmed
+     * by inspection of [computeStreak]: it only ever compares consecutive [LocalDate]s via
+     * [LocalDate.minus]/day-membership in a `HashSet`, never a week/`DayOfWeek` computation.
+     *
      * ### Query window
      * Internally queries every session from the Unix epoch (1970-01-01, `EPOCH`) through the
      * start of the day after `today` (exclusive) — the app's data cannot predate the epoch, so
@@ -161,16 +169,27 @@ public class StatsRepository(private val db: AppDatabase) {
 
         /**
          * `[from, to)` [Instant] bounds for the calendar week containing `today` (per [clock]/
-         * [timeZone]), with week start = **Monday** (ISO-8601 convention, not Sunday). Used by
+         * [timeZone]), with week start = [weekStartDay] (ROADMAP Task 7 Phase B — defaults to
+         * [WeekStartDay.MONDAY], ISO-8601 convention, matching this method's pre-Phase-B hardcoded
+         * behavior exactly so a caller that never passes [weekStartDay] sees no change). Used by
          * `StatsViewModel` to drive [StatsRepository]'s range queries for "this week".
+         *
+         * ### Day math
+         * `daysSinceStart` is `(today's ISO day number - weekStartDay's ISO day number) mod 7`,
+         * walking `today` backward that many days to reach the containing week's start — this
+         * single formula handles both start-day conventions (and every relative position `today`
+         * can have to either) uniformly, with no special-casing: e.g. a Sunday under
+         * [WeekStartDay.MONDAY] start walks back 6 days to the *preceding* Monday, while that same
+         * Sunday under [WeekStartDay.SUNDAY] start walks back 0 days (it *is* its own week's start).
          */
         public fun thisWeekBounds(
             timeZone: TimeZone = TimeZone.currentSystemDefault(),
             clock: Clock = Clock.System,
+            weekStartDay: WeekStartDay = WeekStartDay.MONDAY,
         ): Pair<Instant, Instant> {
             val today = clock.now().toLocalDateTime(timeZone).date
-            val daysSinceMonday = today.dayOfWeek.isoDayNumber - kotlinx.datetime.DayOfWeek.MONDAY.isoDayNumber
-            val weekStart = today.minus(daysSinceMonday, DateTimeUnit.DAY)
+            val daysSinceStart = (today.dayOfWeek.isoDayNumber - weekStartDay.isoDayNumber + 7) % 7
+            val weekStart = today.minus(daysSinceStart, DateTimeUnit.DAY)
             val weekEnd = weekStart.plus(7, DateTimeUnit.DAY)
             return weekStart.atStartOfDayIn(timeZone) to weekEnd.atStartOfDayIn(timeZone)
         }

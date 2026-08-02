@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
@@ -19,16 +20,15 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 
 /**
  * [EditBookViewModel] tests against a real in-memory [AppDatabase], mirroring
  * [BookDetailViewModelTest]'s style (same `testAppDatabase()` builder, `Dispatchers.Main` set to
- * an [UnconfinedTestDispatcher]). Room-backed, so excluded from the android unit-test variant by
- * exact class name in `shared/build.gradle.kts` — `:shared:jvmTest` is the authoritative gate.
+ * an eager test dispatcher via [ViewModelRegistry.installMain]). Room-backed, so excluded from the
+ * android unit-test variant by exact class name in `shared/build.gradle.kts` —
+ * `:shared:jvmTest` is the authoritative gate.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class EditBookViewModelTest {
@@ -36,10 +36,11 @@ class EditBookViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var bookRepository: BookRepository
     private lateinit var mediaId: String
+    private val viewModels = ViewModelRegistry()
 
     @BeforeTest
     fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
         db = testAppDatabase()
         bookRepository = BookRepository(db)
         mediaId = newId()
@@ -47,6 +48,10 @@ class EditBookViewModelTest {
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope (and its stateIn/WhileSubscribed sharing
+        // coroutine) before closing the database or resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters.
+        viewModels.clearAll()
         db.close()
         Dispatchers.resetMain()
     }
@@ -58,6 +63,7 @@ class EditBookViewModelTest {
         totalPages: Int? = 384,
         format: BookFormat = BookFormat.PHYSICAL,
         status: ReadingStatus = ReadingStatus.TO_READ,
+        trackingMode: TrackingMode = TrackingMode.PAGES,
     ) {
         db.mediaItemDao().insert(
             sampleMediaItem(
@@ -69,12 +75,18 @@ class EditBookViewModelTest {
             ),
         )
         db.bookDetailsDao().insert(
-            sampleBookDetails(mediaId = mediaId, format = format, totalPages = totalPages, status = status),
+            sampleBookDetails(
+                mediaId = mediaId,
+                format = format,
+                totalPages = totalPages,
+                status = status,
+                trackingMode = trackingMode,
+            ),
         )
     }
 
     private fun newViewModel(id: String = mediaId) =
-        EditBookViewModel(bookId = id, bookRepository = bookRepository)
+        viewModels.track(EditBookViewModel(bookId = id, bookRepository = bookRepository))
 
     @Test
     fun uiState_initialValue_isLoading() {
@@ -100,6 +112,7 @@ class EditBookViewModelTest {
             totalPages = 384,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.READING,
+            trackingMode = TrackingMode.PAGES,
         )
         val viewModel = newViewModel()
 
@@ -111,6 +124,7 @@ class EditBookViewModelTest {
         assertEquals(384, ready.totalPages)
         assertEquals(BookFormat.PHYSICAL, ready.format)
         assertEquals(ReadingStatus.READING, ready.status)
+        assertEquals(TrackingMode.PAGES, ready.trackingMode)
         assertNull(ready.errorMessage)
         assertEquals(false, ready.isSaving)
     }
@@ -128,6 +142,7 @@ class EditBookViewModelTest {
         assertNull(ready.totalPages)
         assertEquals(BookFormat.PHYSICAL, ready.format)
         assertEquals(ReadingStatus.TO_READ, ready.status)
+        assertEquals(TrackingMode.PAGES, ready.trackingMode)
     }
 
     @Test
@@ -143,6 +158,7 @@ class EditBookViewModelTest {
             totalPages = 366,
             format = BookFormat.HARDCOVER,
             status = ReadingStatus.FINISHED,
+            trackingMode = TrackingMode.PERCENT,
         )
 
         val state = viewModel.uiState.first { it is EditBookUiState.Saved }
@@ -156,6 +172,7 @@ class EditBookViewModelTest {
         assertEquals(366, details?.totalPages)
         assertEquals(BookFormat.HARDCOVER, details?.format)
         assertEquals(ReadingStatus.FINISHED, details?.status)
+        assertEquals(TrackingMode.PERCENT, details?.trackingMode)
         assertTrue(details?.finishedAt != null)
     }
 
@@ -172,6 +189,7 @@ class EditBookViewModelTest {
             totalPages = 384,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
 
         val ready = viewModel.uiState
@@ -197,6 +215,7 @@ class EditBookViewModelTest {
             totalPages = 384,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
 
         val ready = viewModel.uiState
@@ -221,6 +240,7 @@ class EditBookViewModelTest {
             totalPages = 384,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
 
         val ready = viewModel.uiState
@@ -245,6 +265,7 @@ class EditBookViewModelTest {
             totalPages = 0,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
 
         val ready = viewModel.uiState
@@ -269,6 +290,7 @@ class EditBookViewModelTest {
             totalPages = 384,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
         // Second call while the first is still in flight must no-op per the saveInFlight guard.
         viewModel.save(
@@ -278,10 +300,50 @@ class EditBookViewModelTest {
             totalPages = 384,
             format = BookFormat.PHYSICAL,
             status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PAGES,
         )
 
         viewModel.uiState.first { it is EditBookUiState.Saved }
 
         assertEquals("First Call Title", db.mediaItemDao().getById(mediaId)?.title)
+    }
+
+    /**
+     * Tracking-mode selector round-trip (ROADMAP Task 7 Phase A): the value [EditBookUiState.Ready]
+     * prefills the (would-be) selector with is exactly the value a subsequent [EditBookViewModel.save]
+     * persists when re-emitted unchanged -- proving [EditBookUiState.Ready.trackingMode] and
+     * [EditBookViewModel.save]'s `trackingMode` parameter agree on the same field, with no
+     * re-derivation from [totalPages] happening anywhere in between.
+     */
+    @Test
+    fun trackingMode_readThenSaveUnchanged_roundTripsExactly() = runTest {
+        insertBook(totalPages = 384, trackingMode = TrackingMode.PERCENT)
+        val viewModel = newViewModel()
+
+        val ready = viewModel.uiState.first { it is EditBookUiState.Ready } as EditBookUiState.Ready
+        assertEquals(
+            TrackingMode.PERCENT,
+            ready.trackingMode,
+            "prefilled trackingMode must reflect the stored value, not be re-derived from totalPages",
+        )
+
+        viewModel.save(
+            title = ready.title,
+            releaseYear = ready.releaseYear,
+            purchasePrice = ready.purchasePrice,
+            totalPages = ready.totalPages,
+            format = ready.format,
+            status = ready.status,
+            trackingMode = ready.trackingMode,
+        )
+
+        viewModel.uiState.first { it is EditBookUiState.Saved }
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(384, details?.totalPages, "totalPages must survive untouched")
+        assertEquals(
+            TrackingMode.PERCENT,
+            details?.trackingMode,
+            "trackingMode must round-trip unchanged despite totalPages being non-null",
+        )
     }
 }

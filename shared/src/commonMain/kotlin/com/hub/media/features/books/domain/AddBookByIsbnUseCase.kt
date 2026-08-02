@@ -70,6 +70,11 @@ public class AddBookByIsbnUseCase(
      * [BookFormat.PHYSICAL] (an ISBN identifies a specific print/audio/ebook edition, but the
      * providers used here don't reliably expose which); users can correct this after the fact.
      *
+     * Tracking mode (schema v4, ROADMAP Task 7 Phase A) is likewise not passed explicitly here —
+     * [BookRepository.addBook]'s own default derives it from whether [BookMetadata.pageCount] is
+     * known (`PAGES` when known, `PERCENT` otherwise), which is exactly the signal available at
+     * this call site, so there is nothing for this use case to add on top of that default.
+     *
      * @param isbn Raw ISBN-10 or ISBN-13, with or without hyphens/spaces.
      * @return [Resource.Success] with the new media ID, or [Resource.Error] describing why
      *   ingestion failed. Never throws.

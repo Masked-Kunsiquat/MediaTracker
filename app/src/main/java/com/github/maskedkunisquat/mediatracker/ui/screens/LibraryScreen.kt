@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -59,6 +60,8 @@ import kotlin.time.ExperimentalTime
  *   navigate to the book detail screen (Task4 Phase C).
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C),
  *   wired to the TopAppBar's stats icon.
+ * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase
+ *   B), wired to the TopAppBar's settings icon.
  */
 @Composable
 fun LibraryScreenRoute(
@@ -67,6 +70,7 @@ fun LibraryScreenRoute(
     onNavigateToAddBook: () -> Unit,
     onNavigateToBookDetail: (String) -> Unit,
     onNavigateToStats: () -> Unit,
+    onNavigateToSettings: () -> Unit,
 ) {
     val viewModel: LibraryViewModel = viewModel(
         factory = LibraryViewModelFactory(appContainer),
@@ -79,6 +83,7 @@ fun LibraryScreenRoute(
         onNavigateToAddBook = onNavigateToAddBook,
         onBookClick = onNavigateToBookDetail,
         onNavigateToStats = onNavigateToStats,
+        onNavigateToSettings = onNavigateToSettings,
         onStatusFilterChange = viewModel::setStatusFilter,
     )
 }
@@ -99,6 +104,8 @@ fun LibraryScreenRoute(
  *   screen.
  * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped, to open the stats
  *   screen (ROADMAP Task 5 Phase C).
+ * @param onNavigateToSettings Called when the TopAppBar's settings icon is tapped, to open the
+ *   Settings screen (ROADMAP Task 7 Phase B).
  * @param onStatusFilterChange Called with the newly selected filter (`null` for "All") when a
  *   filter chip is tapped (ROADMAP Task 6 Phase C).
  */
@@ -110,6 +117,7 @@ fun LibraryScreen(
     onNavigateToAddBook: () -> Unit,
     onBookClick: (String) -> Unit,
     onNavigateToStats: () -> Unit,
+    onNavigateToSettings: () -> Unit,
     onStatusFilterChange: (ReadingStatus?) -> Unit,
 ) {
     Scaffold(
@@ -121,6 +129,12 @@ fun LibraryScreen(
                         Icon(
                             imageVector = Icons.Filled.Info,
                             contentDescription = stringResource(R.string.stats_content_description),
+                        )
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.settings_content_description),
                         )
                     }
                 },
@@ -352,6 +366,7 @@ private fun LibraryScreenPreview() {
             onNavigateToAddBook = {},
             onBookClick = {},
             onNavigateToStats = {},
+            onNavigateToSettings = {},
             onStatusFilterChange = {},
         )
     }

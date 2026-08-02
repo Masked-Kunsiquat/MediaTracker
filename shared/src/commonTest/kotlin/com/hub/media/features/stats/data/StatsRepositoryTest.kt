@@ -6,6 +6,7 @@ import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.features.settings.data.WeekStartDay
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -278,13 +279,68 @@ class StatsRepositoryTest {
     @Test
     fun thisWeekBounds_sundayYieldsWeekStartingPrecedingMonday() {
         // 2024-06-23 is a Sunday (day 7 of ISO week); the containing ISO week runs Monday
-        // 2024-06-17 through (exclusive) Monday 2024-06-24.
+        // 2024-06-17 through (exclusive) Monday 2024-06-24. Uses the default weekStartDay
+        // (MONDAY) explicitly, proving a caller that never passes it gets this exact behavior.
         val sunday = LocalDateTime(2024, 6, 23, 15, 0).toInstant(TimeZone.UTC)
 
         val (from, to) = StatsRepository.thisWeekBounds(TimeZone.UTC, fixedClock(sunday))
 
         assertEquals(LocalDate(2024, 6, 17).atStartOfDayIn(TimeZone.UTC), from)
         assertEquals(LocalDate(2024, 6, 24).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    // ---- thisWeekBounds(weekStartDay = ...) (ROADMAP Task 7 Phase B) -------------------------
+
+    @Test
+    fun thisWeekBounds_explicitMonday_sundayDateMapsToPrecedingMonday() {
+        // Same case as thisWeekBounds_sundayYieldsWeekStartingPrecedingMonday above, but passing
+        // WeekStartDay.MONDAY explicitly rather than relying on the default -- the "awkward" case
+        // the ROADMAP calls out: a Sunday date under a MONDAY start must map back to the
+        // *preceding* Monday, not forward, and not to itself.
+        val sunday = LocalDateTime(2024, 6, 23, 15, 0).toInstant(TimeZone.UTC)
+
+        val (from, to) = StatsRepository.thisWeekBounds(TimeZone.UTC, fixedClock(sunday), WeekStartDay.MONDAY)
+
+        assertEquals(LocalDate(2024, 6, 17).atStartOfDayIn(TimeZone.UTC), from)
+        assertEquals(LocalDate(2024, 6, 24).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    @Test
+    fun thisWeekBounds_sundayStart_sundayDateMapsToItself() {
+        // The other "awkward" case: under a SUNDAY start, that same Sunday IS its own week's
+        // start -- zero days back, not six.
+        val sunday = LocalDateTime(2024, 6, 23, 15, 0).toInstant(TimeZone.UTC)
+
+        val (from, to) = StatsRepository.thisWeekBounds(TimeZone.UTC, fixedClock(sunday), WeekStartDay.SUNDAY)
+
+        assertEquals(LocalDate(2024, 6, 23).atStartOfDayIn(TimeZone.UTC), from)
+        assertEquals(LocalDate(2024, 6, 30).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    @Test
+    fun thisWeekBounds_sundayStart_wednesdayMapsToPrecedingSunday() {
+        // 2024-06-19 is a Wednesday; under a SUNDAY start its containing week runs Sunday
+        // 2024-06-16 through (exclusive) Sunday 2024-06-23 -- distinct from the MONDAY-start
+        // week (06-17 through 06-24) thisMonthBounds/thisWeekBounds' other tests use for the same
+        // Wednesday, proving weekStartDay actually changes which days are included.
+        val wednesday = LocalDateTime(2024, 6, 19, 15, 0).toInstant(TimeZone.UTC)
+
+        val (from, to) = StatsRepository.thisWeekBounds(TimeZone.UTC, fixedClock(wednesday), WeekStartDay.SUNDAY)
+
+        assertEquals(LocalDate(2024, 6, 16).atStartOfDayIn(TimeZone.UTC), from)
+        assertEquals(LocalDate(2024, 6, 23).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    @Test
+    fun thisWeekBounds_sundayStart_mondayMapsToPrecedingSundayOneDayBack() {
+        // 2024-06-17 is a Monday, one day after the SUNDAY-start week begins -- a minimal
+        // one-day-back case distinct from the Wednesday case above.
+        val monday = LocalDateTime(2024, 6, 17, 9, 0).toInstant(TimeZone.UTC)
+
+        val (from, to) = StatsRepository.thisWeekBounds(TimeZone.UTC, fixedClock(monday), WeekStartDay.SUNDAY)
+
+        assertEquals(LocalDate(2024, 6, 16).atStartOfDayIn(TimeZone.UTC), from)
+        assertEquals(LocalDate(2024, 6, 23).atStartOfDayIn(TimeZone.UTC), to)
     }
 
     @Test

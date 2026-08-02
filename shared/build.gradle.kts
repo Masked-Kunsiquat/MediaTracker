@@ -95,6 +95,11 @@ dependencies {
 // lives under com.hub.media.core.database and is already covered by that package's exclusion.
 // StatsViewModelTest and EditBookViewModelTest (ROADMAP Task 6 Phase A) are excluded by exact
 // class name for the same reason as LibraryViewModelTest/BookDetailViewModelTest above.
+// SettingsRepositoryTest (ROADMAP Task 7 Phase A) is likewise Room-backed and excluded by package
+// (com.hub.media.features.settings.*, mirroring com.hub.media.features.stats.*/
+// com.hub.media.features.books.data.* above).
+// SettingsViewModelTest (ROADMAP Task 7 Phase B) is excluded by exact class name for the same
+// reason as StatsViewModelTest/EditBookViewModelTest above.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
@@ -102,10 +107,12 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.features.books.data.*")
             excludeTestsMatching("com.hub.media.features.books.domain.*")
             excludeTestsMatching("com.hub.media.features.stats.*")
+            excludeTestsMatching("com.hub.media.features.settings.*")
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.SettingsViewModelTest*")
             isFailOnNoMatchingTests = false
         }
     }

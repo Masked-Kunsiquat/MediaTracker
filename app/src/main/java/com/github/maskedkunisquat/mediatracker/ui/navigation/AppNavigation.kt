@@ -10,6 +10,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.hub.media.ui.AppContainer
 
@@ -23,6 +24,7 @@ import com.hub.media.ui.AppContainer
  * - [Route.EditBook]: The edit-book-metadata screen, parameterized by
  *   [Route.EditBook.ARG_BOOK_ID] (ROADMAP Task 6 Phase A).
  * - [Route.Stats]: The stats screen (ROADMAP Task 5 Phase C).
+ * - [Route.Settings]: The Settings screen (ROADMAP Task 7 Phase B).
  *
  * @param navController The navigation controller managing back stack and route transitions.
  * @param appContainer The dependency container for creating ViewModels.
@@ -50,6 +52,9 @@ fun AppNavigation(
                 },
                 onNavigateToStats = {
                     navController.navigate(Route.Stats.route)
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Route.Settings.route)
                 },
             )
         }
@@ -111,6 +116,15 @@ fun AppNavigation(
 
         composable(Route.Stats.route) {
             StatsScreenRoute(
+                appContainer = appContainer,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+            )
+        }
+
+        composable(Route.Settings.route) {
+            SettingsScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = {
                     navController.navigateUp()

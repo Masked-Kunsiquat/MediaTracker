@@ -2,6 +2,7 @@ package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
@@ -103,6 +104,8 @@ class AddBookByIsbnUseCaseTest {
         val bookDetails = db.bookDetailsDao().getByMediaId(mediaId)
         assertEquals("9780547928227", bookDetails?.isbn)
         assertEquals(300, bookDetails?.totalPages)
+        // ROADMAP Task 7 Phase A: a known page count defaults ingestion's trackingMode to PAGES.
+        assertEquals(TrackingMode.PAGES, bookDetails?.trackingMode)
 
         val identifiers = db.externalIdentifierDao().observeForMedia(mediaId).first()
         assertEquals(2, identifiers.size)
@@ -196,6 +199,12 @@ class AddBookByIsbnUseCaseTest {
         assertNull(mediaItem?.coverImageHash, "no provider (including the last-resort probe) had a cover")
         val writtenFiles = File(tempDir).listFiles()?.filter { it.isFile } ?: emptyList()
         assertTrue(writtenFiles.isEmpty(), "no cover file should have been written when nothing has a cover")
+
+        // ROADMAP Task 7 Phase A: "Mystery Book"'s metadata carries no page count, so ingestion's
+        // trackingMode defaults to PERCENT.
+        val bookDetails = db.bookDetailsDao().getByMediaId(result.data)
+        assertNull(bookDetails?.totalPages)
+        assertEquals(TrackingMode.PERCENT, bookDetails?.trackingMode)
     }
 
     @Test
