@@ -114,4 +114,13 @@
         <item quantity="one">%1$d day streak</item>
         <item quantity="other">%1$d day streak</item>
     </plurals>
+
+    <!-- SettingsScreen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_content_description">Open settings</string>
+    <string name="settings_section_stats">Stats</string>
+    <string name="settings_week_start_day_label">Week starts on</string>
+    <string name="settings_week_start_day_description">Controls the boundaries of \"This week\" on the Stats screen.</string>
+    <string name="settings_week_start_day_monday">Monday</string>
+    <string name="settings_week_start_day_sunday">Sunday</string>
 </resources>

@@ -134,14 +134,34 @@ from real use rather than inferred.
   total pages is edited. Replace with an explicit per-book field, editable on the Edit screen,
   defaulted intelligently on ingestion (known page count → pages; ebook without one → percent).
   Requires **Room schema v4** (tracking-mode column + tested `Migration_3_4` per AGENTS.md §8).
-- **Settings screen** — the app has no home for app-wide preferences and now needs one. First
-  occupant: **week start day** (Monday per ISO-8601, or Sunday per US convention), which drives
-  the Stats screen's period bounds.
+- **Settings screen (done).** The app's first home for app-wide preferences. First occupant:
+  **week start day** (Monday per ISO-8601, or Sunday per US convention), which drives the Stats
+  screen's period bounds. `WeekStartDay` (`MONDAY`/`SUNDAY`), persisted by name (not ordinal) via
+  `SettingsRepository` under a `week_start_day` key added in `shared/.../features/settings/data/
+  WeekStartDay.kt`; default (unset or malformed) is `MONDAY`, matching the app's pre-Phase-B
+  hardcoded behavior exactly. `StatsRepository.thisWeekBounds` gained a `weekStartDay` parameter
+  (default `MONDAY`, so no existing call site broke); `thisMonthBounds` is unchanged (calendar
+  month, per the decision below). `observeReadingStreak` was checked and confirmed **unaffected**:
+  it walks backward one calendar day at a time with no notion of "week" at all, so there is no
+  week boundary for the preference to shift. `SettingsViewModel` (new) exposes the current
+  preference reactively and a `setWeekStartDay` action; `StatsViewModel` was extended (not just
+  wired) to *react* to the setting live — its week period now re-buckets via `flatMapLatest` over
+  `observeWeekStartDay()` the moment the preference changes, rather than only on the next
+  ViewModel recreation (the existing "this month"/`today`-fixed-at-construction staleness is
+  otherwise unchanged and remains documented). Settings screen built as an extensible list of
+  titled sections (one `SettingsSection` per group of related rows) rather than hardcoded around
+  this one preference, so a future setting is a new row/section, not a restructure; the
+  week-start-day choice is a two-option `SingleChoiceSegmentedButtonRow` (Material 3's fit for a
+  small, fixed, side-by-side binary choice, versus the vertical radio rows `EditBookScreen` uses
+  for its longer option lists). Reachable via a new `Icons.Filled.Settings` icon in `LibraryScreen`'s
+  TopAppBar — confirmed present in the curated `material-icons-core` set, no local vector drawable
+  needed.
   - Stats period semantics decided: "this week"/"this month" stay **calendar** periods (week =
     the chosen start day 00:00 → same weekday next week; month = 1st → 1st, local timezone),
-    NOT rolling 7/30-day windows. Only the week's start day becomes configurable. Note the
-    existing documented staleness: period bounds are computed when the ViewModel is constructed,
-    so a session spanning midnight/Monday rollover needs a re-subscribe to re-bucket.
+    NOT rolling 7/30-day windows. Only the week's start day becomes configurable. The previously
+    documented staleness (bounds computed once at ViewModel construction) is now *partially*
+    resolved: a live week-start-day change re-buckets immediately; a real midnight/week rollover
+    while the screen stays open still needs a re-subscribe, as before.
 
 ## Task 8 — Data portability
 
@@ -304,6 +324,20 @@ numbered task rather than left to be rediscovered.
   local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
   scoped storage considerations) — Task 8 establishes exactly that plumbing for CSV/backup, so
   this becomes cheap once Task 8 lands and should be picked up right after it.
+- **Pre-existing `:shared:jvmTest` flakiness, unrelated to any specific test's logic.** Discovered
+  while verifying Task 7 Phase B: repeated full-suite reruns intermittently fail one Room-backed
+  ViewModel test (`StatsViewModelTest`/`SettingsViewModelTest`/etc., varying which one) with a
+  `CompletionHandlerException` → `Dispatchers.Main was accessed ... after Dispatchers.resetMain()`.
+  Confirmed via `git stash` to **predate** Phase B entirely (reproduces identically, roughly 1 in
+  2-4 full-suite runs, on the Phase A commit with none of this phase's changes applied) — a race
+  between a `stateIn(..., WhileSubscribed(...))`-shared `Flow`'s real background-thread cleanup
+  (Room's `testAppDatabase()` uses real `Dispatchers.Default`, not virtual test time) and a test
+  class's `tearDown` resetting the global `Dispatchers.Main` before that cleanup finishes; harmless
+  to production (real apps have a real platform Main dispatcher that's never reset mid-process) and
+  doesn't indicate any assertion actually failed incorrectly. Not fixed here — a real fix likely
+  means changing how every Room-backed ViewModel test wires `Dispatchers.setMain`/`resetMain`
+  and/or the test database's coroutine context, which is broader than one task's scope. Re-running
+  the affected test/suite passes.
 
 ## Unscheduled features
 

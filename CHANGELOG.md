@@ -31,6 +31,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`shared/.../features/settings/data/`) expose reactive `String`/`Int`/`Boolean` accessors with
   the raw key-value mechanics hidden; no setting has defined semantics yet — Phase B is the first
   consumer.
+- **Settings screen + week-start-day preference** (ROADMAP Task 7 Phase B) — the first concrete
+  setting to occupy the store Phase A built, and the app's first Settings screen:
+  - **`WeekStartDay`** (`MONDAY`/`SUNDAY`, `shared/.../features/settings/data/WeekStartDay.kt`):
+    persisted via `SettingsRepository` under a single `week_start_day` key, stored by the enum
+    constant's *name* (not ordinal) so a future reordering/insertion can't silently corrupt an
+    existing stored value — a deliberate refinement over the ordinal-`Int` approach Phase A's own
+    `SettingsRepository` KDoc had speculated a setting like this might use. `observeWeekStartDay`/
+    `getWeekStartDay` default to `MONDAY` — ISO-8601, matching the app's pre-Phase-B hardcoded
+    behavior exactly — whenever the key is unset *or* holds a value that no longer maps to a
+    constant, so nothing changes for a user who never opens Settings.
+  - **`StatsRepository.thisWeekBounds`** gains a `weekStartDay: WeekStartDay = WeekStartDay.MONDAY`
+    parameter (defaulted, so no existing call site needed updating for the default behavior) and
+    now computes `daysSinceStart` as `(today's ISO day number - weekStartDay's ISO day number) mod
+    7`, replacing the old Monday-only subtraction. `thisMonthBounds` is unchanged (calendar month,
+    per the ROADMAP's decision). **`observeReadingStreak` finding**: checked and confirmed
+    unaffected by this preference — it walks backward one calendar day at a time via `computeStreak`
+    with no notion of "week" at all, so there is no week boundary for the setting to shift; this is
+    documented on the method directly rather than left implicit. New `StatsRepositoryTest` cases
+    cover both start days including the awkward boundary cases: a Sunday date under a `MONDAY`
+    start maps back to the *preceding* Monday, the same Sunday under a `SUNDAY` start maps to
+    *itself*, plus a Wednesday and a Monday under a `SUNDAY` start.
+  - **`SettingsViewModel` + `SettingsUiState`** (`shared/.../ui/`): a single `StateFlow` (`map` over
+    `SettingsRepository.observeWeekStartDay`, `stateIn`/`WhileSubscribed`, matching
+    `LibraryViewModel`/`StatsViewModel`'s convention) exposing the current week-start-day preference
+    plus a `setWeekStartDay(...)` action. `AppContainer` now wires a `settingsRepository`
+    (previously unexposed since Phase A defined no concrete setting). 4 new `SettingsViewModelTest`
+    cases (Room-backed, added to `shared/build.gradle.kts`'s android-unit-test exclusion filter by
+    exact class name, mirroring `StatsViewModelTest`/`EditBookViewModelTest`) plus 7 new
+    `WeekStartDayTest` cases (default-when-unset, persistence round-trip, malformed-value handling).
+  - **`StatsViewModel` reactivity decision**: its "this week" period now **re-buckets immediately**
+    when the week-start-day setting changes while the Stats screen is open, via
+    `settingsRepository.observeWeekStartDay().flatMapLatest { ... }` feeding the existing week
+    `combine` chain — straightforward to add without restructuring the ViewModel's shape, so it was
+    done rather than left stale. `"This month"`'s bounds and `today` itself are still resolved once
+    at construction (unchanged, already-documented staleness — a real midnight/month rollover still
+    needs a fresh ViewModel; only the *setting* is now live). 2 new `StatsViewModelTest` cases prove
+    a week-start-day change re-buckets "this week" without recreating the ViewModel, and that "this
+    month" stays untouched by it.
+  - **Settings screen** (`app/.../ui/screens/SettingsScreen.kt`): a `LazyColumn` of titled,
+    card-backed `SettingsSection`s — built this way specifically because the ROADMAP expects more
+    settings to land here later, so a future one is a new row/section rather than a screen
+    restructure. The week-start-day choice renders as a two-option Material 3
+    `SingleChoiceSegmentedButtonRow` (chosen over `EditBookScreen`'s vertical radio rows: segmented
+    buttons fit a small, fixed, side-by-side binary choice better than a list built for longer,
+    unrelated option sets). `Route.Settings`/`SettingsScreenRoute`/stateless `SettingsScreen` follow
+    the established route-wrapper/stateless-screen split; reachable from a new
+    `Icons.Filled.Settings` icon in `LibraryScreen`'s TopAppBar, alongside the existing stats icon —
+    confirmed present in the curated `material-icons-core` set (unlike the stats/chart icon gap
+    noted in `v0.4.0`), so no local vector drawable was needed this time. All new user-visible text
+    added via string resources; previews cover both week-start-day selections.
 
 ## [0.5.0] - 2026-08-02
 

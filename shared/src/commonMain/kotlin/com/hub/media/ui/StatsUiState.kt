@@ -10,7 +10,9 @@ package com.hub.media.ui
  *   separate sealed `Loading` state — every field already has a sensible zero/null default, so a
  *   single flag is enough for the screen to show a loading affordance without needing a distinct
  *   state type to destructure.
- * @property week Aggregate stats for the current calendar week (Monday start — see
+ * @property week Aggregate stats for the current calendar week, whose start day is the
+ *   user's [com.hub.media.features.settings.data.WeekStartDay] preference (ROADMAP Task 7 Phase B;
+ *   defaults to Monday, ISO-8601 — see
  *   [com.hub.media.features.stats.data.StatsRepository.thisWeekBounds]).
  * @property month Aggregate stats for the current calendar month (1st of month start — see
  *   [com.hub.media.features.stats.data.StatsRepository.thisMonthBounds]).
