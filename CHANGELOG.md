@@ -82,6 +82,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     noted in `v0.4.0`), so no local vector drawable was needed this time. All new user-visible text
     added via string resources; previews cover both week-start-day selections.
 
+### Changed
+
+- **Details tab and Reading history tab visual revamp** (ROADMAP Task 7 Phase C,
+  `app/.../ui/screens/BookDetailScreen.kt`) — both tabs were "functionally complete but visually
+  plain" going into this task; this phase is layout/hierarchy only, no new state and no ViewModel
+  changes.
+  - **Details tab**: the old single stack of prefix-string `Text` rows ("Released: …", "ISBN: …",
+    "Format: …", "Progress: …") is replaced with a considered hierarchy: `BookHeader` now renders
+    just the cover, a proper heading block (title as `headlineSmall`/bold, release year as a muted
+    subtitle via new `detail_published_year`), and the reading-status chip; a new `ProgressSection`
+    card is promoted directly below the header with the current progress as a large, primary-colored
+    headline plus a `LinearProgressIndicator` whenever a completion fraction is derivable (new
+    `progressFraction` helper, mirroring `formatProgress`'s own page/percent-mode precedence, and
+    degrading to text-only when tracking by page with no known `totalPages`, or to a muted "No
+    progress logged yet" message when nothing has ever been logged); `TimerCard` is restyled with a
+    `primaryContainer` background and full-width buttons so it reads as *the* primary action on the
+    tab rather than another stacked card of equal weight; a new `MetadataCard` renders ISBN (keeping
+    its existing copy `IconButton`)/format/total-pages/tracking-mode as a compact two-column
+    key/value grid (`MetadataRow`) instead of concatenated prefix strings. `released_prefix`/
+    `isbn_prefix`/`format_prefix`/`total_pages_prefix`/`progress_prefix` are deleted from
+    `strings.xml` (superseded by dedicated `detail_*` strings/labels now that each fact has its own
+    UI element) rather than left dangling.
+  - **Reading history tab**: the flat `LazyColumn` of `SessionRow`s (each concatenating
+    `"Duration: 0:31:00  •  42 -> 78"` into one line) is replaced with a **timeline**, built entirely
+    from Compose primitives per AGENTS.md §5 (no chart/timeline library added). `buildTimelineEntries`
+    flattens the existing most-recent-first session list into date-grouped `TimelineEntry` values (a
+    `DateHeader` — "Today"/"Yesterday"/full date — whenever the calendar day changes, since sessions
+    are already time-sorted so simple adjacency is sufficient, no re-sort needed); `TimelineRow`
+    renders each entry against one continuous rail (a plain `Canvas` line + dot, suppressed only at
+    the list's very first/last entry) so the spine runs unbroken through both date separators and
+    session cards. Each session's facts render as distinct `StatBadge` chips (`SessionEventCard`) —
+    duration, start→end position range, pages read — instead of one run-on string; the unknown-
+    duration case (nullable `ReadingSessionEntity.durationSeconds`, schema v2) now shows an explicit
+    muted/italic "Duration unknown" badge rather than omitting the segment silently, and still never
+    renders a misleading `0:00:00`. `session_duration_positions`/`session_positions`/
+    `pages_read_count`/`session_history_title` are deleted (superseded by the new
+    `session_stat_*`/`session_position_range`/`session_pages_delta`/`session_duration_unknown`/
+    `timeline_*` strings and the timeline structure itself, which makes the redundant "Session
+    History" heading unnecessary next to the tab bar's own "Reading history" label). Every existing
+    capability is preserved: per-session edit/delete icons and the delete confirmation dialog, the
+    "Log session manually" affordance, and the empty state.
+  - **State hoisting verified unchanged**: `sessionToDelete`/`showManualEntry`/`sessionToEdit`/
+    `selectedTabIndex` stay hoisted in `BookDetailContent` above the `when (selectedTabIndex)` branch
+    exactly as Task 6 Phase D established — this phase only changed what renders *inside* each tab's
+    composable, not where dialog-triggering state lives. `SelectionContainer`/`DisableSelection`
+    scoping and `InteractiveCoverBox`'s tap-to-enlarge/long-press-to-refetch behavior are unchanged
+    (now wrapping `BookHeader` and `MetadataCard` as two separate `SelectionContainer`s instead of
+    one spanning the old single metadata block, so the timer's live-ticking elapsed time is never
+    inside a selectable region).
+  - New `@Preview`s cover both tabs in light and dark theme (`MediaTrackerTheme(darkTheme = true,
+    dynamicColor = false)`), plus the awkward states: no cover, an unusually long title, unknown
+    total pages, no progress logged, an empty session list, and a session with unknown duration.
+  - **Deferred to Phase D**: the Edit Book screen's own visual revamp (ROADMAP Task 7's separate
+    "Edit screen revamp" bullet) is out of scope for this phase.
+
 ## [0.5.0] - 2026-08-02
 
 Books polish: the book domain becomes correctable and navigable rather than just functional.

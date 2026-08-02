@@ -4,24 +4,30 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.content.ClipData
 import android.os.Build
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -34,6 +40,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -44,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -51,6 +59,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +76,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
@@ -76,6 +87,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -605,21 +618,27 @@ private fun BookDetailContent(
 }
 
 /**
- * Details tab content (ROADMAP Task 6 Phase D): cover + metadata header, reading status, and
- * progress -- see [BookHeader] -- plus the live reading timer (moved here from Reading history in
- * the books-polish pass, see [BookDetailContent]'s KDoc). The "re-fetch cover" affordance (ROADMAP
- * Task 6 Phase E) no longer lives here as a standalone button either -- it moved onto the cover
- * image itself (tap to enlarge, long-press for a menu containing it), see [BookHeader].
+ * Details tab content (books-polish pass revamp; originally ROADMAP Task 6 Phase D). Replaces the
+ * former single stack of prefix-string [Text] rows ("Released: …", "ISBN: …", "Format: …") with a
+ * considered hierarchy, top to bottom:
+ * 1. [BookHeader] -- cover, title/release-year heading block, and the reading-status chip.
+ * 2. [ProgressSection] -- current reading progress, the thing this screen is checked for most
+ *    (per the ROADMAP revamp brief), promoted above the timer and given its own prominent card with
+ *    a [LinearProgressIndicator] wherever a fraction is derivable.
+ * 3. [TimerCard] -- restyled with a `primaryContainer` background and full-width buttons so it
+ *    reads as *the* primary action on this tab, not another stacked card of equal visual weight.
+ * 4. [MetadataCard] -- ISBN/format/total-pages/tracking-mode as a compact two-column key/value
+ *    grid, replacing the old `released_prefix`/`isbn_prefix`/`format_prefix`/`total_pages_prefix`/
+ *    `progress_prefix` strings (all deleted -- see `strings.xml`) that existed only because the
+ *    layout was too primitive to give each fact its own visual slot.
  *
- * ### Selectable/copyable text (ROADMAP backlog, addressed alongside this phase)
- * [BookHeader] is wrapped in a [SelectionContainer] so its title/ISBN/format/etc. text can be
- * long-press selected and copied, applied narrowly to just this metadata block per the backlog
- * item's own caveat (long-press selection conflicts with clickable elements) -- [BookHeader]
- * itself wraps its clickable/long-pressable children (the status [AssistChip], the ISBN copy
- * button, and the cover image) in [DisableSelection] so none of their tap/long-press handling is
- * disrupted. This tab has no session rows or library cards (those live on the Reading history tab
- * and the library screen respectively, and are NOT wrapped in [SelectionContainer] anywhere), so
- * no further carve-out is needed here.
+ * ### Selectable/copyable text (ROADMAP backlog, addressed alongside Task 6 Phase D)
+ * [BookHeader] and [MetadataCard] are each wrapped in their own [SelectionContainer] (rather than
+ * one container spanning the whole tab) so title/ISBN/format/etc. text stays long-press
+ * selectable/copyable while [TimerCard]'s live elapsed-time readout -- which changes every second
+ * while running -- is deliberately left outside any [SelectionContainer]. Both wrapped composables
+ * carry their own [DisableSelection] carve-outs around clickable/long-pressable children (status
+ * chip, ISBN copy button, cover image) exactly as before.
  */
 @Composable
 private fun DetailsTab(
@@ -650,14 +669,18 @@ private fun DetailsTab(
             BookHeader(
                 book = book,
                 details = details,
-                currentProgress = currentProgress,
                 coverStorageDir = coverStorageDir,
                 isRefetchingCover = isRefetchingCover,
                 onStatusChange = onStatusChange,
-                onCopyIsbn = onCopyIsbn,
                 onRefetchCover = onRefetchCover,
             )
         }
+
+        ProgressSection(
+            currentProgress = currentProgress,
+            totalPages = details?.totalPages,
+            trackingMode = details?.trackingMode,
+        )
 
         TimerCard(
             timerState = timerState,
@@ -667,16 +690,36 @@ private fun DetailsTab(
             onResume = onResumeReading,
             onStop = onStopReading,
         )
+
+        if (details != null) {
+            SelectionContainer {
+                MetadataCard(details = details, onCopyIsbn = onCopyIsbn)
+            }
+        }
     }
 }
 
 /**
- * Reading history tab content (ROADMAP Task 6 Phase D): the manual-entry affordance and session
- * history list. **The live timer moved to the Details tab in the books-polish pass** (see
- * [BookDetailContent]'s KDoc) -- this tab keeps only the manual-entry affordance and the session
- * list, per that same change's scope. [onEditSessionClick]/[onDeleteSessionClick] receive the
- * whole [ReadingSessionEntity] (rather than just its id) so [BookDetailContent] can populate
- * `sessionToEdit`/`sessionToDelete` exactly as it did before this was split out.
+ * Reading history tab content: the manual-entry affordance plus a **timeline** of session history
+ * (books-polish pass revamp; originally ROADMAP Task 6 Phase D's flat [LazyColumn] of
+ * concatenated-string [SessionRow]s). **The live timer moved to the Details tab in an earlier
+ * books-polish pass** (see [BookDetailContent]'s KDoc) -- this tab keeps only the manual-entry
+ * affordance and the session history, per that same change's scope.
+ *
+ * ### Timeline construction (Compose primitives only -- AGENTS.md §5, no chart/timeline library)
+ * [buildTimelineEntries] flattens [sessions] (already most-recent-first) into a single ordered list
+ * of [TimelineEntry] -- a [TimelineEntry.DateHeader] whenever the calendar day changes, interleaved
+ * with a [TimelineEntry.SessionEntry] per session -- and the whole flattened list is rendered as one
+ * continuous rail: [TimelineRow] draws a vertical line segment above/below a node for every entry
+ * (a plain [Canvas] line + circle, no drawing library), with the line suppressed only at the very
+ * first and very last entry so the rail reads as one unbroken spine running through both date
+ * headers and session cards, exactly like a changelog/commit-history timeline. Each session's facts
+ * (time, duration, position range, pages read) render as distinct [StatBadge] chips in
+ * [SessionEventCard] rather than one concatenated string.
+ *
+ * [onEditSessionClick]/[onDeleteSessionClick] receive the whole [ReadingSessionEntity] (rather than
+ * just its id) so [BookDetailContent] can populate `sessionToEdit`/`sessionToDelete` exactly as
+ * before this was split out.
  */
 @Composable
 private fun ReadingHistoryTab(
@@ -686,22 +729,20 @@ private fun ReadingHistoryTab(
     onDeleteSessionClick: (ReadingSessionEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val entries = remember(sessions) { buildTimelineEntries(sessions) }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
-            TextButton(onClick = onLogManuallyClick) {
+            TextButton(
+                onClick = onLogManuallyClick,
+                modifier = Modifier.padding(bottom = 8.dp),
+            ) {
                 Text(stringResource(R.string.log_session_manually))
             }
-        }
-
-        item {
-            Text(
-                text = stringResource(R.string.session_history_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
         }
 
         if (sessions.isEmpty()) {
@@ -713,28 +754,48 @@ private fun ReadingHistoryTab(
                 )
             }
         } else {
-            items(sessions, key = { it.id }) { session ->
-                SessionRow(
-                    session = session,
-                    onEditClick = { onEditSessionClick(session) },
-                    onDeleteClick = { onDeleteSessionClick(session) },
-                )
+            itemsIndexed(entries, key = { _, entry -> entry.key }) { index, entry ->
+                val showTopLine = index > 0
+                val showBottomLine = index < entries.lastIndex
+                when (entry) {
+                    is TimelineEntry.DateHeader -> TimelineRow(
+                        showTopLine = showTopLine,
+                        showBottomLine = showBottomLine,
+                        showDot = false,
+                    ) {
+                        TimelineDateHeader(date = entry.date)
+                    }
+                    is TimelineEntry.SessionEntry -> TimelineRow(
+                        showTopLine = showTopLine,
+                        showBottomLine = showBottomLine,
+                        showDot = true,
+                    ) {
+                        SessionEventCard(
+                            session = entry.session,
+                            onEditClick = { onEditSessionClick(entry.session) },
+                            onDeleteClick = { onDeleteSessionClick(entry.session) },
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 /**
- * Cover + metadata header: cover thumbnail (left, now interactive -- see [InteractiveCoverBox]),
- * title/release year/ISBN/format/total pages/status and current progress (right). ISBN/format/
- * total pages are only shown when [details] is non-null and the individual field is present;
- * [currentProgress] formatting is delegated to [formatProgress]. The reading status (ROADMAP Task
- * 6 Phase C) is rendered as a tappable [AssistChip] that opens a [DropdownMenu] of every
- * [ReadingStatus] -- a quick, one-tap status change without leaving this screen for the full
- * edit-metadata form (`EditBookScreen`'s status radio group is for a deliberate full-form edit;
- * this chip is for the common "just finished this" / "started reading this" case). Hidden entirely
- * when [details] is null (nothing to change yet — the data-integrity edge case documented on
- * [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
+ * Cover + heading block: cover thumbnail (left, interactive -- see [InteractiveCoverBox]), title
+ * and release year as a proper heading (right) rather than a body-text row, and the reading-status
+ * chip. ISBN/format/total-pages/tracking-mode moved out to [MetadataCard] and current progress to
+ * [ProgressSection] (books-polish pass revamp) -- this header's job is now purely "what book is
+ * this and what's its status," not a catch-all metadata dump.
+ *
+ * The reading status (ROADMAP Task 6 Phase C) is rendered as a tappable [AssistChip] that opens a
+ * [DropdownMenu] of every [ReadingStatus] -- a quick, one-tap status change without leaving this
+ * screen for the full edit-metadata form (`EditBookScreen`'s status radio group is for a deliberate
+ * full-form edit; this chip is for the common "just finished this" / "started reading this" case).
+ * Hidden entirely when [details] is null (nothing to change yet — the data-integrity edge case
+ * documented on [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
  *
  * ### Cover interactions replace the standalone re-fetch button (books-polish pass)
  * The cover thumbnail's tap-to-enlarge / long-press-to-refetch behavior is implemented by
@@ -743,21 +804,19 @@ private fun ReadingHistoryTab(
  * [OutlinedButton][androidx.compose.material3.OutlinedButton]) survive the move onto the cover
  * itself.
  *
- * The status [AssistChip], the ISBN's copy [IconButton], and the cover ([InteractiveCoverBox]) are
- * each wrapped in [DisableSelection] (ROADMAP backlog: selectable/copyable text) since the caller
- * ([DetailsTab]) wraps this whole composable in a [SelectionContainer] -- without the carve-out,
- * long-press-to-select would conflict with each element's own tap/long-press handling (most
- * notably the cover's long-press-for-menu gesture, which is the same gesture selection uses).
+ * The status [AssistChip] and the cover ([InteractiveCoverBox]) are each wrapped in
+ * [DisableSelection] (ROADMAP backlog: selectable/copyable text) since the caller ([DetailsTab])
+ * wraps this whole composable in a [SelectionContainer] -- without the carve-out, long-press-to-
+ * select would conflict with each element's own tap/long-press handling (most notably the cover's
+ * long-press-for-menu gesture, which is the same gesture selection uses).
  */
 @Composable
 private fun BookHeader(
     book: MediaItemEntity,
     details: BookDetailsEntity?,
-    currentProgress: Double?,
     coverStorageDir: String,
     isRefetchingCover: Boolean,
     onStatusChange: (ReadingStatus) -> Unit,
-    onCopyIsbn: (String) -> Unit,
     onRefetchCover: () -> Unit,
 ) {
     Row(
@@ -774,28 +833,121 @@ private fun BookHeader(
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f),
+        ) {
             Text(
                 text = book.title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
             val releaseYear = book.releaseYear
             if (releaseYear != null) {
                 Text(
-                    text = stringResource(R.string.released_prefix, releaseYear),
+                    text = stringResource(R.string.detail_published_year, releaseYear),
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            val isbn = details?.isbn
+            if (details != null) {
+                DisableSelection {
+                    StatusChip(status = details.status, onStatusChange = onStatusChange)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Reading-progress section (books-polish pass), promoted above [TimerCard] on [DetailsTab] since
+ * progress is "the thing the user checks most" (ROADMAP revamp brief) -- previously a single
+ * `progress_prefix` body-text row buried in [BookHeader]'s metadata stack.
+ *
+ * Degrades gracefully through three cases, exactly mirroring [formatProgress]'s own precedence:
+ * - No session ever logged ([currentProgress] null): a muted "nothing to show yet" message, no bar.
+ * - A fraction is derivable (percent mode, or page mode with a known [totalPages]): the formatted
+ *   text plus a [LinearProgressIndicator] for an at-a-glance visual, via [progressFraction].
+ * - Page mode with no known [totalPages]: the formatted text (a bare page number) with no bar,
+ *   since there is no denominator to visualize a fraction of.
+ */
+@Composable
+private fun ProgressSection(
+    currentProgress: Double?,
+    totalPages: Int?,
+    trackingMode: TrackingMode?,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.detail_progress_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (currentProgress == null) {
+                Text(
+                    text = stringResource(R.string.detail_progress_not_started),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                val progressText = formatProgress(currentProgress, totalPages, trackingMode)
+                if (progressText != null) {
+                    Text(
+                        text = progressText,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                val fraction = progressFraction(currentProgress, totalPages, trackingMode)
+                if (fraction != null) {
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Book metadata as a compact, scannable two-column key/value grid (books-polish pass), replacing
+ * the old `isbn_prefix`/`format_prefix`/`total_pages_prefix` concatenated-string [Text] rows that
+ * used to live in [BookHeader] -- each fact now gets its own [MetadataRow] rather than sharing a
+ * body-text line with a hardcoded label prefix. ISBN keeps its existing copy [IconButton] affordance
+ * (wrapped in [DisableSelection] since the caller wraps this whole composable in a
+ * [SelectionContainer]); total pages shows [R.string.detail_value_unknown] rather than being
+ * omitted, so the grid's shape doesn't jump around depending on which fields a given book happens
+ * to have.
+ */
+@Composable
+private fun MetadataCard(details: BookDetailsEntity, onCopyIsbn: (String) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            val isbn = details.isbn
             if (isbn != null) {
                 val copyIsbnDescription = stringResource(R.string.isbn_copy_content_description)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.isbn_prefix, isbn),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                MetadataRow(label = stringResource(R.string.detail_label_isbn)) {
+                    Text(text = isbn, style = MaterialTheme.typography.bodyMedium)
                     DisableSelection {
                         IconButton(
                             onClick = { onCopyIsbn(isbn) },
@@ -808,33 +960,41 @@ private fun BookHeader(
                         }
                     }
                 }
+                HorizontalDivider()
             }
-            if (details != null) {
-                Text(
-                    text = stringResource(R.string.format_prefix, details.format.displayLabel()),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            MetadataRow(label = stringResource(R.string.detail_label_format)) {
+                Text(text = details.format.displayLabel(), style = MaterialTheme.typography.bodyMedium)
             }
-            val totalPages = details?.totalPages
-            if (totalPages != null) {
+            HorizontalDivider()
+            MetadataRow(label = stringResource(R.string.detail_label_total_pages)) {
                 Text(
-                    text = stringResource(R.string.total_pages_prefix, totalPages),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            val progressText = formatProgress(currentProgress, details?.totalPages, details?.trackingMode)
-            if (progressText != null) {
-                Text(
-                    text = stringResource(R.string.progress_prefix, progressText),
+                    text = details.totalPages?.toString() ?: stringResource(R.string.detail_value_unknown),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
                 )
             }
-            if (details != null) {
-                DisableSelection {
-                    StatusChip(status = details.status, onStatusChange = onStatusChange)
-                }
+            HorizontalDivider()
+            MetadataRow(label = stringResource(R.string.detail_label_tracking_mode)) {
+                Text(text = details.trackingMode.displayLabel(), style = MaterialTheme.typography.bodyMedium)
             }
+        }
+    }
+}
+
+/** One label/value row of [MetadataCard]'s key/value grid; [value] renders the row's right side. */
+@Composable
+private fun MetadataRow(label: String, value: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            value()
         }
     }
 }
@@ -1020,6 +1180,12 @@ private fun StatusChip(status: ReadingStatus, onStatusChange: (ReadingStatus) ->
  * Timer card: formatted elapsed time and action buttons gated by [timerState] --
  * [ReadingTimerState.Idle] shows "Start reading"; [ReadingTimerState.Running] shows "Pause" +
  * "Stop"; [ReadingTimerState.Paused] shows "Resume" + "Stop".
+ *
+ * Restyled in the books-polish pass to read as *the* primary action on [DetailsTab] rather than
+ * another stacked card of equal visual weight: a `primaryContainer` background (Material 3's
+ * highest-emphasis container short of `primary` itself, which would fight with the filled action
+ * [Button]s below it) and full-width, evenly [Modifier.weight]ed buttons instead of the small
+ * side-by-side pill buttons the plain-`Card` version used.
  */
 @Composable
 private fun TimerCard(
@@ -1030,30 +1196,54 @@ private fun TimerCard(
     onResume: () -> Unit,
     onStop: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
+                text = stringResource(R.string.timer_card_title),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
                 text = formatElapsed(elapsedSeconds),
                 style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 when (timerState) {
                     is ReadingTimerState.Idle -> {
-                        Button(onClick = onStart) { Text(stringResource(R.string.start_reading_button)) }
+                        Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.start_reading_button))
+                        }
                     }
                     is ReadingTimerState.Running -> {
-                        Button(onClick = onPause) { Text(stringResource(R.string.pause_button)) }
-                        Button(onClick = onStop) { Text(stringResource(R.string.stop_button)) }
+                        Button(onClick = onPause, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.pause_button))
+                        }
+                        Button(onClick = onStop, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.stop_button))
+                        }
                     }
                     is ReadingTimerState.Paused -> {
-                        Button(onClick = onResume) { Text(stringResource(R.string.resume_button)) }
-                        Button(onClick = onStop) { Text(stringResource(R.string.stop_button)) }
+                        Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.resume_button))
+                        }
+                        Button(onClick = onStop, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.stop_button))
+                        }
                     }
                 }
             }
@@ -1734,87 +1924,275 @@ private fun ManualSessionDialog(
 }
 
 /**
- * A single row in the session history list: date, duration (when known), start->end positions,
- * optional pages-read/notes, and edit/delete icon buttons.
+ * One entry in the Reading history timeline: either a date separator or a session event.
+ * See [buildTimelineEntries] for how [ReadingHistoryTab]'s flat, most-recent-first session list is
+ * turned into this ordered sequence, and [TimelineRow] for how the sequence is rendered as one
+ * continuous rail.
+ */
+private sealed class TimelineEntry {
+    /** Stable [LazyColumn]/`itemsIndexed` key for this entry. */
+    abstract val key: String
+
+    /** A calendar-day separator, inserted whenever consecutive sessions fall on different days. */
+    data class DateHeader(val date: java.time.LocalDate) : TimelineEntry() {
+        override val key: String = "date-$date"
+    }
+
+    /** A single reading session, rendered by [SessionEventCard]. */
+    data class SessionEntry(val session: ReadingSessionEntity) : TimelineEntry() {
+        override val key: String = session.id
+    }
+}
+
+/**
+ * Flattens [sessions] (most-recent-first, per [BookDetailUiState.Ready.sessions]) into an ordered
+ * [TimelineEntry] list: a [TimelineEntry.DateHeader] the first time (walking newest-to-oldest) a
+ * given calendar day is seen, immediately followed by a [TimelineEntry.SessionEntry] per session on
+ * that day. Grouping by simple adjacency (rather than a full `groupBy`) is correct *because*
+ * [sessions] is already sorted by time -- every session for a given day is guaranteed contiguous,
+ * so no re-sort/merge step is needed. The calendar day itself is derived via the existing
+ * [instantToLocalDateTime] conversion (device-local timezone), the same helper
+ * [formatSessionDate]/[ManualSessionDialog]'s edit-mode prefill already use, so there is exactly
+ * one Instant-to-local-day conversion in this file.
+ */
+private fun buildTimelineEntries(sessions: List<ReadingSessionEntity>): List<TimelineEntry> {
+    val entries = mutableListOf<TimelineEntry>()
+    var lastDate: java.time.LocalDate? = null
+    for (session in sessions) {
+        val date = instantToLocalDateTime(session.timestampStart).toLocalDate()
+        if (date != lastDate) {
+            entries += TimelineEntry.DateHeader(date)
+            lastDate = date
+        }
+        entries += TimelineEntry.SessionEntry(session)
+    }
+    return entries
+}
+
+/**
+ * Renders one [TimelineEntry] row as a rail segment (left) + [content] (right): a plain [Canvas]
+ * draws a vertical line above/below a center dot, built entirely from Compose primitives per
+ * AGENTS.md §5 (no charting/timeline library). [showTopLine]/[showBottomLine] are suppressed only
+ * at the very first/last entry of the whole flattened list (see call site in [ReadingHistoryTab]),
+ * so the rail reads as one unbroken spine running through every date header and session card rather
+ * than a series of disconnected per-row ticks. [showDot] is false for date headers (a plain pass-
+ * through line, no node) and true for session entries.
  *
- * ### Edit affordance (ROADMAP Task 6 Phase B)
- * An explicit edit [IconButton] (rather than making the whole row tappable) was chosen because the
- * row already carries a delete [IconButton] for its other destructive/mutating action -- adding a
- * second icon button keeps both actions equally explicit and discoverable, exactly mirroring the
- * TopAppBar's existing Edit-then-Delete icon pair for the book itself (ROADMAP Task 6 Phase A).
- * Making the row itself tappable-to-edit instead would conflate "tap this row" with "start editing
- * it," foreclosing any future non-edit tap behavior (e.g. expanding a row's notes) without a
- * strong reason to prefer that ambiguity over two clearly-labeled icons.
- *
- * [ReadingSessionEntity.durationSeconds] is nullable (schema v2, ROADMAP Task 5 pre-phase): a
- * backlogged manual entry may have been saved with no known duration. When `null`, this renders
- * the positions line ([R.string.session_positions]) without a duration segment, rather than a
- * misleading "0:00:00" -- see that entity's KDoc for why `null` and `0` must stay visually and
- * semantically distinct.
+ * `Modifier.height(IntrinsicSize.Min)` on the outer [Row] is what lets the rail [Canvas] stretch to
+ * match whatever height [content] actually needs (a session card's height varies with whether it has
+ * notes, a pages-read badge, etc.) without either composable needing to know the other's size ahead
+ * of time.
  */
 @Composable
-private fun SessionRow(
+private fun TimelineRow(
+    showTopLine: Boolean,
+    showBottomLine: Boolean,
+    showDot: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
+    val dotColor = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+    ) {
+        Canvas(
+            modifier = Modifier
+                .width(24.dp)
+                .fillMaxHeight(),
+        ) {
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
+            val strokeWidth = 2.dp.toPx()
+            if (showTopLine) {
+                drawLine(
+                    color = lineColor,
+                    start = Offset(centerX, 0f),
+                    end = Offset(centerX, centerY),
+                    strokeWidth = strokeWidth,
+                )
+            }
+            if (showBottomLine) {
+                drawLine(
+                    color = lineColor,
+                    start = Offset(centerX, centerY),
+                    end = Offset(centerX, size.height),
+                    strokeWidth = strokeWidth,
+                )
+            }
+            if (showDot) {
+                drawCircle(color = dotColor, radius = 5.dp.toPx(), center = Offset(centerX, centerY))
+            }
+        }
+        Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+            content()
+        }
+    }
+}
+
+/**
+ * A timeline date separator: "Today"/"Yesterday" for the two most recent days (a small relative-
+ * date convenience), the full `MMM d, yyyy` date otherwise via the existing [DATE_ONLY_FORMATTER].
+ */
+@Composable
+private fun TimelineDateHeader(date: java.time.LocalDate) {
+    val today = remember { java.time.LocalDate.now() }
+    val label = when (date) {
+        today -> stringResource(R.string.timeline_today)
+        today.minusDays(1) -> stringResource(R.string.timeline_yesterday)
+        else -> DATE_ONLY_FORMATTER.format(date)
+    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+    )
+}
+
+/**
+ * One reading session's timeline card: time-of-day + edit/delete icons on top, its facts as
+ * distinct [StatBadge] chips (duration, position range, pages read if known) rather than the old
+ * single concatenated `"Duration: 0:31:00  •  42 -> 78"` line, and notes (if any) below.
+ *
+ * ### Edit affordance (ROADMAP Task 6 Phase B, unchanged by this revamp)
+ * An explicit edit [IconButton] (rather than making the whole card tappable) was chosen because the
+ * card already carries a delete [IconButton] for its other destructive/mutating action -- adding a
+ * second icon button keeps both actions equally explicit and discoverable, exactly mirroring the
+ * TopAppBar's existing Edit-then-Delete icon pair for the book itself (ROADMAP Task 6 Phase A).
+ *
+ * ### Unknown duration ([ReadingSessionEntity.durationSeconds] nullable, schema v2)
+ * A backlogged manual entry may have been saved with no known duration. When `null`, the duration
+ * [StatBadge] shows [R.string.session_duration_unknown] ("Duration unknown") in a muted/italic
+ * style -- never [formatElapsed] on a substitute `0`, which would misleadingly read as a real
+ * zero-length session (see that entity's KDoc for why `null` and `0` must stay visually and
+ * semantically distinct; this is the same distinction the pre-revamp [SessionRow] preserved by
+ * omitting the duration segment entirely, just now rendered as an explicit, legible chip instead of
+ * a silently-shorter string).
+ */
+@Composable
+private fun SessionEventCard(
     session: ReadingSessionEntity,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+    val context = LocalContext.current
+    val localDateTime = instantToLocalDateTime(session.timestampStart)
+    val timeLabel = formatTimeOfDay(context, localDateTime.hour, localDateTime.minute)
+
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text = formatSessionDate(session.timestampStart),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = timeLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Row {
+                    IconButton(onClick = onEditClick, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = stringResource(R.string.edit_session_content_description),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = stringResource(R.string.delete_session_content_description),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 val durationSeconds = session.durationSeconds
-                Text(
-                    text = if (durationSeconds != null) {
-                        stringResource(
-                            R.string.session_duration_positions,
-                            formatElapsed(durationSeconds),
-                            formatUnit(session.startUnit),
-                            formatUnit(session.endUnit),
-                        )
+                StatBadge(
+                    label = stringResource(R.string.session_stat_duration_label),
+                    value = if (durationSeconds != null) {
+                        formatElapsed(durationSeconds)
                     } else {
-                        stringResource(
-                            R.string.session_positions,
-                            formatUnit(session.startUnit),
-                            formatUnit(session.endUnit),
-                        )
+                        stringResource(R.string.session_duration_unknown)
                     },
-                    style = MaterialTheme.typography.bodySmall,
+                    muted = durationSeconds == null,
+                )
+                StatBadge(
+                    label = stringResource(R.string.session_stat_progress_label),
+                    value = stringResource(
+                        R.string.session_position_range,
+                        formatUnit(session.startUnit),
+                        formatUnit(session.endUnit),
+                    ),
                 )
                 val deltaPages = session.deltaPages
                 if (deltaPages != null) {
-                    Text(
-                        text = stringResource(R.string.pages_read_count, deltaPages),
-                        style = MaterialTheme.typography.bodySmall,
+                    StatBadge(
+                        label = stringResource(R.string.session_stat_pages_label),
+                        value = stringResource(R.string.session_pages_delta, deltaPages),
                     )
                 }
-                val notes = session.notes
-                if (!notes.isNullOrBlank()) {
-                    Text(text = notes, style = MaterialTheme.typography.bodySmall)
-                }
             }
-            IconButton(onClick = onEditClick) {
-                Icon(
-                    imageVector = Icons.Filled.Edit,
-                    contentDescription = stringResource(R.string.edit_session_content_description),
-                )
-            }
-            IconButton(onClick = onDeleteClick) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.delete_session_content_description),
+
+            val notes = session.notes
+            if (!notes.isNullOrBlank()) {
+                Text(
+                    text = notes,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        HorizontalDivider()
+    }
+}
+
+/**
+ * One small labelled fact chip used by [SessionEventCard] (duration, position range, pages read)
+ * -- replaces the old single-line concatenated string with a distinct visual element per fact, per
+ * the ROADMAP revamp brief. [muted]/italic styling is used specifically for the unknown-duration
+ * case so it reads as "we don't know" rather than a normal value.
+ */
+@Composable
+private fun StatBadge(label: String, value: String, muted: Boolean = false) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall,
+                fontStyle = if (muted) FontStyle.Italic else FontStyle.Normal,
+                color = if (muted) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+        }
     }
 }
 
@@ -1884,6 +2262,30 @@ private fun formatProgress(currentProgress: Double?, totalPages: Int?, trackingM
             stringResource(R.string.progress_page_only_format, currentProgress.roundToInt())
         else -> stringResource(R.string.progress_percent_format, currentProgress.roundToInt())
     }
+}
+
+/**
+ * Derives a `0f..1f` completion fraction for [ProgressSection]'s [LinearProgressIndicator], or
+ * `null` when no fraction can be derived -- mirrors [formatProgress]'s own mode precedence so the
+ * bar and its text label never disagree about what mode the book is in:
+ * - [TrackingMode.PERCENT] (or `null`, no [BookDetailsEntity] row): [currentProgress] is already a
+ *   0-100 percentage, so the fraction is simply `currentProgress / 100`.
+ * - [TrackingMode.PAGES] with a known [totalPages]: `currentProgress / totalPages`.
+ * - [TrackingMode.PAGES] with no known [totalPages]: `null` -- a bare page number has no
+ *   denominator to visualize a fraction of (degrades to text-only, per [ProgressSection]'s KDoc).
+ *
+ * Clamped to `0f..1f` since a session's `endUnit` is user-entered and not validated against
+ * `totalPages` at save time (a typo could otherwise overshoot the bar past 100%).
+ */
+private fun progressFraction(currentProgress: Double?, totalPages: Int?, trackingMode: TrackingMode?): Float? {
+    if (currentProgress == null) return null
+    val fraction = when {
+        trackingMode == TrackingMode.PAGES && totalPages != null && totalPages > 0 ->
+            currentProgress / totalPages
+        trackingMode == TrackingMode.PAGES -> return null
+        else -> currentProgress / 100.0
+    }
+    return fraction.toFloat().coerceIn(0f, 1f)
 }
 
 /**
@@ -2039,6 +2441,24 @@ private val PREVIEW_SESSIONS = listOf(
     ),
 )
 
+/**
+ * Preview session history that additionally includes a null-[ReadingSessionEntity.durationSeconds]
+ * entry (a backlogged manual session with no recorded duration, schema v2) on its own third day, so
+ * the timeline's "Duration unknown" [StatBadge] path is covered by a preview -- see
+ * [ReadingHistoryTabUnknownDurationPreview].
+ */
+private val PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION = PREVIEW_SESSIONS + ReadingSessionEntity(
+    id = "session-0",
+    mediaId = "book-1",
+    timestampStart = Instant.fromEpochMilliseconds(1_699_800_000_000),
+    timestampEnd = Instant.fromEpochMilliseconds(1_699_800_000_000),
+    durationSeconds = null,
+    startUnit = 0.0,
+    endUnit = 0.0,
+    deltaPages = null,
+    notes = null,
+)
+
 /** Preview of the book detail screen with an established session history. */
 @Preview(showBackground = true)
 @Composable
@@ -2139,8 +2559,8 @@ private fun BookDetailScreenLoadingPreview() {
 /**
  * Preview of the Details tab's content in isolation (ROADMAP Task 6 Phase D -- previews now cover
  * both tabs, alongside [BookDetailScreenReadyPreview] above which renders the whole screen
- * defaulted to this same tab). Now also covers the timer card (books-polish pass moved it here
- * from Reading history) alongside the interactive cover.
+ * defaulted to this same tab). Also covers: no cover ([PREVIEW_BOOK.coverImageHash] is null), the
+ * timer card, and the [ProgressSection]/[MetadataCard] split from the books-polish revamp.
  */
 @Preview(showBackground = true)
 @Composable
@@ -2165,9 +2585,90 @@ private fun DetailsTabPreview() {
     }
 }
 
+/** Dark-theme counterpart of [DetailsTabPreview], same data. */
+@Preview(showBackground = true)
+@Composable
+private fun DetailsTabDarkPreview() {
+    MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
+        DetailsTab(
+            book = PREVIEW_BOOK,
+            details = PREVIEW_DETAILS,
+            currentProgress = 78.0,
+            coverStorageDir = "/fake/path",
+            isRefetchingCover = false,
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
+            onStatusChange = {},
+            onCopyIsbn = {},
+            onRefetchCover = {},
+        )
+    }
+}
+
+/**
+ * Awkward-state preview: an unusually long title (heading-block wrap/overflow), a book explicitly
+ * [TrackingMode.PAGES] with no known [BookDetailsEntity.totalPages] (bare "Page 142" progress text,
+ * no progress bar -- see [progressFraction]'s KDoc -- and [R.string.detail_value_unknown] in
+ * [MetadataCard]'s total-pages row).
+ */
+@Preview(showBackground = true)
+@Composable
+private fun DetailsTabLongTitleUnknownTotalPagesPreview() {
+    MediaTrackerTheme {
+        DetailsTab(
+            book = PREVIEW_BOOK.copy(
+                title = "The Extraordinarily Long and Overly Descriptive Title of a Book That " +
+                    "Simply Refuses to Fit on a Single Line, Volume One",
+            ),
+            details = PREVIEW_DETAILS.copy(totalPages = null, trackingMode = TrackingMode.PAGES),
+            currentProgress = 142.0,
+            coverStorageDir = "/fake/path",
+            isRefetchingCover = false,
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
+            onStatusChange = {},
+            onCopyIsbn = {},
+            onRefetchCover = {},
+        )
+    }
+}
+
+/** Awkward-state preview: no session ever logged, so [ProgressSection] shows its "not started" message. */
+@Preview(showBackground = true)
+@Composable
+private fun DetailsTabNoProgressPreview() {
+    MediaTrackerTheme {
+        DetailsTab(
+            book = PREVIEW_BOOK,
+            details = PREVIEW_DETAILS,
+            currentProgress = null,
+            coverStorageDir = "/fake/path",
+            isRefetchingCover = false,
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
+            onStatusChange = {},
+            onCopyIsbn = {},
+            onRefetchCover = {},
+        )
+    }
+}
+
 /**
  * Preview of the Reading history tab's content in isolation (ROADMAP Task 6 Phase D). No longer
- * includes the timer card (books-polish pass moved it to [DetailsTabPreview]/[DetailsTab]).
+ * includes the timer card (books-polish pass moved it to [DetailsTabPreview]/[DetailsTab]); now
+ * renders as the books-polish-pass timeline (see [buildTimelineEntries]/[TimelineRow]).
  */
 @Preview(showBackground = true)
 @Composable
@@ -2175,6 +2676,52 @@ private fun ReadingHistoryTabPreview() {
     MediaTrackerTheme {
         ReadingHistoryTab(
             sessions = PREVIEW_SESSIONS,
+            onLogManuallyClick = {},
+            onEditSessionClick = {},
+            onDeleteSessionClick = {},
+        )
+    }
+}
+
+/** Dark-theme counterpart of [ReadingHistoryTabPreview], same data. */
+@Preview(showBackground = true)
+@Composable
+private fun ReadingHistoryTabDarkPreview() {
+    MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
+        ReadingHistoryTab(
+            sessions = PREVIEW_SESSIONS,
+            onLogManuallyClick = {},
+            onEditSessionClick = {},
+            onDeleteSessionClick = {},
+        )
+    }
+}
+
+/** Awkward-state preview: no sessions logged yet, so the timeline shows its empty state instead. */
+@Preview(showBackground = true)
+@Composable
+private fun ReadingHistoryTabEmptyPreview() {
+    MediaTrackerTheme {
+        ReadingHistoryTab(
+            sessions = emptyList(),
+            onLogManuallyClick = {},
+            onEditSessionClick = {},
+            onDeleteSessionClick = {},
+        )
+    }
+}
+
+/**
+ * Awkward-state preview: [PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION] includes a session with a null
+ * [ReadingSessionEntity.durationSeconds] (schema v2 backlogged manual entry) -- verifies the
+ * timeline's duration [StatBadge] renders "Duration unknown" rather than a misleading "0:00:00".
+ */
+@Preview(showBackground = true)
+@Composable
+private fun ReadingHistoryTabUnknownDurationPreview() {
+    MediaTrackerTheme {
+        ReadingHistoryTab(
+            sessions = PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION,
             onLogManuallyClick = {},
             onEditSessionClick = {},
             onDeleteSessionClick = {},

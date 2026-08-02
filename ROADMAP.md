@@ -123,11 +123,14 @@ Task 6 made the book domain functionally complete; this task makes it pleasant. 
 ahead of search because these are the screens in daily use, and the rough edges were reported
 from real use rather than inferred.
 
-- **Details tab revamp.** Currently a plain metadata list plus the timer. Needs a considered
-  layout/visual hierarchy rather than stacked `Text` rows.
-- **Reading history revamp.** A timeline view rather than a flat list, with the individual
-  session events rendered more cleanly (dates, durations, progress deltas as visual elements
-  instead of concatenated strings).
+- **Details tab revamp (done).** Replaced the plain metadata list plus the timer with a considered
+  layout/visual hierarchy: a title/release-year heading block, a promoted `ProgressSection` card,
+  `TimerCard` restyled as the tab's primary action, and metadata (ISBN/format/total pages/tracking
+  mode) as a two-column key/value grid instead of stacked prefix-string `Text` rows.
+- **Reading history revamp (done).** Replaced the flat list with a timeline view (a continuous
+  Canvas-drawn rail with per-day date separators and per-session nodes), with each session's
+  duration/position-range/pages-read rendered as distinct visual chips instead of one concatenated
+  string.
 - **Edit screen revamp.** Same treatment — it is currently a bare column of text fields.
 - **Explicit per-book tracking mode (pages vs percent).** Today the mode is *inferred* from
   whether `totalPages` is known, which is invisible to the user and flips silently the moment
