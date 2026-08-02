@@ -1,0 +1,14 @@
+# CodeRabbit configuration.
+#
+# Release PRs are pure ritual (AGENTS.md §8): they only roll the CHANGELOG's
+# [Unreleased] section into a dated version heading and bump `[versions] app` in
+# gradle/libs.versions.toml. There is no code to review, and every one of them
+# spends review quota that is better kept for the feature PRs. They are always
+# titled "Release vX.Y.Z", so skipping on that title keyword is reliable.
+#
+# Feature PRs are deliberately left fully reviewed.
+reviews:
+  auto_review:
+    enabled: true
+    ignore_title_keywords:
+      - "Release v"

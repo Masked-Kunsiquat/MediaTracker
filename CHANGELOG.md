@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-02
+
+UI revamp and settings. Every book-facing surface — Details, reading history, Edit Book, and
+both session dialogs — now shares one visual language, with reading history rendered as a
+timeline. Pages-vs-percent tracking becomes an explicit per-book choice instead of something
+inferred from whether a page count happened to be known, and a Settings screen arrives with a
+week-start-day preference driving the Stats periods. Ships **Room schema v4** with a tested
+migration. Also fixes a ~50% flake rate in the test suite that had been undermining every
+verification run.
+
 ### Added
 
 - **Explicit per-book tracking mode** (ROADMAP Task 7 Phase A) — replaces the old silent
