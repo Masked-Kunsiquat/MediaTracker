@@ -124,6 +124,9 @@ fun StatsScreen(
                     item {
                         StreakCard(streakDays = uiState.currentStreakDays)
                     }
+                    item {
+                        LifetimeBooksFinishedCard(count = uiState.lifetimeBooksFinished)
+                    }
                 }
             }
         }
@@ -165,6 +168,33 @@ private fun PeriodCard(
                 ),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Text(
+                text = stringResource(R.string.stats_books_finished_label, period.booksFinished),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+/**
+ * Lifetime books-finished total (ROADMAP Task 6 Phase C) — see
+ * [com.hub.media.features.stats.data.StatsRepository]'s "Books-finished stat" KDoc for why this
+ * lifetime count is shown as its own card rather than folded into [PeriodCard]: it needs no
+ * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] timestamp and so is exact
+ * from the moment schema v3 exists, unlike [StatsUiState.Period.booksFinished] which can only ever
+ * reflect finishes recorded after this phase shipped.
+ */
+@Composable
+private fun LifetimeBooksFinishedCard(count: Int) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(text = stringResource(R.string.stats_books_finished_lifetime_title), style = MaterialTheme.typography.titleMedium)
+            Text(text = count.toString(), style = MaterialTheme.typography.headlineMedium)
         }
     }
 }

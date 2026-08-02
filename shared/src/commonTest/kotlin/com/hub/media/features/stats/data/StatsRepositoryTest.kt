@@ -1,6 +1,8 @@
 package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
@@ -293,6 +295,44 @@ class StatsRepositoryTest {
 
         assertEquals(LocalDate(2024, 6, 1).atStartOfDayIn(TimeZone.UTC), from)
         assertEquals(LocalDate(2024, 7, 1).atStartOfDayIn(TimeZone.UTC), to)
+    }
+
+    // ---- books-finished stat (ROADMAP Task 6 Phase C) ----------------------------------------
+
+    @Test
+    fun observeBooksFinishedTotal_countsFinishedBooksAcrossAllTime() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+        )
+
+        val total = repo.observeBooksFinishedTotal().first()
+
+        assertEquals(1, total)
+    }
+
+    @Test
+    fun observeBooksFinishedTotal_zeroWhenNoBookIsFinished() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(sampleBookDetails(mediaId = mediaId, status = ReadingStatus.READING))
+
+        val total = repo.observeBooksFinishedTotal().first()
+
+        assertEquals(0, total)
+    }
+
+    @Test
+    fun observeBooksFinishedInRange_onlyCountsFinishesWithinBounds() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+        )
+
+        val inRange = repo.observeBooksFinishedInRange(instant(1_000), instant(2_000)).first()
+        val outOfRange = repo.observeBooksFinishedInRange(instant(2_000), instant(3_000)).first()
+
+        assertEquals(1, inRange)
+        assertEquals(0, outOfRange)
     }
 
     @Test

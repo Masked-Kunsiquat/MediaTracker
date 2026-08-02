@@ -5,12 +5,21 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
+import com.hub.media.features.books.domain.RefetchCoverUseCase
+import com.hub.media.features.books.network.BookMetadata
+import com.hub.media.features.books.network.BookMetadataProvider
+import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.books.timer.ReadingTimerState
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpStatusCode
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -20,6 +29,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,10 +62,15 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalCoroutinesApi::class)
 class BookDetailViewModelTest {
 
+    private companion object {
+        const val PROVIDER_ERROR_MESSAGE = "test provider error"
+    }
+
     private lateinit var db: AppDatabase
     private lateinit var bookRepository: BookRepository
     private lateinit var sessionRepository: ReadingSessionRepository
     private lateinit var useCase: LogReadingSessionUseCase
+    private lateinit var refetchCoverUseCase: RefetchCoverUseCase
     private lateinit var mediaId: String
 
     @BeforeTest
@@ -65,6 +80,20 @@ class BookDetailViewModelTest {
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
         useCase = LogReadingSessionUseCase(sessionRepository)
+        // One test in this file exercises refetchCover() on the error path
+        // (see refetchCover_useCaseError_setsErrorMessageAndClearsInFlightFlag) -- this wiring
+        // must support that. Detailed use-case-level coverage (happy path, no-ISBN, provider
+        // coverless, download failure) lives in RefetchCoverUseCaseTest. The image storage path is
+        // never written to (LocalImageStorageManager does no I/O until saveImage() is called).
+        refetchCoverUseCase = RefetchCoverUseCase(
+            metadataProvider = object : BookMetadataProvider {
+                override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> =
+                    Resource.Error(PROVIDER_ERROR_MESSAGE)
+            },
+            coverDownloader = CoverImageDownloader(createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) })),
+            imageStorage = LocalImageStorageManager("unused"),
+            bookRepository = bookRepository,
+        )
         mediaId = newId()
     }
 
@@ -107,6 +136,7 @@ class BookDetailViewModelTest {
             bookRepository = bookRepository,
             readingSessionRepository = sessionRepository,
             logReadingSessionUseCase = useCase,
+            refetchCoverUseCase = refetchCoverUseCase,
         )
 
     @Test
@@ -479,6 +509,199 @@ class BookDetailViewModelTest {
     }
 
     @Test
+    fun updateSession_persistsAllFieldChanges() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val addResult = sessionRepository.logSession(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = start.plus(1.hours),
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+            notes = "Original",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+
+        viewModel.updateSession(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.plus(2.hours),
+            durationSeconds = 7_200,
+            startUnit = 0.0,
+            endUnit = 90.0,
+            deltaPages = 90,
+            notes = "Edited",
+        )
+
+        val ready = viewModel.uiState
+            .first {
+                it is BookDetailUiState.Ready &&
+                    (it as BookDetailUiState.Ready).sessions.firstOrNull()?.notes == "Edited"
+            } as BookDetailUiState.Ready
+
+        assertEquals(1, ready.sessions.size)
+        val edited = ready.sessions.first()
+        assertEquals(sessionId, edited.id)
+        assertEquals(90.0, edited.endUnit)
+        assertEquals(7_200L, edited.durationSeconds)
+        assertEquals(90, edited.deltaPages)
+        assertEquals("Edited", edited.notes)
+        assertNull(ready.errorMessage)
+    }
+
+    /**
+     * Regression test for the Task 6 Phase B data-integrity defect where `BookDetailScreen`'s
+     * `ManualSessionDialog` (app module) silently coarsened a timer-backed session's sub-minute
+     * precision `durationSeconds` to the nearest whole minute the moment its Save button was
+     * tapped -- even when the user opened the dialog only to fix an unrelated field (e.g. a
+     * position/page number) and never touched the duration field at all. AGENTS.md §1 (user data
+     * safety overrides development shortcuts) forbids silently mutating a field the user never
+     * touched, so that dialog was fixed to re-emit the session's original `durationSeconds`
+     * verbatim whenever its duration text is unchanged from what it was prefilled with.
+     *
+     * This test lives here, not in the app module, because [BookDetailViewModel.updateSession]
+     * already takes `durationSeconds` directly (it always did -- the defect was entirely in the
+     * Compose dialog's minutes<->seconds conversion, one layer above this ViewModel). What this
+     * test proves is the *contract* the UI fix depends on: this ViewModel/repository/DAO stack
+     * must persist whatever `durationSeconds` it's given byte-identical, including a value that is
+     * NOT an exact multiple of 60 (1_847s = 30m47s), when only `startUnit`/`endUnit` also change
+     * in the same call -- i.e. nothing below the UI layer rounds, truncates, or otherwise
+     * reinterprets a sub-minute-precision duration during an update.
+     *
+     * What this test does NOT prove: it does not exercise `ManualSessionDialog` itself (there is
+     * no Compose UI test harness in this shared-module, commonTest target), so it cannot directly
+     * verify that the dialog actually detects "duration field untouched" and passes through
+     * `originalDurationSeconds` rather than the rounded-then-reconverted minutes value. That
+     * detection logic (comparing the live duration text against its captured prefill) is pure
+     * Compose state colocated with the dialog and has no shared-module seam to test against here.
+     * This test instead pins down the one thing that logic depends on: if the dialog *does* pass
+     * 1_847 through unchanged, this stack will not itself corrupt it -- so the layer this test
+     * cannot reach is exactly the layer the fix lives in, and no lower.
+     */
+    @Test
+    fun updateSession_positionOnlyChange_preservesSubMinuteDurationPrecision() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val addResult = sessionRepository.logSession(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = start.plus(1_847.seconds),
+            durationSeconds = 1_847,
+            startUnit = 10.0,
+            endUnit = 20.0,
+            notes = "Timer run",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+
+        // Simulate the fixed dialog's Save call for "user only corrected the end position": every
+        // argument matches the original row except endUnit, and durationSeconds is passed through
+        // as the original 1_847 verbatim -- exactly what ManualSessionDialog now does when its
+        // duration text is unchanged from its prefill.
+        viewModel.updateSession(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.plus(1_847.seconds),
+            durationSeconds = 1_847,
+            startUnit = 10.0,
+            endUnit = 25.0,
+            notes = "Timer run",
+        )
+
+        val ready = viewModel.uiState
+            .first {
+                it is BookDetailUiState.Ready &&
+                    (it as BookDetailUiState.Ready).sessions.firstOrNull()?.endUnit == 25.0
+            } as BookDetailUiState.Ready
+
+        val edited = ready.sessions.first()
+        assertEquals(25.0, edited.endUnit)
+        assertEquals(
+            1_847L,
+            edited.durationSeconds,
+            "editing an unrelated field (position) must not round durationSeconds to the nearest minute",
+        )
+        assertNull(ready.errorMessage)
+    }
+
+    @Test
+    fun updateSession_validationError_leavesSessionUnchangedAndSetsErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val addResult = sessionRepository.logSession(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = start.plus(1.hours),
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+            notes = "Original",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+
+        // Negative startUnit fails LogReadingSessionUseCase.executeUpdate validation without
+        // persisting -- the existing row must survive untouched.
+        viewModel.updateSession(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.plus(1.hours),
+            durationSeconds = 3_600,
+            startUnit = -1.0,
+            endUnit = 50.0,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+                as BookDetailUiState.Ready
+
+        assertNotNull(ready.errorMessage)
+        assertTrue(ready.errorMessage!!.contains("startUnit"))
+        val unchanged = ready.sessions.first()
+        assertEquals("Original", unchanged.notes)
+        assertEquals(0.0, unchanged.startUnit)
+        assertEquals(50.0, unchanged.endUnit)
+    }
+
+    @Test
+    fun updateSession_nonexistentId_setsErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        viewModel.updateSession(
+            sessionId = newId(),
+            timestampStart = start,
+            timestampEnd = start,
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 0.0,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+                as BookDetailUiState.Ready
+
+        assertNotNull(ready.errorMessage)
+        assertTrue(ready.sessions.isEmpty())
+    }
+
+    @Test
     fun deleteSession_removesItFromHistory() = runTest {
         insertBook()
         val viewModel = newViewModel()
@@ -530,6 +753,31 @@ class BookDetailViewModelTest {
 
         val state = viewModel.uiState.first { it is BookDetailUiState.NotFound }
         assertIs<BookDetailUiState.NotFound>(state)
+    }
+
+    /**
+     * ROADMAP Task 6 Phase E: [BookDetailViewModel.refetchCover] surfaces a
+     * [RefetchCoverUseCase.execute] failure via [BookDetailUiState.Ready.errorMessage], the same
+     * convention every other mutating method on this class uses. Detailed use-case-level coverage
+     * (happy path, no-ISBN, provider-coverless, download failure) lives in
+     * [com.hub.media.features.books.domain.RefetchCoverUseCaseTest] -- this test only proves the
+     * ViewModel plumbs the result through and resets [BookDetailUiState.Ready.isRefetchingCover].
+     */
+    @Test
+    fun refetchCover_useCaseError_setsErrorMessageAndClearsInFlightFlag() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        viewModel.refetchCover()
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+                as BookDetailUiState.Ready
+
+        assertNotNull(ready.errorMessage)
+        assertTrue(ready.errorMessage!!.contains(PROVIDER_ERROR_MESSAGE))
+        assertEquals(false, ready.isRefetchingCover)
     }
 
     @Test

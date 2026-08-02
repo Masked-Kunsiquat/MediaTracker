@@ -31,6 +31,10 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * version bump: registering a new DAO changes the Kotlin-visible query surface, not the exported
  * schema, which is derived solely from `@Entity`-annotated tables — no table, column, or index
  * changed, so the schema hash is unaffected.
+ *
+ * Version 3 (ROADMAP Task 6 Phase C) adds [BookDetailsEntity.status] and
+ * [BookDetailsEntity.finishedAt] — see those properties' KDoc — via [MIGRATION_2_3]
+ * (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
  */
 @Database(
     entities = [
@@ -39,7 +43,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
         ExternalIdentifierEntity::class,
         ReadingSessionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

@@ -34,10 +34,15 @@ public sealed class BookDetailUiState {
      *   it, or null if there is none. See [BookDetailViewModel] KDoc for why this lives on [Ready]
      *   rather than a separate `StateFlow`.
      * @property errorMessage Message from the most recently failed
-     *   [BookDetailViewModel.saveSession] or [BookDetailViewModel.logManualSession] call, or null.
-     *   Deliberately NOT cleared when [pendingSession] itself changes shape via unrelated DB
-     *   emissions — only a subsequent successful save or [BookDetailViewModel.discardPendingSession]
-     *   clears it — so the user's error doesn't silently vanish on an unrelated recomposition.
+     *   [BookDetailViewModel.saveSession], [BookDetailViewModel.logManualSession], or
+     *   [BookDetailViewModel.refetchCover] call, or null. Deliberately NOT cleared when
+     *   [pendingSession] itself changes shape via unrelated DB emissions — only a subsequent
+     *   successful mutation or [BookDetailViewModel.discardPendingSession] clears it — so the
+     *   user's error doesn't silently vanish on an unrelated recomposition.
+     * @property isRefetchingCover Whether a [BookDetailViewModel.refetchCover] call
+     *   (ROADMAP Task 6 Phase E) is currently in flight, so the UI can disable the "re-fetch
+     *   cover" affordance and show a loading indicator while it runs rather than allowing a
+     *   double-tap to fire two concurrent lookups.
      */
     public data class Ready(
         val book: MediaItemEntity,
@@ -45,6 +50,7 @@ public sealed class BookDetailUiState {
         val sessions: List<ReadingSessionEntity> = emptyList(),
         val pendingSession: ReadingTimerResult? = null,
         val errorMessage: String? = null,
+        val isRefetchingCover: Boolean = false,
     ) : BookDetailUiState() {
 
         /**

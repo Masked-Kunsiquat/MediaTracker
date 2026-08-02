@@ -57,16 +57,29 @@ public class StatsViewModel(
         statsRepository.observeTimeReadInRange(from, to),
         statsRepository.observeSessionCountInRange(from, to),
         statsRepository.observePagesReadInRange(from, to),
-    ) { timeRead, sessionCount, pagesRead ->
-        StatsUiState.Period(timeReadSeconds = timeRead, sessionCount = sessionCount, pagesRead = pagesRead)
+        statsRepository.observeBooksFinishedInRange(from, to),
+    ) { timeRead, sessionCount, pagesRead, booksFinished ->
+        StatsUiState.Period(
+            timeReadSeconds = timeRead,
+            sessionCount = sessionCount,
+            pagesRead = pagesRead,
+            booksFinished = booksFinished,
+        )
     }
 
     public val uiState: StateFlow<StatsUiState> = combine(
         periodFlow(weekBounds.first, weekBounds.second),
         periodFlow(monthBounds.first, monthBounds.second),
         statsRepository.observeReadingStreak(timeZone, clock),
-    ) { week, month, streak ->
-        StatsUiState(isLoading = false, week = week, month = month, currentStreakDays = streak)
+        statsRepository.observeBooksFinishedTotal(),
+    ) { week, month, streak, lifetimeBooksFinished ->
+        StatsUiState(
+            isLoading = false,
+            week = week,
+            month = month,
+            currentStreakDays = streak,
+            lifetimeBooksFinished = lifetimeBooksFinished,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5.seconds),

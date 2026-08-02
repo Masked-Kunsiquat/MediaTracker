@@ -14,11 +14,16 @@ import kotlin.test.assertTrue
 import org.junit.Rule
 
 /**
- * Validates `MIGRATION_1_2` (`Migrations.kt`) — the schema v1 -> v2 table rebuild that makes
- * [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds] nullable (ROADMAP
- * Task 5 pre-phase, see that entity's KDoc). Per AGENTS.md §8, a schema-version bump on a
- * previously-tagged schema requires a tested [androidx.room.migration.Migration] — this is that
- * test.
+ * Validates every registered [androidx.room.migration.Migration] against the real exported schemas
+ * in `shared/schemas` (AGENTS.md §8: a schema-version bump on a previously-tagged schema requires a
+ * tested [androidx.room.migration.Migration]):
+ * - `MIGRATION_1_2`: the schema v1 -> v2 table rebuild that makes
+ *   [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds] nullable (ROADMAP
+ *   Task 5 pre-phase, see that entity's KDoc).
+ * - `MIGRATION_2_3` (ROADMAP Task 6 Phase C): the schema v2 -> v3 `ALTER TABLE` that adds
+ *   [com.hub.media.core.database.entities.BookDetailsEntity.status]/
+ *   [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] — see that migration's KDoc
+ *   (`Migrations.kt`) for the derivation rules its tests below assert.
  *
  * Uses Room KMP's [MigrationTestHelper] against the real exported schemas in `shared/schemas`
  * (the `room { schemaDirectory(...) }` config in `shared/build.gradle.kts`) rather than
@@ -157,6 +162,135 @@ class MigrationTest {
                 "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_reading_sessions_mediaId'",
             ).use { stmt ->
                 assertTrue(stmt.step(), "index_reading_sessions_mediaId must exist after migration")
+            }
+        }
+    }
+
+    // ==========================================================================================
+    // MIGRATION_2_3 (ROADMAP Task 6 Phase C): adds `book_details.status`/`book_details.finishedAt`.
+    // See that migration's KDoc (`Migrations.kt`) for the full `ALTER TABLE`/derivation rationale.
+    // ==========================================================================================
+
+    /**
+     * The core deliverable (task deliverable #2): a v2 database seeded with one book that already
+     * has a `reading_sessions` row and one that doesn't must, after migrating to v3, land the
+     * former on `status = 'READING'` and the latter on `status = 'TO_READ'` — both with
+     * `finishedAt` still `NULL` (no pre-v3 signal can ever justify `'FINISHED'`) — while every
+     * pre-existing `book_details` column (`isbn`/`format`/`totalPages`) and every `media_items`/
+     * `reading_sessions` row from the v2 seed survives completely untouched.
+     *
+     * This test is not vacuous: temporarily replacing the derivation `UPDATE` statement in
+     * `MIGRATION_2_3` with a no-op (so every row keeps the blanket `'TO_READ'` default regardless
+     * of sessions) makes the `"READING" to true` assertion below fail directly, since
+     * `media-with-sessions` would incorrectly still read `'TO_READ'`. Swapping the `status` column
+     * definition to omit `NOT NULL DEFAULT 'TO_READ'` (an intentionally invalid `ALTER TABLE` for a
+     * table with existing rows and no default) makes `runMigrationsAndValidate` throw instead of
+     * reaching either assertion at all. Both were verified by hand while writing this test, then
+     * reverted.
+     */
+    @Test
+    fun migrate2To3_derivesReadingForBooksWithSessions_toReadForBooksWithout() {
+        helper.createDatabase(2).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-with-sessions', 'BOOK', 'Has Sessions', 2020, 9.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages) " +
+                    "VALUES ('media-with-sessions', '9780000000000', 'PHYSICAL', 300)",
+            )
+            db.execSQL(
+                "INSERT INTO reading_sessions " +
+                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes) " +
+                    "VALUES ('session-1', 'media-with-sessions', 1700000000000, 1700000600000, 600, 10.0, 25.0, 15, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-no-sessions', 'BOOK', 'No Sessions', 2019, 5.0, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages) " +
+                    "VALUES ('media-no-sessions', '9780000000001', 'EBOOK', 100)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(3, listOf(MIGRATION_2_3)).use { db ->
+            val results = mutableMapOf<String, Pair<String, Boolean>>()
+            db.prepare("SELECT mediaId, status, finishedAt, isbn, format, totalPages FROM book_details ORDER BY mediaId")
+                .use { stmt ->
+                    while (stmt.step()) {
+                        val mediaId = stmt.getText(0)
+                        results[mediaId] = stmt.getText(1) to stmt.isNull(2)
+                        // Pre-existing columns must survive untouched.
+                        if (mediaId == "media-with-sessions") {
+                            assertEquals("9780000000000", stmt.getText(3))
+                            assertEquals("PHYSICAL", stmt.getText(4))
+                            assertEquals(300, stmt.getInt(5))
+                        } else {
+                            assertEquals("9780000000001", stmt.getText(3))
+                            assertEquals("EBOOK", stmt.getText(4))
+                            assertEquals(100, stmt.getInt(5))
+                        }
+                    }
+                }
+
+            assertEquals(
+                setOf("media-with-sessions", "media-no-sessions"),
+                results.keys,
+                "both v2 book_details rows must survive",
+            )
+            assertEquals(
+                "READING" to true,
+                results["media-with-sessions"],
+                "a book with an existing reading_sessions row must derive READING, finishedAt still null",
+            )
+            assertEquals(
+                "TO_READ" to true,
+                results["media-no-sessions"],
+                "a book with no reading_sessions row must default to TO_READ, finishedAt null",
+            )
+        }
+    }
+
+    /**
+     * Proves the migration actually relaxed the schema to accept a `FINISHED` status with a real
+     * `finishedAt` going forward (not just that it left v2 data alone) — mirroring
+     * [migrate1To2_newTableAcceptsNullDuration]'s "new capability" shape for the v1->v2 migration.
+     */
+    @Test
+    fun migrate2To3_newColumnsAcceptFinishedStatusAndFinishedAt() {
+        helper.createDatabase(2).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-1', 'BOOK', 'Test Book', 2020, 9.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages) " +
+                    "VALUES ('media-1', '9780000000000', 'PHYSICAL', 300)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(3, listOf(MIGRATION_2_3)).use { db ->
+            db.execSQL(
+                "UPDATE book_details SET status = 'FINISHED', finishedAt = 1700001000000 WHERE mediaId = 'media-1'",
+            )
+            db.prepare("SELECT status, finishedAt FROM book_details WHERE mediaId = 'media-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals("FINISHED", stmt.getText(0))
+                assertEquals(1700001000000L, stmt.getLong(1))
+            }
+        }
+    }
+
+    /** A book with zero rows in either table around it (no sessions, no other books) still gets the blanket default. */
+    @Test
+    fun migrate2To3_emptyDatabase_validatesCleanly() {
+        helper.createDatabase(2).use { }
+
+        helper.runMigrationsAndValidate(3, listOf(MIGRATION_2_3)).use { db ->
+            db.prepare("SELECT COUNT(*) FROM book_details").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0))
             }
         }
     }

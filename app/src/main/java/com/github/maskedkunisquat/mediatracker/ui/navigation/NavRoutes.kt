@@ -44,6 +44,25 @@ sealed interface Route {
     }
 
     /**
+     * Edit-book-metadata screen: title/release year/purchase price/total pages/format form for a
+     * single book identified by [ARG_BOOK_ID] (ROADMAP Task 6 Phase A). Mirrors [BookDetail]'s
+     * PATH-constant pattern as its own destination rather than reusing [BookDetail]'s route, since
+     * Compose Navigation scopes each `composable()` destination to its own ViewModel store.
+     */
+    data object EditBook : Route {
+        /** NavHost argument key for the book id, used both here and by [createRoute]. */
+        const val ARG_BOOK_ID: String = "bookId"
+
+        /** Base path segment shared by [route] and [createRoute]. */
+        private const val PATH: String = "edit_book"
+
+        override val route: String = "$PATH/{$ARG_BOOK_ID}"
+
+        /** Builds a concrete, navigable route string for a specific [bookId]. */
+        fun createRoute(bookId: String): String = "$PATH/$bookId"
+    }
+
+    /**
      * Stats screen: aggregate reading stats for this week/month plus the current streak
      * (ROADMAP Task 5 Phase C).
      */

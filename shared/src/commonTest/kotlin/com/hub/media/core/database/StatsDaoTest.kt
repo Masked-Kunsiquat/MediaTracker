@@ -1,5 +1,6 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.database.entities.ReadingStatus
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -177,5 +178,71 @@ class StatsDaoTest {
         val timestamps = db.statsDao().observeSessionStartTimestampsInRange(instant(1_000), instant(2_000)).first()
 
         assertEquals(setOf(t1, t2), timestamps.toSet())
+    }
+
+    // ---- books-finished stat (ROADMAP Task 6 Phase C) ----------------------------------------
+
+    @Test
+    fun observeBooksFinishedTotal_countsOnlyFinishedStatus() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+        )
+
+        val total = db.statsDao().observeBooksFinishedTotal(ReadingStatus.FINISHED).first()
+
+        assertEquals(1, total)
+    }
+
+    @Test
+    fun observeBooksFinishedTotal_ignoresNonFinishedStatuses() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(sampleBookDetails(mediaId = mediaId, status = ReadingStatus.READING))
+
+        val total = db.statsDao().observeBooksFinishedTotal(ReadingStatus.FINISHED).first()
+
+        assertEquals(0, total, "a READING book must not count toward the FINISHED total")
+    }
+
+    @Test
+    fun observeBooksFinishedInRange_respectsFinishedAtBounds_fromIsInclusive() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
+        )
+
+        val count = db.statsDao()
+            .observeBooksFinishedInRange(ReadingStatus.FINISHED, instant(1_000), instant(2_000)).first()
+
+        assertEquals(1, count, "a book finished exactly at `from` must be included")
+    }
+
+    @Test
+    fun observeBooksFinishedInRange_respectsFinishedAtBounds_toIsExclusive() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+        )
+
+        val count = db.statsDao()
+            .observeBooksFinishedInRange(ReadingStatus.FINISHED, instant(1_000), instant(2_000)).first()
+
+        assertEquals(0, count, "a book finished exactly at `to` must be excluded")
+    }
+
+    @Test
+    fun observeBooksFinishedInRange_nullFinishedAt_neverMatches() = runTest {
+        insertBook()
+        // FINISHED but no known finish date -- e.g. a row MIGRATION_2_3 could never actually
+        // produce (it only derives TO_READ/READING), included here purely to prove the SQL
+        // comparison behavior: `finishedAt >= :from` is never true against a NULL column.
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
+        )
+
+        val count = db.statsDao()
+            .observeBooksFinishedInRange(ReadingStatus.FINISHED, instant(0), instant(999_999_999)).first()
+
+        assertEquals(0, count, "a FINISHED row with unknown finishedAt must never match a range query")
     }
 }

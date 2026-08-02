@@ -2,10 +2,12 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
+import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.timer.ReadingTimer
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
@@ -54,6 +56,8 @@ import kotlinx.coroutines.launch
  * @param readingSessionRepository Source of reactive session history and [deleteSession].
  * @param logReadingSessionUseCase Persists both the timer-backed ([saveSession]) and manual
  *   ([logManualSession]) session-logging paths.
+ * @param refetchCoverUseCase Backs [refetchCover] (ROADMAP Task 6 Phase E's per-book re-fetch
+ *   cover affordance).
  * @param clock Wall-clock time source handed to the internal [ReadingTimer]. Defaults to
  *   [Clock.System]; tests inject a fake tied to a coroutine test scheduler for deterministic
  *   timestamps (see [ReadingTimer]'s KDoc).
@@ -63,6 +67,7 @@ public class BookDetailViewModel(
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
     private val logReadingSessionUseCase: LogReadingSessionUseCase,
+    private val refetchCoverUseCase: RefetchCoverUseCase,
     clock: Clock = Clock.System,
 ) : ViewModel() {
 
@@ -78,6 +83,7 @@ public class BookDetailViewModel(
     private data class LocalState(
         val pendingSession: ReadingTimerResult? = null,
         val errorMessage: String? = null,
+        val isRefetchingCover: Boolean = false,
     )
 
     private val _local = MutableStateFlow(LocalState())
@@ -107,6 +113,7 @@ public class BookDetailViewModel(
                 sessions = sessions,
                 pendingSession = local.pendingSession,
                 errorMessage = local.errorMessage,
+                isRefetchingCover = local.isRefetchingCover,
             )
         }
     }.stateIn(
@@ -280,6 +287,60 @@ public class BookDetailViewModel(
     }
 
     /**
+     * Edits an existing reading session identified by [sessionId] (ROADMAP Task 6 Phase B),
+     * via [LogReadingSessionUseCase.executeUpdate]. Follows [logManualSession]'s shape almost
+     * exactly — same [saveInFlight] guard (shared with [saveSession]/[logManualSession]: a
+     * double-tap on Save while any of the three is already in flight simply no-ops, consistent
+     * with the class KDoc's rationale for that guard), same [Resource.Error] -> [errorMessage]
+     * surfacing, and likewise does not touch [BookDetailUiState.Ready.pendingSession] (editing a
+     * session from history is unrelated to a live/finished timer run).
+     *
+     * On [Resource.Error] — a validation rejection (bad position bounds, `timestampEnd` before
+     * `timestampStart`, negative duration) or an unresolvable [sessionId] (e.g. the row was
+     * deleted from another screen between opening and saving the edit dialog) — the target row is
+     * left completely unchanged: [ReadingSessionRepository.updateSession] validates before it ever
+     * reads the existing row, and only issues the `@Update` after computing the full replacement
+     * entity, so a rejected edit never partially applies.
+     *
+     * @param sessionId The id of the session being edited.
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2).
+     */
+    public fun updateSession(
+        sessionId: String,
+        timestampStart: Instant,
+        timestampEnd: Instant,
+        durationSeconds: Long?,
+        startUnit: Double,
+        endUnit: Double,
+        deltaPages: Int? = null,
+        notes: String? = null,
+    ) {
+        if (saveInFlight) return
+        saveInFlight = true
+        viewModelScope.launch {
+            try {
+                when (
+                    val result = logReadingSessionUseCase.executeUpdate(
+                        sessionId = sessionId,
+                        timestampStart = timestampStart,
+                        timestampEnd = timestampEnd,
+                        durationSeconds = durationSeconds,
+                        startUnit = startUnit,
+                        endUnit = endUnit,
+                        deltaPages = deltaPages,
+                        notes = notes,
+                    )
+                ) {
+                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                }
+            } finally {
+                saveInFlight = false
+            }
+        }
+    }
+
+    /**
      * Abandons the current [BookDetailUiState.Ready.pendingSession] without persisting it, and
      * clears any [BookDetailUiState.Ready.errorMessage]. The timed run is discarded entirely; the
      * user must start a new timer run (or use [logManualSession]) to log progress instead.
@@ -329,6 +390,60 @@ public class BookDetailViewModel(
             when (val result = bookRepository.deleteBook(bookId)) {
                 is Resource.Success -> Unit
                 is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            }
+        }
+    }
+
+    /**
+     * Quick [ReadingStatus] change for [bookId] (ROADMAP Task 6 Phase C — a status chip/dropdown
+     * in the Book Detail header, without a full [com.hub.media.ui.EditBookViewModel]-style
+     * round-trip). Fire-and-forget on success, matching [deleteBook]/[deleteSession]: [uiState]
+     * reflects the new status reactively via [BookRepository.observeBookDetail] once
+     * [BookRepository.updateReadingStatus] persists it. On [Resource.Error] (e.g. the
+     * data-integrity edge case where [bookId] has no [com.hub.media.core.database.entities.BookDetailsEntity]
+     * row — see [BookRepository.updateReadingStatus]'s KDoc), sets
+     * [BookDetailUiState.Ready.errorMessage] using the same surfacing convention as every other
+     * mutating method on this class.
+     */
+    public fun updateStatus(status: ReadingStatus) {
+        viewModelScope.launch {
+            when (val result = bookRepository.updateReadingStatus(bookId, status)) {
+                is Resource.Success -> Unit
+                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            }
+        }
+    }
+
+    /**
+     * Re-runs cover metadata lookup + download + storage for [bookId]'s recorded ISBN via
+     * [refetchCoverUseCase] (ROADMAP Task 6 Phase E's per-book re-fetch-cover affordance). No-ops
+     * (does not queue a second call) if one is already in flight — see [LocalState.isRefetchingCover].
+     *
+     * On [Resource.Success], fire-and-forget: [uiState] reflects the new cover reactively via
+     * [BookRepository.observeBookDetail] once [BookRepository.updateCoverImageHash] persists it,
+     * exactly like [deleteBook]/[deleteSession]/[updateStatus] rely on their own DB writes being
+     * reflected reactively rather than updating local state by hand. On [Resource.Error] (no ISBN
+     * on record, no provider has a cover, a download failure, or a storage failure — see
+     * [RefetchCoverUseCase.execute]'s KDoc), sets [BookDetailUiState.Ready.errorMessage] using the
+     * same surfacing convention as every other mutating method on this class; the book's existing
+     * cover is left completely untouched by [RefetchCoverUseCase] on every failure path.
+     *
+     * [isRefetchingCover] is reset in a `finally` block (same shape as [saveInFlight]'s reset in
+     * [saveSession]/[logManualSession]/[updateSession]): if [refetchCoverUseCase] throws instead of
+     * returning a [Resource], the flag still comes back down, so the affordance can't get stuck
+     * permanently "in flight" (spinner stuck forever, [refetchCover] permanently no-op'ing).
+     */
+    public fun refetchCover() {
+        if (_local.value.isRefetchingCover) return
+        _local.update { it.copy(isRefetchingCover = true, errorMessage = null) }
+        viewModelScope.launch {
+            try {
+                when (val result = refetchCoverUseCase.execute(bookId)) {
+                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                }
+            } finally {
+                _local.update { it.copy(isRefetchingCover = false) }
             }
         }
     }

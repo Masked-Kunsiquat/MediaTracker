@@ -41,11 +41,56 @@
     <string name="book_format_physical">Physical</string>
     <string name="book_format_ebook">E-book</string>
     <string name="book_format_audiobook">Audiobook</string>
+    <string name="book_format_paperback">Paperback</string>
+    <string name="book_format_hardcover">Hardcover</string>
     <string name="delete_book_content_description">Delete book</string>
     <string name="delete_book_title">Delete book?</string>
     <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
     <string name="time_label">Time: %1$s</string>
     <string name="select_time_title">Select time</string>
+    <string name="edit_book_content_description">Edit book</string>
+    <string name="edit_session_content_description">Edit session</string>
+    <string name="edit_session_title">Edit session</string>
+    <string name="manual_entry_section_when">When</string>
+    <string name="manual_entry_section_how_long">How long</string>
+    <string name="manual_entry_section_progress">Progress</string>
+    <string name="position_invalid_error">Enter a valid, non-negative number</string>
+    <string name="pages_read_invalid_error">Enter a valid page count</string>
+    <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
+    <string name="pages_read_derived_placeholder">—</string>
+    <string name="status_prefix">Status: %1$s</string>
+    <string name="change_status_content_description">Change reading status</string>
+    <string name="tab_details">Details</string>
+    <string name="tab_reading_history">Reading history</string>
+    <string name="isbn_copy_content_description">Copy ISBN</string>
+    <string name="isbn_copied_message">ISBN copied to clipboard</string>
+    <string name="refetch_cover_button">Re-fetch cover</string>
+    <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
+    <string name="refetch_cover_in_progress">Re-fetching cover…</string>
+    <string name="cover_view_action_label">View enlarged cover</string>
+    <string name="cover_options_action_label">Cover options</string>
+
+    <!-- ReadingStatus display labels (shared by BookDetailScreen, EditBookScreen, LibraryScreen) -->
+    <string name="reading_status_to_read">To read</string>
+    <string name="reading_status_reading">Reading</string>
+    <string name="reading_status_finished">Finished</string>
+    <string name="reading_status_dnf">Did not finish</string>
+
+    <!-- EditBookScreen -->
+    <string name="edit_book_title_bar">Edit book</string>
+    <string name="edit_title_label">Title</string>
+    <string name="edit_release_year_label">Release year (optional)</string>
+    <string name="edit_purchase_price_label">Purchase price (optional)</string>
+    <string name="edit_total_pages_label">Total pages (optional)</string>
+    <string name="edit_format_label">Format</string>
+    <string name="edit_status_label">Reading status</string>
+    <string name="edit_title_required_error">Title is required</string>
+    <string name="edit_release_year_invalid_error">Enter a year between %1$d and %2$d</string>
+    <string name="edit_purchase_price_invalid_error">Enter a valid non-negative price</string>
+    <string name="edit_total_pages_invalid_error">Enter a positive page count</string>
+
+    <!-- LibraryScreen status filter -->
+    <string name="library_filter_all">All</string>
 
     <!-- StatsScreen -->
     <string name="stats_title">Stats</string>
@@ -55,6 +100,8 @@
     <string name="stats_time_read_label">Time read: %1$s</string>
     <string name="stats_sessions_label">Sessions: %1$d</string>
     <string name="stats_pages_read_label">Pages read: %1$s</string>
+    <string name="stats_books_finished_label">Books finished: %1$d</string>
+    <string name="stats_books_finished_lifetime_title">Books finished (lifetime)</string>
     <string name="stats_unknown_value">—</string>
     <string name="stats_no_streak">No current streak</string>
     <plurals name="stats_streak_days">

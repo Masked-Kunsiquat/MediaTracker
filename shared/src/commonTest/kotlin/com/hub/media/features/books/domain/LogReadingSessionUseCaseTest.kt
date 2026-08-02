@@ -263,6 +263,177 @@ class LogReadingSessionUseCaseTest {
     }
 
     @Test
+    fun executeUpdate_happyPath_persistsChanges() = runTest {
+        val timestampEnd = start.plus(Duration.parse("1h"))
+        val createResult = useCase.execute(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+            notes = "Original",
+        )
+        assertIs<Resource.Success<String>>(createResult)
+        val sessionId = createResult.data
+
+        val newEnd = start.plus(Duration.parse("2h"))
+        val updateResult = useCase.executeUpdate(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = newEnd,
+            durationSeconds = 7_200,
+            startUnit = 0.0,
+            endUnit = 90.0,
+            deltaPages = 90,
+            notes = "Edited",
+        )
+
+        assertIs<Resource.Success<Unit>>(updateResult)
+        val session = db.readingSessionDao().getById(sessionId)
+        assertTrue(session?.endUnit == 90.0)
+        assertTrue(session?.durationSeconds == 7_200L)
+        assertTrue(session?.deltaPages == 90)
+        assertTrue(session?.notes == "Edited")
+    }
+
+    @Test
+    fun executeUpdate_negativeStartUnit_returnsErrorAndLeavesRowUnchanged() = runTest {
+        val timestampEnd = start.plus(Duration.parse("1h"))
+        val createResult = useCase.execute(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+        )
+        assertIs<Resource.Success<String>>(createResult)
+        val sessionId = createResult.data
+        val before = db.readingSessionDao().getById(sessionId)
+
+        val updateResult = useCase.executeUpdate(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = -1.0,
+            endUnit = 10.0,
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        assertTrue(updateResult.message.contains("startUnit"))
+        val after = db.readingSessionDao().getById(sessionId)
+        assertTrue(after == before, "a rejected update must leave the existing row completely unchanged")
+    }
+
+    @Test
+    fun executeUpdate_nanEndUnit_returnsErrorAndLeavesRowUnchanged() = runTest {
+        // Same NaN-must-be-explicitly-rejected concern as the create path (class KDoc) --
+        // validatePositions is shared between execute and executeUpdate, so this must hold here too.
+        val timestampEnd = start.plus(Duration.parse("1h"))
+        val createResult = useCase.execute(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+        )
+        assertIs<Resource.Success<String>>(createResult)
+        val sessionId = createResult.data
+        val before = db.readingSessionDao().getById(sessionId)
+
+        val updateResult = useCase.executeUpdate(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 5.0,
+            endUnit = Double.NaN,
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        assertTrue(updateResult.message.contains("endUnit"))
+        val after = db.readingSessionDao().getById(sessionId)
+        assertTrue(after == before, "a rejected update must leave the existing row completely unchanged")
+    }
+
+    @Test
+    fun executeUpdate_endUnitLessThanStartUnit_isAllowed_rereadIsNotAnError() = runTest {
+        val timestampEnd = start.plus(Duration.parse("1h"))
+        val createResult = useCase.execute(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+        )
+        assertIs<Resource.Success<String>>(createResult)
+        val sessionId = createResult.data
+
+        val updateResult = useCase.executeUpdate(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 100.0,
+            endUnit = 80.0,
+            deltaPages = -20,
+        )
+
+        assertIs<Resource.Success<Unit>>(updateResult)
+        val session = db.readingSessionDao().getById(sessionId)
+        assertTrue(session?.startUnit == 100.0)
+        assertTrue(session?.endUnit == 80.0)
+    }
+
+    @Test
+    fun executeUpdate_nonexistentSessionId_returnsError() = runTest {
+        val updateResult = useCase.executeUpdate(
+            sessionId = newId(),
+            timestampStart = start,
+            timestampEnd = start,
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 0.0,
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        assertTrue(noSessionsPersisted())
+    }
+
+    @Test
+    fun executeUpdate_invalidTimestamps_propagatesRepositoryErrorAndLeavesRowUnchanged() = runTest {
+        val timestampEnd = start.plus(Duration.parse("1h"))
+        val createResult = useCase.execute(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = timestampEnd,
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+        )
+        assertIs<Resource.Success<String>>(createResult)
+        val sessionId = createResult.data
+        val before = db.readingSessionDao().getById(sessionId)
+
+        val updateResult = useCase.executeUpdate(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.minus(Duration.parse("1h")),
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 10.0,
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        val after = db.readingSessionDao().getById(sessionId)
+        assertTrue(after == before)
+    }
+
+    @Test
     fun execute_invalidTimestamps_propagatesRepositoryErrorAndPersistsNothing() = runTest {
         // Repository-level validation (timestampEnd >= timestampStart) still applies for the
         // explicit-bounds overload, e.g. a manual-entry form with bad input.

@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.hub.media.ui.AppContainer
@@ -19,6 +20,8 @@ import com.hub.media.ui.AppContainer
  * - [Route.Library]: The library screen (start destination).
  * - [Route.AddBook]: The add-book-by-ISBN screen.
  * - [Route.BookDetail]: The book detail screen, parameterized by [Route.BookDetail.ARG_BOOK_ID].
+ * - [Route.EditBook]: The edit-book-metadata screen, parameterized by
+ *   [Route.EditBook.ARG_BOOK_ID] (ROADMAP Task 6 Phase A).
  * - [Route.Stats]: The stats screen (ROADMAP Task 5 Phase C).
  *
  * @param navController The navigation controller managing back stack and route transitions.
@@ -78,6 +81,27 @@ fun AppNavigation(
             BookDetailScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
+                bookId = bookId,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+                onNavigateToEditBook = {
+                    navController.navigate(Route.EditBook.createRoute(bookId))
+                },
+            )
+        }
+
+        composable(
+            route = Route.EditBook.route,
+            arguments = listOf(
+                navArgument(Route.EditBook.ARG_BOOK_ID) { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val bookId = requireNotNull(backStackEntry.arguments?.getString(Route.EditBook.ARG_BOOK_ID)) {
+                "Missing required argument: ${Route.EditBook.ARG_BOOK_ID}"
+            }
+            EditBookScreenRoute(
+                appContainer = appContainer,
                 bookId = bookId,
                 onNavigateBack = {
                     navController.navigateUp()
