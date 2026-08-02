@@ -280,6 +280,60 @@ public class BookDetailViewModel(
     }
 
     /**
+     * Edits an existing reading session identified by [sessionId] (ROADMAP Task 6 Phase B),
+     * via [LogReadingSessionUseCase.executeUpdate]. Follows [logManualSession]'s shape almost
+     * exactly — same [saveInFlight] guard (shared with [saveSession]/[logManualSession]: a
+     * double-tap on Save while any of the three is already in flight simply no-ops, consistent
+     * with the class KDoc's rationale for that guard), same [Resource.Error] -> [errorMessage]
+     * surfacing, and likewise does not touch [BookDetailUiState.Ready.pendingSession] (editing a
+     * session from history is unrelated to a live/finished timer run).
+     *
+     * On [Resource.Error] — a validation rejection (bad position bounds, `timestampEnd` before
+     * `timestampStart`, negative duration) or an unresolvable [sessionId] (e.g. the row was
+     * deleted from another screen between opening and saving the edit dialog) — the target row is
+     * left completely unchanged: [ReadingSessionRepository.updateSession] validates before it ever
+     * reads the existing row, and only issues the `@Update` after computing the full replacement
+     * entity, so a rejected edit never partially applies.
+     *
+     * @param sessionId The id of the session being edited.
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2).
+     */
+    public fun updateSession(
+        sessionId: String,
+        timestampStart: Instant,
+        timestampEnd: Instant,
+        durationSeconds: Long?,
+        startUnit: Double,
+        endUnit: Double,
+        deltaPages: Int? = null,
+        notes: String? = null,
+    ) {
+        if (saveInFlight) return
+        saveInFlight = true
+        viewModelScope.launch {
+            try {
+                when (
+                    val result = logReadingSessionUseCase.executeUpdate(
+                        sessionId = sessionId,
+                        timestampStart = timestampStart,
+                        timestampEnd = timestampEnd,
+                        durationSeconds = durationSeconds,
+                        startUnit = startUnit,
+                        endUnit = endUnit,
+                        deltaPages = deltaPages,
+                        notes = notes,
+                    )
+                ) {
+                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                }
+            } finally {
+                saveInFlight = false
+            }
+        }
+    }
+
+    /**
      * Abandons the current [BookDetailUiState.Ready.pendingSession] without persisting it, and
      * clears any [BookDetailUiState.Ready.errorMessage]. The timed run is discarded entirely; the
      * user must start a new timer run (or use [logManualSession]) to log progress instead.

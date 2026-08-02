@@ -479,6 +479,120 @@ class BookDetailViewModelTest {
     }
 
     @Test
+    fun updateSession_persistsAllFieldChanges() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val addResult = sessionRepository.logSession(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = start.plus(1.hours),
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+            notes = "Original",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+
+        viewModel.updateSession(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.plus(2.hours),
+            durationSeconds = 7_200,
+            startUnit = 0.0,
+            endUnit = 90.0,
+            deltaPages = 90,
+            notes = "Edited",
+        )
+
+        val ready = viewModel.uiState
+            .first {
+                it is BookDetailUiState.Ready &&
+                    (it as BookDetailUiState.Ready).sessions.firstOrNull()?.notes == "Edited"
+            } as BookDetailUiState.Ready
+
+        assertEquals(1, ready.sessions.size)
+        val edited = ready.sessions.first()
+        assertEquals(sessionId, edited.id)
+        assertEquals(90.0, edited.endUnit)
+        assertEquals(7_200L, edited.durationSeconds)
+        assertEquals(90, edited.deltaPages)
+        assertEquals("Edited", edited.notes)
+        assertNull(ready.errorMessage)
+    }
+
+    @Test
+    fun updateSession_validationError_leavesSessionUnchangedAndSetsErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val addResult = sessionRepository.logSession(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = start.plus(1.hours),
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 50.0,
+            notes = "Original",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+
+        // Negative startUnit fails LogReadingSessionUseCase.executeUpdate validation without
+        // persisting -- the existing row must survive untouched.
+        viewModel.updateSession(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.plus(1.hours),
+            durationSeconds = 3_600,
+            startUnit = -1.0,
+            endUnit = 50.0,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+                as BookDetailUiState.Ready
+
+        assertNotNull(ready.errorMessage)
+        assertTrue(ready.errorMessage!!.contains("startUnit"))
+        val unchanged = ready.sessions.first()
+        assertEquals("Original", unchanged.notes)
+        assertEquals(0.0, unchanged.startUnit)
+        assertEquals(50.0, unchanged.endUnit)
+    }
+
+    @Test
+    fun updateSession_nonexistentId_setsErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        viewModel.updateSession(
+            sessionId = newId(),
+            timestampStart = start,
+            timestampEnd = start,
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 0.0,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+                as BookDetailUiState.Ready
+
+        assertNotNull(ready.errorMessage)
+        assertTrue(ready.sessions.isEmpty())
+    }
+
+    @Test
     fun deleteSession_removesItFromHistory() = runTest {
         insertBook()
         val viewModel = newViewModel()

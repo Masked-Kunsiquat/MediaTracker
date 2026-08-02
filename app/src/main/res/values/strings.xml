@@ -49,6 +49,15 @@
     <string name="time_label">Time: %1$s</string>
     <string name="select_time_title">Select time</string>
     <string name="edit_book_content_description">Edit book</string>
+    <string name="edit_session_content_description">Edit session</string>
+    <string name="edit_session_title">Edit session</string>
+    <string name="manual_entry_section_when">When</string>
+    <string name="manual_entry_section_how_long">How long</string>
+    <string name="manual_entry_section_progress">Progress</string>
+    <string name="position_invalid_error">Enter a valid, non-negative number</string>
+    <string name="pages_read_invalid_error">Enter a valid page count</string>
+    <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
+    <string name="pages_read_derived_placeholder">—</string>
 
     <!-- EditBookScreen -->
     <string name="edit_book_title_bar">Edit book</string>

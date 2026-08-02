@@ -42,7 +42,7 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
 The book domain gets finished before any other media type starts: real-world use of
 v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no way to
 correct them, redundant form fields, no session editing, no reading status) to justify
-going wide. Movies & TV move to Task 7.
+going wide. Movies & TV move to Task 8.
 
 - **Phase A — Edit book metadata (done).** User-facing correction flow for title, release year,
   purchase price (in the schema since v1 but never displayed or editable anywhere), total
@@ -51,11 +51,18 @@ going wide. Movies & TV move to Task 7.
   `PAPERBACK` and `HARDCOVER`: the column is TEXT so **no schema migration is needed** —
   existing rows keep `PHYSICAL` as the generic/legacy value and get upgraded per-book via
   the edit flow itself.
-- **Phase B — Session editing + manual-entry redesign.** Edit an existing reading session
-  (reuse the manual-entry form prefilled from the row; delete-only today). Redesign the
-  manual-entry dialog: `Pages read` (`deltaPages`) is redundant when positions are page
-  numbers — auto-derive it as `end - start` in page mode and only expose a manual field for
-  percent-based tracking; general layout cleanup.
+- **Phase B — Session editing + manual-entry redesign (done).** Reading sessions gained an edit
+  path: `ReadingSessionRepository.updateSession`/`LogReadingSessionUseCase.executeUpdate` reuse
+  the exact same validation as the create path (a shared private `validatePositions` helper, plus
+  the repository's identical timestamp/duration checks) rather than a second, divergent copy; an
+  edit icon on each session row (next to the existing delete icon) opens the manual-entry dialog
+  prefilled from that row, and Save updates the row in place. `Pages read` (`deltaPages`) is now
+  auto-derived as `end - start` whenever the book's `totalPages` is known — the same signal
+  `formatProgress` already used elsewhere on the screen to distinguish page- from percent-based
+  tracking, so no new schema/flag was needed — and only asked for manually in percent mode. Every
+  numeric field in both session dialogs (positions, pages, duration) now gets the parse-once +
+  isError + Save-gating validation the duration field already had, instead of silently collapsing
+  bad input to `0`/`null`; fields are grouped into "When"/"How long"/"Progress" sections.
 - **Phase C — Reading status.** `TO_READ` / `READING` / `FINISHED` / `DNF` status on books —
   the missing concept that forced deferring the "books finished" stat. Requires **Room
   schema v3** (status column + tested `Migration_2_3` per AGENTS.md §8). Unlocks: the
@@ -71,16 +78,15 @@ going wide. Movies & TV move to Task 7.
   local image). Scraping Google Images or DuckDuckGo image results is a ToS violation and
   is ruled out.
 
-## Task 7 — Movies & TV
+## Task 7 — Search & discovery
 
-- TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
-  tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
-- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v4,
-  assuming Task 6 Phase C lands v3 first) under the §8 schema-freeze rule (version bump +
-  tested `Migration`).
-- Library/media-type UI generalization (type filter, non-book detail screens).
-
-## Task 8 — Search & discovery
+ISBN-only entry is the book domain's remaining bottleneck — a book can only be added while
+physically in hand (or with its ISBN hunted down), so title/author search is what actually
+completes the add-books experience, and local library search matters as the library grows.
+Movies & TV is a much larger lift (new API + user-supplied key, two new tables, a schema
+migration, library UI generalization) and shouldn't gate that. No schema change is needed for
+this task (a title/author index would itself be a schema change + migration if ever added, but
+personal-scale libraries don't need one).
 
 - Title/author type-ahead search of external providers when adding a book: Open Library's
   search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
@@ -92,6 +98,32 @@ going wide. Movies & TV move to Task 7.
   results, so the dropdown can visually distinguish match kinds.
 - Local library search as part of the same task: filter/search the user's own already-added
   books by title/author, independent of the external-provider search above.
+- Scan a book's barcode instead of typing its ISBN. Integration surface is small: the scanner
+  is an app-module-only adapter producing an ISBN string that feeds the existing
+  `AddBookByIsbnUseCase` (which already normalizes/validates ISBN-10/13), so no shared-module
+  or KMP impact. ML Kit barcode scanning runs fully on-device — no image data leaves the phone.
+- Flavor decision and its tradeoff: **Google Code Scanner** (`play-services-code-scanner`) is
+  preferred — Play Services hosts the scanning UI, so the app needs NO camera permission, no
+  CameraX, and no preview implementation, keeping the manifest at just INTERNET; the cost is a
+  hard Google Play Services dependency (sits awkwardly with the local-first/privacy-focused
+  ethos, and rules out de-Googled devices/F-Droid). The alternative, bundled ML Kit + CameraX,
+  avoids Play Services but requires the CAMERA permission, a camera preview implementation, and
+  ~2.2MB of APK.
+- Implementation notes: restrict the scanner to EAN-13 (book barcodes are Bookland EAN-13;
+  restricting formats speeds detection and avoids capturing the EAN-5 price add-on barcode
+  printed beside the ISBN on many covers), and use the 978/979 prefix to confirm a scan is a
+  book rather than an unrelated product.
+- This is a new third-party dependency approved by the user per AGENTS.md §5 ("no unnecessary
+  dependencies without explicit project context approval").
+
+## Task 8 — Movies & TV
+
+- TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
+  tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
+- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v4,
+  assuming Task 6 Phase C lands v3 first) under the §8 schema-freeze rule (version bump +
+  tested `Migration`).
+- Library/media-type UI generalization (type filter, non-book detail screens).
 
 ## Backlog / tech debt
 

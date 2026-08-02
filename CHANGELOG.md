@@ -74,6 +74,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `EditBookViewModelFactory` (per-navigation-argument, like `BookDetailViewModelFactory`).
     Previews cover Ready (prefilled), an inline error message, and Loading.
 
+- **Session editing** (ROADMAP Task 6 Phase B) — reading sessions were delete-only until now:
+  - `ReadingSessionRepository.updateSession(...)` (`shared/.../features/books/data/`): validates
+    `timestampEnd >= timestampStart` and `durationSeconds >= 0` (when non-null) — the *exact* same
+    two checks, same messages, as `logSession` — because the create and edit paths persist the
+    same shape of data and must reject the same inputs for the same reasons. Fetches the existing
+    row first and applies the edit via `.copy(...)`, so `mediaId`/`id` can never drift and an
+    unresolvable session id returns `Resource.Error` rather than Room's silent-no-op `@Update`
+    behavior on a missing primary key.
+  - `LogReadingSessionUseCase.executeUpdate(...)` (`shared/.../features/books/domain/`): the
+    position-bounds check (finite, non-negative `startUnit`/`endUnit`) is now factored into a
+    single private `validatePositions` helper shared by both the create-path `execute` overload and
+    `executeUpdate`, so create and edit can never validate positions differently by accident.
+  - `BookDetailViewModel.updateSession(...)`: mirrors `logManualSession`'s shape — same
+    `saveInFlight` double-tap guard shared with `saveSession`/`logManualSession`, same
+    `Resource.Error` → `errorMessage` surfacing, doesn't touch `pendingSession`.
+  - App: each session row in history gains an edit `IconButton` (`Icons.Filled.Edit`, next to the
+    existing delete icon — mirrors the TopAppBar's Edit/Delete icon pair for the book itself from
+    Phase A, kept explicit rather than making the whole row tappable) that opens
+    `ManualSessionDialog` prefilled from that row; Save updates the row in place instead of
+    inserting a new one. Delete is unchanged.
+  - 5 new `ReadingSessionRepositoryTest` cases, 6 new `LogReadingSessionUseCaseTest` cases, and 3
+    new `BookDetailViewModelTest` cases cover: happy-path field updates, a rejected edit leaving the
+    row completely unchanged, and editing a nonexistent session id.
+
+### Changed
+
+- **Manual-entry redesign** (ROADMAP Task 6 Phase B) — `ManualSessionDialog`/`PendingSessionDialog`
+  (`app/.../ui/screens/BookDetailScreen.kt`):
+  - **`Pages read` is now auto-derived, not asked for, when tracking by page.** There's no explicit
+    "page vs. percent" flag in the data model (schema stays frozen at v2 this phase — see Phase C),
+    so the book's `BookDetailsEntity.totalPages` being known is reused as that signal: it's already
+    exactly the mode signal `formatProgress` uses elsewhere on this same screen to decide "Page 142
+    / 350" vs. a bare percentage, so this keeps one source of truth for "page or percent" instead of
+    inventing a second, parallel one (e.g. a per-dialog toggle, or inferring from position magnitude
+    — which would misfire for round-number percent-complete values). In page mode, `deltaPages` is
+    computed as `endUnit - startUnit` and shown as a read-only "Pages read (auto): N" line instead of
+    an editable field; in percent mode (no fixed denominator to derive a page count from) the manual
+    field is unchanged, just newly validated (below).
+  - **Every numeric field is now parsed once, above the fields, with `isError`/`supportingText` and
+    Save-gating** — the same fix already applied to the duration field is now applied to start/end
+    position and (percent-mode) pages-read too: a blank-or-overflowing value used to collapse
+    silently to `0.0`/`null` via a `?: 0.0` fallback at Save time; it's now rejected with visible
+    feedback instead, and Save stays disabled until every field is valid. Blank *optional* fields
+    (duration, percent-mode pages-read, notes) remain legitimately `null` — only a non-blank,
+    unparseable, or non-finite value is flagged.
+  - **Layout grouped into labeled sections** — "When" (date/time), "How long" (duration), and
+    "Progress" (positions + pages) — inside the dialog's existing scrollable column; still a
+    dialog, not a full screen.
+  - All new/changed strings added via string resources (`app/src/main/res/values/strings.xml`).
+
 ## [0.4.0] - 2026-08-01
 
 Stats milestone, plus the project's first Room schema migration. Schema v2 makes manual

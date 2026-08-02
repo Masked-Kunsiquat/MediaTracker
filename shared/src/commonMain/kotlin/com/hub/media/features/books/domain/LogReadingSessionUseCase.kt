@@ -94,12 +94,7 @@ public class LogReadingSessionUseCase(
         deltaPages: Int? = null,
         notes: String? = null,
     ): Resource<String> {
-        if (!startUnit.isFinite() || startUnit < 0.0) {
-            return Resource.Error("startUnit must be finite and >= 0 (was $startUnit)")
-        }
-        if (!endUnit.isFinite() || endUnit < 0.0) {
-            return Resource.Error("endUnit must be finite and >= 0 (was $endUnit)")
-        }
+        validatePositions(startUnit, endUnit)?.let { return it }
 
         return repository.logSession(
             mediaId = mediaId,
@@ -111,5 +106,75 @@ public class LogReadingSessionUseCase(
             deltaPages = deltaPages,
             notes = notes,
         )
+    }
+
+    /**
+     * Updates an existing session (ROADMAP Task 6 Phase B — session editing), via
+     * [ReadingSessionRepository.updateSession].
+     *
+     * ### Why this routes through the repository directly rather than a sibling use case, and why
+     * validation stays identical
+     * There is exactly one kind of validation this use case owns: the position-bounds check in
+     * [validatePositions] (see class KDoc). That check is not tied to *creating* a row — it's an
+     * invariant of what a valid session's position bounds look like, full stop — so [executeUpdate]
+     * calls the exact same private [validatePositions] helper the explicit-bounds [execute]
+     * overload does, rather than re-deriving or loosening it for edits. The timestamp/duration
+     * checks are owned by [ReadingSessionRepository] (identically for create and update — see
+     * [ReadingSessionRepository.updateSession] KDoc) and are not duplicated here either. The net
+     * effect: a session that would be rejected on creation is rejected on edit for the exact same
+     * reason, with the validation logic itself living in exactly one place per check.
+     *
+     * @param sessionId The id of the session being edited.
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2). Forwarded
+     *   as-is to [ReadingSessionRepository.updateSession].
+     * @param startUnit Position (page or percent) at the start of the session. Must be finite and
+     *   `>= 0`.
+     * @param endUnit Position at the end of the session. Must be finite and `>= 0`; may be less
+     *   than [startUnit] (re-reading backward is valid, see class KDoc).
+     * @param deltaPages Optional page delta.
+     * @param notes Optional free-text notes.
+     * @return [Resource.Success] on success, or [Resource.Error] on validation failure, an unknown
+     *   [sessionId], or a DB failure. Never throws.
+     */
+    public suspend fun executeUpdate(
+        sessionId: String,
+        timestampStart: Instant,
+        timestampEnd: Instant,
+        durationSeconds: Long?,
+        startUnit: Double,
+        endUnit: Double,
+        deltaPages: Int? = null,
+        notes: String? = null,
+    ): Resource<Unit> {
+        validatePositions(startUnit, endUnit)?.let { return it }
+
+        return repository.updateSession(
+            sessionId = sessionId,
+            timestampStart = timestampStart,
+            timestampEnd = timestampEnd,
+            durationSeconds = durationSeconds,
+            startUnit = startUnit,
+            endUnit = endUnit,
+            deltaPages = deltaPages,
+            notes = notes,
+        )
+    }
+
+    /**
+     * Shared position-bounds validation for both [execute] (explicit-bounds overload) and
+     * [executeUpdate] — see class KDoc's "Division of validation responsibility" and
+     * [executeUpdate]'s KDoc for why this must be the single place this check lives, rather than
+     * copied per entry point where create and edit could silently drift apart.
+     *
+     * @return A [Resource.Error] describing the first invalid field, or `null` if both are valid.
+     */
+    private fun validatePositions(startUnit: Double, endUnit: Double): Resource.Error? {
+        if (!startUnit.isFinite() || startUnit < 0.0) {
+            return Resource.Error("startUnit must be finite and >= 0 (was $startUnit)")
+        }
+        if (!endUnit.isFinite() || endUnit < 0.0) {
+            return Resource.Error("endUnit must be finite and >= 0 (was $endUnit)")
+        }
+        return null
     }
 }

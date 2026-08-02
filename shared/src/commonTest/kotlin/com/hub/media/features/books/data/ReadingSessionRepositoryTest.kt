@@ -205,6 +205,156 @@ class ReadingSessionRepositoryTest {
     }
 
     @Test
+    fun updateSession_happyPath_persistsAllFields() = runTest {
+        val timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val timestampEnd = Instant.fromEpochMilliseconds(1_700_000_600_000)
+        val addResult = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = timestampStart,
+            timestampEnd = timestampEnd,
+            durationSeconds = 600,
+            startUnit = 10.0,
+            endUnit = 25.0,
+            deltaPages = 15,
+            notes = "Original notes",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+
+        val newStart = Instant.fromEpochMilliseconds(1_700_100_000_000)
+        val newEnd = Instant.fromEpochMilliseconds(1_700_101_800_000)
+        val updateResult = repo.updateSession(
+            sessionId = sessionId,
+            timestampStart = newStart,
+            timestampEnd = newEnd,
+            durationSeconds = 1_800,
+            startUnit = 25.0,
+            endUnit = 60.0,
+            deltaPages = 35,
+            notes = "Edited notes",
+        )
+
+        assertIs<Resource.Success<Unit>>(updateResult)
+        val session = db.readingSessionDao().getById(sessionId)
+        assertTrue(session != null)
+        assertTrue(session.mediaId == mediaId, "mediaId must not change on edit")
+        assertTrue(session.timestampStart == newStart)
+        assertTrue(session.timestampEnd == newEnd)
+        assertTrue(session.durationSeconds == 1_800L)
+        assertTrue(session.startUnit == 25.0)
+        assertTrue(session.endUnit == 60.0)
+        assertTrue(session.deltaPages == 35)
+        assertTrue(session.notes == "Edited notes")
+    }
+
+    @Test
+    fun updateSession_nullDuration_persistsWithNullDuration() = runTest {
+        val now = Clock.System.now()
+        val addResult = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = now,
+            timestampEnd = now,
+            durationSeconds = 600,
+            startUnit = 10.0,
+            endUnit = 25.0,
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+
+        val updateResult = repo.updateSession(
+            sessionId = sessionId,
+            timestampStart = now,
+            timestampEnd = now,
+            durationSeconds = null,
+            startUnit = 10.0,
+            endUnit = 25.0,
+        )
+
+        assertIs<Resource.Success<Unit>>(updateResult)
+        val session = db.readingSessionDao().getById(sessionId)
+        assertTrue(session?.durationSeconds == null)
+    }
+
+    @Test
+    fun updateSession_invalidEndBeforeStart_returnsErrorAndLeavesRowUnchanged() = runTest {
+        val now = Clock.System.now()
+        val addResult = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = now,
+            timestampEnd = now.plus(kotlin.time.Duration.parse("1h")),
+            durationSeconds = 3600,
+            startUnit = 10.0,
+            endUnit = 25.0,
+            notes = "Untouched",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        val before = db.readingSessionDao().getById(sessionId)
+
+        val updateResult = repo.updateSession(
+            sessionId = sessionId,
+            timestampStart = now,
+            timestampEnd = now.minus(kotlin.time.Duration.parse("1h")), // end before start
+            durationSeconds = 3600,
+            startUnit = 50.0,
+            endUnit = 75.0,
+            notes = "Should not be saved",
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        assertTrue(updateResult.message.contains("timestampEnd"))
+        val after = db.readingSessionDao().getById(sessionId)
+        assertTrue(after == before, "a rejected update must leave the existing row completely unchanged")
+    }
+
+    @Test
+    fun updateSession_negativeDuration_returnsErrorAndLeavesRowUnchanged() = runTest {
+        val now = Clock.System.now()
+        val addResult = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = now,
+            timestampEnd = now.plus(kotlin.time.Duration.parse("1h")),
+            durationSeconds = 3600,
+            startUnit = 10.0,
+            endUnit = 25.0,
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        val before = db.readingSessionDao().getById(sessionId)
+
+        val updateResult = repo.updateSession(
+            sessionId = sessionId,
+            timestampStart = now,
+            timestampEnd = now.plus(kotlin.time.Duration.parse("1h")),
+            durationSeconds = -1,
+            startUnit = 10.0,
+            endUnit = 25.0,
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        assertTrue(updateResult.message.contains("durationSeconds"))
+        val after = db.readingSessionDao().getById(sessionId)
+        assertTrue(after == before, "a rejected update must leave the existing row completely unchanged")
+    }
+
+    @Test
+    fun updateSession_nonexistentId_returnsError() = runTest {
+        val now = Clock.System.now()
+
+        val updateResult = repo.updateSession(
+            sessionId = newId(),
+            timestampStart = now,
+            timestampEnd = now,
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 0.0,
+        )
+
+        assertIs<Resource.Error>(updateResult)
+        assertTrue(updateResult.message.contains("not found"))
+    }
+
+    @Test
     fun deleteSession_removesSession() = runTest {
         val now = Clock.System.now()
 

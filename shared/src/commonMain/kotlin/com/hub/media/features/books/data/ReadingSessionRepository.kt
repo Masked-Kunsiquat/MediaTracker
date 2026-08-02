@@ -90,6 +90,82 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
     }
 
     /**
+     * Updates an existing reading session (ROADMAP Task 6 Phase B — session editing).
+     *
+     * Validation mirrors [logSession] EXACTLY (same two checks, same messages): the create and
+     * edit paths persist the same shape of data, so there is no reason for their timestamp/
+     * duration invariants to diverge — a session that would be rejected at creation time must be
+     * rejected at edit time too, and vice versa. Position-bounds validation (finite/non-negative)
+     * is the caller's responsibility, same division as [logSession] — see
+     * [com.hub.media.features.books.domain.LogReadingSessionUseCase.executeUpdate].
+     *
+     * Unlike [logSession] (which always inserts a fresh row), this needs a target row to update.
+     * [sessionId] not resolving to an existing session — e.g. it was deleted from another screen,
+     * or a stale/garbage id — returns [Resource.Error] rather than silently no-op'ing the way a
+     * bare `@Update` on a missing primary key would (Room's generated `@Update` just reports 0
+     * rows affected; it does not throw), so the caller gets an explicit failure signal instead of
+     * a Save button that appears to work but changed nothing.
+     *
+     * @param sessionId The id of the session to update.
+     * @param timestampStart When the session started.
+     * @param timestampEnd When the session ended.
+     * @param durationSeconds Elapsed time in seconds, or `null` if unknown (schema v2, ROADMAP
+     *   Task 5 pre-phase). `null` skips the `>= 0` check entirely, same as [logSession].
+     * @param startUnit Start position (page or percentage).
+     * @param endUnit End position (page or percentage).
+     * @param deltaPages Optional change in pages (page-mode: auto-derived by the caller as
+     *   `endUnit - startUnit`; percent-mode: manually entered, may be null).
+     * @param notes Optional notes about the session.
+     * @return [Resource.Success] on a successful update, or [Resource.Error] on validation
+     *   failure, an unknown [sessionId], or a DB failure.
+     */
+    public suspend fun updateSession(
+        sessionId: String,
+        timestampStart: Instant,
+        timestampEnd: Instant,
+        durationSeconds: Long?,
+        startUnit: Double,
+        endUnit: Double,
+        deltaPages: Int? = null,
+        notes: String? = null,
+    ): Resource<Unit> {
+        // Validation per AGENTS.md §7: timestampEnd must be >= timestampStart -- identical to
+        // logSession's check above.
+        if (timestampEnd < timestampStart) {
+            return Resource.Error("timestampEnd must be >= timestampStart")
+        }
+
+        // Validation: durationSeconds must be >= 0 when known; null (unknown) always passes --
+        // identical to logSession's check above.
+        if (durationSeconds != null && durationSeconds < 0) {
+            return Resource.Error("durationSeconds must be >= 0")
+        }
+
+        return try {
+            val existing = db.readingSessionDao().getById(sessionId)
+                ?: return Resource.Error("Reading session not found: $sessionId")
+
+            val updated = existing.copy(
+                timestampStart = timestampStart,
+                timestampEnd = timestampEnd,
+                durationSeconds = durationSeconds,
+                startUnit = startUnit,
+                endUnit = endUnit,
+                deltaPages = deltaPages,
+                notes = notes,
+            )
+
+            db.readingSessionDao().update(updated)
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error(
+                message = "Failed to update reading session: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
+    }
+
+    /**
      * Deletes a reading session by ID.
      *
      * @param id The session ID to delete.

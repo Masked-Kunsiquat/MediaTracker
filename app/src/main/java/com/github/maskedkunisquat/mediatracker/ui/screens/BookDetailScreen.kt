@@ -152,6 +152,21 @@ fun BookDetailScreenRoute(
             )
         },
         onDeleteSession = viewModel::deleteSession,
+        onEditSession = { sessionId, durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+            // Mirrors onLogManualSession's timestampStart derivation exactly (same optional-
+            // duration semantics) -- see that lambda's KDoc above.
+            val start = if (durationMinutes != null) timestampEnd - durationMinutes.minutes else timestampEnd
+            viewModel.updateSession(
+                sessionId = sessionId,
+                timestampStart = start,
+                timestampEnd = timestampEnd,
+                durationSeconds = durationMinutes?.let { it * 60 },
+                startUnit = startUnit,
+                endUnit = endUnit,
+                deltaPages = deltaPages,
+                notes = notes,
+            )
+        },
         onEditBook = onNavigateToEditBook,
     )
 }
@@ -189,6 +204,10 @@ fun BookDetailScreenRoute(
  *   durationMinutes is `null` when the duration field was left blank (schema v2, ROADMAP Task 5
  *   pre-phase) -- duration is optional for manual entries.
  * @param onDeleteSession Called with a session id after its delete is confirmed.
+ * @param onEditSession Called with (sessionId, durationMinutes, timestampEnd, startUnit, endUnit,
+ *   deltaPages, notes) from the manual-entry form when it was opened in edit mode (ROADMAP Task 6
+ *   Phase B), i.e. via a session row's edit icon rather than the "Log session manually" button.
+ *   Same argument shape/semantics as [onLogManualSession] -- see that parameter's doc.
  * @param onEditBook Called when the TopAppBar edit icon is tapped (only shown for
  *   [BookDetailUiState.Ready]), to navigate to the edit-metadata screen (ROADMAP Task 6 Phase A).
  */
@@ -216,6 +235,15 @@ fun BookDetailScreen(
         notes: String?,
     ) -> Unit,
     onDeleteSession: (String) -> Unit,
+    onEditSession: (
+        sessionId: String,
+        durationMinutes: Long?,
+        timestampEnd: Instant,
+        startUnit: Double,
+        endUnit: Double,
+        deltaPages: Int?,
+        notes: String?,
+    ) -> Unit,
     onEditBook: () -> Unit,
 ) {
     var showDeleteBookDialog by remember { mutableStateOf(false) }
@@ -283,6 +311,7 @@ fun BookDetailScreen(
                         onDiscardPendingSession = onDiscardPendingSession,
                         onLogManualSession = onLogManualSession,
                         onDeleteSession = onDeleteSession,
+                        onEditSession = onEditSession,
                     )
                 }
             }
@@ -354,9 +383,22 @@ private fun BookDetailContent(
         notes: String?,
     ) -> Unit,
     onDeleteSession: (String) -> Unit,
+    onEditSession: (
+        sessionId: String,
+        durationMinutes: Long?,
+        timestampEnd: Instant,
+        startUnit: Double,
+        endUnit: Double,
+        deltaPages: Int?,
+        notes: String?,
+    ) -> Unit,
 ) {
     var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
     var showManualEntry by remember { mutableStateOf(false) }
+    // Non-null while the manual-entry dialog is open in *edit* mode (opened from a session row's
+    // edit icon, prefilled from this row); null while it's open in *create* mode (opened from the
+    // "Log session manually" button below). See ManualSessionDialog's KDoc.
+    var sessionToEdit by remember { mutableStateOf<ReadingSessionEntity?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -384,7 +426,7 @@ private fun BookDetailContent(
         }
 
         item {
-            TextButton(onClick = { showManualEntry = true }) {
+            TextButton(onClick = { sessionToEdit = null; showManualEntry = true }) {
                 Text(stringResource(R.string.log_session_manually))
             }
         }
@@ -423,6 +465,7 @@ private fun BookDetailContent(
             items(state.sessions, key = { it.id }) { session ->
                 SessionRow(
                     session = session,
+                    onEditClick = { sessionToEdit = session; showManualEntry = true },
                     onDeleteClick = { sessionToDelete = session },
                 )
             }
@@ -435,6 +478,7 @@ private fun BookDetailContent(
             pendingSession = pendingSession,
             errorMessage = state.errorMessage,
             currentProgress = state.currentProgress,
+            totalPages = state.details?.totalPages,
             onSave = onSaveSession,
             onDiscard = onDiscardPendingSession,
         )
@@ -443,11 +487,19 @@ private fun BookDetailContent(
     if (showManualEntry) {
         ManualSessionDialog(
             currentProgress = state.currentProgress,
+            totalPages = state.details?.totalPages,
+            sessionToEdit = sessionToEdit,
             onSave = { durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
-                onLogManualSession(durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
+                val editing = sessionToEdit
+                if (editing != null) {
+                    onEditSession(editing.id, durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
+                } else {
+                    onLogManualSession(durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
+                }
                 showManualEntry = false
+                sessionToEdit = null
             },
-            onDismiss = { showManualEntry = false },
+            onDismiss = { showManualEntry = false; sessionToEdit = null },
         )
     }
 
@@ -590,9 +642,26 @@ private fun TimerCard(
  * [errorMessage] displayed so the user can correct their input and retry without re-timing the
  * session; a successful save clears `pendingSession`, which naturally dismisses the dialog.
  *
- * Start/end position and pages-read fields are digit-and-decimal-point filtered so a negative
- * value (the one input [LogReadingSessionUseCase][com.hub.media.features.books.domain.LogReadingSessionUseCase]
- * rejects) can never be typed in the first place.
+ * ### Position/pages validation (ROADMAP Task 6 Phase B)
+ * Start/end position are digit-and-decimal-point filtered so a negative value (the one input
+ * [LogReadingSessionUseCase][com.hub.media.features.books.domain.LogReadingSessionUseCase]
+ * rejects) can never be typed in the first place, but that filtering alone does not stop a blank
+ * field, a lone "." (unparseable), or a long-enough digit string overflowing [String.toDoubleOrNull]
+ * to [Double.POSITIVE_INFINITY] (a finite-looking string can still parse to a non-finite value) --
+ * all three used to silently collapse to `0.0` via `?: 0.0` at Save time instead of being
+ * rejected. Each position field is now parsed once, above the fields (`parsedStartUnit`/
+ * `parsedEndUnit`), and `startUnitIsValid`/`endUnitIsValid` require both "parses" and
+ * [Double.isFinite]; a non-blank-but-invalid value shows `isError` with [supportingText] and
+ * gates Save disabled, mirroring [ManualSessionDialog]'s duration-field pattern. A blank field is
+ * still not flagged as an error (it's simply incomplete, not invalid input), consistent with the
+ * pre-existing Save-disabled-while-blank behavior.
+ *
+ * ### Page vs. percent mode ([totalPages])
+ * See [ManualSessionDialog]'s KDoc for the full rationale -- the same [totalPages]-based signal is
+ * used here: when non-null (page-mode), pages read is derived as `endUnit - startUnit` and shown
+ * read-only rather than asked for; when null (percent-mode), the manual pages-read field is shown,
+ * now with the same parse-once + isError treatment as the position fields (blank stays legitimately
+ * `null`; a non-blank unparseable value is rejected rather than silently discarded).
  *
  * `onDismissRequest` is a no-op: this dialog represents a *finished, already-timed* run, so an
  * accidental outside tap or back press must not silently discard it the way it would discard an
@@ -607,6 +676,7 @@ private fun PendingSessionDialog(
     pendingSession: ReadingTimerResult,
     errorMessage: String?,
     currentProgress: Double?,
+    totalPages: Int?,
     onSave: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscard: () -> Unit,
 ) {
@@ -614,6 +684,32 @@ private fun PendingSessionDialog(
     var endUnitText by remember { mutableStateOf("") }
     var deltaPagesText by remember { mutableStateOf("") }
     var notesText by remember { mutableStateOf("") }
+
+    val isPageMode = totalPages != null
+
+    val parsedStartUnit = startUnitText.toDoubleOrNull()
+    val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
+    val startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid
+
+    val parsedEndUnit = endUnitText.toDoubleOrNull()
+    val endUnitIsValid = parsedEndUnit != null && parsedEndUnit.isFinite()
+    val endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid
+
+    // Page-mode: deltaPages is fully determined by the positions the user already entered, so it
+    // needs no separate manual input -- see ManualSessionDialog's KDoc.
+    val derivedDeltaPages = if (isPageMode && startUnitIsValid && endUnitIsValid) {
+        (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
+    } else {
+        null
+    }
+
+    val parsedDeltaPages = deltaPagesText.toIntOrNull()
+    val deltaPagesIsValid = deltaPagesText.isBlank() || parsedDeltaPages != null
+    val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
+
+    val canSave = startUnitText.isNotBlank() && startUnitIsValid &&
+        endUnitText.isNotBlank() && endUnitIsValid &&
+        (isPageMode || deltaPagesIsValid)
 
     AlertDialog(
         onDismissRequest = {}, // Incidental dismiss (outside tap / back) must not discard a finished run.
@@ -627,12 +723,22 @@ private fun PendingSessionDialog(
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                Text(
+                    text = stringResource(R.string.manual_entry_section_progress),
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 OutlinedTextField(
                     value = startUnitText,
                     onValueChange = { startUnitText = it.filterDecimalInput() },
                     label = { Text(stringResource(R.string.start_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
+                    isError = startUnitShowsError,
+                    supportingText = if (startUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -641,16 +747,39 @@ private fun PendingSessionDialog(
                     label = { Text(stringResource(R.string.end_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
+                    isError = endUnitShowsError,
+                    supportingText = if (endUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = deltaPagesText,
-                    onValueChange = { deltaPagesText = it.filterIntegerInput() },
-                    label = { Text(stringResource(R.string.pages_read_optional_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (isPageMode) {
+                    Text(
+                        text = stringResource(
+                            R.string.pages_read_derived_label,
+                            derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = deltaPagesText,
+                        onValueChange = { deltaPagesText = it.filterIntegerInput() },
+                        label = { Text(stringResource(R.string.pages_read_optional_label)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        isError = deltaPagesShowsError,
+                        supportingText = if (deltaPagesShowsError) {
+                            { Text(stringResource(R.string.pages_read_invalid_error)) }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 OutlinedTextField(
                     value = notesText,
                     onValueChange = { notesText = it },
@@ -670,13 +799,13 @@ private fun PendingSessionDialog(
             Button(
                 onClick = {
                     onSave(
-                        startUnitText.toDoubleOrNull() ?: 0.0,
-                        endUnitText.toDoubleOrNull() ?: 0.0,
-                        deltaPagesText.toIntOrNull(),
+                        parsedStartUnit ?: 0.0,
+                        parsedEndUnit ?: 0.0,
+                        if (isPageMode) derivedDeltaPages else parsedDeltaPages,
                         notesText.ifBlank { null },
                     )
                 },
-                enabled = startUnitText.isNotBlank() && endUnitText.isNotBlank(),
+                enabled = canSave,
             ) {
                 Text(stringResource(R.string.save_button))
             }
@@ -690,17 +819,37 @@ private fun PendingSessionDialog(
 }
 
 /**
- * Dialog for logging a session with no live timer involved: session date + end time, duration
- * (minutes), start/end position, optional pages-read and notes.
+ * Dialog for logging -- or, since ROADMAP Task 6 Phase B, editing -- a session with no live timer
+ * involved: session date + end time, duration (minutes), start/end position, pages-read (page-mode:
+ * derived; percent-mode: manual/optional), and notes. Fields are grouped into "When" (date/time),
+ * "How long" (duration), and "Progress" (positions + pages) sections (Task 6 Phase B layout
+ * cleanup) inside the existing scrollable [Column] -- this stays a dialog, not a full screen, per
+ * ROADMAP scope.
  *
- * The date field defaults to today and is edited via a [DatePickerDialog] (opened by tapping the
- * "Date:" button). The end time defaults to the current time and is edited via a Material 3
- * [TimePicker] (Task4 Phase E; replaces the earlier digit-filtered hour/minute text fields), hosted
- * in a custom [AlertDialog] with OK/Cancel buttons since this Material 3 version has no built-in
- * `TimePickerDialog` wrapper analogous to [DatePickerDialog] -- Cancel restores the
- * previously-selected time, mirroring the date picker's cancel-restore pattern below. Because both
- * date and time default to "now," the zero-extra-tap "I just finished reading" path is unchanged --
- * picking a date/time is purely opt-in, for backdating a session that happened in the past.
+ * ### Create vs. edit ([sessionToEdit])
+ * When [sessionToEdit] is `null` (opened from the "Log session manually" button), every field
+ * starts blank/defaulted exactly as before ("now" for date/time, [currentProgress] for the start
+ * position). When non-null (opened from a session row's edit icon, ROADMAP Task 6 Phase B), every
+ * field is prefilled from that row instead: date/time from [ReadingSessionEntity.timestampEnd],
+ * duration from [ReadingSessionEntity.durationSeconds] rounded to the nearest minute (this dialog's
+ * duration field only has minute granularity -- a manually-created session's duration is always
+ * already an exact multiple of 60 seconds so this round-trips losslessly, but editing a
+ * timer-backed session with sub-minute precision will coarsen its stored duration to the nearest
+ * minute once saved; a dedicated per-second edit UI was judged not worth it for what's expected to
+ * be a rare edit of already-precise timer data), positions from `startUnit`/`endUnit`, and notes
+ * verbatim. The dialog's title and the semantics of Save are the only other difference -- the
+ * caller ([BookDetailContent]) decides whether [onSave]'s payload means "create" or "update
+ * `sessionToEdit.id`", this composable itself is agnostic to which.
+ *
+ * The date field defaults to today (or, editing, the row's date) and is edited via a
+ * [DatePickerDialog] (opened by tapping the "Date:" button). The end time defaults to the current
+ * time (or, editing, the row's time) and is edited via a Material 3 [TimePicker] (Task4 Phase E;
+ * replaces the earlier digit-filtered hour/minute text fields), hosted in a custom [AlertDialog]
+ * with OK/Cancel buttons since this Material 3 version has no built-in `TimePickerDialog` wrapper
+ * analogous to [DatePickerDialog] -- Cancel restores the previously-selected time, mirroring the
+ * date picker's cancel-restore pattern below. Because both date and time default to "now" in
+ * create mode, the zero-extra-tap "I just finished reading" path is unchanged -- picking a
+ * date/time is purely opt-in, for backdating a session that happened in the past.
  * [TimePickerState] always exposes `hour` in 0-23 regardless of `is24Hour` (that flag only controls
  * the dial/input display), so unlike the old text fields there is no invalid-range state to guard
  * against -- the Save button's `enabled` condition no longer needs a time-validity check.
@@ -715,7 +864,26 @@ private fun PendingSessionDialog(
  * duration field is left blank (see below), by setting `timestampStart = timestampEnd` instead.
  *
  * [currentProgress] (Task4 Phase E) prefills the start-position field with the book's last-known
- * progress as a "resume where you left off" convenience -- the user can freely edit or clear it.
+ * progress as a "resume where you left off" convenience in create mode -- the user can freely edit
+ * or clear it. Ignored in edit mode ([sessionToEdit] wins).
+ *
+ * ### Page vs. percent mode ([totalPages])
+ * `deltaPages` is redundant to ask for whenever positions are page numbers -- it's fully
+ * determined by `endUnit - startUnit`, which the user is already entering (ROADMAP Task 6 Phase
+ * B). This project's data model has no explicit "tracking mode" flag (schema stays frozen at v2
+ * for this phase; a first-class reading-mode concept is Task 6 Phase C's job), so a signal has to
+ * be chosen rather than invented as new schema: [totalPages] (from
+ * [com.hub.media.core.database.entities.BookDetailsEntity.totalPages]) being non-null is reused
+ * here as that signal, because it is **already** this exact signal elsewhere on this same screen --
+ * [formatProgress] renders "Page 142 / 350" when `totalPages != null` and a bare percentage
+ * otherwise. Reusing it keeps exactly one source of truth for "is this book tracked by page or by
+ * percent" across the whole screen, rather than a second, parallel notion (a per-dialog toggle, or
+ * inferring from position magnitude -- which would misfire for, say, a 100-page book at 100%
+ * complete). In page mode (`totalPages != null`) the pages-read field is replaced by a read-only
+ * derived-value [Text] ("Pages read (auto): N") computed from the position fields, making which
+ * mode is active visually obvious; in percent mode (`totalPages == null`, no fixed denominator to
+ * derive a page count from) the manual field is shown exactly as before, just with the same
+ * parse-once + isError validation now applied to every other numeric field (see below).
  *
  * ### Duration is optional (schema v2, ROADMAP Task 5 pre-phase)
  * The duration field may be left blank: `durationMinutes` is then `null`, forwarded all the way
@@ -731,27 +899,41 @@ private fun PendingSessionDialog(
  * The Save button's `enabled` condition therefore no longer requires the duration field to be
  * filled in -- only start/end position are required, same as [PendingSessionDialog].
  *
- * ### Duration validation
- * `durationText` is digit-filtered ([filterIntegerInput]) so it can never contain a sign or
- * decimal point, but a long-enough digit string still overflows [String.toLongOrNull] (returns
- * `null`) the same way a genuinely blank field does -- left unguarded, a mistyped 25-digit
- * duration would silently save as "unknown" instead of being rejected. `durationIsValid`
- * (computed once, above the fields, rather than inline at Save time) distinguishes that case from
- * an intentional blank: blank is always valid (`null` duration), a non-blank value is only valid
- * when it parses *and* is no larger than [MAX_MANUAL_DURATION_MINUTES]. That bound also protects
- * the caller's `durationMinutes * 60` seconds conversion and `timestampEnd - durationMinutes.minutes`
- * arithmetic in [BookDetailRoute] -- both saturate rather than throw on overflow, so an
- * unreasonably large-but-parseable value would otherwise persist a nonsense `durationSeconds`
- * rather than fail loudly.
+ * ### Numeric field validation (ROADMAP Task 6 Phase B)
+ * Every numeric field here -- duration, start/end position, and pages-read (percent-mode only) --
+ * is parsed exactly once, above the fields, rather than inline at Save time, following the same
+ * pattern: a `parsedX` value (`null` for both "blank" and "unparseable/overflowed"), an `xIsValid`
+ * flag that disambiguates those two causes (blank is legitimately valid for an *optional* field --
+ * duration, pages-read; a *required* field -- start/end position -- is simply incomplete while
+ * blank, not erroneous, so blank alone does not show `isError`), and Save is gated on every field's
+ * validity so an invalid value can never reach [onSave]:
+ * - `durationText` is digit-filtered ([filterIntegerInput]) so it can never contain a sign or
+ *   decimal point, but a long-enough digit string still overflows [String.toLongOrNull] (returns
+ *   `null`) the same way a genuinely blank field does -- left unguarded, a mistyped 25-digit
+ *   duration would silently save as "unknown" instead of being rejected. `durationIsValid` also
+ *   bounds a parseable value to [MAX_MANUAL_DURATION_MINUTES], which protects the caller's
+ *   `durationMinutes * 60` seconds conversion and `timestampEnd - durationMinutes.minutes`
+ *   arithmetic in [BookDetailRoute] -- both saturate rather than throw on overflow, so an
+ *   unreasonably large-but-parseable value would otherwise persist a nonsense `durationSeconds`
+ *   rather than fail loudly.
+ * - `startUnitText`/`endUnitText` are digit-and-decimal-point filtered ([filterDecimalInput]) so a
+ *   negative value (the one input
+ *   [LogReadingSessionUseCase][com.hub.media.features.books.domain.LogReadingSessionUseCase]
+ *   rejects) can never be typed, but that alone doesn't stop a lone "." (unparseable) or a
+ *   long-enough digit string overflowing [String.toDoubleOrNull] to [Double.POSITIVE_INFINITY] --
+ *   both used to silently collapse to `0.0` via `?: 0.0` at Save time. `startUnitIsValid`/
+ *   `endUnitIsValid` require both "parses" and [Double.isFinite].
+ * - `deltaPagesText` (percent-mode only) is digit-filtered ([filterIntegerInput]), so the same
+ *   overflow concern as duration applies to [String.toIntOrNull] -- `deltaPagesIsValid` catches it;
+ *   blank stays legitimately `null`.
  *
  * Unlike [PendingSessionDialog], this dialog closes optimistically as soon as Save is tapped
  * rather than waiting on a success/failure signal. There is no shared-state flag analogous to
- * `pendingSession` for the manual path that this dialog could stay bound to, and the one
- * validation [LogReadingSessionUseCase][com.hub.media.features.books.domain.LogReadingSessionUseCase]
- * performs on this input -- rejecting a negative position -- is already made unreachable by the
- * digit-and-decimal-point input filtering below, so an optimistic close cannot silently hide a
- * real failure in practice. The rare case of some other persistence failure is still surfaced via
- * `state.errorMessage` as a banner in [BookDetailContent] once this dialog has closed.
+ * `pendingSession` for the manual path that this dialog could stay bound to; a rejected save (now
+ * possible not just from the repository/use-case layer but, in edit mode, also from
+ * [BookDetailViewModel.updateSession] targeting a since-deleted session) is surfaced via
+ * `state.errorMessage` as a banner in [BookDetailContent] once this dialog has closed, exactly as
+ * a rejected create already was.
  */
 /**
  * Practical upper bound for [ManualSessionDialog]'s duration field, in minutes: 10 years
@@ -767,6 +949,8 @@ private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
 @Composable
 private fun ManualSessionDialog(
     currentProgress: Double?,
+    totalPages: Int?,
+    sessionToEdit: ReadingSessionEntity?,
     onSave: (
         durationMinutes: Long?,
         timestampEnd: Instant,
@@ -777,13 +961,29 @@ private fun ManualSessionDialog(
     ) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var durationText by remember { mutableStateOf("") }
-    var startUnitText by remember { mutableStateOf(currentProgress?.let(::formatUnit) ?: "") }
-    var endUnitText by remember { mutableStateOf("") }
-    var deltaPagesText by remember { mutableStateOf("") }
-    var notesText by remember { mutableStateOf("") }
+    val isPageMode = totalPages != null
 
-    // Parsed once, above the fields, rather than inline at Save time -- see the "Duration
+    var durationText by remember {
+        mutableStateOf(
+            sessionToEdit?.durationSeconds?.let { seconds ->
+                kotlin.math.round(seconds / 60.0).toLong().toString()
+            } ?: "",
+        )
+    }
+    var startUnitText by remember {
+        mutableStateOf(
+            sessionToEdit?.startUnit?.let(::formatUnit)
+                ?: currentProgress?.let(::formatUnit)
+                ?: "",
+        )
+    }
+    var endUnitText by remember { mutableStateOf(sessionToEdit?.endUnit?.let(::formatUnit) ?: "") }
+    var deltaPagesText by remember {
+        mutableStateOf(sessionToEdit?.deltaPages?.takeIf { !isPageMode }?.toString() ?: "")
+    }
+    var notesText by remember { mutableStateOf(sessionToEdit?.notes ?: "") }
+
+    // Parsed once, above the fields, rather than inline at Save time -- see the "Numeric field
     // validation" section of this function's KDoc. `parsedDurationMinutes` is the raw parse
     // (`null` for both "blank" and "unparseable/overflowed"); `durationIsValid` disambiguates
     // those two `null` causes; `validatedDurationMinutes` is the only value that ever reaches
@@ -793,10 +993,38 @@ private fun ManualSessionDialog(
         (parsedDurationMinutes != null && parsedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
     val validatedDurationMinutes = if (durationText.isBlank()) null else parsedDurationMinutes
 
+    val parsedStartUnit = startUnitText.toDoubleOrNull()
+    val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
+    val startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid
+
+    val parsedEndUnit = endUnitText.toDoubleOrNull()
+    val endUnitIsValid = parsedEndUnit != null && parsedEndUnit.isFinite()
+    val endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid
+
+    // Page-mode: deltaPages is fully determined by the positions already entered -- see the "Page
+    // vs. percent mode" section of this function's KDoc.
+    val derivedDeltaPages = if (isPageMode && startUnitIsValid && endUnitIsValid) {
+        (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
+    } else {
+        null
+    }
+
+    val parsedDeltaPages = deltaPagesText.toIntOrNull()
+    val deltaPagesIsValid = deltaPagesText.isBlank() || parsedDeltaPages != null
+    val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
+
     val context = LocalContext.current
-    val nowForDefaults = remember { java.time.LocalDateTime.now() }
+    // "Defaults" for create mode (today/now); in edit mode these seed the pickers with the
+    // session's own date/time instead -- see the "Create vs. edit" section of this function's
+    // KDoc. Keyed on sessionToEdit so switching which row is being edited (were this composable
+    // ever reused across rows without being torn down) would re-seed correctly; in practice each
+    // dialog invocation is backed by a fresh `if (showManualEntry)` composition in
+    // [BookDetailContent], so this is a defensive `remember` key rather than a load-bearing one.
+    val initialDateTime = remember(sessionToEdit) {
+        sessionToEdit?.timestampEnd?.let(::instantToLocalDateTime) ?: java.time.LocalDateTime.now()
+    }
     val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()) },
+        initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(initialDateTime.toLocalDate()) },
     )
     var showDatePicker by remember { mutableStateOf(false) }
     // Snapshot of datePickerState.selectedDateMillis taken when the picker is opened, so a
@@ -806,8 +1034,8 @@ private fun ManualSessionDialog(
 
     val is24Hour = remember { android.text.format.DateFormat.is24HourFormat(context) }
     val timePickerState = rememberTimePickerState(
-        initialHour = nowForDefaults.hour,
-        initialMinute = nowForDefaults.minute,
+        initialHour = initialDateTime.hour,
+        initialMinute = initialDateTime.minute,
         is24Hour = is24Hour,
     )
     var showTimePicker by remember { mutableStateOf(false) }
@@ -816,14 +1044,29 @@ private fun ManualSessionDialog(
     // selection unchanged; only Cancel restores this) -- mirrors dateBeforePickerOpen above.
     var timeBeforePickerOpen by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
+    val canSave = startUnitText.isNotBlank() && startUnitIsValid &&
+        endUnitText.isNotBlank() && endUnitIsValid &&
+        durationIsValid &&
+        (isPageMode || deltaPagesIsValid)
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.log_session_manually)) },
+        title = {
+            Text(
+                stringResource(
+                    if (sessionToEdit != null) R.string.edit_session_title else R.string.log_session_manually,
+                ),
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Text(
+                    text = stringResource(R.string.manual_entry_section_when),
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 OutlinedButton(
                     onClick = {
                         dateBeforePickerOpen = datePickerState.selectedDateMillis
@@ -852,6 +1095,11 @@ private fun ManualSessionDialog(
                         ),
                     )
                 }
+
+                Text(
+                    text = stringResource(R.string.manual_entry_section_how_long),
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 OutlinedTextField(
                     value = durationText,
                     onValueChange = { durationText = it.filterIntegerInput() },
@@ -866,12 +1114,23 @@ private fun ManualSessionDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                Text(
+                    text = stringResource(R.string.manual_entry_section_progress),
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 OutlinedTextField(
                     value = startUnitText,
                     onValueChange = { startUnitText = it.filterDecimalInput() },
                     label = { Text(stringResource(R.string.start_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
+                    isError = startUnitShowsError,
+                    supportingText = if (startUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -880,16 +1139,40 @@ private fun ManualSessionDialog(
                     label = { Text(stringResource(R.string.end_position_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
+                    isError = endUnitShowsError,
+                    supportingText = if (endUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = deltaPagesText,
-                    onValueChange = { deltaPagesText = it.filterIntegerInput() },
-                    label = { Text(stringResource(R.string.pages_read_optional_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (isPageMode) {
+                    Text(
+                        text = stringResource(
+                            R.string.pages_read_derived_label,
+                            derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = deltaPagesText,
+                        onValueChange = { deltaPagesText = it.filterIntegerInput() },
+                        label = { Text(stringResource(R.string.pages_read_optional_label)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        isError = deltaPagesShowsError,
+                        supportingText = if (deltaPagesShowsError) {
+                            { Text(stringResource(R.string.pages_read_invalid_error)) }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
                 OutlinedTextField(
                     value = notesText,
                     onValueChange = { notesText = it },
@@ -906,21 +1189,21 @@ private fun ManualSessionDialog(
                         // "Duration is optional" section. validatedDurationMinutes is hoisted
                         // above the fields and gated by durationIsValid (below), so an
                         // unparseable/overflowing non-blank value can never reach here -- see the
-                        // "Duration validation" section of this function's KDoc.
+                        // "Numeric field validation" section of this function's KDoc.
                         validatedDurationMinutes,
                         deriveTimestampEnd(
                             dateUtcMidnightMillis = datePickerState.selectedDateMillis
-                                ?: localDateToUtcMidnightMillis(nowForDefaults.toLocalDate()),
+                                ?: localDateToUtcMidnightMillis(initialDateTime.toLocalDate()),
                             hour = timePickerState.hour,
                             minute = timePickerState.minute,
                         ),
-                        startUnitText.toDoubleOrNull() ?: 0.0,
-                        endUnitText.toDoubleOrNull() ?: 0.0,
-                        deltaPagesText.toIntOrNull(),
+                        parsedStartUnit ?: 0.0,
+                        parsedEndUnit ?: 0.0,
+                        if (isPageMode) derivedDeltaPages else parsedDeltaPages,
                         notesText.ifBlank { null },
                     )
                 },
-                enabled = startUnitText.isNotBlank() && endUnitText.isNotBlank() && durationIsValid,
+                enabled = canSave,
             ) {
                 Text(stringResource(R.string.save_button))
             }
@@ -962,7 +1245,7 @@ private fun ManualSessionDialog(
             dismissButton = {
                 TextButton(
                     onClick = {
-                        val (hour, minute) = timeBeforePickerOpen ?: (nowForDefaults.hour to nowForDefaults.minute)
+                        val (hour, minute) = timeBeforePickerOpen ?: (initialDateTime.hour to initialDateTime.minute)
                         timePickerState.hour = hour
                         timePickerState.minute = minute
                         showTimePicker = false
@@ -975,7 +1258,16 @@ private fun ManualSessionDialog(
 
 /**
  * A single row in the session history list: date, duration (when known), start->end positions,
- * optional pages-read/notes, and a delete icon button.
+ * optional pages-read/notes, and edit/delete icon buttons.
+ *
+ * ### Edit affordance (ROADMAP Task 6 Phase B)
+ * An explicit edit [IconButton] (rather than making the whole row tappable) was chosen because the
+ * row already carries a delete [IconButton] for its other destructive/mutating action -- adding a
+ * second icon button keeps both actions equally explicit and discoverable, exactly mirroring the
+ * TopAppBar's existing Edit-then-Delete icon pair for the book itself (ROADMAP Task 6 Phase A).
+ * Making the row itself tappable-to-edit instead would conflate "tap this row" with "start editing
+ * it," foreclosing any future non-edit tap behavior (e.g. expanding a row's notes) without a
+ * strong reason to prefer that ambiguity over two clearly-labeled icons.
  *
  * [ReadingSessionEntity.durationSeconds] is nullable (schema v2, ROADMAP Task 5 pre-phase): a
  * backlogged manual entry may have been saved with no known duration. When `null`, this renders
@@ -986,6 +1278,7 @@ private fun ManualSessionDialog(
 @Composable
 private fun SessionRow(
     session: ReadingSessionEntity,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1030,6 +1323,12 @@ private fun SessionRow(
                 if (!notes.isNullOrBlank()) {
                     Text(text = notes, style = MaterialTheme.typography.bodySmall)
                 }
+            }
+            IconButton(onClick = onEditClick) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = stringResource(R.string.edit_session_content_description),
+                )
             }
             IconButton(onClick = onDeleteClick) {
                 Icon(
@@ -1129,6 +1428,17 @@ private fun formatSessionDate(instant: Instant): String {
     val zoned = javaInstant.atZone(java.time.ZoneId.systemDefault())
     return SESSION_DATE_FORMATTER.format(zoned)
 }
+
+/**
+ * Converts [instant] to a local [java.time.LocalDateTime] (device timezone), for seeding
+ * [ManualSessionDialog]'s date/time pickers when it's opened in edit mode -- same conversion
+ * approach as [formatSessionDate], just kept as a `LocalDateTime` rather than formatted to a
+ * string.
+ */
+private fun instantToLocalDateTime(instant: Instant): java.time.LocalDateTime =
+    java.time.Instant.ofEpochMilli(instant.toEpochMilliseconds())
+        .atZone(java.time.ZoneId.systemDefault())
+        .toLocalDateTime()
 
 private val SESSION_DATE_FORMATTER: java.time.format.DateTimeFormatter =
     java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
@@ -1261,6 +1571,7 @@ private fun BookDetailScreenReadyPreview() {
             onDiscardPendingSession = {},
             onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
+            onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
         )
     }
@@ -1295,6 +1606,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             onDiscardPendingSession = {},
             onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
+            onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
         )
     }
@@ -1320,6 +1632,7 @@ private fun BookDetailScreenLoadingPreview() {
             onDiscardPendingSession = {},
             onLogManualSession = { _, _, _, _, _, _ -> },
             onDeleteSession = {},
+            onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
         )
     }
