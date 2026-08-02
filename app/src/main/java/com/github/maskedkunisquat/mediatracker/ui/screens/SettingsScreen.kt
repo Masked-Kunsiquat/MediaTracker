@@ -2,10 +2,13 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -18,14 +21,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -33,6 +39,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -48,25 +56,40 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.export.copyFileToUri
+import com.github.maskedkunisquat.mediatracker.export.copyUriToFile
 import com.github.maskedkunisquat.mediatracker.export.readCsvFromUri
 import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
+import com.github.maskedkunisquat.mediatracker.restartApp
+import com.github.maskedkunisquat.mediatracker.ui.BackupViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.RestoreMarker
+import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.CsvExportBundle
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportRejection
 import com.hub.media.features.portability.domain.ImportSummary
+import com.hub.media.features.portability.domain.StagedRestoreInfo
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.BackupUiState
+import com.hub.media.ui.BackupViewModel
 import com.hub.media.ui.ExportUiState
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportUiState
 import com.hub.media.ui.ImportViewModel
+import com.hub.media.ui.RestoreUiState
+import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Route-level composable for the Settings screen (ROADMAP Task 7 Phase B).
@@ -89,9 +112,17 @@ fun SettingsScreenRoute(
     val importViewModel: ImportViewModel = viewModel(
         factory = ImportViewModelFactory(appContainer),
     )
+    val backupViewModel: BackupViewModel = viewModel(
+        factory = BackupViewModelFactory(appContainer),
+    )
+    val restoreViewModel: RestoreViewModel = viewModel(
+        factory = RestoreViewModelFactory(appContainer),
+    )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val exportUiState by exportViewModel.uiState.collectAsStateWithLifecycle()
     val importUiState by importViewModel.uiState.collectAsStateWithLifecycle()
+    val backupUiState by backupViewModel.uiState.collectAsStateWithLifecycle()
+    val restoreUiState by restoreViewModel.uiState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -101,6 +132,24 @@ fun SettingsScreenRoute(
     val exportCancelledMessage = stringResource(R.string.export_cancelled_message)
     val importCancelledMessage = stringResource(R.string.import_cancelled_message)
     val importFailureMessage = stringResource(R.string.import_failure_message)
+    val backupSuccessMessage = stringResource(R.string.backup_success_message)
+    val backupFailureMessage = stringResource(R.string.backup_failure_message)
+    val backupCancelledMessage = stringResource(R.string.backup_cancelled_message)
+    val restoreCancelledMessage = stringResource(R.string.restore_cancelled_message)
+    val restoreReadFailureMessage = stringResource(R.string.restore_read_failure_message)
+
+    // Surfaced exactly once per Settings-screen visit (see AppContainer.pendingRestoreMarker's
+    // KDoc): the outcome of a restore that completed just before this process was killed and
+    // relaunched (ROADMAP Task 8 Phase C -- see DefaultRestoreDatabaseUseCase's KDoc for why a
+    // restart follows every restore attempt, success or failure). `null` on every ordinary launch.
+    val restoreOutcomeMessage: String? = when (val marker = appContainer.pendingRestoreMarker) {
+        RestoreMarker.Success -> stringResource(R.string.restore_previous_success_message)
+        is RestoreMarker.Failure -> stringResource(R.string.restore_previous_failure_message, marker.message)
+        null -> null
+    }
+    LaunchedEffect(Unit) {
+        restoreOutcomeMessage?.let { snackbarHostState.showSnackbar(it) }
+    }
 
     // The duplicate-policy choice the user makes visible before every import (ROADMAP Task 8 Phase
     // B brief: "make the duplicate policy a visible user choice rather than a hidden default").
@@ -212,6 +261,97 @@ fun SettingsScreenRoute(
         ImportSummaryDialog(summary = state.summary, onDismiss = importViewModel::reset)
     }
 
+    // ---- Backup (ROADMAP Task 8 Phase C) ------------------------------------------------------
+    // Holds the staged snapshot's path between BackupUiState.Success and the SAF destination
+    // picker below, mirroring pendingBundle's export-side role.
+    var pendingBackupResult by remember { mutableStateOf<BackupResult?>(null) }
+
+    val backupDestinationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val result = pendingBackupResult
+        pendingBackupResult = null
+        backupViewModel.reset()
+        coroutineScope.launch {
+            val message = when {
+                uri == null -> backupCancelledMessage
+                result == null -> backupFailureMessage
+                copyFileToUri(context, uri, result.stagedFilePath) -> backupSuccessMessage
+                else -> backupFailureMessage
+            }
+            // The staged snapshot is this screen's own private temp file (not the live database
+            // itself) -- always clean it up once the SAF copy has been attempted, success or not.
+            result?.let { File(it.stagedFilePath).delete() }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    LaunchedEffect(backupUiState) {
+        when (val state = backupUiState) {
+            is BackupUiState.Success -> {
+                pendingBackupResult = state.result
+                backupDestinationLauncher.launch(state.result.suggestedFileName)
+            }
+            is BackupUiState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
+                backupViewModel.reset()
+            }
+            BackupUiState.Idle, BackupUiState.Loading -> Unit
+        }
+    }
+
+    // ---- Restore (ROADMAP Task 8 Phase C) ------------------------------------------------------
+    // The picked file is streamed into the app's own private cache directory *before* the
+    // non-destructive shared-layer validation ever runs -- see RestoreDatabaseUseCase.stage's KDoc
+    // for why this exact copy is what "copy the incoming file to a temp location" means here.
+    val restoreFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(restoreCancelledMessage) }
+            return@rememberLauncherForActivityResult
+        }
+        val incomingFile = File(context.cacheDir, "restore-incoming-${System.currentTimeMillis()}.tmp")
+        if (!copyUriToFile(context, uri, incomingFile.absolutePath)) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(restoreReadFailureMessage) }
+            return@rememberLauncherForActivityResult
+        }
+        restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
+    }
+
+    LaunchedEffect(restoreUiState) {
+        val state = restoreUiState
+        if (state is RestoreUiState.Error) {
+            snackbarHostState.showSnackbar(state.message)
+            restoreViewModel.reset()
+        }
+    }
+
+    (restoreUiState as? RestoreUiState.AwaitingConfirmation)?.let { state ->
+        RestoreConfirmationDialog(
+            info = state.info,
+            onConfirm = {
+                // Deliberately NOT routed through restoreViewModel.viewModelScope: the very next
+                // step closes the AppContainer this ViewModel's own use case was wired from, and
+                // the process is killed immediately after -- see RestoreViewModel's KDoc.
+                coroutineScope.launch {
+                    // Off the main thread: closing the database/HTTP client and renaming files are
+                    // blocking calls. restartApp (Activity/process APIs) runs back on the launch's
+                    // original dispatcher once this completes.
+                    withContext(Dispatchers.IO) {
+                        appContainer.close()
+                        appContainer.restoreDatabaseUseCase.commit(state.info)
+                    }
+                    restartApp(context)
+                }
+            },
+            onCancel = {
+                File(state.info.stagedFilePath).delete()
+                restoreViewModel.reset()
+            },
+        )
+    }
+
     SettingsScreen(
         uiState = uiState,
         onWeekStartDayChange = viewModel::setWeekStartDay,
@@ -221,6 +361,10 @@ fun SettingsScreenRoute(
         duplicatePolicy = duplicatePolicy,
         onDuplicatePolicyChange = { duplicatePolicy = it },
         onImportClick = { libraryImportLauncher.launch(arrayOf("text/*")) },
+        backupInProgress = backupUiState is BackupUiState.Loading,
+        onBackupClick = backupViewModel::backupData,
+        restoreInProgress = restoreUiState is RestoreUiState.Validating,
+        onRestoreClick = { restoreFilePickerLauncher.launch(arrayOf("*/*")) },
         snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
     )
@@ -290,6 +434,61 @@ private fun ImportSummaryDialog(summary: ImportSummary, onDismiss: () -> Unit) {
 }
 
 /**
+ * The restore destructive-action confirmation (ROADMAP Task 8 Phase C task brief: "Require an
+ * explicit, unambiguous confirmation that states what will be lost. Do not make it a single tap
+ * next to the export button.") -- a dedicated modal dialog, reached only after the picked file has
+ * already passed non-destructive header/version validation (so this dialog never appears for a
+ * file that turns out to be unusable), requiring an explicit checkbox acknowledgement before the
+ * destructive confirm button becomes enabled, with that button styled in the theme's `error` color
+ * to read as visually distinct from every other action on this screen.
+ */
+@Composable
+private fun RestoreConfirmationDialog(
+    info: StagedRestoreInfo,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var understood by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.restore_confirm_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.restore_confirm_message))
+                if (info.isOlderSchemaVersion) {
+                    Text(
+                        text = stringResource(R.string.restore_confirm_message_older_version, info.schemaVersionFound),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { understood = !understood },
+                ) {
+                    Checkbox(checked = understood, onCheckedChange = { understood = it })
+                    Text(
+                        text = stringResource(R.string.restore_confirm_checkbox_label),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = understood,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text(stringResource(R.string.restore_confirm_button))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.restore_cancel_button)) }
+        },
+    )
+}
+
+/**
  * Stateless Settings screen composable (AGENTS.md §5 State Hoisting).
  *
  * ### Structure, built to be extended
@@ -321,6 +520,18 @@ private fun ImportSummaryDialog(summary: ImportSummary, onDismiss: () -> Unit) {
  * @param onImportClick Called when the import button is tapped, wired to launch the library-file
  *   SAF picker. The actual SAF file-picker/read sequence and the resulting summary dialog happen
  *   in the route composable, not here.
+ * @param backupInProgress Whether a `.sqlite` backup snapshot is currently being generated
+ *   (ROADMAP Task 8 Phase C) -- wired to `BackupUiState.Loading`.
+ * @param onBackupClick Called when the backup button is tapped, wired to
+ *   `BackupViewModel.backupData`. Non-destructive -- no confirmation needed, unlike restore.
+ * @param restoreInProgress Whether a picked restore candidate is currently being validated
+ *   (ROADMAP Task 8 Phase C) -- wired to `RestoreUiState.Validating`. This is still the
+ *   *non-destructive* half; the destructive confirmation dialog itself is shown by the route
+ *   composable, not here.
+ * @param onRestoreClick Called when the restore button is tapped, wired to launch the SAF file
+ *   picker. Deliberately placed in its own visually-distinct section from every other action on
+ *   this screen (this phase's brief: restore must not be "a single tap next to the export
+ *   button").
  * @param onNavigateBack Called when the back icon is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -334,6 +545,10 @@ fun SettingsScreen(
     duplicatePolicy: DuplicatePolicy,
     onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
     onImportClick: () -> Unit,
+    backupInProgress: Boolean,
+    onBackupClick: () -> Unit,
+    restoreInProgress: Boolean,
+    onRestoreClick: () -> Unit,
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
 ) {
@@ -383,6 +598,24 @@ fun SettingsScreen(
                             duplicatePolicy = duplicatePolicy,
                             onDuplicatePolicyChange = onDuplicatePolicyChange,
                             onImportClick = onImportClick,
+                        )
+                    }
+                }
+                item {
+                    // A separate section (not another row in the "Data" card above) -- ROADMAP
+                    // Task 8 Phase C's brief calls for backup and restore to be "clearly
+                    // separated by risk" from CSV export/import and from each other; a whole-
+                    // database restore is destructive in a way the CSV importer's DuplicatePolicy
+                    // (SKIP/MERGE always preserve existing rows) never is.
+                    SettingsSection(title = stringResource(R.string.settings_section_backup_restore)) {
+                        BackupDataSetting(
+                            backupInProgress = backupInProgress,
+                            onBackupClick = onBackupClick,
+                        )
+                        HorizontalDivider()
+                        RestoreDataSetting(
+                            restoreInProgress = restoreInProgress,
+                            onRestoreClick = onRestoreClick,
                         )
                     }
                 }
@@ -578,6 +811,95 @@ private fun ImportDataSetting(
     }
 }
 
+/**
+ * The `.sqlite` backup setting row (ROADMAP Task 8 Phase C): a label, a short description, and a
+ * single button that produces a complete database snapshot and then prompts (via the route
+ * composable's SAF `CreateDocument` launcher) for where to save it. Non-destructive -- unlike
+ * [RestoreDataSetting], this never reads anything other than the live database and never writes to
+ * it, so it needs no confirmation dialog, matching [ExportDataSetting]'s shape.
+ */
+@Composable
+private fun BackupDataSetting(
+    backupInProgress: Boolean,
+    onBackupClick: () -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_backup_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_backup_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Button(onClick = onBackupClick, enabled = !backupInProgress) {
+            if (backupInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(stringResource(R.string.settings_backup_button))
+            }
+        }
+    }
+}
+
+/**
+ * The `.sqlite` restore setting row (ROADMAP Task 8 Phase C) -- the single most dangerous action in
+ * the app (AGENTS.md §1). Deliberately styled and worded to read as higher-risk than every other
+ * row on this screen:
+ * - An [OutlinedButton] in the theme's `error` color, not a filled primary [Button] like every
+ *   other action here -- visually distinct at a glance, before the user even reads the label.
+ * - The description states plainly that this replaces the whole library and cannot be undone,
+ *   rather than a neutral "restore your data" framing.
+ * - Tapping this button only ever *launches the file picker* -- it never touches the live database
+ *   by itself. The actual destructive action requires the picked file to first pass non-destructive
+ *   validation, then an explicit checkbox-gated confirmation dialog (see
+ *   `RestoreConfirmationDialog`, shown by the route composable), satisfying this phase's brief that
+ *   restore must not be "a single tap next to the export button."
+ */
+@Composable
+private fun RestoreDataSetting(
+    restoreInProgress: Boolean,
+    onRestoreClick: () -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_restore_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_restore_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        OutlinedButton(
+            onClick = onRestoreClick,
+            enabled = !restoreInProgress,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+        ) {
+            if (restoreInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = stringResource(R.string.restore_validating_message),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            } else {
+                Text(stringResource(R.string.settings_restore_button))
+            }
+        }
+    }
+}
+
 /** Preview of the Settings screen with the default (Monday) week-start-day selected. */
 @Preview(showBackground = true)
 @Composable
@@ -592,6 +914,10 @@ private fun SettingsScreenMondayPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            backupInProgress = false,
+            onBackupClick = {},
+            restoreInProgress = false,
+            onRestoreClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -612,6 +938,10 @@ private fun SettingsScreenSundayPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            backupInProgress = false,
+            onBackupClick = {},
+            restoreInProgress = false,
+            onRestoreClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -632,8 +962,94 @@ private fun SettingsScreenExportingPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            backupInProgress = false,
+            onBackupClick = {},
+            restoreInProgress = false,
+            onRestoreClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
+        )
+    }
+}
+
+/** Preview of the Settings screen mid-backup (progress indicator on the backup button). */
+@Preview(showBackground = true)
+@Composable
+private fun SettingsScreenBackingUpPreview() {
+    MediaTrackerTheme {
+        SettingsScreen(
+            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
+            onWeekStartDayChange = {},
+            exportInProgress = false,
+            onExportClick = {},
+            importInProgress = false,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+            onDuplicatePolicyChange = {},
+            onImportClick = {},
+            backupInProgress = true,
+            onBackupClick = {},
+            restoreInProgress = false,
+            onRestoreClick = {},
+            snackbarHostState = remember { SnackbarHostState() },
+            onNavigateBack = {},
+        )
+    }
+}
+
+/** Preview of the Settings screen while a picked restore candidate is being validated. */
+@Preview(showBackground = true)
+@Composable
+private fun SettingsScreenValidatingRestorePreview() {
+    MediaTrackerTheme {
+        SettingsScreen(
+            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
+            onWeekStartDayChange = {},
+            exportInProgress = false,
+            onExportClick = {},
+            importInProgress = false,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+            onDuplicatePolicyChange = {},
+            onImportClick = {},
+            backupInProgress = false,
+            onBackupClick = {},
+            restoreInProgress = true,
+            onRestoreClick = {},
+            snackbarHostState = remember { SnackbarHostState() },
+            onNavigateBack = {},
+        )
+    }
+}
+
+/** Preview of the destructive restore confirmation dialog, for a backup at the current schema version. */
+@Preview(showBackground = true)
+@Composable
+private fun RestoreConfirmationDialogPreview() {
+    MediaTrackerTheme {
+        RestoreConfirmationDialog(
+            info = StagedRestoreInfo(
+                stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
+                schemaVersionFound = 4,
+                isOlderSchemaVersion = false,
+            ),
+            onConfirm = {},
+            onCancel = {},
+        )
+    }
+}
+
+/** Preview of the destructive restore confirmation dialog, for a backup from an older schema version. */
+@Preview(showBackground = true)
+@Composable
+private fun RestoreConfirmationDialogOlderVersionPreview() {
+    MediaTrackerTheme {
+        RestoreConfirmationDialog(
+            info = StagedRestoreInfo(
+                stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
+                schemaVersionFound = 2,
+                isOlderSchemaVersion = true,
+            ),
+            onConfirm = {},
+            onCancel = {},
         )
     }
 }

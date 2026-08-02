@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.BackupViewModel
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
+import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
 
@@ -168,6 +170,43 @@ class ImportViewModelFactory(private val appContainer: AppContainer) : ViewModel
         return when {
             modelClass.isAssignableFrom(ImportViewModel::class.java) -> {
                 ImportViewModel(appContainer.importDataUseCase) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [BackupViewModel] with its
+ * [com.hub.media.features.portability.domain.DatabaseBackupUseCase] dependency from the
+ * [AppContainer] (ROADMAP Task 8 Phase C). Reused across navigations to the Settings screen the
+ * same way [ExportViewModelFactory] is.
+ */
+class BackupViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(BackupViewModel::class.java) -> {
+                BackupViewModel(appContainer.backupDatabaseUseCase) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [RestoreViewModel] with its
+ * [com.hub.media.features.portability.domain.RestoreDatabaseUseCase] dependency from the
+ * [AppContainer] (ROADMAP Task 8 Phase C). Reused across navigations to the Settings screen the
+ * same way [ExportViewModelFactory] is -- see [RestoreViewModel]'s KDoc for why it only ever
+ * exposes the non-destructive "stage" half of restore, not the destructive swap itself.
+ */
+class RestoreViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(RestoreViewModel::class.java) -> {
+                RestoreViewModel(appContainer.restoreDatabaseUseCase) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

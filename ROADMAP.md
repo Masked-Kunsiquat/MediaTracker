@@ -218,9 +218,35 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   reuses the existing use-case-layer rules (`BookMetadataValidation`/`ReadingSessionValidation`,
   extracted from `BookRepository`/`ReadingSessionRepository`/`LogReadingSessionUseCase`) rather
   than forking a divergent copy. No schema change; Room stays at v4.
-- **`.sqlite` backup + restore**: whole-database file copy out, and restore back in. Restore must
-  refuse a file whose `user_version` is newer than the running app understands, rather than
-  letting Room fail obscurely at open time.
+- **`.sqlite` backup + restore (done)**: a new "Backup & restore" Settings section, visually and
+  structurally separated from CSV export/import by risk. Backup runs SQLite's own `VACUUM INTO`
+  against the live database (via Room KMP's `useWriterConnection`/`Transactor.usePrepared`) rather
+  than a naive file copy or a manual `PRAGMA wal_checkpoint` + copy: `RoomDatabase.Builder` defaults
+  to `WRITE_AHEAD_LOGGING` and this app never overrides it, so the most recent commits can live only
+  in the `-wal` sidecar until SQLite next checkpoints them -- `VACUUM INTO` reads through the normal
+  pager (transparently merging main file + WAL, the same path every ordinary query already uses) and
+  writes one fresh, compacted, WAL-free snapshot, proven in `DatabaseBackupUseCaseTest` (`jvmTest`)
+  against a real file-backed database with a row confirmed to still be sitting only in `-wal` at
+  backup time. Restore validates a picked file *before* touching anything: the first 100 bytes are
+  parsed directly (no SQLite driver at all) for the magic string and `PRAGMA user_version` at its
+  fixed header offset, refusing a non-SQLite file or a `user_version` newer than
+  `APP_DATABASE_VERSION` with a clear message; an **older** version is accepted and
+  swapped in as-is, since the very next open goes through the exact same registered migration chain
+  every normal launch already uses -- verified end to end in `RestoreDatabaseUseCaseTest` (a real v2
+  file restored, reopened, and confirmed migrated to v4 with its data intact). The live file is
+  never deleted until the replacement is staged and validated: the picked document is streamed to a
+  private temp file, validated there, then swapped in via same-directory atomic renames (old file to
+  a fixed-name `.pre-restore-bak` safety net, then the validated file into the live path); a failed
+  final rename rolls the backup back automatically, and a `selfHealDatabaseIfNeeded` check at every
+  cold start closes the one unavoidable gap between those two renames (a process death in that exact
+  window would otherwise make Room create an empty database on next launch). `AppContainer` is
+  closed before the swap and the whole process is killed and relaunched immediately after,
+  success or failure -- the only clean way back to a fully working `AppContainer` rather than a
+  half-live one -- with the outcome persisted to a small marker file and surfaced once on the next
+  launch. Confirmation is a dedicated modal requiring an explicit checkbox before a
+  destructively-styled button enables, reached only after the file already passed validation. No
+  schema change; no new dependency; no new permission (SAF only, reusing the `CreateDocument`/
+  `OpenDocument` plumbing Phases A/B established).
 - Establishes the Storage Access Framework / file-picker plumbing the app has never needed
   before — which also makes the deferred **manual cover entry** backlog item cheap afterward.
 - **Goodreads CSV import** (`goodreads_library_export.csv`), scheduled as the final phase of this

@@ -21,6 +21,18 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 
 /**
+ * The current Room schema version, as a named constant rather than a bare literal in the
+ * [Database] annotation below -- ROADMAP Task 8 Phase C (`.sqlite` backup/restore) needs this
+ * exact number outside of Room's own annotation processing, to reject a restored file whose own
+ * `PRAGMA user_version` (parsed directly from its raw header bytes by
+ * [com.hub.media.core.database.parseSqliteHeader], no SQLite connection required) is newer than
+ * this build understands, before Room ever tries to open it. Keeping one named constant (used both
+ * here and by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase]) means the
+ * two can never silently drift apart the way two independent literals could.
+ */
+public const val APP_DATABASE_VERSION: Int = 4
+
+/**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,
  * zero required external cloud sync"). Schema is exported to `shared/schemas` per the
  * `room { schemaDirectory(...) }` config in shared/build.gradle.kts so future migrations can be
@@ -57,7 +69,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
         ReadingSessionEntity::class,
         AppSettingEntity::class,
     ],
-    version = 4,
+    version = APP_DATABASE_VERSION,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

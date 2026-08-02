@@ -84,6 +84,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     in-memory database, asserting the freshly-imported data matches the original field-for-field.
   - No schema change; Room stays at v4 (`ImportWriteDao` is a new DAO only, like `StatsDao` before
     it — no `@Entity` changed).
+- **`.sqlite` backup and restore** (ROADMAP Task 8 Phase C) — the Settings screen gains a
+  "Backup & restore" section, deliberately separate from (and styled at higher visual risk than)
+  the CSV export/import section above: a whole-database restore replaces everything, with no
+  cloud copy to fall back on (`android:allowBackup="true"` means Android *may* be silently
+  snapshotting to Google Drive, but that's invisible, size-capped, and not restorable on demand —
+  never the answer this app relies on).
+  - **Backup, and the WAL problem it actually has to solve**: `RoomDatabase.Builder` defaults to
+    `JournalMode.WRITE_AHEAD_LOGGING` (confirmed against the resolved `room-runtime` 2.8.4
+    bytecode) and this app never overrides it with `setJournalMode(TRUNCATE)`, so the live database
+    genuinely runs in WAL mode — meaning the most recently committed rows can live only in the
+    `-wal` sidecar file until SQLite next checkpoints them into the main `.db` file. A naive
+    `File.copyTo(...)` of just the main file can silently produce a backup missing whatever hasn't
+    been checkpointed yet. Rejected the "manual `PRAGMA wal_checkpoint(TRUNCATE)` then copy"
+    approach too (it would mutate the live database's own WAL state, and `TRUNCATE` can still leave
+    the WAL non-empty if a concurrent reader is active, reintroducing the same problem one layer
+    down). Instead, backup runs SQLite's own **`VACUUM INTO`** — reading through the normal pager
+    (the same path every ordinary query already uses, which transparently merges the main file with
+    anything still only in the WAL) and writing a fresh, compacted, single-file, WAL-free snapshot —
+    executed via Room KMP's `AppDatabase.useWriterConnection` + `Transactor.usePrepared("VACUUM
+    INTO ?")`, binding the destination path as a parameter. `DatabaseBackupUseCaseTest` (`jvmTest`,
+    a real file-backed database, not in-memory — in-memory can't prove anything about WAL) confirms
+    this concretely: it inserts a row, asserts the live database's own `-wal` file is genuinely
+    non-trivial at that moment (proof the row hasn't been checkpointed), then asserts the row is
+    present when the backup is opened fresh.
+  - **Restore validates before touching anything.** The candidate file's first 100 bytes are parsed
+    directly — no SQLite driver, no Room, no database connection at all — for the 16-byte
+    `"SQLite format 3\0"` magic string and `PRAGMA user_version` at its fixed header offset (new
+    `parseSqliteHeader`, pure Kotlin, `SqliteHeaderTest` in `commonTest` with hand-built byte
+    arrays). A non-SQLite file, or a `user_version` newer than `APP_DATABASE_VERSION`
+    (a new named constant so the check and the `@Database` annotation can never silently drift),
+    is refused with a clear message before Room ever gets near it — exactly the "refuse loudly
+    rather than let Room fail obscurely" the task called for. An **older** `user_version` is
+    legitimate and accepted: the very next time the swapped-in file is opened, it goes through the
+    exact same registered migration chain (`MIGRATION_1_2`/`MIGRATION_2_3`/`MIGRATION_3_4`) every
+    ordinary app launch already uses, with no separate "restore migration" path — proven, not just
+    assumed, by `RestoreDatabaseUseCaseTest`'s round trip: a real v2-schema file is restored,
+    reopened through the normal `buildAppDatabase` path, and asserted to land on the current schema
+    with its pre-migration data completely intact.
+  - **The live database is never deleted until the replacement is staged and validated.** The
+    picked SAF document is streamed into a private temp file (new binary-file counterparts to the
+    existing CSV `Uri`↔text helpers, `app/.../export/DatabaseFileIo.kt`) and validated *there*,
+    before anything destructive happens. The swap itself is same-directory atomic renames
+    (`java.nio.file.Files.move` with `ATOMIC_MOVE`/`REPLACE_EXISTING`, falling back to a
+    non-atomic move only if the platform can't do atomic — not expected same-directory): the live
+    file renames to a fixed-name `.pre-restore-bak` (each restore attempt replaces the previous
+    attempt's safety net rather than accumulating one per restore forever), then the validated file
+    renames into the live path. A failed final rename automatically rolls the backup back into
+    place before returning an error. The one gap this can't make atomic — a process death between
+    those two renames, which would otherwise make Room silently create an empty database on the
+    next launch — is closed by a new `selfHealDatabaseIfNeeded` check that runs at the very start of
+    every `createAppContainer`, before Room ever opens anything: if the live file is missing but the
+    safety-net backup exists, it's moved back first. `RestoreDatabaseUseCaseTest` covers header
+    rejection, the too-new/older version rules, the full round trip, and — the core safety
+    guarantee — a forced mid-swap failure (a `StagedRestoreInfo` pointing at a file that no longer
+    exists) leaving the original database completely intact and openable afterward.
+  - **`AppContainer.close()` + a full process restart, not an in-place rebuild.** Every
+    ViewModel/repository already alive in the process holds references captured from the
+    `AppContainer` a restore's confirm handler closes right before the swap; rebuilding a fresh
+    container in place and hoping already-created ViewModels/Compose recompositions notice is
+    exactly the "half-live container" AGENTS.md §1 warns against. Instead, the app is killed and
+    relaunched immediately after the swap — success or failure alike, since the container is
+    already closed either way — through the exact same `createAppContainer` cold-start path every
+    ordinary launch uses, landing on whatever the swap left at the live path (the restored library
+    on success, the untouched/rolled-back original on failure). The outcome is written to a small
+    marker file as the swap's last step and consumed exactly once on the next launch
+    (`consumeRestoreMarker`), surfaced as a one-time Snackbar on the Settings screen.
+  - **Confirmation**: a dedicated modal (`RestoreConfirmationDialog`), reached only after the picked
+    file has already passed validation, states plainly what will be lost, and requires an explicit
+    checkbox acknowledgement before its destructively-`error`-colored confirm button enables — never
+    a single tap next to the export button. The restore button itself is an outlined, `error`-toned
+    control, visually distinct from every other action on the screen.
+  - No schema change (`AppDatabase` stays at v4); no new dependency; no new permission — reuses the
+    SAF `CreateDocument`/`OpenDocument` plumbing Phases A/B already established.
 
 ## [0.6.0] - 2026-08-02
 
