@@ -229,6 +229,18 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
     naive parser reads that literal string and every ISBN match fails — strip the `="` / `"`
     wrapper before validation. Verify the exact column set against a real export file rather than
     trusting this list.
+  - **Handling the columns with no home yet — import staging, not speculative columns.** The
+    tempting fix is to migrate `rating`/shelves/read-count columns in now and leave them as
+    unread "shadow data" until their features ship. Rejected: under the §8 freeze rule every
+    shipped column is permanent, so that commits the schema to shapes for features not yet
+    designed — and it demonstrably gets them wrong, since ratings turn out to belong on the
+    read-through entity (Task 10), not on the book. The honest version is a generic
+    **import-staging table** holding unmapped columns as raw key/value pairs keyed by book id: it
+    commits to no shape, keeps the import lossless, and lets Task 10 (ratings, read counts) and
+    Task 12 (shelves → genres) backfill from it when those features land. The alternative — simply
+    sequencing the Goodreads import after Tasks 10 and 12 so everything maps first-class — is
+    cleaner still and needs no staging table at all; pick between them when this phase is
+    scheduled, based on how soon the import is actually wanted.
 
 ## Task 9 — Search & discovery
 
@@ -291,6 +303,14 @@ individual session histories per read-through."
 - **Room schema v5** (read-through table or session grouping column + tested `Migration_4_5`),
   with the migration assigning every existing session to read-through #1 so no history is lost.
 - Per-read stats become possible (duration per read, pages/day per read) and feed Task 11.
+- **Ratings belong here, per read-through** (user decision), not as a standalone book column.
+  The model has no rating field today and Goodreads exports one, so it is tempting to add
+  `rating` to `book_details` early — but a rating is per *read* ("loved it the first time, dragged
+  the second"), so a book-level column added now would have to be migrated onto the read-through
+  entity by this task anyway. Adding it as a column on the read-through table the migration
+  already creates costs one migration instead of two and puts it on the right entity first time.
+  This also means the Goodreads importer must not land before this task without a plan for its
+  `My Rating` column — see Task 8's import-staging note.
 
 ## Task 11 — Analytics & stats revamp
 

@@ -41,18 +41,16 @@ import kotlinx.datetime.TimeZone
  *
  * "This week"'s bounds are different: [weekPeriodFlow] re-derives them via
  * [flatMapLatest][kotlinx.coroutines.flow.flatMapLatest] every time
- * [SettingsRepository.observeWeekStartDay] emits a new [WeekStartDay], not just once at
- * construction. This was chosen over leaving the week bounds equally stale, because it was
- * straightforward to do with the existing `combine`-based shape (swap one `combine` input for a
- * `flatMapLatest` chain) and directly addresses the ROADMAP's call-out: a user who opens Settings
- * and flips the week-start-day preference while the Stats screen is already open (the same
- * navigation session, no ViewModel recreation) sees "this week" re-bucket immediately, rather than
- * needing to leave and re-enter the screen. `today` itself (which calendar date anchors *either*
- * period) is still resolved once from [clock]/[timeZone] at construction — only *which* day within
- * that fixed "today" the week is considered to start on becomes live. The midnight/week-rollover
- * staleness described above for "this month" therefore still applies to "this week" too: changing
- * the *setting* re-buckets live, but a real midnight tick rolling "today" into a new calendar week
- * does not, without a fresh ViewModel.
+ * [SettingsRepository.observeWeekStartDay] emits a new [WeekStartDay], calling
+ * [StatsRepository.thisWeekBounds] on initial collection and on every preference change.
+ * This was chosen over leaving the week bounds equally stale, because it was straightforward to do
+ * with the existing `combine`-based shape (swap one `combine` input for a `flatMapLatest` chain)
+ * and directly addresses the ROADMAP's call-out: a user who opens Settings and flips the
+ * week-start-day preference while the Stats screen is already open (the same navigation session, no
+ * ViewModel recreation) sees "this week" re-bucket immediately, rather than needing to leave and
+ * re-enter the screen. Note that this means "this week"'s bounds are re-resolved alongside the
+ * week-start-day change, so they will pick up a fresh "today" on each [observeWeekStartDay]
+ * emission. The month bounds, by contrast, remain fixed to their construction-time "today".
  *
  * @param statsRepository Source of all reactive aggregate queries.
  * @param settingsRepository Source of the reactive week-start-day preference (ROADMAP Task 7 Phase

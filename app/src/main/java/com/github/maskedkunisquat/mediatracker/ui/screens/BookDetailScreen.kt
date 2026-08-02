@@ -732,11 +732,11 @@ private fun ReadingHistoryTab(
     modifier: Modifier = Modifier,
 ) {
     val entries = remember(sessions) { buildTimelineEntries(sessions) }
+    val today = remember { java.time.LocalDate.now() }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
             TextButton(
@@ -765,7 +765,7 @@ private fun ReadingHistoryTab(
                         showBottomLine = showBottomLine,
                         showDot = false,
                     ) {
-                        TimelineDateHeader(date = entry.date)
+                        TimelineDateHeader(date = entry.date, today = today)
                     }
                     is TimelineEntry.SessionEntry -> TimelineRow(
                         showTopLine = showTopLine,
@@ -946,7 +946,7 @@ private fun MetadataCard(details: BookDetailsEntity, onCopyIsbn: (String) -> Uni
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             val isbn = details.isbn
-            if (isbn != null) {
+            if (!isbn.isNullOrBlank()) {
                 val copyIsbnDescription = stringResource(R.string.isbn_copy_content_description)
                 MetadataRow(label = stringResource(R.string.detail_label_isbn)) {
                     Text(text = isbn, style = MaterialTheme.typography.bodyMedium)
@@ -2231,7 +2231,7 @@ private fun TimelineRow(
                 drawCircle(color = dotColor, radius = 5.dp.toPx(), center = Offset(centerX, centerY))
             }
         }
-        Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+        Box(modifier = Modifier.weight(1f).padding(start = 8.dp, bottom = 4.dp)) {
             content()
         }
     }
@@ -2242,8 +2242,7 @@ private fun TimelineRow(
  * date convenience), the full `MMM d, yyyy` date otherwise via the existing [DATE_ONLY_FORMATTER].
  */
 @Composable
-private fun TimelineDateHeader(date: java.time.LocalDate) {
-    val today = remember { java.time.LocalDate.now() }
+private fun TimelineDateHeader(date: java.time.LocalDate, today: java.time.LocalDate) {
     val label = when (date) {
         today -> stringResource(R.string.timeline_today)
         today.minusDays(1) -> stringResource(R.string.timeline_yesterday)
