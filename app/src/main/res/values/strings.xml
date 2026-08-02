@@ -45,4 +45,19 @@
     <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
     <string name="time_label">Time: %1$s</string>
     <string name="select_time_title">Select time</string>
+
+    <!-- StatsScreen -->
+    <string name="stats_title">Stats</string>
+    <string name="stats_content_description">View stats</string>
+    <string name="stats_this_week_title">This week</string>
+    <string name="stats_this_month_title">This month</string>
+    <string name="stats_time_read_label">Time read: %1$s</string>
+    <string name="stats_sessions_label">Sessions: %1$d</string>
+    <string name="stats_pages_read_label">Pages read: %1$s</string>
+    <string name="stats_unknown_value">—</string>
+    <string name="stats_no_streak">No current streak</string>
+    <plurals name="stats_streak_days">
+        <item quantity="one">%1$d day streak</item>
+        <item quantity="other">%1$d day streak</item>
+    </plurals>
 </resources>

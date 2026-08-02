@@ -6,6 +6,7 @@ import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.LibraryViewModel
+import com.hub.media.ui.StatsViewModel
 
 /**
  * Factory for creating [LibraryViewModel] with its [com.hub.media.features.books.data.BookRepository]
@@ -60,6 +61,25 @@ class BookDetailViewModelFactory(
                     readingSessionRepository = appContainer.readingSessionRepository,
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,
                 ) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [StatsViewModel] with its [com.hub.media.features.stats.data.StatsRepository]
+ * dependency from the [AppContainer] (ROADMAP Task 5 Phase C). Reused across navigations to the
+ * stats screen the same way [LibraryViewModelFactory]/[AddBookViewModelFactory] are (unlike the
+ * per-navigation-argument [BookDetailViewModelFactory]).
+ */
+class StatsViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(StatsViewModel::class.java) -> {
+                StatsViewModel(appContainer.statsRepository) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

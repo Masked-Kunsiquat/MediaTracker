@@ -55,6 +55,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`StatsRepositoryTest`, `StatsViewModelTest`) are excluded from the android unit-test variant
     in `shared/build.gradle.kts` (package/exact-class-name filters), mirroring the existing books
     DAO/repository/ViewModel test exclusions — `:shared:jvmTest` remains the authoritative gate.
+- **Stats screen** (ROADMAP Task 5 Phase C, `app/.../ui/screens/StatsScreen.kt`): a new screen
+  showing "This week"/"This month" cards (time read, session count, pages read) plus a current
+  reading streak card. Route-level `StatsScreenRoute` wires `StatsViewModel` (via the new
+  `StatsViewModelFactory`, `ui/ViewModelFactories.kt`) to the stateless `StatsScreen`, following
+  the same route-wrapper/stateless-screen split as `LibraryScreen`/`BookDetailScreen`.
+  `StatsUiState.isLoading` renders a centered `CircularProgressIndicator`; otherwise, each period's
+  `timeReadSeconds`/`pagesRead` render the real value when known, or the `stats_unknown_value`
+  ("—") marker string when `null` — a `null` sum means no session in the period has a known value
+  at all (schema v2), which must stay visually distinct from a legitimate `0` (e.g. a session
+  logged with 0 pages read); `sessionCount` is always a real, non-negative count and is never
+  shown with the unknown marker, including when it is legitimately `0`. Time read is formatted
+  `H:MM` (hours unpadded, minutes zero-padded) — no seconds, unlike the book detail timer's
+  `H:MM:SS`, since this is an aggregate total rather than a live-ticking display. The streak card
+  uses a new `stats_streak_days` `<plurals>` resource (`one`/`other`, both rendering "N day
+  streak" — "day" stays a singular noun-adjunct regardless of count, e.g. "a 5-day streak", not "a
+  5-days streak") for a positive streak, or `stats_no_streak` ("No current streak") when the streak
+  is `0`. Previews cover Loading, a populated week/month/streak, and an all-null/zero/empty state.
+  **Navigation**: new `Route.Stats` ("stats"), wired into `AppNavigation`'s `NavHost` with a
+  `navigateUp()` back callback; entry point is a new `IconButton` (`Icons.Filled.Info` —
+  `material-icons-core`'s curated ~49-icon set has no chart/analytics/bar-graph icon, so `Info` is
+  the closest available fit) in `LibraryScreen`'s TopAppBar actions slot, wired through a new
+  `onNavigateToStats: () -> Unit` parameter threaded through `LibraryScreenRoute` per AGENTS.md §5
+  state hoisting.
 
 ### Changed
 

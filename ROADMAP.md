@@ -26,24 +26,18 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   making `durationSeconds` nullable (null = unknown), with a tested `Migration_1_2` per
   AGENTS.md §8; duration is now optional in the manual-entry UI. Session-gap semantics for the
   upcoming stat queries remain as documented below.
+- **Task 5 — Stats** (`v0.4.0`): reactive aggregate reading-stats queries (`StatsDao`,
+  `StatsRepository`) for this week/this month time read, session count, and pages read, plus the
+  current consecutive-reading-day streak (Phase B); a Stats screen (Phase C) showing "This
+  week"/"This month" cards and a streak card, reachable from a new icon in `LibraryScreen`'s
+  TopAppBar. Session gaps are NOT auto-reconciled -- sessions are independent facts recorded as
+  start/end position pairs, not a continuous log, so stats sum per-session deltas rather than
+  assume continuity between one session's end and the next session's start. Time-read/pages-read
+  totals sum only *known* values (a null `durationSeconds`/`deltaPages` contributes nothing to its
+  total but still counts toward the session count); the stats screen renders an unknown-value
+  marker rather than a misleading `0` when a period's sum is entirely `null`.
 
-## Task 5 — Stats (next)
-
-- **Note:** session gaps are NOT auto-reconciled -- sessions are independent facts recorded
-  as start/end position pairs, not a continuous log, so stats must sum per-session deltas
-  rather than assume continuity between one session's end and the next session's start.
-  Start-position autofill from current progress (landed in Task 4 Phase E) mitigates
-  accidental gaps by defaulting the next session's start to where the last one left off, but
-  the user can still edit or clear it. A "gap detected" nudge (comparing a new session's
-  start position against the prior session's end) is a possible later nicety, not required
-  for correct stats. Stats must also sum only *known* durations (a null `durationSeconds`
-  contributes nothing to time-read totals but does not otherwise affect session counts or page
-  progress, per the schema v2 pre-phase above).
-
-Aggregate queries in `features/stats`: time read per week/month, books finished, streaks.
-Depends on Task 4 producing session data.
-
-## Task 6 — Movies & TV
+## Task 6 — Movies & TV (next)
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
