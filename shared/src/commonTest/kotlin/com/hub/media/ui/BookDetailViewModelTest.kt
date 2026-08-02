@@ -20,6 +20,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -522,6 +523,85 @@ class BookDetailViewModelTest {
         assertEquals(7_200L, edited.durationSeconds)
         assertEquals(90, edited.deltaPages)
         assertEquals("Edited", edited.notes)
+        assertNull(ready.errorMessage)
+    }
+
+    /**
+     * Regression test for the Task 6 Phase B data-integrity defect where `BookDetailScreen`'s
+     * `ManualSessionDialog` (app module) silently coarsened a timer-backed session's sub-minute
+     * precision `durationSeconds` to the nearest whole minute the moment its Save button was
+     * tapped -- even when the user opened the dialog only to fix an unrelated field (e.g. a
+     * position/page number) and never touched the duration field at all. AGENTS.md §1 (user data
+     * safety overrides development shortcuts) forbids silently mutating a field the user never
+     * touched, so that dialog was fixed to re-emit the session's original `durationSeconds`
+     * verbatim whenever its duration text is unchanged from what it was prefilled with.
+     *
+     * This test lives here, not in the app module, because [BookDetailViewModel.updateSession]
+     * already takes `durationSeconds` directly (it always did -- the defect was entirely in the
+     * Compose dialog's minutes<->seconds conversion, one layer above this ViewModel). What this
+     * test proves is the *contract* the UI fix depends on: this ViewModel/repository/DAO stack
+     * must persist whatever `durationSeconds` it's given byte-identical, including a value that is
+     * NOT an exact multiple of 60 (1_847s = 30m47s), when only `startUnit`/`endUnit` also change
+     * in the same call -- i.e. nothing below the UI layer rounds, truncates, or otherwise
+     * reinterprets a sub-minute-precision duration during an update.
+     *
+     * What this test does NOT prove: it does not exercise `ManualSessionDialog` itself (there is
+     * no Compose UI test harness in this shared-module, commonTest target), so it cannot directly
+     * verify that the dialog actually detects "duration field untouched" and passes through
+     * `originalDurationSeconds` rather than the rounded-then-reconverted minutes value. That
+     * detection logic (comparing the live duration text against its captured prefill) is pure
+     * Compose state colocated with the dialog and has no shared-module seam to test against here.
+     * This test instead pins down the one thing that logic depends on: if the dialog *does* pass
+     * 1_847 through unchanged, this stack will not itself corrupt it -- so the layer this test
+     * cannot reach is exactly the layer the fix lives in, and no lower.
+     */
+    @Test
+    fun updateSession_positionOnlyChange_preservesSubMinuteDurationPrecision() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
+        val addResult = sessionRepository.logSession(
+            mediaId = mediaId,
+            timestampStart = start,
+            timestampEnd = start.plus(1_847.seconds),
+            durationSeconds = 1_847,
+            startUnit = 10.0,
+            endUnit = 20.0,
+            notes = "Timer run",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        viewModel.uiState.first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).sessions.isNotEmpty() }
+
+        // Simulate the fixed dialog's Save call for "user only corrected the end position": every
+        // argument matches the original row except endUnit, and durationSeconds is passed through
+        // as the original 1_847 verbatim -- exactly what ManualSessionDialog now does when its
+        // duration text is unchanged from its prefill.
+        viewModel.updateSession(
+            sessionId = sessionId,
+            timestampStart = start,
+            timestampEnd = start.plus(1_847.seconds),
+            durationSeconds = 1_847,
+            startUnit = 10.0,
+            endUnit = 25.0,
+            notes = "Timer run",
+        )
+
+        val ready = viewModel.uiState
+            .first {
+                it is BookDetailUiState.Ready &&
+                    (it as BookDetailUiState.Ready).sessions.firstOrNull()?.endUnit == 25.0
+            } as BookDetailUiState.Ready
+
+        val edited = ready.sessions.first()
+        assertEquals(25.0, edited.endUnit)
+        assertEquals(
+            1_847L,
+            edited.durationSeconds,
+            "editing an unrelated field (position) must not round durationSeconds to the nearest minute",
+        )
         assertNull(ready.errorMessage)
     }
 

@@ -72,7 +72,7 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailUiState
 import com.hub.media.ui.BookDetailViewModel
 import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
 /**
@@ -127,24 +127,31 @@ fun BookDetailScreenRoute(
             viewModel.saveSession(startUnit, endUnit, deltaPages, notes)
         },
         onDiscardPendingSession = viewModel::discardPendingSession,
-        onLogManualSession = { durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+        onLogManualSession = { durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes ->
             // Manual entry has no live timer to read timestamps from, so the dialog itself
             // collects a session date + end time (defaulting to today/now, so the common "I just
             // finished reading" case still takes zero extra taps) and derives timestampEnd from
             // that selection -- see ManualSessionDialog. timestampStart is then simply the
-            // entered duration subtracted from timestampEnd, which supports backdating an entry
+            // effective duration subtracted from timestampEnd, which supports backdating an entry
             // to an arbitrary past date/time as well as the zero-extra-tap "just now" case.
             //
-            // durationMinutes is null when the duration field was left blank (schema v2, ROADMAP
+            // durationSeconds is already the fully-resolved, correct-precision value by the time
+            // it reaches here -- ManualSessionDialog itself does the minutes->seconds conversion
+            // (its duration field only has minute granularity), because only that composable knows
+            // whether the field was actually touched by the user (see its KDoc's "Duration
+            // precision" section and AGENTS.md §1). This lambda must NOT redo/reinterpret that
+            // conversion -- it has no way to tell an untouched prefill from a genuine edit.
+            //
+            // durationSeconds is null when the duration field was left blank (schema v2, ROADMAP
             // Task 5 pre-phase -- backlogged manual sessions don't always have a known duration).
             // With no duration to subtract, timestampStart is set equal to timestampEnd: a
             // zero-length interval that anchors the session to its date without asserting a false
             // span -- see ManualSessionDialog's KDoc.
-            val start = if (durationMinutes != null) timestampEnd - durationMinutes.minutes else timestampEnd
+            val start = if (durationSeconds != null) timestampEnd - durationSeconds.seconds else timestampEnd
             viewModel.logManualSession(
                 timestampStart = start,
                 timestampEnd = timestampEnd,
-                durationSeconds = durationMinutes?.let { it * 60 },
+                durationSeconds = durationSeconds,
                 startUnit = startUnit,
                 endUnit = endUnit,
                 deltaPages = deltaPages,
@@ -152,15 +159,16 @@ fun BookDetailScreenRoute(
             )
         },
         onDeleteSession = viewModel::deleteSession,
-        onEditSession = { sessionId, durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+        onEditSession = { sessionId, durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes ->
             // Mirrors onLogManualSession's timestampStart derivation exactly (same optional-
-            // duration semantics) -- see that lambda's KDoc above.
-            val start = if (durationMinutes != null) timestampEnd - durationMinutes.minutes else timestampEnd
+            // duration semantics, and the same "durationSeconds already resolved by the dialog"
+            // caveat) -- see that lambda's KDoc above.
+            val start = if (durationSeconds != null) timestampEnd - durationSeconds.seconds else timestampEnd
             viewModel.updateSession(
                 sessionId = sessionId,
                 timestampStart = start,
                 timestampEnd = timestampEnd,
-                durationSeconds = durationMinutes?.let { it * 60 },
+                durationSeconds = durationSeconds,
                 startUnit = startUnit,
                 endUnit = endUnit,
                 deltaPages = deltaPages,
@@ -198,13 +206,15 @@ fun BookDetailScreenRoute(
  * @param onSaveSession Called with (startUnit, endUnit, deltaPages, notes) to persist the pending
  *   timer-backed session.
  * @param onDiscardPendingSession Called to abandon the pending timer-backed session.
- * @param onLogManualSession Called with (durationMinutes, timestampEnd, startUnit, endUnit,
+ * @param onLogManualSession Called with (durationSeconds, timestampEnd, startUnit, endUnit,
  *   deltaPages, notes) from the manual-entry form; timestampEnd reflects the session date/time
  *   the user picked in the dialog (defaulting to now, but backdatable to a past date/time).
- *   durationMinutes is `null` when the duration field was left blank (schema v2, ROADMAP Task 5
- *   pre-phase) -- duration is optional for manual entries.
+ *   durationSeconds is `null` when the duration field was left blank (schema v2, ROADMAP Task 5
+ *   pre-phase) -- duration is optional for manual entries. Already resolved to seconds by
+ *   [ManualSessionDialog] itself (its minutes-granularity field is converted there, not here) --
+ *   see that composable's KDoc.
  * @param onDeleteSession Called with a session id after its delete is confirmed.
- * @param onEditSession Called with (sessionId, durationMinutes, timestampEnd, startUnit, endUnit,
+ * @param onEditSession Called with (sessionId, durationSeconds, timestampEnd, startUnit, endUnit,
  *   deltaPages, notes) from the manual-entry form when it was opened in edit mode (ROADMAP Task 6
  *   Phase B), i.e. via a session row's edit icon rather than the "Log session manually" button.
  *   Same argument shape/semantics as [onLogManualSession] -- see that parameter's doc.
@@ -227,7 +237,7 @@ fun BookDetailScreen(
     onSaveSession: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscardPendingSession: () -> Unit,
     onLogManualSession: (
-        durationMinutes: Long?,
+        durationSeconds: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -237,7 +247,7 @@ fun BookDetailScreen(
     onDeleteSession: (String) -> Unit,
     onEditSession: (
         sessionId: String,
-        durationMinutes: Long?,
+        durationSeconds: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -375,7 +385,7 @@ private fun BookDetailContent(
     onSaveSession: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
     onDiscardPendingSession: () -> Unit,
     onLogManualSession: (
-        durationMinutes: Long?,
+        durationSeconds: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -385,7 +395,7 @@ private fun BookDetailContent(
     onDeleteSession: (String) -> Unit,
     onEditSession: (
         sessionId: String,
-        durationMinutes: Long?,
+        durationSeconds: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -489,12 +499,12 @@ private fun BookDetailContent(
             currentProgress = state.currentProgress,
             totalPages = state.details?.totalPages,
             sessionToEdit = sessionToEdit,
-            onSave = { durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+            onSave = { durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes ->
                 val editing = sessionToEdit
                 if (editing != null) {
-                    onEditSession(editing.id, durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
+                    onEditSession(editing.id, durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes)
                 } else {
-                    onLogManualSession(durationMinutes, timestampEnd, startUnit, endUnit, deltaPages, notes)
+                    onLogManualSession(durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes)
                 }
                 showManualEntry = false
                 sessionToEdit = null
@@ -831,15 +841,30 @@ private fun PendingSessionDialog(
  * starts blank/defaulted exactly as before ("now" for date/time, [currentProgress] for the start
  * position). When non-null (opened from a session row's edit icon, ROADMAP Task 6 Phase B), every
  * field is prefilled from that row instead: date/time from [ReadingSessionEntity.timestampEnd],
- * duration from [ReadingSessionEntity.durationSeconds] rounded to the nearest minute (this dialog's
- * duration field only has minute granularity -- a manually-created session's duration is always
- * already an exact multiple of 60 seconds so this round-trips losslessly, but editing a
- * timer-backed session with sub-minute precision will coarsen its stored duration to the nearest
- * minute once saved; a dedicated per-second edit UI was judged not worth it for what's expected to
- * be a rare edit of already-precise timer data), positions from `startUnit`/`endUnit`, and notes
- * verbatim. The dialog's title and the semantics of Save are the only other difference -- the
- * caller ([BookDetailContent]) decides whether [onSave]'s payload means "create" or "update
+ * duration from [ReadingSessionEntity.durationSeconds] rounded to the nearest minute for *display*
+ * (this dialog's duration field only has minute granularity), positions from `startUnit`/`endUnit`,
+ * and notes verbatim. The dialog's title and the semantics of Save are the only other difference --
+ * the caller ([BookDetailContent]) decides whether [onSave]'s payload means "create" or "update
  * `sessionToEdit.id`", this composable itself is agnostic to which.
+ *
+ * ### Duration precision is preserved when untouched (AGENTS.md §1 fix)
+ * Rounding the *displayed* duration text to whole minutes does NOT mean rounding the *stored*
+ * value. Task 6 Phase B originally converted whatever whole-minute count was in `durationText`
+ * back to seconds unconditionally at Save time -- which meant opening this dialog to fix some
+ * unrelated field (a page number, a note) on a timer-backed session with real sub-minute precision
+ * (e.g. 1,847s = 30m47s) silently coarsened its stored `durationSeconds` to 1,860s the moment Save
+ * was tapped, even though the user never touched the duration field. That is exactly the silent
+ * mutation of an untouched field AGENTS.md §1 (user data safety) forbids, so it has been fixed:
+ * [prefilledDurationText] captures the exact string [durationText] was seeded with, alongside
+ * [originalDurationSeconds] (`sessionToEdit?.durationSeconds`). At Save time, `durationText` being
+ * still identical to [prefilledDurationText] AND [originalDurationSeconds] being non-null together
+ * mean "the user never edited this field" -- in that case [originalDurationSeconds] is re-emitted
+ * to [onSave] verbatim, preserving whatever precision it had. Any other case (the text differs from
+ * the prefill -- a genuine edit -- or there was no original value to fall back on, i.e. create mode
+ * or an originally-unknown duration) falls back to the entered minutes converted to seconds, or
+ * `null` when blank, exactly as before. A dedicated per-second edit UI is still not offered (the
+ * user cannot deliberately enter sub-minute precision by hand) -- this fix only guarantees that
+ * *not touching* the field never destroys precision that was already there.
  *
  * The date field defaults to today (or, editing, the row's date) and is edited via a
  * [DatePickerDialog] (opened by tapping the "Date:" button). The end time defaults to the current
@@ -886,8 +911,9 @@ private fun PendingSessionDialog(
  * parse-once + isError validation now applied to every other numeric field (see below).
  *
  * ### Duration is optional (schema v2, ROADMAP Task 5 pre-phase)
- * The duration field may be left blank: `durationMinutes` is then `null`, forwarded all the way
- * to [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds] as `null` rather
+ * The duration field may be left blank: the effective `durationSeconds` emitted to [onSave] is
+ * then `null`, forwarded all the way to
+ * [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds] as `null` rather
  * than `0` -- see that entity's KDoc for why `0` cannot double as "unknown" without corrupting
  * future time-read stats. A backlogged manual session (e.g. "I read some of this book last
  * month, I don't remember for how long") is the motivating case; a live timer run always has a
@@ -911,11 +937,11 @@ private fun PendingSessionDialog(
  *   decimal point, but a long-enough digit string still overflows [String.toLongOrNull] (returns
  *   `null`) the same way a genuinely blank field does -- left unguarded, a mistyped 25-digit
  *   duration would silently save as "unknown" instead of being rejected. `durationIsValid` also
- *   bounds a parseable value to [MAX_MANUAL_DURATION_MINUTES], which protects the caller's
- *   `durationMinutes * 60` seconds conversion and `timestampEnd - durationMinutes.minutes`
- *   arithmetic in [BookDetailRoute] -- both saturate rather than throw on overflow, so an
- *   unreasonably large-but-parseable value would otherwise persist a nonsense `durationSeconds`
- *   rather than fail loudly.
+ *   bounds a parseable value to [MAX_MANUAL_DURATION_MINUTES], which protects this composable's
+ *   own `parsedDurationMinutes * 60` seconds conversion and the caller's
+ *   `timestampEnd - durationSeconds.seconds` arithmetic in [BookDetailScreenRoute] -- both
+ *   saturate rather than throw on overflow, so an unreasonably large-but-parseable value would
+ *   otherwise persist a nonsense `durationSeconds` rather than fail loudly.
  * - `startUnitText`/`endUnitText` are digit-and-decimal-point filtered ([filterDecimalInput]) so a
  *   negative value (the one input
  *   [LogReadingSessionUseCase][com.hub.media.features.books.domain.LogReadingSessionUseCase]
@@ -940,8 +966,8 @@ private fun PendingSessionDialog(
  * (`10 * 365 * 24 * 60`). A manually-backlogged single reading session in the tens of years is
  * never legitimate, so this exists to catch fat-fingered/overflowing input (see the duration
  * field's KDoc on [ManualSessionDialog]) -- it is not derived from `Long.MAX_VALUE / 60` (the
- * true limit before `durationMinutes * 60` overflows), which is astronomically larger and would
- * let obviously-bogus values like a 12-digit minute count through unrejected.
+ * true limit before the entered-minutes-to-seconds conversion overflows), which is astronomically
+ * larger and would let obviously-bogus values like a 12-digit minute count through unrejected.
  */
 private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
 
@@ -952,7 +978,7 @@ private fun ManualSessionDialog(
     totalPages: Int?,
     sessionToEdit: ReadingSessionEntity?,
     onSave: (
-        durationMinutes: Long?,
+        durationSeconds: Long?,
         timestampEnd: Instant,
         startUnit: Double,
         endUnit: Double,
@@ -963,13 +989,23 @@ private fun ManualSessionDialog(
 ) {
     val isPageMode = totalPages != null
 
-    var durationText by remember {
-        mutableStateOf(
-            sessionToEdit?.durationSeconds?.let { seconds ->
-                kotlin.math.round(seconds / 60.0).toLong().toString()
-            } ?: "",
-        )
+    // The session's original per-second-precision duration, when editing one that had a known
+    // duration -- `null` in create mode, and `null` when the session being edited itself had an
+    // unknown duration. Captured once so Save can fall back to it verbatim -- see the "Duration
+    // precision is preserved when untouched" section of this function's KDoc.
+    val originalDurationSeconds = remember { sessionToEdit?.durationSeconds }
+
+    // The exact string `durationText` below was seeded with. Comparing against this (rather than,
+    // say, "is it non-blank") at Save time is what lets Save distinguish "user never touched this
+    // field" from "user edited it, then happened to retype the same digits" -- both leave
+    // `durationText == prefilledDurationText`, and both are legitimately treated as "unchanged"
+    // (retyping the identical value is, semantically, still not a change).
+    val prefilledDurationText = remember {
+        sessionToEdit?.durationSeconds?.let { seconds ->
+            kotlin.math.round(seconds / 60.0).toLong().toString()
+        } ?: ""
     }
+    var durationText by remember { mutableStateOf(prefilledDurationText) }
     var startUnitText by remember {
         mutableStateOf(
             sessionToEdit?.startUnit?.let(::formatUnit)
@@ -986,12 +1022,26 @@ private fun ManualSessionDialog(
     // Parsed once, above the fields, rather than inline at Save time -- see the "Numeric field
     // validation" section of this function's KDoc. `parsedDurationMinutes` is the raw parse
     // (`null` for both "blank" and "unparseable/overflowed"); `durationIsValid` disambiguates
-    // those two `null` causes; `validatedDurationMinutes` is the only value that ever reaches
-    // [onSave], and only when `durationIsValid` (which also gates the Save button below).
+    // those two `null` causes (and gates the Save button below); `validatedDurationMinutes` feeds
+    // `effectiveDurationSeconds` below, which is the value that actually reaches [onSave].
     val parsedDurationMinutes = durationText.toLongOrNull()
     val durationIsValid = durationText.isBlank() ||
         (parsedDurationMinutes != null && parsedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
     val validatedDurationMinutes = if (durationText.isBlank()) null else parsedDurationMinutes
+
+    // The value that actually reaches [onSave] -- see the "Duration precision is preserved when
+    // untouched" section of this function's KDoc. `durationText == prefilledDurationText` means
+    // the user never (net) changed what this field was seeded with; combined with
+    // `originalDurationSeconds != null` (there was a real per-second value to preserve), that
+    // means Save must re-emit it verbatim rather than reconstructing it from the rounded minutes
+    // currently on screen. Every other case -- a genuine edit, a blank field, or no original value
+    // to fall back on (create mode, or a session whose duration was itself unknown) -- falls back
+    // to the entered minutes converted to seconds (`null` when blank), exactly as before this fix.
+    val effectiveDurationSeconds = if (durationText == prefilledDurationText && originalDurationSeconds != null) {
+        originalDurationSeconds
+    } else {
+        validatedDurationMinutes?.let { it * 60 }
+    }
 
     val parsedStartUnit = startUnitText.toDoubleOrNull()
     val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
@@ -1186,11 +1236,17 @@ private fun ManualSessionDialog(
                 onClick = {
                     onSave(
                         // Blank duration => null ("unknown"), not 0 -- see class KDoc's
-                        // "Duration is optional" section. validatedDurationMinutes is hoisted
-                        // above the fields and gated by durationIsValid (below), so an
-                        // unparseable/overflowing non-blank value can never reach here -- see the
-                        // "Numeric field validation" section of this function's KDoc.
-                        validatedDurationMinutes,
+                        // "Duration is optional" section. When the field is untouched from its
+                        // prefill and the session being edited had a known duration,
+                        // effectiveDurationSeconds is that original per-second value verbatim
+                        // (never rounded) -- see the "Duration precision is preserved when
+                        // untouched" section of this function's KDoc. Otherwise it's the entered
+                        // minutes converted to seconds; validatedDurationMinutes (feeding that
+                        // fallback) is hoisted above the fields and gated by durationIsValid
+                        // (below), so an unparseable/overflowing non-blank value can never reach
+                        // here -- see the "Numeric field validation" section of this function's
+                        // KDoc.
+                        effectiveDurationSeconds,
                         deriveTimestampEnd(
                             dateUtcMidnightMillis = datePickerState.selectedDateMillis
                                 ?: localDateToUtcMidnightMillis(initialDateTime.toLocalDate()),

@@ -94,9 +94,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Phase A, kept explicit rather than making the whole row tappable) that opens
     `ManualSessionDialog` prefilled from that row; Save updates the row in place instead of
     inserting a new one. Delete is unchanged.
-  - 5 new `ReadingSessionRepositoryTest` cases, 6 new `LogReadingSessionUseCaseTest` cases, and 3
+  - **Editing preserves a timer-backed session's exact duration unless the duration field is
+    itself edited.** `ManualSessionDialog`'s duration field only has minute granularity, and an
+    initial version of this edit path converted it back to seconds unconditionally on Save — so
+    opening the dialog to fix an unrelated field (a position, a note) on a session with real
+    sub-minute precision (e.g. 1,847s = 30m47s) silently rewrote its stored `durationSeconds` to
+    1,860s the moment Save was tapped, even though duration was never touched. That is a
+    data-integrity defect (AGENTS.md §1: user data safety overrides development shortcuts), not an
+    acceptable simplification, and has been fixed before this phase ships: the dialog now captures
+    both its prefilled duration text and the session's original `durationSeconds`, and Save
+    re-emits that original value verbatim whenever the duration text is unchanged from its prefill
+    — only a genuine edit (or a blank field, or create mode) produces a fresh minutes→seconds
+    conversion. `timestampStart` derivation follows the same effective-seconds value so
+    start/end/duration stay mutually consistent. The dialog's `onSave` contract changed shape
+    accordingly (`durationSeconds: Long?` instead of `durationMinutes: Long?`), doing the
+    minutes↔seconds conversion inside the dialog itself, where the "was it edited?" knowledge
+    lives, rather than in the route lambda that previously blindly reconverted it.
+  - 5 new `ReadingSessionRepositoryTest` cases, 6 new `LogReadingSessionUseCaseTest` cases, and 4
     new `BookDetailViewModelTest` cases cover: happy-path field updates, a rejected edit leaving the
-    row completely unchanged, and editing a nonexistent session id.
+    row completely unchanged, editing a nonexistent session id, and — the duration-precision fix
+    above — a position-only edit leaving a sub-minute-precision `durationSeconds` byte-identical.
 
 ### Changed
 

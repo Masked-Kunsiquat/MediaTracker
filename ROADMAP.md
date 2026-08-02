@@ -73,10 +73,22 @@ going wide. Movies & TV move to Task 8.
 - **Phase E — Cover improvements.** Re-fetch affordance for coverless books (per-book, or a
   bulk backfill — books added before the field-level cover fallback have no stored cover and
   no re-fetch path); Open Library ISBN-keyed cover URL with `?default=false` as a further
-  probeable fallback (404s instead of serving a placeholder image); try all Google Books
-  image sizes (only thumbnail is used today); manual cover entry (paste a URL or pick a
-  local image). Scraping Google Images or DuckDuckGo image results is a ToS violation and
-  is ruled out.
+  probeable fallback (404s instead of serving a placeholder image); manual cover entry
+  (paste a URL or pick a local image). Scraping Google Images or DuckDuckGo image results is
+  a ToS violation and is ruled out.
+  - **Google Books image size is the real gap.** `GoogleBooksImageLinksDto` declares only
+    `thumbnail` (~128px), so the larger `small`/`medium`/`large`/`extraLarge` links are
+    discarded even when a volume provides them. This matters more than it looks: the
+    field-level cover fallback consults Google Books precisely *when Open Library has no
+    cover*, so books that get a cover from Google are exactly the ones stuck with the
+    smallest image. Fix = declare the remaining fields and prefer the largest present.
+  - **Open Library sizing is already correct** — covers are requested as
+    `/b/id/{coverId}-L.jpg`, and `L` is the largest that API offers (S/M/L only). Keying by
+    cover ID rather than ISBN is also deliberate: ISBN/OCLC/LCCN-keyed cover lookups are
+    rate-limited to 100 requests per IP per 5 minutes, ID-keyed ones are not.
+  - Consequence for the `?default=false` probe above: it is ISBN-keyed, so unlike current
+    cover fetches it *is* subject to that 100/IP/5-min limit — fine interactively, but a
+    bulk backfill across a large library needs throttling.
 
 ## Task 7 — Search & discovery
 
@@ -137,6 +149,14 @@ personal-scale libraries don't need one).
 - Purchase/borrow tracking (lending a book out, borrow sources, purchase history) — data
   model + schema work; prerequisite for the Book Detail Purchase & Borrow tab (Task 6
   Phase D note).
+- Session edit truncates `timestampEnd` seconds to `:00`. Material 3's `TimePicker` has no
+  seconds field, so re-saving an edited session rebuilds its end timestamp at `:00` even
+  when the time was never touched. Judged low priority rather than fixed alongside the
+  duration-precision fix: seconds are never displayed (history renders `HH:mm`), truncation
+  only ever moves the value earlier *within the same minute* so it cannot shift a session
+  across a calendar day (streaks/period bounds are unaffected), and `durationSeconds` is now
+  preserved exactly, so nothing sums the drift. Fix if it ever matters by applying the same
+  "was it touched?" tracking used for duration to the date/time pickers.
 - Orphaned cover files: deleting a book leaves its content-addressed cover on disk
   (dedup means the file may be shared by other books, so deletion needs a reference check
   or a periodic sweep).
