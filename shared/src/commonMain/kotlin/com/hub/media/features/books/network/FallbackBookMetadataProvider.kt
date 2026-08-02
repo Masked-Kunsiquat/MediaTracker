@@ -1,6 +1,7 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.util.Resource
+import io.ktor.client.HttpClient
 
 /**
  * Composes two [BookMetadataProvider]s with fallback semantics: tries [primary] first, and only
@@ -17,16 +18,24 @@ import com.hub.media.core.util.Resource
  * from the secondary (via [BookMetadata.copy]) — every other field (title, authors, page count,
  * year, provider, external id, ...) always comes from the primary, since the primary is the
  * preferred, authoritative source. A cover is a nice-to-have: if the secondary probe errors, or
- * also has no cover, the primary's result is returned completely unchanged. This probe never
- * downgrades a primary success into a failure.
+ * also has no cover, [isbnCoverProbe] (when supplied) is consulted as one further last-resort
+ * step — see that parameter's doc. This probe chain never downgrades a primary success into a
+ * failure.
  *
  * @param primary The preferred provider (Open Library per AGENTS.md §4).
  * @param secondary The fallback provider (Google Books per AGENTS.md §4), invoked when [primary]
  *   fails, or as a cover-only probe when [primary] succeeds without a cover image.
+ * @param isbnCoverProbe Last-resort ISBN-keyed cover probe (ROADMAP Task 6 Phase E), consulted
+ *   only when [primary] succeeds but neither it nor [secondary] has a cover. `null` (the default)
+ *   disables this step entirely — every existing caller/test that constructs this class without
+ *   a third argument keeps its exact prior behavior. See [OpenLibraryIsbnCoverProbe]'s KDoc for
+ *   why this is a separate, explicitly opt-in step rather than folded into [primary]/[secondary]
+ *   themselves.
  */
 public class FallbackBookMetadataProvider(
     private val primary: BookMetadataProvider,
     private val secondary: BookMetadataProvider,
+    private val isbnCoverProbe: OpenLibraryIsbnCoverProbe? = null,
 ) : BookMetadataProvider {
 
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
@@ -51,7 +60,9 @@ public class FallbackBookMetadataProvider(
     /**
      * If [primaryResult] already has a cover, returns it unchanged (secondary is never called).
      * Otherwise probes [secondary] for a cover image and merges it into the primary's metadata,
-     * per the field-level cover fallback semantics documented on this class.
+     * per the field-level cover fallback semantics documented on this class. If [secondary] also
+     * has no cover, [isbnCoverProbe] (when non-null) is tried as one further last-resort step —
+     * same merge-only-the-cover semantics, applied on top of [primaryResult] either way.
      */
     private suspend fun withCoverFallback(
         primaryResult: Resource.Success<BookMetadata>,
@@ -63,8 +74,31 @@ public class FallbackBookMetadataProvider(
 
         val secondaryResult = secondary.fetchByIsbn(isbn)
         val secondaryCoverUrl = (secondaryResult as? Resource.Success)?.data?.coverImageUrl
-            ?: return primaryResult
+        if (secondaryCoverUrl != null) {
+            return Resource.Success(primaryResult.data.copy(coverImageUrl = secondaryCoverUrl))
+        }
 
-        return Resource.Success(primaryResult.data.copy(coverImageUrl = secondaryCoverUrl))
+        val probedCoverUrl = isbnCoverProbe?.probeCoverUrl(isbn)
+        if (probedCoverUrl != null) {
+            return Resource.Success(primaryResult.data.copy(coverImageUrl = probedCoverUrl))
+        }
+
+        return primaryResult
     }
 }
+
+/**
+ * Standard Open Library → Google Books → ISBN-probe cover-resolution chain (AGENTS.md §4,
+ * ROADMAP Task 6 Phase E), shared by [com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase]
+ * and [com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase] so both entry points
+ * (initial ingestion and the per-book re-fetch-cover affordance) resolve covers identically.
+ *
+ * @param httpClient Shared Ktor client used for all three underlying requests (Open Library
+ *   metadata, Google Books metadata, and the last-resort ISBN cover probe).
+ */
+public fun createDefaultBookMetadataProvider(httpClient: HttpClient): BookMetadataProvider =
+    FallbackBookMetadataProvider(
+        primary = OpenLibraryClient(httpClient),
+        secondary = GoogleBooksClient(httpClient),
+        isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient),
+    )

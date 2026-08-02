@@ -20,7 +20,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -160,16 +159,32 @@ class AddBookByIsbnUseCaseTest {
         assertTrue(writtenFiles.isEmpty(), "no cover file should have been written on download failure")
     }
 
+    /**
+     * ROADMAP Task 6 Phase E updated this test's premise: the default provider chain
+     * ([createDefaultBookMetadataProvider]) now also consults [com.hub.media.features.books.network.OpenLibraryIsbnCoverProbe]
+     * as a last-resort step whenever *both* Open Library's own record and the Google Books probe
+     * are coverless -- which this test's scenario (no cover anywhere) is exactly. That probe
+     * legitimately DOES hit `covers.openlibrary.org` now (previously it never would have, since
+     * the probe didn't exist), so the old assertion ("zero requests to that host") no longer holds
+     * -- and correctly so, that's the new intended behavior. What must still hold is the *outcome*:
+     * with no real cover anywhere (this test's engine 404s the probe's URL, matched precisely by
+     * host rather than by an "/isbn/" path substring that used to accidentally also match the
+     * probe's `/b/isbn/...` path), `coverImageHash` stays null and no cover file is written.
+     */
     @Test
-    fun noCoverUrlInMetadata_succeedsWithoutAnyCoverDownloadRequest() = runTest {
+    fun noCoverUrlInMetadata_succeedsWithoutDownloadingAnyCover() = runTest {
         val editionJson = """{"title": "Mystery Book"}"""
         val engine = MockEngine { request ->
             when {
-                request.url.encodedPath.contains("/isbn/") -> respond(
+                // Open Library metadata lookup (GET openlibrary.org/isbn/{isbn}.json) -- the only
+                // request that should ever succeed in this "no cover anywhere" scenario.
+                request.url.host == "openlibrary.org" && request.url.encodedPath.contains("/isbn/") -> respond(
                     content = editionJson,
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                 )
+                // Everything else -- Google Books' secondary lookup, and the covers.openlibrary.org
+                // last-resort ISBN cover probe -- has no cover to offer.
                 else -> respondError(HttpStatusCode.NotFound)
             }
         }
@@ -178,11 +193,9 @@ class AddBookByIsbnUseCaseTest {
 
         assertIs<Resource.Success<String>>(result)
         val mediaItem = db.mediaItemDao().getById(result.data)
-        assertNull(mediaItem?.coverImageHash)
-        assertFalse(
-            engine.requestHistory.any { it.url.host == "covers.openlibrary.org" },
-            "no cover URL was present in metadata, so no cover download request should be made",
-        )
+        assertNull(mediaItem?.coverImageHash, "no provider (including the last-resort probe) had a cover")
+        val writtenFiles = File(tempDir).listFiles()?.filter { it.isFile } ?: emptyList()
+        assertTrue(writtenFiles.isEmpty(), "no cover file should have been written when nothing has a cover")
     }
 
     @Test

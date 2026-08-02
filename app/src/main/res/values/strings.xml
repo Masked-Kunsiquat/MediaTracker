@@ -60,6 +60,12 @@
     <string name="pages_read_derived_placeholder">—</string>
     <string name="status_prefix">Status: %1$s</string>
     <string name="change_status_content_description">Change reading status</string>
+    <string name="tab_details">Details</string>
+    <string name="tab_reading_history">Reading history</string>
+    <string name="isbn_copy_content_description">Copy ISBN</string>
+    <string name="isbn_copied_message">ISBN copied to clipboard</string>
+    <string name="refetch_cover_button">Re-fetch cover</string>
+    <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
 
     <!-- ReadingStatus display labels (shared by BookDetailScreen, EditBookScreen, LibraryScreen) -->
     <string name="reading_status_to_read">To read</string>

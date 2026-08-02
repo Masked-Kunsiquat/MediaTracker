@@ -189,6 +189,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     "Progress" (positions + pages) — inside the dialog's existing scrollable column; still a
     dialog, not a full screen.
   - All new/changed strings added via string resources (`app/src/main/res/values/strings.xml`).
+- **Book Detail screen tabs** (ROADMAP Task 6 Phase D, `app/.../ui/screens/BookDetailScreen.kt`):
+  the single scrolling column is split into a `PrimaryTabRow` with two tabs — **Details** (cover +
+  metadata header, reading status, progress; new private `DetailsTab` composable) and **Reading
+  history** (timer card, manual-entry affordance, session history; new private `ReadingHistoryTab`
+  composable). No Purchase & Borrow tab — that data model doesn't exist yet (moved to the backlog
+  below, alongside manual cover entry). `sessionToDelete`/`showManualEntry`/`sessionToEdit` (all
+  pre-existing) and the new `selectedTabIndex` are all hoisted one level above the tab content in
+  `BookDetailContent`, so switching tabs never tears down a dialog opened from the Reading history
+  tab; `PendingSessionDialog`/`ManualSessionDialog`/`DeleteSessionConfirmationDialog` render
+  unconditionally on that same state, outside the `when (selectedTabIndex)` branch, so they overlay
+  whichever tab is showing. `state.errorMessage`'s banner moved from inside the (now-split) content
+  column to directly below the `PrimaryTabRow` — it now surfaces failures from session mutations,
+  book deletion, status changes, *and* the new cover-refetch action below, so pinning it to one
+  specific tab would have hidden it whenever the failing action originated from the other tab.
+  `BookDetailScreen`/`BookDetailContent` gain no new required parameters for the tab split itself
+  (tab index is local UI state); `@Preview`s updated to cover both tabs (`DetailsTabPreview`,
+  `ReadingHistoryTabPreview`, alongside the existing whole-screen previews which default to the
+  Details tab).
+- **Selectable/copyable text** (ROADMAP backlog item, addressed alongside Phase D since it touches
+  the same file): the Details tab's `BookHeader` metadata block (title/release year/ISBN/format/
+  total pages/progress) is wrapped in a `SelectionContainer` so it can be long-press selected and
+  copied, applied narrowly per the backlog item's own caveat — the status `AssistChip` and the new
+  ISBN copy button (both clickable) are each wrapped in `DisableSelection` so long-press selection
+  never conflicts with their tap handling. Session rows and library cards are untouched (no
+  `SelectionContainer` around either). Explicit tap-to-copy added on the ISBN value specifically: a
+  small `IconButton` (a "📋" glyph, since `material-icons-core` has no content-copy vector — same
+  constraint the Stats screen's toolbar icon already documents) with a content description, using
+  `LocalClipboard`/`ClipEntry` — the current, non-deprecated Compose clipboard API in this project's
+  resolved Compose BOM (verified against the actual resolved `androidx.compose.ui:ui-android:1.11.4`
+  artifact: it declares both `LocalClipboardManager` — deprecated — and `LocalClipboard`/
+  `ClipEntry`/`Clipboard`, so the latter was used rather than guessed at) rather than the deprecated
+  `LocalClipboardManager`. Android 13+ (API 33/`TIRAMISU`) shows its own system "copied" confirmation,
+  so an in-app `Snackbar` (via a new `Scaffold(snackbarHost = ...)`) is only shown below API 33 —
+  minSdk is 28, so both paths are reachable in practice.
+- **Cover improvements** (ROADMAP Task 6 Phase E):
+  - **Google Books now selects the largest available cover image**, not just the ~128px thumbnail.
+    `GoogleBooksImageLinksDto` (`shared/.../features/books/network/dto/GoogleBooksDto.kt`) now
+    declares `small`/`medium`/`large`/`extraLarge` (previously only `thumbnail` was declared, so
+    Google's larger links were silently discarded even when a volume provided them) plus
+    `smallThumbnail`. A new `GoogleBooksImageLinksDto.largestAvailableUrl()` extension
+    (`GoogleBooksClient.kt`) selects `extraLarge > large > medium > small > thumbnail >
+    smallThumbnail`, walking the whole chain rather than stopping at the first missing field. This
+    matters more than it looks: the field-level cover fallback (Task4 Phase D) consults Google Books
+    precisely *when Open Library has no cover*, so books that get a cover from Google were exactly
+    the ones stuck with the smallest image. 5 new `GoogleBooksClientTest` cases cover all-sizes-
+    present (extraLarge wins), a mid-chain fallback (medium, when only medium-and-smaller are
+    present), thumbnail-only, smallThumbnail-only, and all-absent (`null`).
+  - **Open Library's own cover sizing was verified and left unchanged** — `OpenLibraryClient`
+    already requests `/b/id/{coverId}-L.jpg` (`L` is the largest Open Library offers: S/M/L only)
+    keyed by cover id rather than ISBN (ID-keyed cover lookups aren't rate-limited; ISBN/OCLC/LCCN-
+    keyed ones are, at 100 requests/IP/5min) — no code change needed here, per the roadmap's own
+    finding.
+  - **New last-resort `?default=false` ISBN cover probe**: a new `OpenLibraryIsbnCoverProbe`
+    (`shared/.../features/books/network/OpenLibraryIsbnCoverProbe.kt`) probes
+    `covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false`, which returns a real 404 instead of
+    Open Library's usual coverless-edition placeholder image — making it safely probeable with just
+    a status-code check, unlike the plain ISBN-keyed URL `OpenLibraryClient`'s own KDoc already
+    explains it deliberately avoids. Wired as a third fallback step in
+    `FallbackBookMetadataProvider.withCoverFallback` (new optional `isbnCoverProbe` constructor
+    param, `null` by default so every pre-existing two-arg call site/test keeps its exact prior
+    behavior), consulted only when *both* Open Library's own record and the Google Books probe have
+    no cover. **This probe is ISBN-keyed and therefore subject to Open Library's
+    100-requests-per-IP-per-5-minutes cover rate limit** (unlike the ID-keyed fetches
+    `OpenLibraryClient` normally uses) — fine for the one-book-at-a-time re-fetch affordance below,
+    but explicitly NOT used in any bulk/loop context in this phase. A new
+    `createDefaultBookMetadataProvider(httpClient)` factory (`FallbackBookMetadataProvider.kt`)
+    centralizes the standard Open Library → Google Books → ISBN-probe wiring, now shared by both
+    `createDefaultAddBookByIsbnUseCase` and the new `createDefaultRefetchCoverUseCase` below so
+    ingestion and re-fetch resolve covers identically. 4 new `OpenLibraryIsbnCoverProbeTest` cases
+    (200 → URL returned, 404 → `null`, request URL includes `default=false`, network failure →
+    `null` rather than throwing) plus 3 new `FallbackBookMetadataProviderTest` cases covering the
+    full three-level chain (probe succeeds after both providers are coverless, probe also 404s, and
+    the probe is never consulted when the primary already has a cover).
+  - **New per-book "re-fetch cover" affordance**, for books added before the field-level cover
+    fallback existed (they have no stored cover and previously no way to get one short of deleting
+    and re-adding the book). A new `RefetchCoverUseCase` + `createDefaultRefetchCoverUseCase` factory
+    (`shared/.../features/books/domain/RefetchCoverUseCase.kt`) re-runs metadata lookup (via the same
+    three-level provider chain above) + cover download + content-addressed storage for the book's
+    already-recorded ISBN, then updates only `MediaItemEntity.coverImageHash` via two new
+    `BookRepository` methods: `getBookWithDetails` (one-shot, non-reactive fetch, unlike
+    `observeBookDetail`'s ongoing `Flow`) and `updateCoverImageHash` (deliberately narrower than
+    `updateBookMetadata` — touches no other field). Every failure path (no ISBN on record, no
+    provider has a cover, download failure, save failure) leaves the book's existing cover completely
+    untouched — this only ever *adds* a cover, never removes one. `BookDetailViewModel` gains a new
+    required `refetchCoverUseCase` constructor param and a `refetchCover()` method (double-tap-guarded
+    via a new `isRefetchingCover` flag on `BookDetailUiState.Ready`, surfacing failures via the
+    existing `errorMessage` convention); `AppContainer` wires a new `refetchCoverUseCase`. Surfaced on
+    the Book Detail screen's Details tab as an `OutlinedButton` (not a TopAppBar/overflow icon,
+    chosen because — unlike the always-relevant Edit/Delete icons — this is a rare, cover-specific
+    corrective action best discovered next to the cover it affects, with room for an inline
+    explanation when disabled) — disabled with an explanatory message when the book has no ISBN on
+    record, and showing a small spinner while in flight. 7 new `RefetchCoverUseCaseTest` cases (happy
+    path updates the hash and writes the file, no ISBN, blank ISBN, provider-coverless leaves the
+    existing hash, metadata-lookup failure leaves the existing hash, download failure leaves the
+    existing hash and writes no file, unknown media id) plus a `BookDetailViewModelTest` case proving
+    the ViewModel plumbs a use-case failure through to `errorMessage` and resets `isRefetchingCover`.
+  - **Deliberately NOT implemented this phase** (moved to the backlog below): bulk cover backfill
+    across a whole library (the `?default=false` probe's rate limit needs its own throttling for
+    that; the per-book affordance above never risks it), and manual cover entry (paste a URL / pick a
+    local image — needs a file-picker permission story that belongs in its own phase).
 
 ## [0.4.0] - 2026-08-01
 

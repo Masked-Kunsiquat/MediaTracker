@@ -2,6 +2,7 @@ package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.network.dto.GoogleBooksImageLinksDto
 import com.hub.media.features.books.network.dto.GoogleBooksResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -44,7 +45,7 @@ public class GoogleBooksClient(private val client: HttpClient) : BookMetadataPro
                 return Resource.Error("Google Books result for ISBN $isbn is missing a title")
             }
 
-            val coverImageUrl = volumeInfo.imageLinks?.thumbnail?.let { toHttps(it) }
+            val coverImageUrl = volumeInfo.imageLinks?.largestAvailableUrl()?.let { toHttps(it) }
             val releaseYear = volumeInfo.publishedDate?.let { parseYear(it) }
 
             Resource.Success(
@@ -68,3 +69,15 @@ public class GoogleBooksClient(private val client: HttpClient) : BookMetadataPro
 /** Upgrades an `http://` image URL to `https://`; leaves other schemes untouched. */
 internal fun toHttps(url: String): String =
     if (url.startsWith("http://")) "https://" + url.removePrefix("http://") else url
+
+/**
+ * Selects the largest image URL Google actually provided (ROADMAP Task 6 Phase E), preferring
+ * [GoogleBooksImageLinksDto.extraLarge] > [GoogleBooksImageLinksDto.large] >
+ * [GoogleBooksImageLinksDto.medium] > [GoogleBooksImageLinksDto.small] >
+ * [GoogleBooksImageLinksDto.thumbnail] > [GoogleBooksImageLinksDto.smallThumbnail]. Google Books
+ * volumes are inconsistent about which sizes they populate — falling straight to `null` the moment
+ * a preferred field is absent would throw away a perfectly good smaller image, so this walks the
+ * whole chain rather than only checking the top of it.
+ */
+internal fun GoogleBooksImageLinksDto.largestAvailableUrl(): String? =
+    extraLarge ?: large ?: medium ?: small ?: thumbnail ?: smallThumbnail

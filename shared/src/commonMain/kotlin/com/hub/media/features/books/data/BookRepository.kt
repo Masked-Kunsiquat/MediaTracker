@@ -280,6 +280,47 @@ public class BookRepository(private val db: AppDatabase) {
     }
 
     /**
+     * One-shot (non-reactive) fetch of [BookWithDetails] for [mediaId], for callers that need a
+     * single current snapshot rather than [observeBookDetail]'s ongoing [Flow] — namely
+     * [com.hub.media.features.books.domain.RefetchCoverUseCase] (ROADMAP Task 6 Phase E), which
+     * only needs the book's current ISBN once per invocation, not a live subscription. Null if
+     * [mediaId] does not resolve to a [MediaItemEntity] (never created, or deleted) — same
+     * null-on-delete semantics as [observeBookDetail].
+     */
+    public suspend fun getBookWithDetails(mediaId: String): BookWithDetails? {
+        val mediaItem = db.mediaItemDao().getById(mediaId) ?: return null
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        return BookWithDetails(mediaItem = mediaItem, details = details)
+    }
+
+    /**
+     * Updates only [MediaItemEntity.coverImageHash] for [mediaId] (ROADMAP Task 6 Phase E's
+     * re-fetch-cover affordance — see [com.hub.media.features.books.domain.RefetchCoverUseCase]).
+     * Deliberately narrower than [updateBookMetadata]: every other [MediaItemEntity] field and all
+     * of [BookDetailsEntity] are left completely untouched, so a cover refetch can never have a
+     * side effect on any user-edited field beyond the cover itself.
+     *
+     * @param mediaId The book whose cover is being updated.
+     * @param coverImageHash The new `<sha256>.jpg` filename (from
+     *   [com.hub.media.core.storage.LocalImageStorageManager.saveImage]).
+     * @return [Resource.Success] if updated, or [Resource.Error] if [mediaId] does not resolve to
+     *   a [MediaItemEntity] (never expected in practice — [RefetchCoverUseCase] only calls this
+     *   right after successfully reading the same row via [getBookWithDetails]) or the underlying
+     *   DB write throws.
+     */
+    public suspend fun updateCoverImageHash(mediaId: String, coverImageHash: String): Resource<Unit> = try {
+        val existing = db.mediaItemDao().getById(mediaId)
+            ?: return Resource.Error("Book with id=$mediaId not found")
+        db.mediaItemDao().update(existing.copy(coverImageHash = coverImageHash))
+        Resource.Success(Unit)
+    } catch (e: Exception) {
+        Resource.Error(
+            message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
+            cause = e,
+        )
+    }
+
+    /**
      * Quick, single-field [ReadingStatus] change (ROADMAP Task 6 Phase C) — e.g. a status
      * chip/dropdown on the Book Detail screen — without the full [updateBookMetadata] round-trip
      * (re-entering title/release year/purchase price/total pages/format just to flip one enum).

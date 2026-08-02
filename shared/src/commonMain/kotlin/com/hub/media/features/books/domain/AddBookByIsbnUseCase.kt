@@ -8,9 +8,7 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.network.BookMetadata
 import com.hub.media.features.books.network.BookMetadataProvider
 import com.hub.media.features.books.network.CoverImageDownloader
-import com.hub.media.features.books.network.FallbackBookMetadataProvider
-import com.hub.media.features.books.network.GoogleBooksClient
-import com.hub.media.features.books.network.OpenLibraryClient
+import com.hub.media.features.books.network.createDefaultBookMetadataProvider
 import io.ktor.client.HttpClient
 
 private val ISBN_10_REGEX = Regex("^\\d{9}[\\dX]$")
@@ -33,8 +31,9 @@ public interface BookIngestionUseCase {
  * content-addresses the cover image, and atomically persists the result.
  *
  * @param metadataProvider Source of [BookMetadata] for a given ISBN. Callers are expected to
- *   hand in a [FallbackBookMetadataProvider] wired Open Library -> Google Books per AGENTS.md §4
- *   (see [createDefaultAddBookByIsbnUseCase] for the standard wiring), but any implementation
+ *   hand in the [com.hub.media.features.books.network.createDefaultBookMetadataProvider] chain
+ *   (Open Library -> Google Books -> ISBN cover probe, per AGENTS.md §4 and ROADMAP Task 6 Phase E
+ *   — see [createDefaultAddBookByIsbnUseCase] for the standard wiring), but any implementation
  *   works.
  * @param coverDownloader Downloads raw cover image bytes from [BookMetadata.coverImageUrl].
  * @param imageStorage Content-addressed local disk store for cover images (AGENTS.md §4).
@@ -138,9 +137,11 @@ internal fun isValidIsbn(normalizedIsbn: String): Boolean =
         (ISBN_10_REGEX.matches(normalizedIsbn) || ISBN_13_REGEX.matches(normalizedIsbn))
 
 /**
- * Convenience factory assembling the standard Open Library -> Google Books fallback chain
- * (AGENTS.md §4) and a matching [CoverImageDownloader] from a single shared [HttpClient], wired
- * into a ready-to-use [AddBookByIsbnUseCase].
+ * Convenience factory assembling the standard Open Library -> Google Books -> ISBN-probe cover
+ * fallback chain (AGENTS.md §4, ROADMAP Task 6 Phase E — see
+ * [com.hub.media.features.books.network.createDefaultBookMetadataProvider]) and a matching
+ * [CoverImageDownloader] from a single shared [HttpClient], wired into a ready-to-use
+ * [AddBookByIsbnUseCase].
  *
  * @param httpClient Shared Ktor client (see [com.hub.media.core.network.createHttpClient]) used
  *   for both metadata providers and the cover downloader.
@@ -151,15 +152,9 @@ public fun createDefaultAddBookByIsbnUseCase(
     httpClient: HttpClient,
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
-): AddBookByIsbnUseCase {
-    val fallbackProvider = FallbackBookMetadataProvider(
-        primary = OpenLibraryClient(httpClient),
-        secondary = GoogleBooksClient(httpClient),
-    )
-    return AddBookByIsbnUseCase(
-        metadataProvider = fallbackProvider,
-        coverDownloader = CoverImageDownloader(httpClient),
-        imageStorage = imageStorage,
-        bookRepository = bookRepository,
-    )
-}
+): AddBookByIsbnUseCase = AddBookByIsbnUseCase(
+    metadataProvider = createDefaultBookMetadataProvider(httpClient),
+    coverDownloader = CoverImageDownloader(httpClient),
+    imageStorage = imageStorage,
+    bookRepository = bookRepository,
+)

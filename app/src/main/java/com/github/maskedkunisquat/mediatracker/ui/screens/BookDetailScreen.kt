@@ -2,20 +2,26 @@
 
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import android.content.ClipData
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,7 +44,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -47,13 +57,19 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -78,6 +94,7 @@ import com.hub.media.ui.BookDetailViewModel
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlinx.coroutines.launch
 
 /**
  * Route-level composable for the book detail screen (ROADMAP Task4 Phase C).
@@ -181,6 +198,7 @@ fun BookDetailScreenRoute(
         },
         onEditBook = onNavigateToEditBook,
         onStatusChange = viewModel::updateStatus,
+        onRefetchCover = viewModel::refetchCover,
     )
 }
 
@@ -227,6 +245,8 @@ fun BookDetailScreenRoute(
  *   [BookDetailUiState.Ready]), to navigate to the edit-metadata screen (ROADMAP Task 6 Phase A).
  * @param onStatusChange Called with the newly selected [ReadingStatus] from the header's quick
  *   status chip/dropdown (ROADMAP Task 6 Phase C), wired to [BookDetailViewModel.updateStatus].
+ * @param onRefetchCover Called when the Details tab's "re-fetch cover" button is tapped (ROADMAP
+ *   Task 6 Phase E), wired to [BookDetailViewModel.refetchCover].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -263,10 +283,34 @@ fun BookDetailScreen(
     ) -> Unit,
     onEditBook: () -> Unit,
     onStatusChange: (ReadingStatus) -> Unit,
+    onRefetchCover: () -> Unit,
 ) {
     var showDeleteBookDialog by remember { mutableStateOf(false) }
 
+    // ISBN tap-to-copy (ROADMAP Task 6 Phase E backlog item): a pure UI-local side effect (no
+    // ViewModel/business state involved), so it's implemented entirely here rather than hoisted
+    // as a callback param, per AGENTS.md §5's state-hoisting principle being about screen/business
+    // state, not ephemeral platform actions like clipboard writes. Uses LocalClipboard (the
+    // current, non-deprecated Compose clipboard API in this project's resolved Compose BOM --
+    // LocalClipboardManager is deprecated in favor of it) rather than LocalClipboardManager.
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val isbnCopiedMessage = stringResource(R.string.isbn_copied_message)
+    val onCopyIsbn: (String) -> Unit = { isbn ->
+        coroutineScope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("ISBN", isbn)))
+            // Android 13+ (API 33/TIRAMISU) shows its own system "copied to clipboard"
+            // confirmation UI, so an in-app confirmation there would double up; only show ours
+            // below that API level (minSdk is 28, so both paths are reachable in practice).
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                snackbarHostState.showSnackbar(isbnCopiedMessage)
+            }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
@@ -331,6 +375,8 @@ fun BookDetailScreen(
                         onDeleteSession = onDeleteSession,
                         onEditSession = onEditSession,
                         onStatusChange = onStatusChange,
+                        onCopyIsbn = onCopyIsbn,
+                        onRefetchCover = onRefetchCover,
                     )
                 }
             }
@@ -378,8 +424,25 @@ private fun DeleteBookConfirmationDialog(
 }
 
 /**
- * Content for [BookDetailUiState.Ready]: header, timer, manual-entry affordance, and session
- * history, plus the pending-session and delete-confirmation dialogs.
+ * Content for [BookDetailUiState.Ready]: a [PrimaryTabRow] splitting the screen into a Details tab
+ * (cover/metadata header, reading status, progress -- see [DetailsTab]) and a Reading history tab
+ * (timer, manual-entry affordance, session history -- see [ReadingHistoryTab]), per ROADMAP Task 6
+ * Phase D. A Purchase & Borrow tab is deliberately NOT included -- that data model doesn't exist
+ * yet (see ROADMAP's Task 6 Phase D note; tracked in the backlog).
+ *
+ * ### State survives the tab split
+ * [sessionToDelete]/[showManualEntry]/[sessionToEdit] (all pre-existing) and [selectedTabIndex]
+ * (new) are all hoisted to this function, one level above the tab content -- switching tabs never
+ * tears down or recreates them, so a dialog opened from the Reading history tab (the only tab
+ * whose rows/buttons open one) keeps working exactly as before regardless of which tab happens to
+ * be selected when it renders; the dialogs themselves ([PendingSessionDialog]/
+ * [ManualSessionDialog]/[DeleteSessionConfirmationDialog]) are rendered unconditionally on this
+ * same state below, outside the `when (selectedTabIndex)` branch, so they overlay whichever tab is
+ * showing rather than only the one that opened them. [state.errorMessage] is likewise rendered
+ * here, above the tab content, rather than inside either tab -- it now surfaces failures from
+ * session mutations, book deletion, status changes, *and* [onRefetchCover] (ROADMAP Task 6 Phase
+ * E), so pinning its display to one specific tab would hide it whenever that failure happened to
+ * originate from an action on the other tab.
  */
 @Composable
 private fun BookDetailContent(
@@ -412,6 +475,8 @@ private fun BookDetailContent(
         notes: String?,
     ) -> Unit,
     onStatusChange: (ReadingStatus) -> Unit,
+    onCopyIsbn: (String) -> Unit,
+    onRefetchCover: () -> Unit,
 ) {
     var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
     var showManualEntry by remember { mutableStateOf(false) }
@@ -419,77 +484,63 @@ private fun BookDetailContent(
     // edit icon, prefilled from this row); null while it's open in *create* mode (opened from the
     // "Log session manually" button below). See ManualSessionDialog's KDoc.
     var sessionToEdit by remember { mutableStateOf<ReadingSessionEntity?>(null) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            BookHeader(
+    Column(modifier = Modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+            Tab(
+                selected = selectedTabIndex == 0,
+                onClick = { selectedTabIndex = 0 },
+                text = { Text(stringResource(R.string.tab_details)) },
+            )
+            Tab(
+                selected = selectedTabIndex == 1,
+                onClick = { selectedTabIndex = 1 },
+                text = { Text(stringResource(R.string.tab_reading_history)) },
+            )
+        }
+
+        // The pending-session dialog already surfaces state.errorMessage while a timer-backed
+        // session is awaiting save (see below). Every other mutation that can fail (manual-entry
+        // save/edit, session delete, book delete, status change, cover refetch) has no dialog left
+        // open to show it in by the time it fails, so show it here instead, scoped to the case
+        // where it isn't already visible elsewhere -- see this function's KDoc for why this lives
+        // above the tab content rather than inside one specific tab.
+        val errorMessage = state.errorMessage
+        if (errorMessage != null && state.pendingSession == null) {
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+
+        when (selectedTabIndex) {
+            0 -> DetailsTab(
                 book = state.book,
                 details = state.details,
                 currentProgress = state.currentProgress,
                 coverStorageDir = coverStorageDir,
+                isRefetchingCover = state.isRefetchingCover,
                 onStatusChange = onStatusChange,
+                onCopyIsbn = onCopyIsbn,
+                onRefetchCover = onRefetchCover,
+                modifier = Modifier.weight(1f),
             )
-        }
-
-        item {
-            TimerCard(
+            1 -> ReadingHistoryTab(
+                sessions = state.sessions,
                 timerState = timerState,
                 elapsedSeconds = elapsedSeconds,
-                onStart = onStartReading,
-                onPause = onPauseReading,
-                onResume = onResumeReading,
-                onStop = onStopReading,
+                onStartReading = onStartReading,
+                onPauseReading = onPauseReading,
+                onResumeReading = onResumeReading,
+                onStopReading = onStopReading,
+                onLogManuallyClick = { sessionToEdit = null; showManualEntry = true },
+                onEditSessionClick = { session -> sessionToEdit = session; showManualEntry = true },
+                onDeleteSessionClick = { session -> sessionToDelete = session },
+                modifier = Modifier.weight(1f),
             )
-        }
-
-        item {
-            TextButton(onClick = { sessionToEdit = null; showManualEntry = true }) {
-                Text(stringResource(R.string.log_session_manually))
-            }
-        }
-
-        // The pending-session dialog already surfaces state.errorMessage while a timer-backed
-        // session is awaiting save (see below). A manual-entry failure has no dialog left open to
-        // show it in (that dialog closes optimistically on Save -- see ManualSessionDialog KDoc),
-        // so show it here instead, scoped to the case where it isn't already visible elsewhere.
-        val manualEntryError = state.errorMessage
-        if (manualEntryError != null && state.pendingSession == null) {
-            item {
-                Text(
-                    text = manualEntryError,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-
-        item {
-            Text(
-                text = stringResource(R.string.session_history_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-        }
-
-        if (state.sessions.isEmpty()) {
-            item {
-                Text(
-                    text = stringResource(R.string.no_sessions_logged_yet),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            items(state.sessions, key = { it.id }) { session ->
-                SessionRow(
-                    session = session,
-                    onEditClick = { sessionToEdit = session; showManualEntry = true },
-                    onDeleteClick = { sessionToDelete = session },
-                )
-            }
         }
     }
 
@@ -537,6 +588,178 @@ private fun BookDetailContent(
 }
 
 /**
+ * Details tab content (ROADMAP Task 6 Phase D): cover + metadata header, reading status, and
+ * progress -- see [BookHeader] -- plus the "re-fetch cover" affordance (ROADMAP Task 6 Phase E) --
+ * see [RefetchCoverSection].
+ *
+ * ### Selectable/copyable text (ROADMAP backlog, addressed alongside this phase)
+ * [BookHeader] is wrapped in a [SelectionContainer] so its title/ISBN/format/etc. text can be
+ * long-press selected and copied, applied narrowly to just this metadata block per the backlog
+ * item's own caveat (long-press selection conflicts with clickable elements) -- [BookHeader]
+ * itself wraps its one clickable child (the status [AssistChip]) and the ISBN copy button in
+ * [DisableSelection] so neither's tap handling is disrupted. This tab has no session rows or
+ * library cards (those live on the Reading history tab and the library screen respectively, and
+ * are NOT wrapped in [SelectionContainer] anywhere), so no further carve-out is needed here.
+ */
+@Composable
+private fun DetailsTab(
+    book: MediaItemEntity,
+    details: BookDetailsEntity?,
+    currentProgress: Double?,
+    coverStorageDir: String,
+    isRefetchingCover: Boolean,
+    onStatusChange: (ReadingStatus) -> Unit,
+    onCopyIsbn: (String) -> Unit,
+    onRefetchCover: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        SelectionContainer {
+            BookHeader(
+                book = book,
+                details = details,
+                currentProgress = currentProgress,
+                coverStorageDir = coverStorageDir,
+                onStatusChange = onStatusChange,
+                onCopyIsbn = onCopyIsbn,
+            )
+        }
+
+        RefetchCoverSection(
+            hasIsbn = !details?.isbn.isNullOrBlank(),
+            isRefetchingCover = isRefetchingCover,
+            onRefetchCover = onRefetchCover,
+        )
+    }
+}
+
+/**
+ * "Re-fetch cover" affordance (ROADMAP Task 6 Phase E): re-runs metadata lookup + cover download +
+ * content-addressed storage for this book's recorded ISBN (see
+ * [com.hub.media.features.books.domain.RefetchCoverUseCase]), for books added before the
+ * field-level cover fallback existed and therefore have no stored cover with no other way to get
+ * one.
+ *
+ * ### Why a button on the Details tab rather than a TopAppBar/overflow icon
+ * Edit and Delete (the TopAppBar's existing icons) are frequent, one-tap, whole-book actions
+ * relevant regardless of which tab is showing. Re-fetching a cover is different: it's a rare,
+ * corrective action scoped specifically to the cover image, most naturally discovered right next
+ * to the cover it affects (this tab's [BookHeader]) rather than the app-wide TopAppBar. Placing it
+ * here also leaves room for an inline explanation when it's disabled ([hasIsbn] is false) --
+ * something a disabled, greyed-out TopAppBar icon has no space to convey.
+ *
+ * @param hasIsbn Whether the book has an ISBN on record. When false, the button is disabled and an
+ *   explanatory [Text] is shown instead of silently doing nothing on tap -- there's no ISBN to look
+ *   a cover up by (and no edit surface to add one; ISBN is intentionally not editable, see
+ *   [com.hub.media.features.books.data.BookRepository.updateBookMetadata]'s KDoc).
+ * @param isRefetchingCover Whether a refetch is currently in flight (ROADMAP Task 6 Phase E),
+ *   disabling the button and showing a small spinner so a double-tap can't fire two concurrent
+ *   lookups.
+ */
+@Composable
+private fun RefetchCoverSection(
+    hasIsbn: Boolean,
+    isRefetchingCover: Boolean,
+    onRefetchCover: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedButton(
+            onClick = onRefetchCover,
+            enabled = hasIsbn && !isRefetchingCover,
+        ) {
+            if (isRefetchingCover) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(stringResource(R.string.refetch_cover_button))
+        }
+        if (!hasIsbn) {
+            Text(
+                text = stringResource(R.string.refetch_cover_no_isbn),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Reading history tab content (ROADMAP Task 6 Phase D): the timer card, manual-entry affordance,
+ * and session history list -- everything that was previously interleaved with the header in a
+ * single scrolling column. [onEditSessionClick]/[onDeleteSessionClick] receive the whole
+ * [ReadingSessionEntity] (rather than just its id) so [BookDetailContent] can populate
+ * `sessionToEdit`/`sessionToDelete` exactly as it did before this was split out.
+ */
+@Composable
+private fun ReadingHistoryTab(
+    sessions: List<ReadingSessionEntity>,
+    timerState: ReadingTimerState,
+    elapsedSeconds: Long,
+    onStartReading: () -> Unit,
+    onPauseReading: () -> Unit,
+    onResumeReading: () -> Unit,
+    onStopReading: () -> Unit,
+    onLogManuallyClick: () -> Unit,
+    onEditSessionClick: (ReadingSessionEntity) -> Unit,
+    onDeleteSessionClick: (ReadingSessionEntity) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            TimerCard(
+                timerState = timerState,
+                elapsedSeconds = elapsedSeconds,
+                onStart = onStartReading,
+                onPause = onPauseReading,
+                onResume = onResumeReading,
+                onStop = onStopReading,
+            )
+        }
+
+        item {
+            TextButton(onClick = onLogManuallyClick) {
+                Text(stringResource(R.string.log_session_manually))
+            }
+        }
+
+        item {
+            Text(
+                text = stringResource(R.string.session_history_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+
+        if (sessions.isEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.no_sessions_logged_yet),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            items(sessions, key = { it.id }) { session ->
+                SessionRow(
+                    session = session,
+                    onEditClick = { onEditSessionClick(session) },
+                    onDeleteClick = { onDeleteSessionClick(session) },
+                )
+            }
+        }
+    }
+}
+
+/**
  * Cover + metadata header: cover thumbnail (left), title/release year/ISBN/format/total pages/
  * status and current progress (right). ISBN/format/total pages are only shown when [details] is
  * non-null and the individual field is present; [currentProgress] formatting is delegated to
@@ -546,6 +769,11 @@ private fun BookDetailContent(
  * radio group is for a deliberate full-form edit; this chip is for the common "just finished this"
  * / "started reading this" case). Hidden entirely when [details] is null (nothing to change yet —
  * the data-integrity edge case documented on [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
+ *
+ * The status [AssistChip] and the ISBN's copy [IconButton] are each wrapped in [DisableSelection]
+ * (ROADMAP backlog: selectable/copyable text) since the caller ([DetailsTab]) wraps this whole
+ * composable in a [SelectionContainer] -- without the carve-out, long-press-to-select would
+ * conflict with each element's own tap handling.
  */
 @Composable
 private fun BookHeader(
@@ -554,6 +782,7 @@ private fun BookHeader(
     currentProgress: Double?,
     coverStorageDir: String,
     onStatusChange: (ReadingStatus) -> Unit,
+    onCopyIsbn: (String) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -587,10 +816,23 @@ private fun BookHeader(
             }
             val isbn = details?.isbn
             if (isbn != null) {
-                Text(
-                    text = stringResource(R.string.isbn_prefix, isbn),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                val copyIsbnDescription = stringResource(R.string.isbn_copy_content_description)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.isbn_prefix, isbn),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    DisableSelection {
+                        IconButton(
+                            onClick = { onCopyIsbn(isbn) },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .semantics { contentDescription = copyIsbnDescription },
+                        ) {
+                            Text(text = "📋", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             }
             if (details != null) {
                 Text(
@@ -614,7 +856,9 @@ private fun BookHeader(
                 )
             }
             if (details != null) {
-                StatusChip(status = details.status, onStatusChange = onStatusChange)
+                DisableSelection {
+                    StatusChip(status = details.status, onStatusChange = onStatusChange)
+                }
             }
         }
     }
@@ -1680,6 +1924,7 @@ private fun BookDetailScreenReadyPreview() {
             onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
             onStatusChange = {},
+            onRefetchCover = {},
         )
     }
 }
@@ -1716,6 +1961,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
             onStatusChange = {},
+            onRefetchCover = {},
         )
     }
 }
@@ -1743,6 +1989,49 @@ private fun BookDetailScreenLoadingPreview() {
             onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
             onStatusChange = {},
+            onRefetchCover = {},
+        )
+    }
+}
+
+/**
+ * Preview of the Details tab's content in isolation (ROADMAP Task 6 Phase D -- previews now cover
+ * both tabs, alongside [BookDetailScreenReadyPreview] above which renders the whole screen
+ * defaulted to this same tab).
+ */
+@Preview(showBackground = true)
+@Composable
+private fun DetailsTabPreview() {
+    MediaTrackerTheme {
+        DetailsTab(
+            book = PREVIEW_BOOK,
+            details = PREVIEW_DETAILS,
+            currentProgress = 78.0,
+            coverStorageDir = "/fake/path",
+            isRefetchingCover = false,
+            onStatusChange = {},
+            onCopyIsbn = {},
+            onRefetchCover = {},
+        )
+    }
+}
+
+/** Preview of the Reading history tab's content in isolation (ROADMAP Task 6 Phase D). */
+@Preview(showBackground = true)
+@Composable
+private fun ReadingHistoryTabPreview() {
+    MediaTrackerTheme {
+        ReadingHistoryTab(
+            sessions = PREVIEW_SESSIONS,
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
+            onLogManuallyClick = {},
+            onEditSessionClick = {},
+            onDeleteSessionClick = {},
         )
     }
 }

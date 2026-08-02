@@ -37,7 +37,7 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   total but still counts toward the session count); the stats screen renders an unknown-value
   marker rather than a misleading `0` when a period's sum is entirely `null`.
 
-## Task 6 — Books polish (next)
+## Task 6 — Books polish (done — ready for release)
 
 The book domain gets finished before any other media type starts: real-world use of
 v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no way to
@@ -77,28 +77,45 @@ going wide. Movies & TV move to Task 8.
   count via `finishedAt` (honest about only reflecting finishes recorded after this phase, never
   fabricated for pre-v3 history) — and a library status filter (`FilterChip` row, client-side/
   in-memory, sorting unchanged/still title-only).
-- **Phase D — Detail screen tabs.** Split the single scrolling column into tabs: Details /
-  Reading history now; a Purchase & Borrow tab is deferred until purchase/borrow tracking
-  exists as a feature (data model + schema work of its own).
-- **Phase E — Cover improvements.** Re-fetch affordance for coverless books (per-book, or a
-  bulk backfill — books added before the field-level cover fallback have no stored cover and
-  no re-fetch path); Open Library ISBN-keyed cover URL with `?default=false` as a further
-  probeable fallback (404s instead of serving a placeholder image); manual cover entry
-  (paste a URL or pick a local image). Scraping Google Images or DuckDuckGo image results is
-  a ToS violation and is ruled out.
-  - **Google Books image size is the real gap.** `GoogleBooksImageLinksDto` declares only
-    `thumbnail` (~128px), so the larger `small`/`medium`/`large`/`extraLarge` links are
-    discarded even when a volume provides them. This matters more than it looks: the
-    field-level cover fallback consults Google Books precisely *when Open Library has no
-    cover*, so books that get a cover from Google are exactly the ones stuck with the
-    smallest image. Fix = declare the remaining fields and prefer the largest present.
-  - **Open Library sizing is already correct** — covers are requested as
+- **Phase D — Detail screen tabs (done).** Split the single scrolling column into a
+  `PrimaryTabRow` with two tabs: Details (cover/metadata header, reading status, progress) and
+  Reading history (timer, manual-entry affordance, session history). A Purchase & Borrow tab is
+  deferred until purchase/borrow tracking exists as a feature (data model + schema work of its
+  own — see backlog). `sessionToDelete`/`showManualEntry`/`sessionToEdit` and the new
+  `selectedTabIndex` are hoisted above the tab content in `BookDetailContent` so a dialog opened
+  from the Reading history tab keeps working regardless of which tab is later selected; the
+  three session/pending-session dialogs render unconditionally on that same state, outside the
+  `when (selectedTabIndex)` branch. Bundled alongside (same file, same phase): the backlog's
+  selectable/copyable-text item — the Details tab's metadata block is wrapped in a
+  `SelectionContainer` (with `DisableSelection` around the clickable status chip and the new ISBN
+  copy button), and the ISBN gets an explicit tap-to-copy `IconButton` using `LocalClipboard`/
+  `ClipEntry` (verified against the actual resolved `androidx.compose.ui:ui-android:1.11.4`
+  artifact — both the deprecated `LocalClipboardManager` and the current `LocalClipboard`/
+  `ClipEntry`/`Clipboard` are present; the latter was used), with the in-app "copied" `Snackbar`
+  suppressed on API 33+ (system confirmation takes over there) and shown below it (minSdk 28).
+- **Phase E — Cover improvements (done).** Per-book re-fetch affordance for coverless books (a
+  new `RefetchCoverUseCase`, wired to a Details-tab button, disabled with an explanation when the
+  book has no ISBN on record); Open Library ISBN-keyed cover URL with `?default=false` wired as a
+  third, last-resort fallback step in `FallbackBookMetadataProvider` (404s instead of serving a
+  placeholder image, so it's safely probeable) after both Open Library's own record and the
+  Google Books probe are coverless. Bulk backfill across a whole library and manual cover entry
+  (paste a URL or pick a local image) were both deliberately **not** implemented this phase — see
+  backlog. Scraping Google Images or DuckDuckGo image results is a ToS violation and is ruled out.
+  - **Google Books image size was the real gap, and is now fixed.** `GoogleBooksImageLinksDto`
+    previously declared only `thumbnail` (~128px), so the larger `small`/`medium`/`large`/
+    `extraLarge` links were discarded even when a volume provided them — this mattered more than
+    it looked, since the field-level cover fallback consults Google Books precisely *when Open
+    Library has no cover*, so books that got a cover from Google were exactly the ones stuck with
+    the smallest image. Fixed by declaring the remaining fields and selecting the largest present
+    (`extraLarge > large > medium > small > thumbnail > smallThumbnail`).
+  - **Open Library sizing was verified and left unchanged** — covers are requested as
     `/b/id/{coverId}-L.jpg`, and `L` is the largest that API offers (S/M/L only). Keying by
     cover ID rather than ISBN is also deliberate: ISBN/OCLC/LCCN-keyed cover lookups are
     rate-limited to 100 requests per IP per 5 minutes, ID-keyed ones are not.
   - Consequence for the `?default=false` probe above: it is ISBN-keyed, so unlike current
-    cover fetches it *is* subject to that 100/IP/5-min limit — fine interactively, but a
-    bulk backfill across a large library needs throttling.
+    cover fetches it *is* subject to that 100/IP/5-min limit — fine for the interactive
+    one-book-at-a-time re-fetch affordance, but explicitly NOT used in any bulk/loop context this
+    phase (see backlog for the deferred bulk-backfill item this constrains).
 
 ## Task 7 — Search & discovery
 
@@ -170,12 +187,13 @@ personal-scale libraries don't need one).
 - Orphaned cover files: deleting a book leaves its content-addressed cover on disk
   (dedup means the file may be shared by other books, so deletion needs a reference check
   or a periodic sweep).
-- Selectable/copyable text: no text in the app is currently selectable or copyable. Wants
-  tap-to-copy on the ISBN (the identifier users re-use elsewhere) and a `SelectionContainer`
-  around the Book Detail metadata block so titles/notes/etc. can be long-press selected. On
-  Android 13+ (API 33+) the system shows its own "copied" confirmation, so an in-app
-  toast/snackbar must be suppressed there to avoid a doubled message (minSdk is 28, so both
-  paths matter); the Compose clipboard API has shifted from `LocalClipboardManager` to
-  `LocalClipboard`/`ClipEntry`, so use whichever is current in the project's Compose BOM;
-  `SelectionContainer` must be applied narrowly, since long-press selection conflicts with
-  the clickable library cards and session rows (`DisableSelection` carves out exceptions).
+- Bulk cover backfill across a whole library (Task 6 Phase E only implemented the per-book
+  re-fetch affordance). The last-resort `?default=false` ISBN cover probe
+  (`OpenLibraryIsbnCoverProbe`) that a backfill would lean on most heavily is ISBN-keyed and
+  therefore subject to Open Library's 100-requests-per-IP-per-5-minutes cover rate limit
+  (unlike the ID-keyed fetches `OpenLibraryClient` normally uses), so a bulk pass needs its own
+  throttling before it can safely loop `RefetchCoverUseCase` over an entire library.
+- Manual cover entry (paste a URL or pick a local image, Task 6 Phase E). Deferred because a
+  local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
+  scoped storage considerations) that belongs in its own phase rather than riding along with the
+  rest of Phase E's provider-driven cover fixes.

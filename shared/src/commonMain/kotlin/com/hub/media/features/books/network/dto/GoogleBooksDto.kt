@@ -24,7 +24,19 @@ internal data class GoogleBooksVolumeInfoDto(
     val imageLinks: GoogleBooksImageLinksDto? = null,
 )
 
+/**
+ * Google Books' `imageLinks` object. Google returns whichever of these fields it has for a given
+ * volume, roughly in ascending size order: [smallThumbnail] (~80px) < [thumbnail] (~128px) <
+ * [small] < [medium] < [large] < [extraLarge]. Prior to ROADMAP Task 6 Phase E, only [thumbnail]
+ * was declared here, so a volume that *did* offer a larger image was silently limited to the
+ * smallest usable size — see [com.hub.media.features.books.network.largestAvailableUrl].
+ */
 @Serializable
 internal data class GoogleBooksImageLinksDto(
+    val smallThumbnail: String? = null,
     val thumbnail: String? = null,
+    val small: String? = null,
+    val medium: String? = null,
+    val large: String? = null,
+    val extraLarge: String? = null,
 )

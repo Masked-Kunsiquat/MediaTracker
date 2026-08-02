@@ -5,12 +5,21 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
+import com.hub.media.features.books.domain.RefetchCoverUseCase
+import com.hub.media.features.books.network.BookMetadata
+import com.hub.media.features.books.network.BookMetadataProvider
+import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.books.timer.ReadingTimerState
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpStatusCode
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -57,6 +66,7 @@ class BookDetailViewModelTest {
     private lateinit var bookRepository: BookRepository
     private lateinit var sessionRepository: ReadingSessionRepository
     private lateinit var useCase: LogReadingSessionUseCase
+    private lateinit var refetchCoverUseCase: RefetchCoverUseCase
     private lateinit var mediaId: String
 
     @BeforeTest
@@ -66,6 +76,19 @@ class BookDetailViewModelTest {
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
         useCase = LogReadingSessionUseCase(sessionRepository)
+        // No test in this file exercises refetchCover() itself (see RefetchCoverUseCaseTest for
+        // that coverage) -- this wiring only needs to exist so BookDetailViewModel can be
+        // constructed. The metadata provider is never invoked, and the image storage path is
+        // never written to (LocalImageStorageManager does no I/O until saveImage() is called).
+        refetchCoverUseCase = RefetchCoverUseCase(
+            metadataProvider = object : BookMetadataProvider {
+                override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> =
+                    Resource.Error("not used in BookDetailViewModelTest")
+            },
+            coverDownloader = CoverImageDownloader(createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) })),
+            imageStorage = LocalImageStorageManager("unused"),
+            bookRepository = bookRepository,
+        )
         mediaId = newId()
     }
 
@@ -108,6 +131,7 @@ class BookDetailViewModelTest {
             bookRepository = bookRepository,
             readingSessionRepository = sessionRepository,
             logReadingSessionUseCase = useCase,
+            refetchCoverUseCase = refetchCoverUseCase,
         )
 
     @Test
@@ -724,6 +748,31 @@ class BookDetailViewModelTest {
 
         val state = viewModel.uiState.first { it is BookDetailUiState.NotFound }
         assertIs<BookDetailUiState.NotFound>(state)
+    }
+
+    /**
+     * ROADMAP Task 6 Phase E: [BookDetailViewModel.refetchCover] surfaces a
+     * [RefetchCoverUseCase.execute] failure via [BookDetailUiState.Ready.errorMessage], the same
+     * convention every other mutating method on this class uses. Detailed use-case-level coverage
+     * (happy path, no-ISBN, provider-coverless, download failure) lives in
+     * [com.hub.media.features.books.domain.RefetchCoverUseCaseTest] -- this test only proves the
+     * ViewModel plumbs the result through and resets [BookDetailUiState.Ready.isRefetchingCover].
+     */
+    @Test
+    fun refetchCover_useCaseError_setsErrorMessageAndClearsInFlightFlag() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is BookDetailUiState.Ready }
+
+        viewModel.refetchCover()
+
+        val ready = viewModel.uiState
+            .first { it is BookDetailUiState.Ready && (it as BookDetailUiState.Ready).errorMessage != null }
+                as BookDetailUiState.Ready
+
+        assertNotNull(ready.errorMessage)
+        assertTrue(ready.errorMessage!!.contains("not used in BookDetailViewModelTest"))
+        assertEquals(false, ready.isRefetchingCover)
     }
 
     @Test

@@ -61,6 +61,7 @@ class BookDetailViewModelFactory(
                     bookRepository = appContainer.bookRepository,
                     readingSessionRepository = appContainer.readingSessionRepository,
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,
+                    refetchCoverUseCase = appContainer.refetchCoverUseCase,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")

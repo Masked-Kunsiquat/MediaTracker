@@ -7,7 +7,9 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
+import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
+import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.stats.data.StatsRepository
 
 /**
@@ -64,6 +66,17 @@ public class AppContainer(
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */
     public val addBookByIsbnUseCase: AddBookByIsbnUseCase = createDefaultAddBookByIsbnUseCase(
+        httpClient = httpClient,
+        imageStorage = imageStorage,
+        bookRepository = bookRepository,
+    )
+
+    /**
+     * Per-book "re-fetch cover" affordance (ROADMAP Task 6 Phase E), consumed by
+     * [BookDetailViewModel]. Shares the same Open Library -> Google Books -> ISBN-probe cover
+     * chain as [addBookByIsbnUseCase] (see [createDefaultRefetchCoverUseCase]).
+     */
+    public val refetchCoverUseCase: RefetchCoverUseCase = createDefaultRefetchCoverUseCase(
         httpClient = httpClient,
         imageStorage = imageStorage,
         bookRepository = bookRepository,
