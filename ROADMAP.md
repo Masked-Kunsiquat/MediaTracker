@@ -37,16 +37,50 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
   total but still counts toward the session count); the stats screen renders an unknown-value
   marker rather than a misleading `0` when a period's sum is entirely `null`.
 
-## Task 6 — Movies & TV (next)
+## Task 6 — Books polish (next)
+
+The book domain gets finished before any other media type starts: real-world use of
+v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no way to
+correct them, redundant form fields, no session editing, no reading status) to justify
+going wide. Movies & TV move to Task 7.
+
+- **Phase A — Edit book metadata.** User-facing correction flow for title, release year,
+  purchase price (in the schema since v1 but never displayed or editable anywhere), total
+  pages, and format. Provider edition records carry wrong values — e.g. Open Library reports
+  384 pages for an edition that's physically 366. Includes expanding `BookFormat` with
+  `PAPERBACK` and `HARDCOVER`: the column is TEXT so **no schema migration is needed** —
+  existing rows keep `PHYSICAL` as the generic/legacy value and get upgraded per-book via
+  the edit flow itself.
+- **Phase B — Session editing + manual-entry redesign.** Edit an existing reading session
+  (reuse the manual-entry form prefilled from the row; delete-only today). Redesign the
+  manual-entry dialog: `Pages read` (`deltaPages`) is redundant when positions are page
+  numbers — auto-derive it as `end - start` in page mode and only expose a manual field for
+  percent-based tracking; general layout cleanup.
+- **Phase C — Reading status.** `TO_READ` / `READING` / `FINISHED` / `DNF` status on books —
+  the missing concept that forced deferring the "books finished" stat. Requires **Room
+  schema v3** (status column + tested `Migration_2_3` per AGENTS.md §8). Unlocks: the
+  books-finished stat (Stats screen), library filtering/sorting by status.
+- **Phase D — Detail screen tabs.** Split the single scrolling column into tabs: Details /
+  Reading history now; a Purchase & Borrow tab is deferred until purchase/borrow tracking
+  exists as a feature (data model + schema work of its own).
+- **Phase E — Cover improvements.** Re-fetch affordance for coverless books (per-book, or a
+  bulk backfill — books added before the field-level cover fallback have no stored cover and
+  no re-fetch path); Open Library ISBN-keyed cover URL with `?default=false` as a further
+  probeable fallback (404s instead of serving a placeholder image); try all Google Books
+  image sizes (only thumbnail is used today); manual cover entry (paste a URL or pick a
+  local image). Scraping Google Images or DuckDuckGo image results is a ToS violation and
+  is ruled out.
+
+## Task 7 — Movies & TV
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
-- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v3,
-  assuming the Task 5 pre-phase lands v2 first) under the §8 schema-freeze rule (version
-  bump + tested `Migration`).
+- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v4,
+  assuming Task 6 Phase C lands v3 first) under the §8 schema-freeze rule (version bump +
+  tested `Migration`).
 - Library/media-type UI generalization (type filter, non-book detail screens).
 
-## Task 7 — Search & discovery
+## Task 8 — Search & discovery
 
 - Title/author type-ahead search of external providers when adding a book: Open Library's
   search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
@@ -63,27 +97,14 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
 
 - AGP 9 workaround: remove `android.builtInKotlin=false` + `android.newDsl=false` once KSP
   supports `com.android.kotlin.multiplatform.library` (google/ksp#2476); flags die in AGP 10.
-- Edit-book-metadata screen: no UI for correcting title, release year, purchase price,
-  total pages, or format after ingestion (`BookFormat` also defaults to `PHYSICAL` and has
-  no correction path). Provider edition records can carry wrong values — e.g. Open Library
-  reports 384 pages for an edition that's physically 366 — so a user-facing correction flow
-  covering all five fields is needed, not just format.
-- On-device smoke test of the full add-book flow (only exercised via JVM tests so far).
+- On-device smoke test of the full add-book flow (only exercised via JVM tests so far);
+  first migration-on-device check (v1 → v2) rides along with the v0.4.0 install.
 - Lifecycle pinned to 2.10.0 and core-ktx to 1.17.0 until compileSdk 37.
-- Cover re-fetch for pre-fix books: the field-level cover fallback (secondary provider's
-  cover merged into a coverless primary success) only runs at ingestion time, so books added
-  before that fix have no stored cover and no re-fetch path. Needs a "re-fetch cover"
-  affordance (per-book, or a bulk backfill over existing library entries). Could also add a
-  further fallback via Open Library's ISBN-keyed cover URL with `?default=false` (which
-  404s instead of serving a placeholder image, making it safely probeable) for cases where
-  both providers' records are coverless.
-- Additional legitimate cover sources: try all Google Books image sizes (currently only
-  thumbnail is used, when larger sizes may be available); an optional user-supplied Google
-  Custom Search API key (100 free queries/day) for image search, following the same
-  user-supplied-key pattern already planned for TMDB (Task 6); manual cover entry (paste a
-  URL, or pick a local image from the device). Scraping Google Images or DuckDuckGo image
-  results is a ToS violation and is ruled out as an option.
-- Book Detail screen tab separation: once purchase/borrow tracking exists, split the screen
-  into tabs (details / reading history / purchase & borrow info) -- it's a single scrolling
-  column today and is already getting crowded with header, timer, manual-entry, and session
-  history all stacked together.
+- Stats screen visual polish (acceptable as v1 today: plain cards, `Icons.Filled.Info` as
+  the library-toolbar entry because material-icons-core has no chart glyph).
+- Purchase/borrow tracking (lending a book out, borrow sources, purchase history) — data
+  model + schema work; prerequisite for the Book Detail Purchase & Borrow tab (Task 6
+  Phase D note).
+- Orphaned cover files: deleting a book leaves its content-addressed cover on disk
+  (dedup means the file may be shared by other books, so deletion needs a reference check
+  or a periodic sweep).
