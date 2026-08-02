@@ -172,6 +172,17 @@ from real use rather than inferred.
     documented staleness (bounds computed once at ViewModel construction) is now *partially*
     resolved: a live week-start-day change re-buckets immediately; a real midnight/week rollover
     while the screen stays open still needs a re-subscribe, as before.
+- **Session-logging dialogs revamp (done).** The manual-entry and save-after-timer dialogs were the
+  last surface still in the pre-revamp style — Task 6 Phase B made them functionally solid but never
+  gave them a visual pass, and both launch from the screens the phases above just restyled. Both now
+  render as a full-screen `Dialog` (Material 3's own guidance for a form this involved on a compact
+  screen, over a bigger `AlertDialog`/`ModalBottomSheet`) through a shared `SessionDialogFrame`:
+  card-backed titled sections (matching `EditBookScreen`/`SettingsScreen`'s convention) and a pinned
+  bottom action bar. Every Task 6 Phase B validation/precision/dismissal rule (parse-once validation,
+  duration-precision preservation on untouched edits, the `MAX_MANUAL_DURATION_MINUTES` bound,
+  `TrackingMode`-driven page/percent mode, date/time picker cancel-restore, `currentProgress`
+  prefill, edit-mode prefill, and `PendingSessionDialog`'s not-dismissible-except-by-Discard rule)
+  is unchanged — layout only.
 
 ## Task 8 — Data portability
 
@@ -187,12 +198,37 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   export as `0`), reading status, `finishedAt`, and formats.
 - **CSV import**: the harder half. Needs a duplicate policy (match on ISBN? on title+year?
   skip/merge/replace), validation mirroring the use-case layer rather than a second divergent
-  copy, and an all-or-nothing transaction so a malformed row can't half-import a library.
+  copy, and an all-or-nothing transaction so a malformed row can't half-import a library. The
+  duplicate policy must support **merging into an existing book**, not only skip-or-replace — the
+  Goodreads import below depends on merge being available so a later re-import can backfill fields
+  the model doesn't have a home for yet, rather than needing a staging table now or blocking on
+  Task 12.
 - **`.sqlite` backup + restore**: whole-database file copy out, and restore back in. Restore must
   refuse a file whose `user_version` is newer than the running app understands, rather than
   letting Room fail obscurely at open time.
 - Establishes the Storage Access Framework / file-picker plumbing the app has never needed
   before — which also makes the deferred **manual cover entry** backlog item cheap afterward.
+- **Goodreads CSV import** (`goodreads_library_export.csv`), scheduled as the final phase of this
+  task, after the generic export/import/backup phases above exist. It is the same machinery those
+  phases already build — SAF file picking, CSV parsing, duplicate policy, validation, all-or-nothing
+  transaction — with only a column-mapping layer on top; building it separately later would mean
+  duplicating or retrofitting that pipeline.
+  - Mapping is largely clean against the current model: `Title`; `Number of Pages` →
+    `totalPages`; `Binding` → `BookFormat` (the `PAPERBACK`/`HARDCOVER` values Task 6 added);
+    `Exclusive Shelf` (`read`/`currently-reading`/`to-read`) → `ReadingStatus`; `Date Read` →
+    `finishedAt`. Goodreads exports both `Year Published` and `Original Publication Year` — the
+    edition-vs-work distinction that made a 2026 anniversary printing display instead of the 2016
+    original — so which one `releaseYear` takes must be decided and documented when this phase is
+    implemented.
+  - **Three columns have no home yet and would be silently dropped**: `Bookshelves` → genres
+    (Task 12), `Read Count` → read-throughs (Task 10), and `My Rating` → nothing at all, since the
+    model has no rating field. Mitigated by the merge duplicate policy required above: a later
+    re-import (once Task 10/12 land) can backfill shelves and read counts into books already
+    imported today, instead of staging the data or delaying this import until after Task 12.
+  - Parsing gotcha to record: Goodreads armors ISBNs against Excel as `="9780593135204"`, so a
+    naive parser reads that literal string and every ISBN match fails — strip the `="` / `"`
+    wrapper before validation. Verify the exact column set against a real export file rather than
+    trusting this list.
 
 ## Task 9 — Search & discovery
 
@@ -334,6 +370,9 @@ numbered task rather than left to be rediscovered.
   local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
   scoped storage considerations) — Task 8 establishes exactly that plumbing for CSV/backup, so
   this becomes cheap once Task 8 lands and should be picked up right after it.
+- **No book rating field.** The schema has nothing to hold a per-book rating today, which is also
+  why the Goodreads import (Task 8) has no home for the `My Rating` column. Worth considering on
+  its own merits independent of that import, not only as an import-completeness gap.
 
 ## Unscheduled features
 

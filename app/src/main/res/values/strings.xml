@@ -12,7 +12,6 @@
     <string name="resume_button">Resume</string>
     <string name="stop_button">Stop</string>
     <string name="save_reading_session_title">Save reading session</string>
-    <string name="session_duration_label">Duration: %1$s</string>
     <string name="start_position_label">Start position</string>
     <string name="end_position_label">End position</string>
     <string name="pages_read_optional_label">Pages read (optional)</string>
@@ -20,7 +19,8 @@
     <string name="save_button">Save</string>
     <string name="discard_button">Discard</string>
     <string name="date_label">Date: %1$s</string>
-    <string name="duration_minutes_label">Duration in minutes (optional)</string>
+    <string name="duration_minutes_label">Duration (optional)</string>
+    <string name="duration_minutes_suffix">min</string>
     <string name="duration_minutes_invalid">Enter a valid duration, up to %1$d minutes</string>
     <string name="cancel_button">Cancel</string>
     <string name="ok_button">OK</string>
@@ -46,7 +46,9 @@
     <string name="manual_entry_section_when">When</string>
     <string name="manual_entry_section_how_long">How long</string>
     <string name="manual_entry_section_progress">Progress</string>
+    <string name="manual_entry_section_notes">Notes</string>
     <string name="position_invalid_error">Enter a valid, non-negative number</string>
+    <string name="position_percent_suffix">%</string>
     <string name="pages_read_invalid_error">Enter a valid page count</string>
     <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
     <string name="pages_read_derived_placeholder">—</string>

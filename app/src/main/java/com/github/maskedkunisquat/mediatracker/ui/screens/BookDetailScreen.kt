@@ -13,6 +13,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
@@ -1252,12 +1254,170 @@ private fun TimerCard(
 }
 
 /**
+ * Shared full-screen chrome for [PendingSessionDialog] and [ManualSessionDialog] (ROADMAP Task 7
+ * Phase E visual revamp -- previously each was a cramped [AlertDialog] that already needed an
+ * internal scroll for the "how long" + "progress" + notes fields; Material 3's own guidance favors
+ * a full-screen dialog over an [AlertDialog] once a form gets this involved on a compact screen).
+ * A plain [Dialog] with [DialogProperties.usePlatformDefaultWidth] set to `false` (rather than
+ * navigating to a real destination) is used because these dialogs are opened from hoisted boolean/
+ * nullable state in [BookDetailContent] (AGENTS.md §5), not from a nav-graph route -- switching to
+ * an actual screen would mean threading a session-editing route and its args through the nav graph
+ * for what is still, semantically, a transient piece of dialog state.
+ *
+ * Composition mirrors [EditBookScreen]/[SettingsScreen]'s established language exactly, so the
+ * whole pair reads as one system rather than a fourth style:
+ * - A [CenterAlignedTopAppBar] title, with an optional [Icons.Filled.Close] navigation icon
+ *   ([showCloseIcon]) -- present on [ManualSessionDialog] (mirrors [EditBookScreen]'s back icon,
+ *   which is itself just another way to invoke Cancel) but omitted on [PendingSessionDialog],
+ *   which must offer no incidental way to abandon a finished timed run (see that dialog's KDoc).
+ * - A scrollable body [Column] ([content]) holding titled, [Card]-backed sections built with
+ *   [SessionFormSection] -- the same "title [Text] above a [Card]" convention as `EditBookScreen`'s
+ *   `FormSection`/`SettingsScreen`'s `SettingsSection`.
+ * - An optional non-scrolling [errorContent] slot, pinned above the bottom bar rather than inside
+ *   the scrollable body, mirroring `EditBookForm`'s `errorMessage` placement -- an error must stay
+ *   visible regardless of scroll position.
+ * - A [bottomBar] built with [SessionDialogBottomBar], the same elevated, pinned two-button action
+ *   row as `EditBookScreen`'s `EditBookBottomBar`.
+ *
+ * [dismissOnBackPress]/[dismissOnClickOutside] are forwarded straight to [DialogProperties] --
+ * [PendingSessionDialog] sets both `false` (see its KDoc's "not dismissible" section, ROADMAP Task
+ * 7 Phase E non-negotiable #6); [ManualSessionDialog] leaves both at their default `true` (an
+ * un-started/editable form has nothing un-discardable about an incidental dismiss).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SessionDialogFrame(
+    title: String,
+    onDismissRequest: () -> Unit,
+    showCloseIcon: Boolean,
+    bottomBar: @Composable () -> Unit,
+    dismissOnBackPress: Boolean = true,
+    dismissOnClickOutside: Boolean = true,
+    errorContent: @Composable () -> Unit = {},
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = dismissOnBackPress,
+            dismissOnClickOutside = dismissOnClickOutside,
+        ),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                topBar = {
+                    CenterAlignedTopAppBar(
+                        title = { Text(title) },
+                        navigationIcon = {
+                            if (showCloseIcon) {
+                                IconButton(onClick = onDismissRequest) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = stringResource(R.string.cancel_button),
+                                    )
+                                }
+                            }
+                        },
+                    )
+                },
+            ) { innerPadding ->
+                Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                        content = content,
+                    )
+                    errorContent()
+                    bottomBar()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One titled, [Card]-backed group of related session-dialog fields (ROADMAP Task 7 Phase E),
+ * mirroring `EditBookScreen`'s `FormSection`/`SettingsScreen`'s `SettingsSection` convention
+ * exactly: a [Text] title above a [Card], its content column spaced by 16dp. Declared separately
+ * per-file (Kotlin top-level `private` is file-scoped) rather than shared across files, matching
+ * how this codebase already keeps each screen's private layout helpers local to that screen.
+ */
+@Composable
+private fun SessionFormSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+/**
+ * Persistent, non-scrolling two-button action row (ROADMAP Task 7 Phase E), pinned to the bottom of
+ * [SessionDialogFrame] on an elevated [Surface] (Material 3's default `BottomAppBar` tonal
+ * elevation, 3dp) -- the same shape as `EditBookScreen`'s `EditBookBottomBar`. [secondaryLabel]/
+ * [onSecondary] is Cancel on [ManualSessionDialog] and Discard on [PendingSessionDialog];
+ * [primaryLabel]/[onPrimary]/[primaryEnabled] is always Save.
+ */
+@Composable
+private fun SessionDialogBottomBar(
+    primaryLabel: String,
+    primaryEnabled: Boolean,
+    onPrimary: () -> Unit,
+    secondaryLabel: String,
+    onSecondary: () -> Unit,
+) {
+    Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(onClick = onSecondary, modifier = Modifier.weight(1f)) {
+                Text(secondaryLabel)
+            }
+            Button(onClick = onPrimary, enabled = primaryEnabled, modifier = Modifier.weight(1f)) {
+                Text(primaryLabel)
+            }
+        }
+    }
+}
+
+/**
  * Dialog for saving a finished timer run ([pendingSession]). Visibility is entirely
  * state-driven by the caller (rendered only while `state.pendingSession != null`), so unlike
  * [ManualSessionDialog] it never closes itself: a failed [onSave] leaves `pendingSession` set
  * (see [BookDetailViewModel.saveSession] KDoc), which keeps this dialog open with
  * [errorMessage] displayed so the user can correct their input and retry without re-timing the
  * session; a successful save clears `pendingSession`, which naturally dismisses the dialog.
+ *
+ * ### Visual structure (ROADMAP Task 7 Phase E revamp)
+ * Rendered via [SessionDialogFrame] with `showCloseIcon = false` -- see this dialog's pre-existing
+ * "not dismissible" section below, which the revamp does not relax: there is deliberately no
+ * top-bar icon that could be tapped as a shortcut past the explicit Discard button. The finished
+ * run's duration is surfaced as a small `primaryContainer` stat card (echoing [TimerCard], the same
+ * control that produced this run) above a [SessionFormSection] "Progress" (start/end position,
+ * page-mode's auto-derived pages-read or percent-mode's manual field) and a "Notes" section,
+ * followed by [errorMessage] (pinned above the bottom bar, not inside the scrollable body, so it
+ * stays visible regardless of scroll position) and a [SessionDialogBottomBar] (Discard/Save).
  *
  * ### Position/pages validation (ROADMAP Task 6 Phase B)
  * Start/end position are digit-and-decimal-point filtered so a negative value (the one input
@@ -1292,6 +1452,7 @@ private fun TimerCard(
  * [currentProgress] (Task4 Phase E) prefills the start-position field with the book's last-known
  * progress as a "resume where you left off" convenience -- the user can freely edit or clear it.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PendingSessionDialog(
     pendingSession: ReadingTimerResult,
@@ -1332,93 +1493,36 @@ private fun PendingSessionDialog(
         endUnitText.isNotBlank() && endUnitIsValid &&
         (isPageMode || deltaPagesIsValid)
 
-    AlertDialog(
+    // Percent-mode position fields get a "%" suffix (ROADMAP Task 7 Phase E) -- page-mode positions
+    // are raw page numbers with no fixed unit, so no suffix is shown for them (matches
+    // ManualSessionDialog's identical treatment below).
+    val positionSuffix: (@Composable () -> Unit)? = if (isPageMode) {
+        null
+    } else {
+        { Text(stringResource(R.string.position_percent_suffix)) }
+    }
+
+    SessionDialogFrame(
+        title = stringResource(R.string.save_reading_session_title),
         onDismissRequest = {}, // Incidental dismiss (outside tap / back) must not discard a finished run.
-        title = { Text(stringResource(R.string.save_reading_session_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        showCloseIcon = false, // No shortcut past the explicit Discard button -- see this function's KDoc.
+        dismissOnBackPress = false,
+        dismissOnClickOutside = false,
+        errorContent = {
+            if (errorMessage != null) {
                 Text(
-                    text = stringResource(
-                        R.string.session_duration_label,
-                        formatElapsed(pendingSession.durationSeconds),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),
                 )
-                Text(
-                    text = stringResource(R.string.manual_entry_section_progress),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                OutlinedTextField(
-                    value = startUnitText,
-                    onValueChange = { startUnitText = it.filterDecimalInput() },
-                    label = { Text(stringResource(R.string.start_position_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    isError = startUnitShowsError,
-                    supportingText = if (startUnitShowsError) {
-                        { Text(stringResource(R.string.position_invalid_error)) }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = endUnitText,
-                    onValueChange = { endUnitText = it.filterDecimalInput() },
-                    label = { Text(stringResource(R.string.end_position_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    isError = endUnitShowsError,
-                    supportingText = if (endUnitShowsError) {
-                        { Text(stringResource(R.string.position_invalid_error)) }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (isPageMode) {
-                    Text(
-                        text = stringResource(
-                            R.string.pages_read_derived_label,
-                            derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = deltaPagesText,
-                        onValueChange = { deltaPagesText = it.filterIntegerInput() },
-                        label = { Text(stringResource(R.string.pages_read_optional_label)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        isError = deltaPagesShowsError,
-                        supportingText = if (deltaPagesShowsError) {
-                            { Text(stringResource(R.string.pages_read_invalid_error)) }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text(stringResource(R.string.notes_optional_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (errorMessage != null) {
-                    Text(
-                        text = errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
             }
         },
-        confirmButton = {
-            Button(
-                onClick = {
+        bottomBar = {
+            SessionDialogBottomBar(
+                primaryLabel = stringResource(R.string.save_button),
+                primaryEnabled = canSave,
+                onPrimary = {
                     onSave(
                         parsedStartUnit ?: 0.0,
                         parsedEndUnit ?: 0.0,
@@ -1426,17 +1530,104 @@ private fun PendingSessionDialog(
                         notesText.ifBlank { null },
                     )
                 },
-                enabled = canSave,
+                secondaryLabel = stringResource(R.string.discard_button),
+                onSecondary = onDiscard,
+            )
+        },
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(stringResource(R.string.save_button))
+                Text(
+                    text = stringResource(R.string.timer_card_title),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    text = formatElapsed(pendingSession.durationSeconds),
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                )
             }
-        },
-        dismissButton = {
-            Button(onClick = onDiscard) {
-                Text(stringResource(R.string.discard_button))
+        }
+
+        SessionFormSection(title = stringResource(R.string.manual_entry_section_progress)) {
+            OutlinedTextField(
+                value = startUnitText,
+                onValueChange = { startUnitText = it.filterDecimalInput() },
+                label = { Text(stringResource(R.string.start_position_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                isError = startUnitShowsError,
+                suffix = positionSuffix,
+                supportingText = if (startUnitShowsError) {
+                    { Text(stringResource(R.string.position_invalid_error)) }
+                } else {
+                    null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = endUnitText,
+                onValueChange = { endUnitText = it.filterDecimalInput() },
+                label = { Text(stringResource(R.string.end_position_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                isError = endUnitShowsError,
+                suffix = positionSuffix,
+                supportingText = if (endUnitShowsError) {
+                    { Text(stringResource(R.string.position_invalid_error)) }
+                } else {
+                    null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (isPageMode) {
+                Text(
+                    text = stringResource(
+                        R.string.pages_read_derived_label,
+                        derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                OutlinedTextField(
+                    value = deltaPagesText,
+                    onValueChange = { deltaPagesText = it.filterIntegerInput() },
+                    label = { Text(stringResource(R.string.pages_read_optional_label)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = deltaPagesShowsError,
+                    supportingText = if (deltaPagesShowsError) {
+                        { Text(stringResource(R.string.pages_read_invalid_error)) }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-        },
-    )
+        }
+
+        SessionFormSection(title = stringResource(R.string.manual_entry_section_notes)) {
+            OutlinedTextField(
+                value = notesText,
+                onValueChange = { notesText = it },
+                label = { Text(stringResource(R.string.notes_optional_label)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
 }
 
 /**
@@ -1453,9 +1644,20 @@ private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
  * Dialog for logging -- or, since ROADMAP Task 6 Phase B, editing -- a session with no live timer
  * involved: session date + end time, duration (minutes), start/end position, pages-read (page-mode:
  * derived; percent-mode: manual/optional), and notes. Fields are grouped into "When" (date/time),
- * "How long" (duration), and "Progress" (positions + pages) sections (Task 6 Phase B layout
- * cleanup) inside the existing scrollable [Column] -- this stays a dialog, not a full screen, per
- * ROADMAP scope.
+ * "How long" (duration), "Progress" (positions + pages), and "Notes" sections (the last split out
+ * on its own as of the Task 7 Phase E visual revamp below; previously a bare field with no section
+ * of its own).
+ *
+ * ### Visual structure (ROADMAP Task 7 Phase E revamp)
+ * Rendered via [SessionDialogFrame] as a full-screen dialog rather than the cramped [AlertDialog]
+ * this used before -- see [SessionDialogFrame]'s KDoc for why a full-screen presentation was chosen
+ * over Material 3's `AlertDialog`/`ModalBottomSheet` for a form carrying this many fields. Each
+ * group listed above is now its own [SessionFormSection] (title above a [Card], matching
+ * `EditBookScreen`/`SettingsScreen`'s section convention) instead of a bare [labelMedium][MaterialTheme.typography]
+ * [Text] header floating over ungrouped fields. `showCloseIcon = true` gives this dialog a top-bar
+ * close icon (mirroring `EditBookScreen`'s back icon) in addition to the bottom bar's Cancel
+ * button -- unlike [PendingSessionDialog], an un-started/editable form has nothing un-discardable
+ * about an incidental dismiss, so both paths call the same [onDismiss].
  *
  * ### Create vs. edit ([sessionToEdit])
  * When [sessionToEdit] is `null` (opened from the "Log session manually" button), every field
@@ -1710,141 +1912,26 @@ private fun ManualSessionDialog(
         durationIsValid &&
         (isPageMode || deltaPagesIsValid)
 
-    AlertDialog(
+    // Percent-mode position fields get a "%" suffix (ROADMAP Task 7 Phase E) -- page-mode positions
+    // are raw page numbers with no fixed unit, so no suffix is shown for them (matches
+    // PendingSessionDialog's identical treatment).
+    val positionSuffix: (@Composable () -> Unit)? = if (isPageMode) {
+        null
+    } else {
+        { Text(stringResource(R.string.position_percent_suffix)) }
+    }
+
+    SessionDialogFrame(
+        title = stringResource(
+            if (sessionToEdit != null) R.string.edit_session_title else R.string.log_session_manually,
+        ),
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (sessionToEdit != null) R.string.edit_session_title else R.string.log_session_manually,
-                ),
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.manual_entry_section_when),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                OutlinedButton(
-                    onClick = {
-                        dateBeforePickerOpen = datePickerState.selectedDateMillis
-                        showDatePicker = true
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        stringResource(
-                            R.string.date_label,
-                            formatUtcMidnightMillis(datePickerState.selectedDateMillis),
-                        ),
-                    )
-                }
-                OutlinedButton(
-                    onClick = {
-                        timeBeforePickerOpen = timePickerState.hour to timePickerState.minute
-                        showTimePicker = true
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        stringResource(
-                            R.string.time_label,
-                            formatTimeOfDay(context, timePickerState.hour, timePickerState.minute),
-                        ),
-                    )
-                }
-
-                Text(
-                    text = stringResource(R.string.manual_entry_section_how_long),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                OutlinedTextField(
-                    value = durationText,
-                    onValueChange = { durationText = it.filterIntegerInput() },
-                    label = { Text(stringResource(R.string.duration_minutes_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    isError = !durationIsValid,
-                    supportingText = if (!durationIsValid) {
-                        { Text(stringResource(R.string.duration_minutes_invalid, MAX_MANUAL_DURATION_MINUTES)) }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Text(
-                    text = stringResource(R.string.manual_entry_section_progress),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                OutlinedTextField(
-                    value = startUnitText,
-                    onValueChange = { startUnitText = it.filterDecimalInput() },
-                    label = { Text(stringResource(R.string.start_position_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    isError = startUnitShowsError,
-                    supportingText = if (startUnitShowsError) {
-                        { Text(stringResource(R.string.position_invalid_error)) }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = endUnitText,
-                    onValueChange = { endUnitText = it.filterDecimalInput() },
-                    label = { Text(stringResource(R.string.end_position_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    isError = endUnitShowsError,
-                    supportingText = if (endUnitShowsError) {
-                        { Text(stringResource(R.string.position_invalid_error)) }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (isPageMode) {
-                    Text(
-                        text = stringResource(
-                            R.string.pages_read_derived_label,
-                            derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = deltaPagesText,
-                        onValueChange = { deltaPagesText = it.filterIntegerInput() },
-                        label = { Text(stringResource(R.string.pages_read_optional_label)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        isError = deltaPagesShowsError,
-                        supportingText = if (deltaPagesShowsError) {
-                            { Text(stringResource(R.string.pages_read_invalid_error)) }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                OutlinedTextField(
-                    value = notesText,
-                    onValueChange = { notesText = it },
-                    label = { Text(stringResource(R.string.notes_optional_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
+        showCloseIcon = true,
+        bottomBar = {
+            SessionDialogBottomBar(
+                primaryLabel = stringResource(R.string.save_button),
+                primaryEnabled = canSave,
+                onPrimary = {
                     onSave(
                         // Blank duration => null ("unknown"), not 0 -- see class KDoc's
                         // "Duration is optional" section. When the field is untouched from its
@@ -1870,17 +1957,136 @@ private fun ManualSessionDialog(
                         notesText.ifBlank { null },
                     )
                 },
-                enabled = canSave,
+                secondaryLabel = stringResource(R.string.cancel_button),
+                onSecondary = onDismiss,
+            )
+        },
+    ) {
+        SessionFormSection(title = stringResource(R.string.manual_entry_section_when)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(stringResource(R.string.save_button))
+                OutlinedButton(
+                    onClick = {
+                        dateBeforePickerOpen = datePickerState.selectedDateMillis
+                        showDatePicker = true
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.date_label,
+                            formatUtcMidnightMillis(datePickerState.selectedDateMillis),
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        timeBeforePickerOpen = timePickerState.hour to timePickerState.minute
+                        showTimePicker = true
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.time_label,
+                            formatTimeOfDay(context, timePickerState.hour, timePickerState.minute),
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel_button))
+        }
+
+        SessionFormSection(title = stringResource(R.string.manual_entry_section_how_long)) {
+            OutlinedTextField(
+                value = durationText,
+                onValueChange = { durationText = it.filterIntegerInput() },
+                label = { Text(stringResource(R.string.duration_minutes_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                suffix = { Text(stringResource(R.string.duration_minutes_suffix)) },
+                singleLine = true,
+                isError = !durationIsValid,
+                supportingText = if (!durationIsValid) {
+                    { Text(stringResource(R.string.duration_minutes_invalid, MAX_MANUAL_DURATION_MINUTES)) }
+                } else {
+                    null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        SessionFormSection(title = stringResource(R.string.manual_entry_section_progress)) {
+            OutlinedTextField(
+                value = startUnitText,
+                onValueChange = { startUnitText = it.filterDecimalInput() },
+                label = { Text(stringResource(R.string.start_position_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                isError = startUnitShowsError,
+                suffix = positionSuffix,
+                supportingText = if (startUnitShowsError) {
+                    { Text(stringResource(R.string.position_invalid_error)) }
+                } else {
+                    null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = endUnitText,
+                onValueChange = { endUnitText = it.filterDecimalInput() },
+                label = { Text(stringResource(R.string.end_position_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                isError = endUnitShowsError,
+                suffix = positionSuffix,
+                supportingText = if (endUnitShowsError) {
+                    { Text(stringResource(R.string.position_invalid_error)) }
+                } else {
+                    null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (isPageMode) {
+                Text(
+                    text = stringResource(
+                        R.string.pages_read_derived_label,
+                        derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                OutlinedTextField(
+                    value = deltaPagesText,
+                    onValueChange = { deltaPagesText = it.filterIntegerInput() },
+                    label = { Text(stringResource(R.string.pages_read_optional_label)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = deltaPagesShowsError,
+                    supportingText = if (deltaPagesShowsError) {
+                        { Text(stringResource(R.string.pages_read_invalid_error)) }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-        },
-    )
+        }
+
+        SessionFormSection(title = stringResource(R.string.manual_entry_section_notes)) {
+            OutlinedTextField(
+                value = notesText,
+                onValueChange = { notesText = it },
+                label = { Text(stringResource(R.string.notes_optional_label)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -2725,6 +2931,162 @@ private fun ReadingHistoryTabUnknownDurationPreview() {
             onLogManuallyClick = {},
             onEditSessionClick = {},
             onDeleteSessionClick = {},
+        )
+    }
+}
+
+// --- ManualSessionDialog / PendingSessionDialog previews (ROADMAP Task 7 Phase E) ---
+// Both are `private` composables, so their previews live in this same file rather than beside
+// EditBookScreen/SettingsScreen's own preview blocks.
+
+/** Preview of [ManualSessionDialog] in create mode, page-tracked book (light theme). */
+@Preview(showBackground = true)
+@Composable
+private fun ManualSessionDialogPageModePreview() {
+    MediaTrackerTheme {
+        ManualSessionDialog(
+            currentProgress = 42.0,
+            trackingMode = TrackingMode.PAGES,
+            sessionToEdit = null,
+            onSave = { _, _, _, _, _, _ -> },
+            onDismiss = {},
+        )
+    }
+}
+
+/** Dark-theme counterpart of [ManualSessionDialogPageModePreview], same data. */
+@Preview(showBackground = true)
+@Composable
+private fun ManualSessionDialogPageModeDarkPreview() {
+    MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
+        ManualSessionDialog(
+            currentProgress = 42.0,
+            trackingMode = TrackingMode.PAGES,
+            sessionToEdit = null,
+            onSave = { _, _, _, _, _, _ -> },
+            onDismiss = {},
+        )
+    }
+}
+
+/**
+ * Preview of [ManualSessionDialog] in create mode, percent-tracked book -- covers the manual
+ * pages-read field ([TrackingMode.PERCENT] shows it; [TrackingMode.PAGES] derives it instead, see
+ * [ManualSessionDialogPageModePreview]) and the "%" position-field suffix.
+ */
+@Preview(showBackground = true)
+@Composable
+private fun ManualSessionDialogPercentModePreview() {
+    MediaTrackerTheme {
+        ManualSessionDialog(
+            currentProgress = 37.0,
+            trackingMode = TrackingMode.PERCENT,
+            sessionToEdit = null,
+            onSave = { _, _, _, _, _, _ -> },
+            onDismiss = {},
+        )
+    }
+}
+
+/**
+ * Preview of [ManualSessionDialog] in edit mode, prefilled from [PREVIEW_SESSIONS]' first entry --
+ * covers the "Create vs. edit" prefill path (date/time/duration/positions/notes all seeded from the
+ * session being edited) described in this dialog's KDoc.
+ */
+@Preview(showBackground = true)
+@Composable
+private fun ManualSessionDialogEditModePreview() {
+    MediaTrackerTheme {
+        ManualSessionDialog(
+            currentProgress = 78.0,
+            trackingMode = TrackingMode.PAGES,
+            sessionToEdit = PREVIEW_SESSIONS.first(),
+            onSave = { _, _, _, _, _, _ -> },
+            onDismiss = {},
+        )
+    }
+}
+
+/**
+ * Awkward-state preview of [ManualSessionDialog]: an out-of-range/unparseable duration
+ * (`durationText` seeded past [MAX_MANUAL_DURATION_MINUTES]) so the duration field's `isError` +
+ * [supportingText] path renders, and Save is disabled -- see the class KDoc's "Numeric field
+ * validation" section.
+ */
+@Preview(showBackground = true)
+@Composable
+private fun ManualSessionDialogValidationErrorPreview() {
+    MediaTrackerTheme {
+        ManualSessionDialog(
+            currentProgress = 42.0,
+            trackingMode = TrackingMode.PAGES,
+            sessionToEdit = PREVIEW_SESSIONS.first().copy(durationSeconds = (MAX_MANUAL_DURATION_MINUTES + 1) * 60),
+            onSave = { _, _, _, _, _, _ -> },
+            onDismiss = {},
+        )
+    }
+}
+
+/** Preview of [PendingSessionDialog] for a just-finished timer run (light theme). */
+@Preview(showBackground = true)
+@Composable
+private fun PendingSessionDialogPreview() {
+    MediaTrackerTheme {
+        PendingSessionDialog(
+            pendingSession = ReadingTimerResult(
+                timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                durationSeconds = 1_200,
+            ),
+            errorMessage = null,
+            currentProgress = 42.0,
+            trackingMode = TrackingMode.PAGES,
+            onSave = { _, _, _, _ -> },
+            onDiscard = {},
+        )
+    }
+}
+
+/** Dark-theme counterpart of [PendingSessionDialogPreview], same data. */
+@Preview(showBackground = true)
+@Composable
+private fun PendingSessionDialogDarkPreview() {
+    MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
+        PendingSessionDialog(
+            pendingSession = ReadingTimerResult(
+                timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                durationSeconds = 1_200,
+            ),
+            errorMessage = null,
+            currentProgress = 42.0,
+            trackingMode = TrackingMode.PAGES,
+            onSave = { _, _, _, _ -> },
+            onDiscard = {},
+        )
+    }
+}
+
+/**
+ * Awkward-state preview of [PendingSessionDialog]: a failed save leaves the dialog open with
+ * [errorMessage] shown above the bottom bar and the pending session intact for retry -- see this
+ * dialog's KDoc.
+ */
+@Preview(showBackground = true)
+@Composable
+private fun PendingSessionDialogErrorPreview() {
+    MediaTrackerTheme {
+        PendingSessionDialog(
+            pendingSession = ReadingTimerResult(
+                timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                durationSeconds = 1_200,
+            ),
+            errorMessage = "Failed to save session. Please try again.",
+            currentProgress = 42.0,
+            trackingMode = TrackingMode.PERCENT,
+            onSave = { _, _, _, _ -> },
+            onDiscard = {},
         )
     }
 }

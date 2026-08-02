@@ -171,9 +171,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `edit_section_status`/`edit_section_purchase`) were added; no existing `EditBookScreen` string was
     orphaned by the revamp. Previews cover light and dark theme, a validation error, a save in
     progress, unknown total pages (with no purchase price on record), and a very long title.
+- **Session-logging dialogs visual revamp** (ROADMAP Task 7 Phase E — final phase of Task 7,
+  `app/.../ui/screens/BookDetailScreen.kt`) — `ManualSessionDialog`/`PendingSessionDialog` were the
+  last surface still in the pre-revamp style: Task 6 Phase B had already made them functionally
+  solid (grouped fields, auto-derived pages, full parse-once validation) but never gave them a
+  visual pass, and both launch directly from the screens Phases B/C/D just restyled. Layout only —
+  every validation rule, precision-preservation behavior, and dismissal rule from Task 6 Phase B is
+  unchanged.
+  - **Presentation: full-screen `Dialog`, not a bigger `AlertDialog`.** `ManualSessionDialog` alone
+    carries date, time, duration, start/end position, optional pages, and notes — enough that the
+    old `AlertDialog` already needed an internal scroll on a phone. Material 3's own guidance favors
+    a full-screen dialog over `AlertDialog`/`ModalBottomSheet` once a form is this involved on a
+    compact screen, so both dialogs now render through a new shared `SessionDialogFrame`: a plain
+    `Dialog` (`DialogProperties.usePlatformDefaultWidth = false`, not a nav-graph destination, since
+    the dialogs are still opened from hoisted boolean/nullable state in `BookDetailContent` per
+    AGENTS.md §5) hosting a `CenterAlignedTopAppBar`, a scrollable body of new card-backed
+    `SessionFormSection`s (the same "title `Text` above a `Card`" convention as `EditBookScreen`'s
+    `FormSection`/`SettingsScreen`'s `SettingsSection`), and a pinned `SessionDialogBottomBar`
+    (elevated `Surface`, two full-width buttons) mirroring `EditBookBottomBar` exactly — the pair now
+    reads as one system with the rest of the app rather than a fourth style.
+  - **`ManualSessionDialog`**: "When" (date/time buttons, now side by side), "How long" (duration,
+    new "min" suffix), "Progress" (start/end position, page-mode auto-derived pages read or
+    percent-mode's manual field, now with a "%" suffix on the position fields in percent mode), and
+    a new "Notes" section (previously a bare field with no section of its own) — plus a top-bar close
+    icon alongside the bottom bar's Cancel, both wired to the same `onDismiss`.
+  - **`PendingSessionDialog`**: the finished run's duration is now a small `primaryContainer` stat
+    card echoing `TimerCard` (the control that produced the run), above the same "Progress"/"Notes"
+    sections. **Still not dismissible by outside tap or back press** — `showCloseIcon = false`,
+    `dismissOnBackPress`/`dismissOnClickOutside = false`, `onDismissRequest = {}` — Discard remains
+    the only path that abandons a finished timed run, and a failed Save still leaves the dialog open
+    with the error shown (now pinned above the bottom bar, outside the scrollable body) and the
+    pending session intact for retry.
+  - **Every Task 6 Phase B non-negotiable verified unchanged**: parse-once validation
+    (blank/unparseable/out-of-range) on every numeric field with `isError`/`supportingText` gating
+    Save; a session's original per-second `durationSeconds` is still re-emitted verbatim when its
+    duration field is untouched (never recomputed from rounded minutes); `MAX_MANUAL_DURATION_MINUTES`
+    still bounds the duration field and a blank duration still saves as a legitimate `null`; page vs.
+    percent mode still reads the stored `TrackingMode` rather than re-inferring it from `totalPages`;
+    the date/time pickers' Cancel button still reverts to the selection captured when each was
+    opened; the start-position field still prefills from `currentProgress` in both dialogs; edit mode
+    still prefills every field from the session being edited.
+  - Three new strings (`manual_entry_section_notes`, `duration_minutes_suffix`,
+    `position_percent_suffix`); `session_duration_label` is deleted (its one call site now composes
+    `timer_card_title` + the formatted duration directly inside the new stat card) — the only string
+    this revamp orphaned. `duration_minutes_label`'s text was shortened now that a "min" suffix
+    carries the unit. New `@Preview`s (light/dark) cover `ManualSessionDialog` in page mode, percent
+    mode, edit mode (prefilled from an existing session), a validation error (duration past the max),
+    and `PendingSessionDialog`'s ready and failed-save states.
 
 **Task 7 is now complete** — UI revamp & settings work across the Details/Reading-history/Edit
-screens plus the new Settings screen, explicit tracking mode, and Room schema v4 all landed above.
+screens, the session-logging dialogs, plus the new Settings screen, explicit tracking mode, and Room
+schema v4 all landed above.
 
 ## [0.5.0] - 2026-08-02
 
