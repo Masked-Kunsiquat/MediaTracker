@@ -324,20 +324,6 @@ numbered task rather than left to be rediscovered.
   local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
   scoped storage considerations) — Task 8 establishes exactly that plumbing for CSV/backup, so
   this becomes cheap once Task 8 lands and should be picked up right after it.
-- **Pre-existing `:shared:jvmTest` flakiness, unrelated to any specific test's logic.** Discovered
-  while verifying Task 7 Phase B: repeated full-suite reruns intermittently fail one Room-backed
-  ViewModel test (`StatsViewModelTest`/`SettingsViewModelTest`/etc., varying which one) with a
-  `CompletionHandlerException` → `Dispatchers.Main was accessed ... after Dispatchers.resetMain()`.
-  Confirmed via `git stash` to **predate** Phase B entirely (reproduces identically, roughly 1 in
-  2-4 full-suite runs, on the Phase A commit with none of this phase's changes applied) — a race
-  between a `stateIn(..., WhileSubscribed(...))`-shared `Flow`'s real background-thread cleanup
-  (Room's `testAppDatabase()` uses real `Dispatchers.Default`, not virtual test time) and a test
-  class's `tearDown` resetting the global `Dispatchers.Main` before that cleanup finishes; harmless
-  to production (real apps have a real platform Main dispatcher that's never reset mid-process) and
-  doesn't indicate any assertion actually failed incorrectly. Not fixed here — a real fix likely
-  means changing how every Room-backed ViewModel test wires `Dispatchers.setMain`/`resetMain`
-  and/or the test database's coroutine context, which is broader than one task's scope. Re-running
-  the affected test/suite passes.
 
 ## Unscheduled features
 

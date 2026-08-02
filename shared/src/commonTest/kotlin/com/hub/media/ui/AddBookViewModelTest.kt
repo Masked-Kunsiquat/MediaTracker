@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.domain.BookIngestionUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -9,10 +10,8 @@ import kotlin.test.assertIs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 
 /**
  * [AddBookViewModel] tests against a hand-rolled [FakeAddBookByIsbnUseCase] — no Ktor engine, no
@@ -23,22 +22,30 @@ import kotlinx.coroutines.test.setMain
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddBookViewModelTest {
 
+    private val viewModels = ViewModelRegistry()
+
     @BeforeTest
     fun setUp() {
         // viewModelScope dispatches on Dispatchers.Main; UnconfinedTestDispatcher runs launched
         // coroutines eagerly so state transitions are observable synchronously without manually
         // pumping a TestCoroutineScheduler.
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
     }
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope before resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters (this class has no database to close in between).
+        viewModels.clearAll()
         Dispatchers.resetMain()
     }
 
+    private fun newViewModel(useCase: BookIngestionUseCase) =
+        viewModels.track(AddBookViewModel(useCase))
+
     @Test
     fun initialState_isIdle() {
-        val viewModel = AddBookViewModel(FakeAddBookByIsbnUseCase())
+        val viewModel = newViewModel(FakeAddBookByIsbnUseCase())
         assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
     }
 
@@ -47,7 +54,7 @@ class AddBookViewModelTest {
         val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
             awaitGate = true
         }
-        val viewModel = AddBookViewModel(fake)
+        val viewModel = newViewModel(fake)
 
         assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
 
@@ -62,7 +69,7 @@ class AddBookViewModelTest {
     @Test
     fun addBook_useCaseError_setsErrorState() = runTest {
         val fake = FakeAddBookByIsbnUseCase(result = Resource.Error("Invalid ISBN: 'bad'"))
-        val viewModel = AddBookViewModel(fake)
+        val viewModel = newViewModel(fake)
 
         viewModel.addBook("bad")
 
@@ -76,7 +83,7 @@ class AddBookViewModelTest {
         val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
             awaitGate = true
         }
-        val viewModel = AddBookViewModel(fake)
+        val viewModel = newViewModel(fake)
 
         viewModel.addBook("9780135957059")
         assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
@@ -93,7 +100,7 @@ class AddBookViewModelTest {
     @Test
     fun reset_returnsToIdleAfterTerminalState() = runTest {
         val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-        val viewModel = AddBookViewModel(fake)
+        val viewModel = newViewModel(fake)
 
         viewModel.addBook("9780135957059")
         assertIs<AddBookUiState.Success>(viewModel.uiState.value)
@@ -106,7 +113,7 @@ class AddBookViewModelTest {
     @Test
     fun addBook_afterReset_isAcceptedAgain() = runTest {
         val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-        val viewModel = AddBookViewModel(fake)
+        val viewModel = newViewModel(fake)
 
         viewModel.addBook("9780135957059")
         viewModel.reset()

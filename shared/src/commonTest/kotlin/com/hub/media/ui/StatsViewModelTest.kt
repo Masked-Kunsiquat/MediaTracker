@@ -20,10 +20,8 @@ import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -51,6 +49,7 @@ class StatsViewModelTest {
     private lateinit var repository: StatsRepository
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var mediaId: String
+    private val viewModels = ViewModelRegistry()
 
     private val timeZone = TimeZone.UTC
     private val now: Instant = LocalDateTime(2024, 6, 19, 15, 0).toInstant(timeZone)
@@ -63,7 +62,7 @@ class StatsViewModelTest {
         // viewModelScope dispatches on Dispatchers.Main; UnconfinedTestDispatcher runs launched
         // coroutines eagerly so uiState updates are observable without manually pumping a
         // TestCoroutineScheduler (same convention as LibraryViewModelTest).
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
         db = testAppDatabase()
         repository = StatsRepository(db)
         settingsRepository = SettingsRepository(db.appSettingsDao())
@@ -72,6 +71,10 @@ class StatsViewModelTest {
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope (and its stateIn/WhileSubscribed sharing
+        // coroutine) before closing the database or resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters.
+        viewModels.clearAll()
         db.close()
         Dispatchers.resetMain()
     }
@@ -80,11 +83,13 @@ class StatsViewModelTest {
         db.mediaItemDao().insert(sampleMediaItem(id = mediaId))
     }
 
-    private fun newViewModel() = StatsViewModel(
-        statsRepository = repository,
-        settingsRepository = settingsRepository,
-        timeZone = timeZone,
-        clock = clock,
+    private fun newViewModel() = viewModels.track(
+        StatsViewModel(
+            statsRepository = repository,
+            settingsRepository = settingsRepository,
+            timeZone = timeZone,
+            clock = clock,
+        ),
     )
 
     @Test

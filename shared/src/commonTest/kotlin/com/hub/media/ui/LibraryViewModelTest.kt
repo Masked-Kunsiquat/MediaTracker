@@ -19,10 +19,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 
 /**
  * [LibraryViewModel] tests against a real in-memory [AppDatabase] (via [testAppDatabase], the
@@ -38,20 +36,25 @@ class LibraryViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: BookRepository
     private lateinit var viewModel: LibraryViewModel
+    private val viewModels = ViewModelRegistry()
 
     @BeforeTest
     fun setUp() {
         // viewModelScope dispatches on Dispatchers.Main; UnconfinedTestDispatcher runs launched
         // coroutines eagerly so uiState updates are observable without manually pumping a
         // TestCoroutineScheduler.
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
         db = testAppDatabase()
         repository = BookRepository(db)
-        viewModel = LibraryViewModel(repository)
+        viewModel = viewModels.track(LibraryViewModel(repository))
     }
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope (and its stateIn/WhileSubscribed sharing
+        // coroutine) before closing the database or resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters.
+        viewModels.clearAll()
         db.close()
         Dispatchers.resetMain()
     }

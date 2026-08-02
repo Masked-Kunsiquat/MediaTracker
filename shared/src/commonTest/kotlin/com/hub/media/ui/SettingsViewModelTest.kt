@@ -12,10 +12,8 @@ import kotlin.test.assertEquals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 
 /**
  * [SettingsViewModel] tests against a real in-memory [AppDatabase] (same builder/style as
@@ -35,24 +33,29 @@ class SettingsViewModelTest {
 
     private lateinit var db: AppDatabase
     private lateinit var repository: SettingsRepository
+    private val viewModels = ViewModelRegistry()
 
     @BeforeTest
     fun setUp() {
         // viewModelScope dispatches on Dispatchers.Main; UnconfinedTestDispatcher runs launched
         // coroutines eagerly so uiState updates are observable without manually pumping a
         // TestCoroutineScheduler (same convention as LibraryViewModelTest/StatsViewModelTest).
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        viewModels.installMain()
         db = testAppDatabase()
         repository = SettingsRepository(db.appSettingsDao())
     }
 
     @AfterTest
     fun tearDown() {
+        // Cancel every ViewModel's viewModelScope (and its stateIn/WhileSubscribed sharing
+        // coroutine) before closing the database or resetting Main -- see ViewModelRegistry's
+        // KDoc for why this order matters.
+        viewModels.clearAll()
         db.close()
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel() = SettingsViewModel(settingsRepository = repository)
+    private fun newViewModel() = viewModels.track(SettingsViewModel(settingsRepository = repository))
 
     @Test
     fun uiState_initialValue_defaultsToMonday() {
