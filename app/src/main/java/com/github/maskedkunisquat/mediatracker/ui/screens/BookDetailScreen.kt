@@ -4,15 +4,18 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.content.ClipData
 import android.os.Build
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,9 +67,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -74,10 +80,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.BookDetailViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookDetailsEntity
@@ -245,8 +254,10 @@ fun BookDetailScreenRoute(
  *   [BookDetailUiState.Ready]), to navigate to the edit-metadata screen (ROADMAP Task 6 Phase A).
  * @param onStatusChange Called with the newly selected [ReadingStatus] from the header's quick
  *   status chip/dropdown (ROADMAP Task 6 Phase C), wired to [BookDetailViewModel.updateStatus].
- * @param onRefetchCover Called when the Details tab's "re-fetch cover" button is tapped (ROADMAP
- *   Task 6 Phase E), wired to [BookDetailViewModel.refetchCover].
+ * @param onRefetchCover Called when the "Re-fetch cover" item is selected from the Details tab
+ *   cover's long-press menu (ROADMAP Task 6 Phase E; moved off a standalone button and onto the
+ *   cover's own interactions in the books-polish pass -- see [InteractiveCoverBox]), wired to
+ *   [BookDetailViewModel.refetchCover].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -425,24 +436,29 @@ private fun DeleteBookConfirmationDialog(
 
 /**
  * Content for [BookDetailUiState.Ready]: a [PrimaryTabRow] splitting the screen into a Details tab
- * (cover/metadata header, reading status, progress -- see [DetailsTab]) and a Reading history tab
- * (timer, manual-entry affordance, session history -- see [ReadingHistoryTab]), per ROADMAP Task 6
- * Phase D. A Purchase & Borrow tab is deliberately NOT included -- that data model doesn't exist
- * yet (see ROADMAP's Task 6 Phase D note; tracked in the backlog).
+ * (cover/metadata header, reading status, progress, and -- as of the books-polish pass below --
+ * the live reading timer -- see [DetailsTab]) and a Reading history tab (manual-entry affordance,
+ * session history -- see [ReadingHistoryTab]), per ROADMAP Task 6 Phase D. **The timer moved from
+ * Reading history to Details in the books-polish pass**: users found it counter-intuitive that
+ * starting/stopping a reading session lived under a history tab rather than alongside the book
+ * itself; the manual-entry affordance and session list stay on Reading history unchanged. A
+ * Purchase & Borrow tab is deliberately NOT included -- that data model doesn't exist yet (see
+ * ROADMAP's Task 6 Phase D note; tracked in the backlog).
  *
  * ### State survives the tab split
  * [sessionToDelete]/[showManualEntry]/[sessionToEdit] (all pre-existing) and [selectedTabIndex]
  * (new) are all hoisted to this function, one level above the tab content -- switching tabs never
- * tears down or recreates them, so a dialog opened from the Reading history tab (the only tab
- * whose rows/buttons open one) keeps working exactly as before regardless of which tab happens to
- * be selected when it renders; the dialogs themselves ([PendingSessionDialog]/
- * [ManualSessionDialog]/[DeleteSessionConfirmationDialog]) are rendered unconditionally on this
- * same state below, outside the `when (selectedTabIndex)` branch, so they overlay whichever tab is
- * showing rather than only the one that opened them. [state.errorMessage] is likewise rendered
- * here, above the tab content, rather than inside either tab -- it now surfaces failures from
- * session mutations, book deletion, status changes, *and* [onRefetchCover] (ROADMAP Task 6 Phase
- * E), so pinning its display to one specific tab would hide it whenever that failure happened to
- * originate from an action on the other tab.
+ * tears down or recreates them, so a dialog opened from either tab (Reading history's manual-entry/
+ * delete dialogs, or Details' pending-timer-session dialog now that the timer lives there) keeps
+ * working exactly as before regardless of which tab happens to be selected when it renders; the
+ * dialogs themselves ([PendingSessionDialog]/[ManualSessionDialog]/[DeleteSessionConfirmationDialog])
+ * are rendered unconditionally on this same state below, outside the `when (selectedTabIndex)`
+ * branch, so they overlay whichever tab is showing rather than only the one that opened them.
+ * [state.errorMessage] is likewise rendered here, above the tab content, rather than inside either
+ * tab -- it now surfaces failures from session mutations, book deletion, status changes, *and*
+ * [onRefetchCover] (ROADMAP Task 6 Phase E, now triggered from the cover's long-press menu rather
+ * than a standalone button -- see [BookHeader]), so pinning its display to one specific tab would
+ * hide it whenever that failure happened to originate from an action on the other tab.
  */
 @Composable
 private fun BookDetailContent(
@@ -523,6 +539,12 @@ private fun BookDetailContent(
                 currentProgress = state.currentProgress,
                 coverStorageDir = coverStorageDir,
                 isRefetchingCover = state.isRefetchingCover,
+                timerState = timerState,
+                elapsedSeconds = elapsedSeconds,
+                onStartReading = onStartReading,
+                onPauseReading = onPauseReading,
+                onResumeReading = onResumeReading,
+                onStopReading = onStopReading,
                 onStatusChange = onStatusChange,
                 onCopyIsbn = onCopyIsbn,
                 onRefetchCover = onRefetchCover,
@@ -530,12 +552,6 @@ private fun BookDetailContent(
             )
             1 -> ReadingHistoryTab(
                 sessions = state.sessions,
-                timerState = timerState,
-                elapsedSeconds = elapsedSeconds,
-                onStartReading = onStartReading,
-                onPauseReading = onPauseReading,
-                onResumeReading = onResumeReading,
-                onStopReading = onStopReading,
                 onLogManuallyClick = { sessionToEdit = null; showManualEntry = true },
                 onEditSessionClick = { session -> sessionToEdit = session; showManualEntry = true },
                 onDeleteSessionClick = { session -> sessionToDelete = session },
@@ -589,17 +605,20 @@ private fun BookDetailContent(
 
 /**
  * Details tab content (ROADMAP Task 6 Phase D): cover + metadata header, reading status, and
- * progress -- see [BookHeader] -- plus the "re-fetch cover" affordance (ROADMAP Task 6 Phase E) --
- * see [RefetchCoverSection].
+ * progress -- see [BookHeader] -- plus the live reading timer (moved here from Reading history in
+ * the books-polish pass, see [BookDetailContent]'s KDoc). The "re-fetch cover" affordance (ROADMAP
+ * Task 6 Phase E) no longer lives here as a standalone button either -- it moved onto the cover
+ * image itself (tap to enlarge, long-press for a menu containing it), see [BookHeader].
  *
  * ### Selectable/copyable text (ROADMAP backlog, addressed alongside this phase)
  * [BookHeader] is wrapped in a [SelectionContainer] so its title/ISBN/format/etc. text can be
  * long-press selected and copied, applied narrowly to just this metadata block per the backlog
  * item's own caveat (long-press selection conflicts with clickable elements) -- [BookHeader]
- * itself wraps its one clickable child (the status [AssistChip]) and the ISBN copy button in
- * [DisableSelection] so neither's tap handling is disrupted. This tab has no session rows or
- * library cards (those live on the Reading history tab and the library screen respectively, and
- * are NOT wrapped in [SelectionContainer] anywhere), so no further carve-out is needed here.
+ * itself wraps its clickable/long-pressable children (the status [AssistChip], the ISBN copy
+ * button, and the cover image) in [DisableSelection] so none of their tap/long-press handling is
+ * disrupted. This tab has no session rows or library cards (those live on the Reading history tab
+ * and the library screen respectively, and are NOT wrapped in [SelectionContainer] anywhere), so
+ * no further carve-out is needed here.
  */
 @Composable
 private fun DetailsTab(
@@ -608,6 +627,12 @@ private fun DetailsTab(
     currentProgress: Double?,
     coverStorageDir: String,
     isRefetchingCover: Boolean,
+    timerState: ReadingTimerState,
+    elapsedSeconds: Long,
+    onStartReading: () -> Unit,
+    onPauseReading: () -> Unit,
+    onResumeReading: () -> Unit,
+    onStopReading: () -> Unit,
     onStatusChange: (ReadingStatus) -> Unit,
     onCopyIsbn: (String) -> Unit,
     onRefetchCover: () -> Unit,
@@ -626,85 +651,35 @@ private fun DetailsTab(
                 details = details,
                 currentProgress = currentProgress,
                 coverStorageDir = coverStorageDir,
+                isRefetchingCover = isRefetchingCover,
                 onStatusChange = onStatusChange,
                 onCopyIsbn = onCopyIsbn,
+                onRefetchCover = onRefetchCover,
             )
         }
 
-        RefetchCoverSection(
-            hasIsbn = !details?.isbn.isNullOrBlank(),
-            isRefetchingCover = isRefetchingCover,
-            onRefetchCover = onRefetchCover,
+        TimerCard(
+            timerState = timerState,
+            elapsedSeconds = elapsedSeconds,
+            onStart = onStartReading,
+            onPause = onPauseReading,
+            onResume = onResumeReading,
+            onStop = onStopReading,
         )
     }
 }
 
 /**
- * "Re-fetch cover" affordance (ROADMAP Task 6 Phase E): re-runs metadata lookup + cover download +
- * content-addressed storage for this book's recorded ISBN (see
- * [com.hub.media.features.books.domain.RefetchCoverUseCase]), for books added before the
- * field-level cover fallback existed and therefore have no stored cover with no other way to get
- * one.
- *
- * ### Why a button on the Details tab rather than a TopAppBar/overflow icon
- * Edit and Delete (the TopAppBar's existing icons) are frequent, one-tap, whole-book actions
- * relevant regardless of which tab is showing. Re-fetching a cover is different: it's a rare,
- * corrective action scoped specifically to the cover image, most naturally discovered right next
- * to the cover it affects (this tab's [BookHeader]) rather than the app-wide TopAppBar. Placing it
- * here also leaves room for an inline explanation when it's disabled ([hasIsbn] is false) --
- * something a disabled, greyed-out TopAppBar icon has no space to convey.
- *
- * @param hasIsbn Whether the book has an ISBN on record. When false, the button is disabled and an
- *   explanatory [Text] is shown instead of silently doing nothing on tap -- there's no ISBN to look
- *   a cover up by (and no edit surface to add one; ISBN is intentionally not editable, see
- *   [com.hub.media.features.books.data.BookRepository.updateBookMetadata]'s KDoc).
- * @param isRefetchingCover Whether a refetch is currently in flight (ROADMAP Task 6 Phase E),
- *   disabling the button and showing a small spinner so a double-tap can't fire two concurrent
- *   lookups.
- */
-@Composable
-private fun RefetchCoverSection(
-    hasIsbn: Boolean,
-    isRefetchingCover: Boolean,
-    onRefetchCover: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        OutlinedButton(
-            onClick = onRefetchCover,
-            enabled = hasIsbn && !isRefetchingCover,
-        ) {
-            if (isRefetchingCover) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            Text(stringResource(R.string.refetch_cover_button))
-        }
-        if (!hasIsbn) {
-            Text(
-                text = stringResource(R.string.refetch_cover_no_isbn),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-/**
- * Reading history tab content (ROADMAP Task 6 Phase D): the timer card, manual-entry affordance,
- * and session history list -- everything that was previously interleaved with the header in a
- * single scrolling column. [onEditSessionClick]/[onDeleteSessionClick] receive the whole
- * [ReadingSessionEntity] (rather than just its id) so [BookDetailContent] can populate
+ * Reading history tab content (ROADMAP Task 6 Phase D): the manual-entry affordance and session
+ * history list. **The live timer moved to the Details tab in the books-polish pass** (see
+ * [BookDetailContent]'s KDoc) -- this tab keeps only the manual-entry affordance and the session
+ * list, per that same change's scope. [onEditSessionClick]/[onDeleteSessionClick] receive the
+ * whole [ReadingSessionEntity] (rather than just its id) so [BookDetailContent] can populate
  * `sessionToEdit`/`sessionToDelete` exactly as it did before this was split out.
  */
 @Composable
 private fun ReadingHistoryTab(
     sessions: List<ReadingSessionEntity>,
-    timerState: ReadingTimerState,
-    elapsedSeconds: Long,
-    onStartReading: () -> Unit,
-    onPauseReading: () -> Unit,
-    onResumeReading: () -> Unit,
-    onStopReading: () -> Unit,
     onLogManuallyClick: () -> Unit,
     onEditSessionClick: (ReadingSessionEntity) -> Unit,
     onDeleteSessionClick: (ReadingSessionEntity) -> Unit,
@@ -715,17 +690,6 @@ private fun ReadingHistoryTab(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            TimerCard(
-                timerState = timerState,
-                elapsedSeconds = elapsedSeconds,
-                onStart = onStartReading,
-                onPause = onPauseReading,
-                onResume = onResumeReading,
-                onStop = onStopReading,
-            )
-        }
-
         item {
             TextButton(onClick = onLogManuallyClick) {
                 Text(stringResource(R.string.log_session_manually))
@@ -760,20 +724,29 @@ private fun ReadingHistoryTab(
 }
 
 /**
- * Cover + metadata header: cover thumbnail (left), title/release year/ISBN/format/total pages/
- * status and current progress (right). ISBN/format/total pages are only shown when [details] is
- * non-null and the individual field is present; [currentProgress] formatting is delegated to
- * [formatProgress]. The reading status (ROADMAP Task 6 Phase C) is rendered as a tappable
- * [AssistChip] that opens a [DropdownMenu] of every [ReadingStatus] -- a quick, one-tap status
- * change without leaving this screen for the full edit-metadata form (`EditBookScreen`'s status
- * radio group is for a deliberate full-form edit; this chip is for the common "just finished this"
- * / "started reading this" case). Hidden entirely when [details] is null (nothing to change yet —
- * the data-integrity edge case documented on [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
+ * Cover + metadata header: cover thumbnail (left, now interactive -- see [InteractiveCoverBox]),
+ * title/release year/ISBN/format/total pages/status and current progress (right). ISBN/format/
+ * total pages are only shown when [details] is non-null and the individual field is present;
+ * [currentProgress] formatting is delegated to [formatProgress]. The reading status (ROADMAP Task
+ * 6 Phase C) is rendered as a tappable [AssistChip] that opens a [DropdownMenu] of every
+ * [ReadingStatus] -- a quick, one-tap status change without leaving this screen for the full
+ * edit-metadata form (`EditBookScreen`'s status radio group is for a deliberate full-form edit;
+ * this chip is for the common "just finished this" / "started reading this" case). Hidden entirely
+ * when [details] is null (nothing to change yet — the data-integrity edge case documented on
+ * [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
  *
- * The status [AssistChip] and the ISBN's copy [IconButton] are each wrapped in [DisableSelection]
- * (ROADMAP backlog: selectable/copyable text) since the caller ([DetailsTab]) wraps this whole
- * composable in a [SelectionContainer] -- without the carve-out, long-press-to-select would
- * conflict with each element's own tap handling.
+ * ### Cover interactions replace the standalone re-fetch button (books-polish pass)
+ * The cover thumbnail's tap-to-enlarge / long-press-to-refetch behavior is implemented by
+ * [InteractiveCoverBox] -- see its KDoc for how [isRefetchingCover]/[onRefetchCover] and the
+ * no-ISBN explanation (previously inline body text next to a standalone
+ * [OutlinedButton][androidx.compose.material3.OutlinedButton]) survive the move onto the cover
+ * itself.
+ *
+ * The status [AssistChip], the ISBN's copy [IconButton], and the cover ([InteractiveCoverBox]) are
+ * each wrapped in [DisableSelection] (ROADMAP backlog: selectable/copyable text) since the caller
+ * ([DetailsTab]) wraps this whole composable in a [SelectionContainer] -- without the carve-out,
+ * long-press-to-select would conflict with each element's own tap/long-press handling (most
+ * notably the cover's long-press-for-menu gesture, which is the same gesture selection uses).
  */
 @Composable
 private fun BookHeader(
@@ -781,22 +754,22 @@ private fun BookHeader(
     details: BookDetailsEntity?,
     currentProgress: Double?,
     coverStorageDir: String,
+    isRefetchingCover: Boolean,
     onStatusChange: (ReadingStatus) -> Unit,
     onCopyIsbn: (String) -> Unit,
+    onRefetchCover: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .width(120.dp)
-                .height(160.dp),
-        ) {
-            CoverImage(
-                coverDir = coverStorageDir,
+        DisableSelection {
+            InteractiveCoverBox(
+                coverStorageDir = coverStorageDir,
                 coverImageHash = book.coverImageHash,
-                modifier = Modifier.fillMaxSize(),
+                hasIsbn = !details?.isbn.isNullOrBlank(),
+                isRefetchingCover = isRefetchingCover,
+                onRefetchCover = onRefetchCover,
             )
         }
 
@@ -829,7 +802,10 @@ private fun BookHeader(
                                 .size(32.dp)
                                 .semantics { contentDescription = copyIsbnDescription },
                         ) {
-                            Text(text = "📋", style = MaterialTheme.typography.bodyMedium)
+                            Icon(
+                                painter = painterResource(R.drawable.ic_content_copy),
+                                contentDescription = null,
+                            )
                         }
                     }
                 }
@@ -860,6 +836,154 @@ private fun BookHeader(
                     StatusChip(status = details.status, onStatusChange = onStatusChange)
                 }
             }
+        }
+    }
+}
+
+/**
+ * The Details tab's cover thumbnail (books-polish pass), replacing the standalone "Re-fetch cover"
+ * [OutlinedButton][androidx.compose.material3.OutlinedButton] that used to sit below [BookHeader]
+ * on [DetailsTab]:
+ * - **Tap** opens the cover enlarged in a [Dialog] ([EnlargedCoverDialog]) with
+ *   [ContentScale.Fit], dismissible by tapping the enlarged image or the system back
+ *   gesture/button.
+ * - **Long-press** opens a [DropdownMenu] anchored on the cover with a single item that re-runs
+ *   [onRefetchCover] (ROADMAP Task 6 Phase E's re-fetch-cover action).
+ *
+ * [Modifier.combinedClickable] provides the tap/long-press pair (`onClickLabel`/`onLongClickLabel`
+ * give each gesture an accessible name for screen readers, since there's no visible label on the
+ * cover itself the way the old button had "Re-fetch cover" text).
+ *
+ * ### Every piece of the old button's state survives the move
+ * - [isRefetchingCover] disables the menu item exactly as it disabled the old button, and is
+ *   *additionally* surfaced as a translucent overlay spinner directly on the cover -- unlike the
+ *   old button's inline spinner (only visible once you'd already found the button), this stays
+ *   visible regardless of whether the long-press menu happens to be open.
+ * - The no-ISBN case ([hasIsbn] false) still disables the action and still explains why. The old
+ *   button showed [R.string.refetch_cover_no_isbn] as a separate line of body text next to the
+ *   (disabled) button; with no button left to put that text "next to", the same string is now the
+ *   *menu item's own text* while it's disabled for that reason -- reachable the same way the
+ *   action itself is reached (long-press), rather than a snackbar the user would have to trigger
+ *   separately to learn why nothing happened.
+ * - Failures (metadata lookup, download, save) are unchanged: they still flow into
+ *   [BookDetailUiState.Ready.errorMessage] and surface via [BookDetailContent]'s existing banner,
+ *   exactly as the old button's failures did -- nothing here duplicates that.
+ *
+ * Sized by [BOOK_COVER_ASPECT_RATIO] (2:3) rather than the previous fixed 120dp x 160dp (3:4) box
+ * that used to make [ContentScale.Crop] slice the top/bottom off many covers, and rendered with
+ * [ContentScale.Fit] (the header's own default via [CoverImage]'s `contentScale` param) so nothing
+ * is cropped here the way [LibraryScreen]'s grid rows intentionally still crop for a uniform look.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun InteractiveCoverBox(
+    coverStorageDir: String,
+    coverImageHash: String?,
+    hasIsbn: Boolean,
+    isRefetchingCover: Boolean,
+    onRefetchCover: () -> Unit,
+) {
+    var showEnlargedCover by remember { mutableStateOf(false) }
+    var showCoverMenu by remember { mutableStateOf(false) }
+    val viewCoverLabel = stringResource(R.string.cover_view_action_label)
+    val coverOptionsLabel = stringResource(R.string.cover_options_action_label)
+    val refetchingDescription = stringResource(R.string.refetch_cover_in_progress)
+
+    Box(
+        modifier = Modifier
+            .width(120.dp)
+            .aspectRatio(BOOK_COVER_ASPECT_RATIO)
+            .combinedClickable(
+                onClickLabel = viewCoverLabel,
+                onClick = { showEnlargedCover = true },
+                onLongClickLabel = coverOptionsLabel,
+                onLongClick = { showCoverMenu = true },
+            ),
+    ) {
+        CoverImage(
+            coverDir = coverStorageDir,
+            coverImageHash = coverImageHash,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
+
+        if (isRefetchingCover) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .semantics { contentDescription = refetchingDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    strokeWidth = 3.dp,
+                    color = Color.White,
+                )
+            }
+        }
+
+        DropdownMenu(expanded = showCoverMenu, onDismissRequest = { showCoverMenu = false }) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = when {
+                            !hasIsbn -> stringResource(R.string.refetch_cover_no_isbn)
+                            isRefetchingCover -> stringResource(R.string.refetch_cover_in_progress)
+                            else -> stringResource(R.string.refetch_cover_button)
+                        },
+                    )
+                },
+                onClick = {
+                    showCoverMenu = false
+                    onRefetchCover()
+                },
+                enabled = hasIsbn && !isRefetchingCover,
+            )
+        }
+    }
+
+    if (showEnlargedCover) {
+        EnlargedCoverDialog(
+            coverStorageDir = coverStorageDir,
+            coverImageHash = coverImageHash,
+            onDismiss = { showEnlargedCover = false },
+        )
+    }
+}
+
+/**
+ * Full-size cover view (books-polish pass), opened by tapping the Details tab's cover thumbnail
+ * ([InteractiveCoverBox]). Rendered with [ContentScale.Fit] (never [ContentScale.Crop]) so the
+ * whole cover is visible, sized to [BOOK_COVER_ASPECT_RATIO] within most of the screen's width
+ * ([DialogProperties.usePlatformDefaultWidth] set to `false` so `fillMaxWidth` isn't capped by the
+ * platform's default dialog width). Dismissible by tapping anywhere on the enlarged image, or by
+ * the system back gesture/button (the [Dialog]'s default `onDismissRequest`/back handling, left as
+ * the default rather than suppressed the way [PendingSessionDialog] deliberately suppresses it --
+ * this dialog holds no unsaved user input to protect against an accidental dismiss).
+ */
+@Composable
+private fun EnlargedCoverDialog(
+    coverStorageDir: String,
+    coverImageHash: String?,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .aspectRatio(BOOK_COVER_ASPECT_RATIO)
+                .clickable(onClick = onDismiss),
+        ) {
+            CoverImage(
+                coverDir = coverStorageDir,
+                coverImageHash = coverImageHash,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
         }
     }
 }
@@ -1997,7 +2121,8 @@ private fun BookDetailScreenLoadingPreview() {
 /**
  * Preview of the Details tab's content in isolation (ROADMAP Task 6 Phase D -- previews now cover
  * both tabs, alongside [BookDetailScreenReadyPreview] above which renders the whole screen
- * defaulted to this same tab).
+ * defaulted to this same tab). Now also covers the timer card (books-polish pass moved it here
+ * from Reading history) alongside the interactive cover.
  */
 @Preview(showBackground = true)
 @Composable
@@ -2009,6 +2134,12 @@ private fun DetailsTabPreview() {
             currentProgress = 78.0,
             coverStorageDir = "/fake/path",
             isRefetchingCover = false,
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
             onStatusChange = {},
             onCopyIsbn = {},
             onRefetchCover = {},
@@ -2016,19 +2147,16 @@ private fun DetailsTabPreview() {
     }
 }
 
-/** Preview of the Reading history tab's content in isolation (ROADMAP Task 6 Phase D). */
+/**
+ * Preview of the Reading history tab's content in isolation (ROADMAP Task 6 Phase D). No longer
+ * includes the timer card (books-polish pass moved it to [DetailsTabPreview]/[DetailsTab]).
+ */
 @Preview(showBackground = true)
 @Composable
 private fun ReadingHistoryTabPreview() {
     MediaTrackerTheme {
         ReadingHistoryTab(
             sessions = PREVIEW_SESSIONS,
-            timerState = ReadingTimerState.Idle,
-            elapsedSeconds = 0,
-            onStartReading = {},
-            onPauseReading = {},
-            onResumeReading = {},
-            onStopReading = {},
             onLogManuallyClick = {},
             onEditSessionClick = {},
             onDeleteSessionClick = {},

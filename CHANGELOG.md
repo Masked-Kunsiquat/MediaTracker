@@ -191,32 +191,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All new/changed strings added via string resources (`app/src/main/res/values/strings.xml`).
 - **Book Detail screen tabs** (ROADMAP Task 6 Phase D, `app/.../ui/screens/BookDetailScreen.kt`):
   the single scrolling column is split into a `PrimaryTabRow` with two tabs — **Details** (cover +
-  metadata header, reading status, progress; new private `DetailsTab` composable) and **Reading
-  history** (timer card, manual-entry affordance, session history; new private `ReadingHistoryTab`
-  composable). No Purchase & Borrow tab — that data model doesn't exist yet (moved to the backlog
-  below, alongside manual cover entry). `sessionToDelete`/`showManualEntry`/`sessionToEdit` (all
-  pre-existing) and the new `selectedTabIndex` are all hoisted one level above the tab content in
-  `BookDetailContent`, so switching tabs never tears down a dialog opened from the Reading history
-  tab; `PendingSessionDialog`/`ManualSessionDialog`/`DeleteSessionConfirmationDialog` render
-  unconditionally on that same state, outside the `when (selectedTabIndex)` branch, so they overlay
-  whichever tab is showing. `state.errorMessage`'s banner moved from inside the (now-split) content
-  column to directly below the `PrimaryTabRow` — it now surfaces failures from session mutations,
-  book deletion, status changes, *and* the new cover-refetch action below, so pinning it to one
-  specific tab would have hidden it whenever the failing action originated from the other tab.
-  `BookDetailScreen`/`BookDetailContent` gain no new required parameters for the tab split itself
-  (tab index is local UI state); `@Preview`s updated to cover both tabs (`DetailsTabPreview`,
-  `ReadingHistoryTabPreview`, alongside the existing whole-screen previews which default to the
-  Details tab).
+  metadata header, reading status, progress, **and the live reading timer**; new private
+  `DetailsTab` composable) and **Reading history** (manual-entry affordance, session history; new
+  private `ReadingHistoryTab` composable). *(The timer card was originally placed on Reading
+  history when this phase first shipped; a books-polish pass — see below — moved it to Details,
+  since users expect to start/stop reading from the same screen as the book itself rather than a
+  history tab. `DetailsTab`/`ReadingHistoryTab`'s parameter lists reflect that final split
+  directly; there was never a released version with the timer on Reading history.)* No Purchase &
+  Borrow tab — that data model doesn't exist yet (moved to the backlog below, alongside manual
+  cover entry). `sessionToDelete`/`showManualEntry`/`sessionToEdit` (all pre-existing) and the new
+  `selectedTabIndex` are all hoisted one level above the tab content in `BookDetailContent`, so
+  switching tabs never tears down a dialog opened from either tab (Reading history's manual-entry/
+  delete dialogs, or Details' pending-timer-session dialog); `PendingSessionDialog`/
+  `ManualSessionDialog`/`DeleteSessionConfirmationDialog` render unconditionally on that same
+  state, outside the `when (selectedTabIndex)` branch, so they overlay whichever tab is showing.
+  `state.errorMessage`'s banner moved from inside the (now-split) content column to directly below
+  the `PrimaryTabRow` — it now surfaces failures from session mutations, book deletion, status
+  changes, *and* the cover-refetch action below, so pinning it to one specific tab would have
+  hidden it whenever the failing action originated from the other tab. `BookDetailScreen`/
+  `BookDetailContent` gain no new required parameters for the tab split itself (tab index is local
+  UI state); `@Preview`s updated to cover both tabs (`DetailsTabPreview`, `ReadingHistoryTabPreview`,
+  alongside the existing whole-screen previews which default to the Details tab).
 - **Selectable/copyable text** (ROADMAP backlog item, addressed alongside Phase D since it touches
   the same file): the Details tab's `BookHeader` metadata block (title/release year/ISBN/format/
   total pages/progress) is wrapped in a `SelectionContainer` so it can be long-press selected and
-  copied, applied narrowly per the backlog item's own caveat — the status `AssistChip` and the new
-  ISBN copy button (both clickable) are each wrapped in `DisableSelection` so long-press selection
-  never conflicts with their tap handling. Session rows and library cards are untouched (no
-  `SelectionContainer` around either). Explicit tap-to-copy added on the ISBN value specifically: a
-  small `IconButton` (a "📋" glyph, since `material-icons-core` has no content-copy vector — same
-  constraint the Stats screen's toolbar icon already documents) with a content description, using
-  `LocalClipboard`/`ClipEntry` — the current, non-deprecated Compose clipboard API in this project's
+  copied, applied narrowly per the backlog item's own caveat — the status `AssistChip`, the ISBN
+  copy button, and (as of the books-polish pass below) the cover thumbnail's own tap/long-press
+  handling are each wrapped in `DisableSelection` so long-press selection never conflicts with
+  their tap handling. Session rows and library cards are untouched (no `SelectionContainer` around
+  either). Explicit tap-to-copy added on the ISBN value specifically: a small `IconButton` with a
+  content description, using `LocalClipboard`/`ClipEntry` — the current, non-deprecated Compose
+  clipboard API in this project's
   resolved Compose BOM (verified against the actual resolved `androidx.compose.ui:ui-android:1.11.4`
   artifact: it declares both `LocalClipboardManager` — deprecated — and `LocalClipboard`/
   `ClipEntry`/`Clipboard`, so the latter was used rather than guessed at) rather than the deprecated
@@ -275,20 +280,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     untouched — this only ever *adds* a cover, never removes one. `BookDetailViewModel` gains a new
     required `refetchCoverUseCase` constructor param and a `refetchCover()` method (double-tap-guarded
     via a new `isRefetchingCover` flag on `BookDetailUiState.Ready`, surfacing failures via the
-    existing `errorMessage` convention); `AppContainer` wires a new `refetchCoverUseCase`. Surfaced on
-    the Book Detail screen's Details tab as an `OutlinedButton` (not a TopAppBar/overflow icon,
-    chosen because — unlike the always-relevant Edit/Delete icons — this is a rare, cover-specific
-    corrective action best discovered next to the cover it affects, with room for an inline
-    explanation when disabled) — disabled with an explanatory message when the book has no ISBN on
-    record, and showing a small spinner while in flight. 7 new `RefetchCoverUseCaseTest` cases (happy
-    path updates the hash and writes the file, no ISBN, blank ISBN, provider-coverless leaves the
-    existing hash, metadata-lookup failure leaves the existing hash, download failure leaves the
-    existing hash and writes no file, unknown media id) plus a `BookDetailViewModelTest` case proving
-    the ViewModel plumbs a use-case failure through to `errorMessage` and resets `isRefetchingCover`.
+    existing `errorMessage` convention); `AppContainer` wires a new `refetchCoverUseCase`. Surfaced
+    on the Book Detail screen's Details tab cover thumbnail's long-press menu (not a TopAppBar/
+    overflow icon, chosen because — unlike the always-relevant Edit/Delete icons — this is a rare,
+    cover-specific corrective action best discovered right on the cover it affects; see the
+    books-polish pass below for why it ended up on the cover's own interactions rather than the
+    standalone button this phase first shipped it as) — disabled with an explanatory message when
+    the book has no ISBN on record, and showing an in-flight overlay spinner directly on the cover
+    while a refetch is running. 7 new `RefetchCoverUseCaseTest` cases (happy path updates the hash
+    and writes the file, no ISBN, blank ISBN, provider-coverless leaves the existing hash,
+    metadata-lookup failure leaves the existing hash, download failure leaves the existing hash and
+    writes no file, unknown media id) plus a `BookDetailViewModelTest` case proving the ViewModel
+    plumbs a use-case failure through to `errorMessage` and resets `isRefetchingCover`.
   - **Deliberately NOT implemented this phase** (moved to the backlog below): bulk cover backfill
     across a whole library (the `?default=false` probe's rate limit needs its own throttling for
     that; the per-book affordance above never risks it), and manual cover entry (paste a URL / pick a
     local image — needs a file-picker permission story that belongs in its own phase).
+- **Books-polish pass** — user-reported issues in the just-landed Task 6 Phase D/E work above,
+  fixed before any of it reaches a tagged release (this bullet amends the two bullets above rather
+  than describing a separately-shipped feature):
+  - **Cover aspect ratio** (`CoverImage.kt`, `LibraryScreen.kt`, `BookDetailScreen.kt`): `CoverImage`
+    hardcoded `ContentScale.Crop` with no say for the caller, and neither call site pinned an aspect
+    ratio, so covers rendered at whatever the source image happened to be. On the Library screen the
+    cover `Box` constrained width only (`fillMaxWidth(0.2f)`) and let height float free, so a tall
+    cover stretched the whole row absurdly tall; on the Detail screen header the `Box` was a fixed
+    120dp × 160dp (3:4), narrower/squarer than a typical ~2:3 book cover, so `Crop` sliced the top
+    and bottom off nearly every cover. Fixed by giving `CoverImage` a `contentScale: ContentScale =
+    ContentScale.Crop` parameter (default preserves prior behavior for any caller that doesn't pass
+    one) and adding a single shared `BOOK_COVER_ASPECT_RATIO = 2f / 3f` constant in `CoverImage.kt`,
+    applied via `Modifier.aspectRatio(BOOK_COVER_ASPECT_RATIO)` at both call sites so every cover
+    gets the same predictable footprint regardless of its actual pixel dimensions. The placeholder
+    branch (`CoverPlaceholder`) already rendered whatever `modifier` it was given, so it automatically
+    honors the same aspect-ratio footprint as the image branch — no separate fix needed there, and no
+    ragged rows when some covers are missing and others aren't. Library keeps `ContentScale.Crop`
+    (its `Box` is now `.fillMaxWidth(0.2f).padding(4.dp).aspectRatio(BOOK_COVER_ASPECT_RATIO)`,
+    `CoverImage`'s own modifier `Modifier.fillMaxSize()`) since a uniform card-grid look is the goal
+    and a small crop is an acceptable trade for every row being the same height; the Detail header's
+    cover switches to `ContentScale.Fit` (`Box` is now `.width(120.dp).aspectRatio(
+    BOOK_COVER_ASPECT_RATIO)`, i.e. 120dp × 180dp) so the whole cover is visible there instead.
+  - **ISBN copy icon** (`BookDetailScreen.kt`): the copy `IconButton` rendered a `"📋"` emoji
+    `Text` because `material-icons-core` (this project's curated icon set) has no content-copy
+    glyph — the same constraint already documented on the Stats screen's toolbar icon — and adding
+    `material-icons-extended` for one icon isn't justified (AGENTS.md §5: no unnecessary
+    dependencies). Fixed with a new hand-added vector, `app/src/main/res/drawable/ic_content_copy.xml`
+    (the standard Material "content copy" 24dp glyph), rendered via
+    `Icon(painter = painterResource(R.drawable.ic_content_copy), ...)` and tinted through the normal
+    `LocalContentColor` `Icon` already applies — no dependency added, no behavior change to the
+    click/clipboard/description logic below it.
+  - **Timer moved from Reading history to the Details tab** (`BookDetailScreen.kt`): described
+    inline in the "Book Detail screen tabs" entry above — `TimerCard` (and the pending-session
+    dialog's trigger path, i.e. `onStartReading`/`onPauseReading`/`onResumeReading`/`onStopReading`/
+    `timerState`/`elapsedSeconds`) moved from `ReadingHistoryTab` to `DetailsTab`; the manual-entry
+    affordance and session history list stay on Reading history. `sessionToDelete`/
+    `showManualEntry`/`sessionToEdit`/`pendingSession` dialogs remain hoisted in `BookDetailContent`
+    above the `when (selectedTabIndex)` branch (pre-existing Phase D structure, verified unchanged),
+    so they keep overlaying whichever tab is showing regardless of which tab the timer now lives on.
+  - **Cover interactions replace the standalone "Re-fetch cover" button** (`BookDetailScreen.kt`):
+    the `OutlinedButton` below `BookHeader` is gone; a new private `InteractiveCoverBox` wraps the
+    Detail header's cover in `Modifier.combinedClickable` (`ExperimentalFoundationApi`, opted into
+    on that composable) — **tap** opens the cover enlarged in a new `EnlargedCoverDialog`
+    (`ContentScale.Fit`, sized to `BOOK_COVER_ASPECT_RATIO` at 90% screen width via
+    `DialogProperties(usePlatformDefaultWidth = false)`, dismissible by tapping the image or the
+    system back gesture); **long-press** opens a `DropdownMenu` anchored on the cover with a single
+    "Re-fetch cover" `DropdownMenuItem` wired to the existing `onRefetchCover` callback. Every prior
+    state/behavior of the removed button survives the move: the in-flight `isRefetchingCover` state
+    still disables the menu item, and is *additionally* shown as a translucent overlay spinner
+    directly on the cover (visible regardless of whether the menu happens to be open, unlike the old
+    button's inline spinner which only showed once you'd found the button); the no-ISBN case still
+    disables the action, and its explanatory text (`refetch_cover_no_isbn`, unchanged string) is now
+    reached by long-pressing the cover and reading the (disabled) menu item's own text, rather than
+    a separate line of body text next to a button that no longer exists; error surfacing is
+    unchanged (`BookDetailUiState.Ready.errorMessage`'s existing banner above the tab content, not
+    duplicated locally). The cover's whole interactive `Box` is wrapped in `DisableSelection`, same
+    as the status chip and ISBN copy button, since it sits inside `BookHeader`'s `SelectionContainer`
+    (Phase D backlog item) — without it, long-press-to-select would fight long-press-to-open-menu for
+    the same gesture; verified the menu still opens correctly with the wrapper in place. Two new
+    accessible click/long-click labels (`cover_view_action_label`, `cover_options_action_label`) and
+    an in-flight label (`refetch_cover_in_progress`) added as string resources; no new user-visible
+    text was hardcoded.
 
 ## [0.4.0] - 2026-08-01
 

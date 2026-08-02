@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -258,16 +260,21 @@ private fun BookCard(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // Cover image (thumbnail)
+        // Cover image (thumbnail). Width is bounded by fillMaxWidth(0.2f); height was previously
+        // unconstrained, so a cover's actual pixel aspect dictated row height and rows went
+        // ragged. aspectRatio(BOOK_COVER_ASPECT_RATIO) now pins every cover to the same 2:3
+        // footprint -- Crop is kept (not Fit) since a uniform card-grid look is the goal here,
+        // unlike the detail screen header (see BookHeader) where nothing should be cropped.
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.2f)
-                .padding(4.dp),
+                .padding(4.dp)
+                .aspectRatio(BOOK_COVER_ASPECT_RATIO),
         ) {
             CoverImage(
                 coverDir = coverStorageDir,
                 coverImageHash = mediaItem.coverImageHash,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
             )
         }
 

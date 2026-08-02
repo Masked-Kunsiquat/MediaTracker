@@ -42,7 +42,7 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
 The book domain gets finished before any other media type starts: real-world use of
 v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no way to
 correct them, redundant form fields, no session editing, no reading status) to justify
-going wide. Movies & TV move to Task 8.
+going wide. Movies & TV move to Task 9.
 
 - **Phase A — Edit book metadata (done).** User-facing correction flow for title, release year,
   purchase price (in the schema since v1 but never displayed or editable anywhere), total
@@ -117,7 +117,54 @@ going wide. Movies & TV move to Task 8.
     one-book-at-a-time re-fetch affordance, but explicitly NOT used in any bulk/loop context this
     phase (see backlog for the deferred bulk-backfill item this constrains).
 
-## Task 7 — Search & discovery
+## Task 7 — UI revamp & settings (next)
+
+Task 6 made the book domain functionally complete; this task makes it pleasant. Prioritized
+ahead of search because these are the screens in daily use, and the rough edges were reported
+from real use rather than inferred.
+
+- **Details tab revamp.** Currently a plain metadata list plus the timer. Needs a considered
+  layout/visual hierarchy rather than stacked `Text` rows.
+- **Reading history revamp.** A timeline view rather than a flat list, with the individual
+  session events rendered more cleanly (dates, durations, progress deltas as visual elements
+  instead of concatenated strings).
+- **Edit screen revamp.** Same treatment — it is currently a bare column of text fields.
+- **Explicit per-book tracking mode (pages vs percent).** Today the mode is *inferred* from
+  whether `totalPages` is known, which is invisible to the user and flips silently the moment
+  total pages is edited. Replace with an explicit per-book field, editable on the Edit screen,
+  defaulted intelligently on ingestion (known page count → pages; ebook without one → percent).
+  Requires **Room schema v4** (tracking-mode column + tested `Migration_3_4` per AGENTS.md §8).
+- **Settings screen** — the app has no home for app-wide preferences and now needs one. First
+  occupant: **week start day** (Monday per ISO-8601, or Sunday per US convention), which drives
+  the Stats screen's period bounds.
+  - Stats period semantics decided: "this week"/"this month" stay **calendar** periods (week =
+    the chosen start day 00:00 → same weekday next week; month = 1st → 1st, local timezone),
+    NOT rolling 7/30-day windows. Only the week's start day becomes configurable. Note the
+    existing documented staleness: period bounds are computed when the ViewModel is constructed,
+    so a session spanning midnight/Monday rollover needs a re-subscribe to re-bucket.
+
+## Task 8 — Data portability
+
+The vision doc calls CSV export/import and `.sqlite` backups "first-class support," but none of
+it exists — which means an app whose entire premise is *no cloud* currently offers the user no
+way to get their data out or back it up. Real reading data is accumulating now, so this is
+scheduled ahead of search. (`android:allowBackup="true"` means Android Auto Backup may be
+snapshotting the database to Google Drive, but that is invisible, size-capped, not restorable on
+demand, and depends on exactly the cloud this app's premise rejects — it is not the answer.)
+
+- **CSV export**: `library_export.csv` and `reading_logs_export.csv` per the vision doc. Must
+  round-trip everything the schema holds, including nullable `durationSeconds` (unknown must not
+  export as `0`), reading status, `finishedAt`, and formats.
+- **CSV import**: the harder half. Needs a duplicate policy (match on ISBN? on title+year?
+  skip/merge/replace), validation mirroring the use-case layer rather than a second divergent
+  copy, and an all-or-nothing transaction so a malformed row can't half-import a library.
+- **`.sqlite` backup + restore**: whole-database file copy out, and restore back in. Restore must
+  refuse a file whose `user_version` is newer than the running app understands, rather than
+  letting Room fail obscurely at open time.
+- Establishes the Storage Access Framework / file-picker plumbing the app has never needed
+  before — which also makes the deferred **manual cover entry** backlog item cheap afterward.
+
+## Task 9 — Search & discovery
 
 ISBN-only entry is the book domain's remaining bottleneck — a book can only be added while
 physically in hand (or with its ISBN hunted down), so title/author search is what actually
@@ -154,28 +201,81 @@ personal-scale libraries don't need one).
   book rather than an unrelated product.
 - This is a new third-party dependency approved by the user per AGENTS.md §5 ("no unnecessary
   dependencies without explicit project context approval").
+- **Manual entry** belongs here too: the vision doc lists "manual entry, ISBN typing, and future
+  barcode scanning" as three input paths, but only ISBN exists today — a book with no usable
+  ISBN (older editions, self-published, damaged barcode) simply cannot be added. Needs a
+  create-book form that writes straight through `BookRepository.addBook` with no provider lookup.
 
-## Task 8 — Movies & TV
+## Task 10 — Re-read modeling
+
+Today a re-read is invisible: sessions just keep appending to the same flat list, status flips
+back to `READING`, and `finishedAt` is overwritten — so "I read this in 6 weeks the first time
+and 4 days the second" is unrecoverable. The vision doc asks for "completion milestones and
+individual session histories per read-through."
+
+- Group reading sessions into numbered read-throughs, each with its own completion state and
+  finish date; the Book Detail reading-history view separates them.
+- **Room schema v5** (read-through table or session grouping column + tested `Migration_4_5`),
+  with the migration assigning every existing session to read-through #1 so no history is lost.
+- Per-read stats become possible (duration per read, pages/day per read) and feed Task 11.
+
+## Task 11 — Analytics & stats revamp
+
+The vision doc's "rich offline analytics" pillar, minus the financial half (explicitly declined
+for now — see Unscheduled features for why the purchase-data prerequisite is parked).
+
+- **Reading velocity**: pages/hour and minutes/page. Derives from existing session data with no
+  schema change, but must exclude null-duration sessions from any rate (an unknown duration
+  cannot contribute to a speed) the same way time-read totals already do.
+- **GitHub-style activity heatmap** of reading days. Derives from session dates, no schema
+  change, and gives the Stats screen the visual anchor it currently lacks.
+- Absorbs the former "stats screen visual polish" backlog item, including replacing
+  `Icons.Filled.Info` as the library-toolbar entry point (material-icons-core has no chart glyph,
+  so this needs a local vector drawable — the same approach used for the ISBN copy icon).
+
+## Task 12 — Genre tracking
+
+Specified in `docs/project-idea.md` from the outset — "multi-genre tagging per title with custom
+user taxonomies and hex color coding," plus genre filtering — but never carried into this roadmap
+and never implemented: there is no genre column, table, or UI anywhere today.
+
+- Genres table plus a many-to-many join table (a title holds several genres), user-defined
+  taxonomies, a hex color per genre, a management UI, and library filtering by genre.
+- **Room schema v6** (+ tested `Migration_5_6`).
+- Open question when scheduled: whether to seed suggestions from provider metadata (Open
+  Library `subjects` are numerous and messy; Google Books `categories` are cleaner but coarse) or
+  keep the taxonomy purely user-authored.
+
+## Task 13 — Movies & TV
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
-- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v4,
-  assuming Task 6 Phase C lands v3 first) under the §8 schema-freeze rule (version bump +
-  tested `Migration`).
+- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v7, assuming
+  v4 tracking mode, v5 read-throughs, and v6 genres land first) under the §8 schema-freeze rule
+  (version bump + tested `Migration`).
+- Note this has now slid from Task 6 to Task 13 as book-domain work kept taking priority. That
+  reflects a real preference — the book side is what's in daily use — but it is worth an explicit
+  decision rather than continued drift if multi-media matters sooner.
+- The vision doc's Phase 2 also describes a **unified dashboard** (cross-media totals, combined
+  spending, active timers, an "Up Next" queue). Not separately scheduled; it only makes sense
+  once a second media type exists.
 - Library/media-type UI generalization (type filter, non-book detail screens).
 
-## Backlog / tech debt
+## Blocked on external changes
+
+Nothing to schedule — these unblock when an upstream dependency moves.
 
 - AGP 9 workaround: remove `android.builtInKotlin=false` + `android.newDsl=false` once KSP
   supports `com.android.kotlin.multiplatform.library` (google/ksp#2476); flags die in AGP 10.
-- On-device smoke test of the full add-book flow (only exercised via JVM tests so far);
-  first migration-on-device check (v1 → v2) rides along with the v0.4.0 install.
-- Lifecycle pinned to 2.10.0 and core-ktx to 1.17.0 until compileSdk 37.
-- Stats screen visual polish (acceptable as v1 today: plain cards, `Icons.Filled.Info` as
-  the library-toolbar entry because material-icons-core has no chart glyph).
-- Purchase/borrow tracking (lending a book out, borrow sources, purchase history) — data
-  model + schema work; prerequisite for the Book Detail Purchase & Borrow tab (Task 6
-  Phase D note).
+- Lifecycle pinned to 2.10.0 and core-ktx to 1.17.0 until the project moves to compileSdk 37.
+
+## Backlog / tech debt
+
+Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
+numbered task rather than left to be rediscovered.
+
+- On-device smoke test of the full add-book flow (only exercised via JVM tests so far); the
+  first on-device migration checks (v1 → v2, then v2 → v3) ride along with the next installs.
 - Session edit truncates `timestampEnd` seconds to `:00`. Material 3's `TimePicker` has no
   seconds field, so re-saving an edited session rebuilds its end timestamp at `:00` even
   when the time was never touched. Judged low priority rather than fixed alongside the
@@ -195,5 +295,30 @@ personal-scale libraries don't need one).
   throttling before it can safely loop `RefetchCoverUseCase` over an entire library.
 - Manual cover entry (paste a URL or pick a local image, Task 6 Phase E). Deferred because a
   local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
-  scoped storage considerations) that belongs in its own phase rather than riding along with the
-  rest of Phase E's provider-driven cover fixes.
+  scoped storage considerations) — Task 8 establishes exactly that plumbing for CSV/backup, so
+  this becomes cheap once Task 8 lands and should be picked up right after it.
+
+## Unscheduled features
+
+One item. Everything else that used to sit here now has a task number — if this section grows
+past a couple of entries again, that is the signal to schedule rather than to keep adding.
+
+- **Purchase/borrow tracking** (lending a book out, borrow sources, purchase history), implied
+  by the vision doc's "filtering across ... purchase dates" and its "captures ... purchase date,
+  price, and store source". `purchasePrice` exists on `MediaItemEntity`, but there is no purchase
+  *date*, no store source, no lending state, and no borrow source. Prerequisite for two deferred
+  things: the Book Detail "Purchase & Borrow" tab (Task 6 Phase D) and the vision's **financial
+  analytics** (shelf totals, average cost per book, cost per page read), which were explicitly
+  declined for now — cost-per-page in particular also needs page counts to be trustworthy.
+  Unscheduled because nothing downstream is currently waiting on it; schedule it when the
+  financial analytics or the lending workflow actually matter. Schema bump + tested migration
+  required.
+
+## Source of truth note
+
+`docs/project-idea.md` is the original vision and contains requirements that never reached this
+roadmap (genre tracking and data portability both went missing for months, and were only caught
+by auditing that document against this one). When adding a task, check it. Items from it now
+accounted for: data portability (Task 8), manual entry (Task 9), re-read mechanics (Task 10),
+velocity + heatmap (Task 11), genres (Task 12), unified dashboard (Task 13 note), purchase/store
+source and financial analytics (Unscheduled), orphaned-cover garbage collection (backlog).

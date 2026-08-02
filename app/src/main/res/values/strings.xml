@@ -66,6 +66,9 @@
     <string name="isbn_copied_message">ISBN copied to clipboard</string>
     <string name="refetch_cover_button">Re-fetch cover</string>
     <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
+    <string name="refetch_cover_in_progress">Re-fetching cover…</string>
+    <string name="cover_view_action_label">View enlarged cover</string>
+    <string name="cover_options_action_label">Cover options</string>
 
     <!-- ReadingStatus display labels (shared by BookDetailScreen, EditBookScreen, LibraryScreen) -->
     <string name="reading_status_to_read">To read</string>
