@@ -154,4 +154,22 @@
     <string name="export_success_message">Export saved successfully</string>
     <string name="export_failure_message">Export failed — nothing was saved</string>
     <string name="export_cancelled_message">Export cancelled</string>
+
+    <!-- SettingsScreen: data import (ROADMAP Task 8 Phase B) -->
+    <string name="settings_import_label">Import library</string>
+    <string name="settings_import_description">Restore or merge a library/reading-history CSV export. Reading history is optional and asked for after the library file.</string>
+    <string name="settings_import_button">Import from CSV</string>
+    <string name="settings_import_duplicate_policy_label">When a book/session already exists</string>
+    <string name="settings_import_duplicate_policy_description">Controls what happens when an imported row matches something already in your library.</string>
+    <string name="duplicate_policy_skip">Skip</string>
+    <string name="duplicate_policy_replace">Replace</string>
+    <string name="duplicate_policy_merge">Merge</string>
+    <string name="import_cancelled_message">Import cancelled</string>
+    <string name="import_failure_message">Couldn\'t read the selected file</string>
+    <string name="import_summary_title">Import finished</string>
+    <string name="import_summary_books_line">Books: %1$d imported, %2$d skipped, %3$d replaced, %4$d merged</string>
+    <string name="import_summary_sessions_line">Sessions: %1$d imported, %2$d skipped, %3$d replaced, %4$d merged</string>
+    <string name="import_summary_rejections_title">Not imported (%1$d row(s)):</string>
+    <string name="import_summary_rejection_line">%1$s row %2$d: %3$s</string>
+    <string name="import_summary_no_rejections">Every row imported cleanly.</string>
 </resources>

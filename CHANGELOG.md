@@ -34,6 +34,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     new `ExportViewModel` (`Idle`/`Loading`/`Success`/`Error`, mirroring `AddBookViewModel`'s
     existing shape) — the app module owns all file I/O, per AGENTS.md §6.
   - No schema change; Room stays at v4.
+- **CSV import** (ROADMAP Task 8 Phase B) — the harder half of data portability: the Settings
+  screen's "Data" section gains an "Import library" action alongside export, reading
+  `library_export.csv`/`reading_logs_export.csv` back via SAF `ActivityResultContracts.
+  OpenDocument` (still no new permission; manifest unchanged) and writing to the real database
+  through one all-or-nothing transaction.
+  - **A genuine RFC 4180 reader** (`CsvReader`), not `split(",")`: handles quoted commas/quotes and
+    embedded newlines (a multi-line session note parses as one field, not extra rows). An
+    unterminated quote fails the whole file closed rather than guessing where it ends; a
+    completely empty file parses to zero rows with no opinion on headers.
+  - **`CsvTableReader`** layers structural validation on top: refuses a file with an unrecognized
+    header, a data row whose column count doesn't match the header, or (deliverable: version
+    compatibility) a `csv_schema_version` **newer** than this build understands, with a message
+    telling the user to update the app rather than mis-parsing an unknown column layout.
+  - **`ImportDataUseCase`** with an explicit, user-visible `DuplicatePolicy` (`SKIP`/`REPLACE`/
+    **`MERGE`** — merge is a hard requirement per the Goodreads-import groundwork, not just
+    skip-or-replace): matches an incoming book by `media_id`, then ISBN, then case-insensitive
+    title+release-year as a last resort (documented weakness: no author column exists yet, so two
+    same-titled/same-year books by different authors would over-match on this last tier). MERGE
+    only backfills fields the existing row left null (releaseYear/purchasePrice/isbn/totalPages,
+    plus any external-identifier provider not already on record) and never overwrites a value
+    that's already set; REPLACE overwrites everything this importer manages except `createdAt`
+    and `coverImageHash` (CSV carries no image bytes, so a foreign hash is never written over an
+    existing cover reference).
+  - **All-or-nothing**: every resolved insert/update is queued and applied through one new
+    `ImportWriteDao.importAtomically` transaction (mirroring `BookWriteDao`'s existing
+    `@Transaction` pattern) — a constraint violation partway through rolls back everything already
+    applied in that same call, verified by a forced-mid-failure test. Structural file problems
+    (bad header, wrong column count, unterminated quote, unsupported version) refuse the entire
+    import before any write is attempted; a semantically bad *row* (blank title, out-of-range
+    year, a session whose `media_id` isn't a known book) is skipped and reported instead of
+    aborting everything else in the file.
+  - **Orphan reading-session rows are skipped-with-report, not silently dropped or fatal**: a
+    session whose `media_id` matches neither the existing library nor the library file being
+    imported alongside it is counted as a rejection with a reason, while every other valid row
+    still imports.
+  - **The `PROVIDER:id|...` packed-identifier hazard is handled, not assumed away**: each `|`
+    segment splits on only its *first* `:`, so a provider id containing `:` round-trips correctly;
+    a segment with no `:` at all (the fallout of an id containing a literal `|`, which this
+    encoding cannot losslessly represent) is detected and rejects that row with a clear reason
+    instead of silently mis-splitting it.
+  - Validation reuses the existing rules instead of forking a second copy: extracted
+    `BookMetadataValidation` (title/price/pages/year bounds, ex-`BookRepository`) and
+    `ReadingSessionValidation` (timestamp/duration/position rules, ex-`ReadingSessionRepository`/
+    `LogReadingSessionUseCase`) are now shared by both the manual-edit paths and the importer.
+  - The import summary shown to the user always states counts (imported/skipped/merged/replaced,
+    per file) and every rejection's reason — never a bare "done."
+  - The strongest test added this phase: an export-then-import round trip over a populated
+    in-memory database, asserting the freshly-imported data matches the original field-for-field.
+  - No schema change; Room stays at v4 (`ImportWriteDao` is a new DAO only, like `StatsDao` before
+    it — no `@Entity` changed).
 
 ## [0.6.0] - 2026-08-02
 

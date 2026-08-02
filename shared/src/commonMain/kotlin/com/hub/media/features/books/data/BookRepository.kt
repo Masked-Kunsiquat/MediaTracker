@@ -11,6 +11,7 @@ import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
+import com.hub.media.features.books.domain.BookMetadataValidation
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -262,20 +263,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         status: ReadingStatus,
         trackingMode: TrackingMode,
     ): Resource<Unit> {
-        if (title.isBlank()) {
-            return Resource.Error("Title must not be blank")
-        }
-        if (purchasePrice != null && purchasePrice < 0.0) {
-            return Resource.Error("Purchase price must not be negative")
-        }
-        if (totalPages != null && totalPages <= 0) {
-            return Resource.Error("Total pages must be a positive number")
-        }
-        if (releaseYear != null && releaseYear !in MIN_RELEASE_YEAR..MAX_RELEASE_YEAR) {
-            return Resource.Error(
-                "Release year must be between $MIN_RELEASE_YEAR and $MAX_RELEASE_YEAR",
-            )
-        }
+        // Delegates to BookMetadataValidation (ROADMAP Task 8 Phase B extraction) so this exact
+        // rule set is also available to the CSV importer without forking a second copy -- see
+        // that object's KDoc.
+        BookMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
+        BookMetadataValidation.validatePurchasePrice(purchasePrice)?.let { return Resource.Error(it) }
+        BookMetadataValidation.validateTotalPages(totalPages)?.let { return Resource.Error(it) }
+        BookMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
 
         return try {
             // Only read for resolveFinishedAt's transition decision (old status/finishedAt) --

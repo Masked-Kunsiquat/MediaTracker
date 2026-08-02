@@ -10,7 +10,9 @@ import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.ExportDataUseCase
+import com.hub.media.features.portability.domain.ImportDataUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.stats.data.StatsRepository
 
@@ -99,6 +101,21 @@ public class AppContainer(
     public val exportDataUseCase: ExportDataUseCase = ExportDataUseCase(
         bookRepository = bookRepository,
         readingSessionRepository = readingSessionRepository,
+    )
+
+    /**
+     * CSV data-import workflow (ROADMAP Task 8 Phase B), consumed by [ImportViewModel] from the
+     * Settings screen. [importWriteRepository] wraps the single all-or-nothing write transaction
+     * ([com.hub.media.core.database.dao.ImportWriteDao.importAtomically]); [bookRepository]/
+     * [readingSessionRepository] are reused for reading the current-library snapshot import needs
+     * for duplicate matching, same as [exportDataUseCase] reuses them for reading everything out.
+     */
+    private val importWriteRepository: ImportWriteRepository = ImportWriteRepository(database)
+
+    public val importDataUseCase: ImportDataUseCase = ImportDataUseCase(
+        bookRepository = bookRepository,
+        readingSessionRepository = readingSessionRepository,
+        importWriteRepository = importWriteRepository,
     )
 
     /**

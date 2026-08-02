@@ -10,6 +10,7 @@ import com.hub.media.core.database.dao.AppSettingsDao
 import com.hub.media.core.database.dao.BookDetailsDao
 import com.hub.media.core.database.dao.BookWriteDao
 import com.hub.media.core.database.dao.ExternalIdentifierDao
+import com.hub.media.core.database.dao.ImportWriteDao
 import com.hub.media.core.database.dao.MediaItemDao
 import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
@@ -42,6 +43,11 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * [com.hub.media.core.database.entities.TrackingMode]'s KDoc) and the new [AppSettingEntity]
  * key-value settings table (see its KDoc for why that shape was chosen over a typed table), both
  * via [MIGRATION_3_4] (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
+ *
+ * [ImportWriteDao] (ROADMAP Task 8 Phase B, CSV import's single all-or-nothing write transaction)
+ * was likewise added on top of version 4 without a further version bump -- same reasoning as
+ * [StatsDao] above: a new DAO changes the Kotlin-visible query surface only, not the exported
+ * schema (no `@Entity` was added, changed, or removed).
  */
 @Database(
     entities = [
@@ -64,6 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookWriteDao(): BookWriteDao
     abstract fun statsDao(): StatsDao
     abstract fun appSettingsDao(): AppSettingsDao
+    abstract fun importWriteDao(): ImportWriteDao
 }
 
 /**

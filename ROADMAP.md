@@ -202,13 +202,22 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   empty field, never `0`), reading status, `finishedAt`, and formats (enums by name). Hand-rolled
   RFC 4180 escaping, no CSV dependency. A `csv_schema_version` column on every row is the version
   marker Phase B's importer will read. No schema change.
-- **CSV import**: the harder half. Needs a duplicate policy (match on ISBN? on title+year?
-  skip/merge/replace), validation mirroring the use-case layer rather than a second divergent
-  copy, and an all-or-nothing transaction so a malformed row can't half-import a library. The
-  duplicate policy must support **merging into an existing book**, not only skip-or-replace — the
-  Goodreads import below depends on merge being available so a later re-import can backfill fields
-  the model doesn't have a home for yet, rather than needing a staging table now or blocking on
-  Task 12.
+- **CSV import (done)**: the harder half. A hand-rolled RFC 4180 reader (`CsvReader`, not
+  `split(",")`, handling quoted commas/quotes and embedded newlines as single fields) plus
+  `CsvTableReader`'s structural validation (header/column-count/`csv_schema_version` compatibility
+  — refuses a file newer than this build understands) sit under `ImportDataUseCase`, which
+  supports an explicit, user-visible `DuplicatePolicy` (`SKIP`/`REPLACE`/**`MERGE`**) matching an
+  incoming book by `media_id`, then ISBN, then title+release-year as a last resort. MERGE only
+  backfills fields the existing row left null, never overwriting a value already set — exactly
+  what a later Goodreads re-import needs to backfill fields the model doesn't have a home for yet
+  (see that bullet below), without a staging table or blocking on Task 12. Every resolved
+  insert/update is applied through one new `ImportWriteDao.importAtomically` transaction
+  (all-or-nothing, verified by a forced-mid-failure rollback test); structural file problems fail
+  the whole import before any write, while a semantically bad row (or an orphaned reading session
+  whose book isn't known) is skipped and reported rather than aborting everything else. Validation
+  reuses the existing use-case-layer rules (`BookMetadataValidation`/`ReadingSessionValidation`,
+  extracted from `BookRepository`/`ReadingSessionRepository`/`LogReadingSessionUseCase`) rather
+  than forking a divergent copy. No schema change; Room stays at v4.
 - **`.sqlite` backup + restore**: whole-database file copy out, and restore back in. Restore must
   refuse a file whose `user_version` is newer than the running app understands, rather than
   letting Room fail obscurely at open time.

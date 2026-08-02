@@ -7,6 +7,7 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.ExportViewModel
+import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
@@ -148,6 +149,25 @@ class ExportViewModelFactory(private val appContainer: AppContainer) : ViewModel
         return when {
             modelClass.isAssignableFrom(ExportViewModel::class.java) -> {
                 ExportViewModel(appContainer.exportDataUseCase) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [ImportViewModel] with its
+ * [com.hub.media.features.portability.domain.ImportDataUseCase] dependency from the
+ * [AppContainer] (ROADMAP Task 8 Phase B). Reused across navigations to the Settings screen the
+ * same way [ExportViewModelFactory] is -- both ViewModels are constructed side by side by the
+ * same route composable.
+ */
+class ImportViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(ImportViewModel::class.java) -> {
+                ImportViewModel(appContainer.importDataUseCase) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

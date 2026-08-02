@@ -27,6 +27,12 @@ package com.hub.media.features.portability.csv
  * A future importer (ROADMAP Task 8's later phases) reads this column from the first data row and
  * refuses/warns on a file whose value it does not recognize, rather than guessing at a column
  * layout it was never written for.
+ *
+ * **Phase B update**: that importer is [com.hub.media.features.portability.csv.CsvTableReader],
+ * which reads this column from the first data row and refuses the whole file if its value is
+ * *newer* than [CSV_SCHEMA_VERSION] -- see that object's KDoc for the exact check and for the
+ * forward plan on what an *older* value would mean once a `v2` format exists (nothing today: `v1`
+ * is still the only version ever produced).
  */
 public const val CSV_SCHEMA_VERSION: Int = 1
 

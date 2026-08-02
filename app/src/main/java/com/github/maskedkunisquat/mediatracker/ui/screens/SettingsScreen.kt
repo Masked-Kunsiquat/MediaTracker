@@ -8,16 +8,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,15 +48,22 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.export.readCsvFromUri
 import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
 import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.features.portability.domain.CsvExportBundle
+import com.hub.media.features.portability.domain.DuplicatePolicy
+import com.hub.media.features.portability.domain.ImportRejection
+import com.hub.media.features.portability.domain.ImportSummary
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.ExportUiState
 import com.hub.media.ui.ExportViewModel
+import com.hub.media.ui.ImportUiState
+import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -74,8 +86,12 @@ fun SettingsScreenRoute(
     val exportViewModel: ExportViewModel = viewModel(
         factory = ExportViewModelFactory(appContainer),
     )
+    val importViewModel: ImportViewModel = viewModel(
+        factory = ImportViewModelFactory(appContainer),
+    )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val exportUiState by exportViewModel.uiState.collectAsStateWithLifecycle()
+    val importUiState by importViewModel.uiState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -83,6 +99,46 @@ fun SettingsScreenRoute(
     val exportSuccessMessage = stringResource(R.string.export_success_message)
     val exportFailureMessage = stringResource(R.string.export_failure_message)
     val exportCancelledMessage = stringResource(R.string.export_cancelled_message)
+    val importCancelledMessage = stringResource(R.string.import_cancelled_message)
+    val importFailureMessage = stringResource(R.string.import_failure_message)
+
+    // The duplicate-policy choice the user makes visible before every import (ROADMAP Task 8 Phase
+    // B brief: "make the duplicate policy a visible user choice rather than a hidden default").
+    // SKIP is the default -- the only policy that can never overwrite or discard existing data,
+    // matching AGENTS.md §1's "refuse and explain over guess and proceed" for the one screen that
+    // writes to the user's real library.
+    var duplicatePolicy by remember { mutableStateOf(DuplicatePolicy.SKIP) }
+
+    // Holds the library file's text between the two sequential SAF "open document" picks below,
+    // mirroring pendingBundle's export-side role: the reading-logs file is optional, so the second
+    // picker's Cancel still runs the import with just the library file, rather than the
+    // first-picker Cancel semantics below (which abort the whole import request).
+    var pendingLibraryCsvForImport by remember { mutableStateOf<String?>(null) }
+
+    val readingLogsImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val libraryCsv = pendingLibraryCsvForImport
+        pendingLibraryCsvForImport = null
+        val readingLogsCsv = uri?.let { readCsvFromUri(context, it) }
+        importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
+    }
+
+    val libraryImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
+            return@rememberLauncherForActivityResult
+        }
+        val content = readCsvFromUri(context, uri)
+        if (content == null) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(importFailureMessage) }
+            return@rememberLauncherForActivityResult
+        }
+        pendingLibraryCsvForImport = content
+        readingLogsImportLauncher.launch(arrayOf("text/*"))
+    }
 
     // Holds the generated bundle between the two sequential SAF "create document" picks below --
     // see SettingsScreen.kt's class-level export section KDoc for why both files are written from
@@ -139,13 +195,97 @@ fun SettingsScreenRoute(
         }
     }
 
+    // Import's Success state is rendered as a summary AlertDialog (below) rather than a Snackbar --
+    // a Snackbar's single line can't show per-row rejection reasons, and this phase's brief is
+    // explicit that a bare "done" is not an acceptable result for an operation that may have
+    // silently skipped rows otherwise. Error is still a Snackbar, matching export's convention,
+    // since a refused-outright import has no partial summary to show.
+    LaunchedEffect(importUiState) {
+        val state = importUiState
+        if (state is ImportUiState.Error) {
+            snackbarHostState.showSnackbar(state.message)
+            importViewModel.reset()
+        }
+    }
+
+    (importUiState as? ImportUiState.Success)?.let { state ->
+        ImportSummaryDialog(summary = state.summary, onDismiss = importViewModel::reset)
+    }
+
     SettingsScreen(
         uiState = uiState,
         onWeekStartDayChange = viewModel::setWeekStartDay,
         exportInProgress = exportUiState is ExportUiState.Loading,
         onExportClick = exportViewModel::exportData,
+        importInProgress = importUiState is ImportUiState.Loading,
+        duplicatePolicy = duplicatePolicy,
+        onDuplicatePolicyChange = { duplicatePolicy = it },
+        onImportClick = { libraryImportLauncher.launch(arrayOf("text/*")) },
         snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
+    )
+}
+
+/**
+ * Full import-result summary (ROADMAP Task 8 Phase B): per-file counts for every duplicate-policy
+ * outcome, plus every rejected row's reason (scrollable, since a large messy import could reject
+ * many rows) -- see [ImportSummary]'s KDoc for why a bare "done" isn't acceptable here.
+ */
+@Composable
+private fun ImportSummaryDialog(summary: ImportSummary, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onDismiss) { Text(stringResource(R.string.ok_button)) }
+        },
+        title = { Text(stringResource(R.string.import_summary_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    stringResource(
+                        R.string.import_summary_books_line,
+                        summary.booksImported,
+                        summary.booksSkipped,
+                        summary.booksReplaced,
+                        summary.booksMerged,
+                    ),
+                )
+                Text(
+                    stringResource(
+                        R.string.import_summary_sessions_line,
+                        summary.sessionsImported,
+                        summary.sessionsSkipped,
+                        summary.sessionsReplaced,
+                        summary.sessionsMerged,
+                    ),
+                )
+                if (summary.rejections.isEmpty()) {
+                    Text(stringResource(R.string.import_summary_no_rejections))
+                } else {
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(R.string.import_summary_rejections_title, summary.rejections.size),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    summary.rejections.forEach { rejection: ImportRejection ->
+                        Text(
+                            text = stringResource(
+                                R.string.import_summary_rejection_line,
+                                rejection.source.name,
+                                rejection.rowNumber,
+                                rejection.reason,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        },
     )
 }
 
@@ -172,6 +312,15 @@ fun SettingsScreenRoute(
  * @param snackbarHostState Hosts the success/failure/cancelled Snackbar the route composable shows
  *   once the export (and subsequent SAF writes) finish -- a silently failed export would be worse
  *   than no export button at all (this phase's task brief).
+ * @param importInProgress Whether a CSV import is currently running (ROADMAP Task 8 Phase B) --
+ *   wired to `ImportUiState.Loading`, disables the import button and shows a progress indicator so
+ *   a double-tap can't fire two concurrent imports.
+ * @param duplicatePolicy The currently-selected [DuplicatePolicy], shown as a visible three-way
+ *   choice rather than a hidden default (this phase's brief).
+ * @param onDuplicatePolicyChange Called with the newly selected [DuplicatePolicy].
+ * @param onImportClick Called when the import button is tapped, wired to launch the library-file
+ *   SAF picker. The actual SAF file-picker/read sequence and the resulting summary dialog happen
+ *   in the route composable, not here.
  * @param onNavigateBack Called when the back icon is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -181,6 +330,10 @@ fun SettingsScreen(
     onWeekStartDayChange: (WeekStartDay) -> Unit,
     exportInProgress: Boolean,
     onExportClick: () -> Unit,
+    importInProgress: Boolean,
+    duplicatePolicy: DuplicatePolicy,
+    onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
+    onImportClick: () -> Unit,
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
 ) {
@@ -223,6 +376,13 @@ fun SettingsScreen(
                         ExportDataSetting(
                             exportInProgress = exportInProgress,
                             onExportClick = onExportClick,
+                        )
+                        HorizontalDivider()
+                        ImportDataSetting(
+                            importInProgress = importInProgress,
+                            duplicatePolicy = duplicatePolicy,
+                            onDuplicatePolicyChange = onDuplicatePolicyChange,
+                            onImportClick = onImportClick,
                         )
                     }
                 }
@@ -351,6 +511,73 @@ private fun ExportDataSetting(
     }
 }
 
+/**
+ * The data-import setting row (ROADMAP Task 8 Phase B): a label/description, a visible
+ * [DuplicatePolicy] choice, and a single button that starts the SAF library-then-reading-logs
+ * file-picker sequence (the route composable's `ActivityResultContracts.OpenDocument` launchers).
+ *
+ * The [DuplicatePolicy] picker is deliberately placed *above* the import button, not hidden behind
+ * a settings menu or defaulted silently -- this phase's brief calls for making the duplicate
+ * policy "a visible user choice rather than a hidden default," since it directly controls whether
+ * an import can overwrite existing data.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImportDataSetting(
+    importInProgress: Boolean,
+    duplicatePolicy: DuplicatePolicy,
+    onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
+    onImportClick: () -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_import_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_import_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Text(
+            text = stringResource(R.string.settings_import_duplicate_policy_label),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text = stringResource(R.string.settings_import_duplicate_policy_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        val options = DuplicatePolicy.entries
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = duplicatePolicy == option,
+                    onClick = { onDuplicatePolicyChange(option) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    label = { Text(option.displayLabel()) },
+                )
+            }
+        }
+        Button(
+            onClick = onImportClick,
+            enabled = !importInProgress,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            if (importInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(stringResource(R.string.settings_import_button))
+            }
+        }
+    }
+}
+
 /** Preview of the Settings screen with the default (Monday) week-start-day selected. */
 @Preview(showBackground = true)
 @Composable
@@ -361,6 +588,10 @@ private fun SettingsScreenMondayPreview() {
             onWeekStartDayChange = {},
             exportInProgress = false,
             onExportClick = {},
+            importInProgress = false,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+            onDuplicatePolicyChange = {},
+            onImportClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -377,6 +608,10 @@ private fun SettingsScreenSundayPreview() {
             onWeekStartDayChange = {},
             exportInProgress = false,
             onExportClick = {},
+            importInProgress = false,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+            onDuplicatePolicyChange = {},
+            onImportClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -393,6 +628,10 @@ private fun SettingsScreenExportingPreview() {
             onWeekStartDayChange = {},
             exportInProgress = true,
             onExportClick = {},
+            importInProgress = false,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+            onDuplicatePolicyChange = {},
+            onImportClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
