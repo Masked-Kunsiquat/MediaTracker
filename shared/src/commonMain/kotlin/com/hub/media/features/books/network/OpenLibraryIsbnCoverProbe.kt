@@ -1,8 +1,9 @@
 package com.hub.media.features.books.network
 
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
+import io.ktor.client.request.head
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 
 private const val OPEN_LIBRARY_COVERS_ISBN_URL = "https://covers.openlibrary.org/b/isbn"
 
@@ -34,8 +35,15 @@ public class OpenLibraryIsbnCoverProbe(private val client: HttpClient) {
     /**
      * Probes `covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false` for [isbn].
      *
+     * Issues a `HEAD`, not a `GET`: this is a pure status check, and a `GET` against a cover URL
+     * buffers the entire image (tens of KB) into memory only for it to be discarded — wasteful for
+     * a probe whose whole answer is the status code. Verified against the live service that
+     * `covers.openlibrary.org` answers `HEAD` with the same status a `GET` would, for both the
+     * cover-exists and the `?default=false` no-cover cases.
+     *
      * @return The probed URL if the response is a 2xx success (a real cover exists), or `null` on
-     *   a 404 (no cover), any other non-success status, or a network/parse failure. Never throws.
+     *   a 404 (no cover), any other non-success status, or a network failure. Never throws, with
+     *   the deliberate exception of [CancellationException] (see below).
      *
      * ### On the network-failure branch being silent
      * A thrown exception (TLS failure, DNS failure, timeout, connection reset, etc.) is
@@ -53,8 +61,14 @@ public class OpenLibraryIsbnCoverProbe(private val client: HttpClient) {
     public suspend fun probeCoverUrl(isbn: String): String? {
         val url = "$OPEN_LIBRARY_COVERS_ISBN_URL/$isbn-L.jpg?default=false"
         return try {
-            val response = client.get(url)
+            val response = client.head(url)
             if (response.status.isSuccess()) url else null
+        } catch (e: CancellationException) {
+            // Must be caught before the broad `Exception` below and rethrown: coroutine
+            // cancellation propagates as an exception, so swallowing it to `null` would break
+            // structured concurrency -- a caller whose scope was cancelled mid-probe would carry
+            // on as though the probe had simply found no cover.
+            throw e
         } catch (e: Exception) {
             // See "On the network-failure branch being silent" above: no shared/ logging facility
             // exists to record `e` against, so a network/TLS failure and a genuine "no cover" are

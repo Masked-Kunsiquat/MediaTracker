@@ -42,7 +42,7 @@ Versioning follows AGENTS.md §8 — roughly one minor release per completed tas
 The book domain gets finished before any other media type starts: real-world use of
 v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no way to
 correct them, redundant form fields, no session editing, no reading status) to justify
-going wide. Movies & TV move to Task 9.
+going wide. Movies & TV move to Task 13.
 
 - **Phase A — Edit book metadata (done).** User-facing correction flow for title, release year,
   purchase price (in the schema since v1 but never displayed or editable anywhere), total

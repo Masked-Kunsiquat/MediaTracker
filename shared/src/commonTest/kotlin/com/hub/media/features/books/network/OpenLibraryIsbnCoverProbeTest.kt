@@ -4,6 +4,7 @@ import com.hub.media.core.network.createHttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -43,6 +44,21 @@ class OpenLibraryIsbnCoverProbeTest {
         val result = probe.probeCoverUrl("9780547928227")
 
         assertNull(result)
+        assertEquals(1, engine.requestHistory.size)
+    }
+
+    @Test
+    fun probeIssuesHeadRequest_notGet() = runTest {
+        // A GET against a cover URL would buffer the whole image just to read its status code;
+        // this probe only ever needs the status, so it must stay a HEAD.
+        val engine = MockEngine { request ->
+            assertEquals(HttpMethod.Head, request.method)
+            respondError(HttpStatusCode.NotFound)
+        }
+        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(engine))
+
+        probe.probeCoverUrl("9780547928227")
+
         assertEquals(1, engine.requestHistory.size)
     }
 
