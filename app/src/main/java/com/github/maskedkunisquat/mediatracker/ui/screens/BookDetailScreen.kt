@@ -22,12 +22,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +69,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
 import com.hub.media.ui.AppContainer
@@ -176,6 +180,7 @@ fun BookDetailScreenRoute(
             )
         },
         onEditBook = onNavigateToEditBook,
+        onStatusChange = viewModel::updateStatus,
     )
 }
 
@@ -220,6 +225,8 @@ fun BookDetailScreenRoute(
  *   Same argument shape/semantics as [onLogManualSession] -- see that parameter's doc.
  * @param onEditBook Called when the TopAppBar edit icon is tapped (only shown for
  *   [BookDetailUiState.Ready]), to navigate to the edit-metadata screen (ROADMAP Task 6 Phase A).
+ * @param onStatusChange Called with the newly selected [ReadingStatus] from the header's quick
+ *   status chip/dropdown (ROADMAP Task 6 Phase C), wired to [BookDetailViewModel.updateStatus].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -255,6 +262,7 @@ fun BookDetailScreen(
         notes: String?,
     ) -> Unit,
     onEditBook: () -> Unit,
+    onStatusChange: (ReadingStatus) -> Unit,
 ) {
     var showDeleteBookDialog by remember { mutableStateOf(false) }
 
@@ -322,6 +330,7 @@ fun BookDetailScreen(
                         onLogManualSession = onLogManualSession,
                         onDeleteSession = onDeleteSession,
                         onEditSession = onEditSession,
+                        onStatusChange = onStatusChange,
                     )
                 }
             }
@@ -402,6 +411,7 @@ private fun BookDetailContent(
         deltaPages: Int?,
         notes: String?,
     ) -> Unit,
+    onStatusChange: (ReadingStatus) -> Unit,
 ) {
     var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
     var showManualEntry by remember { mutableStateOf(false) }
@@ -421,6 +431,7 @@ private fun BookDetailContent(
                 details = state.details,
                 currentProgress = state.currentProgress,
                 coverStorageDir = coverStorageDir,
+                onStatusChange = onStatusChange,
             )
         }
 
@@ -526,9 +537,15 @@ private fun BookDetailContent(
 }
 
 /**
- * Cover + metadata header: cover thumbnail (left), title/release year/ISBN/format/total pages and
- * current progress (right). ISBN/format/total pages are only shown when [details] is non-null and
- * the individual field is present; [currentProgress] formatting is delegated to [formatProgress].
+ * Cover + metadata header: cover thumbnail (left), title/release year/ISBN/format/total pages/
+ * status and current progress (right). ISBN/format/total pages are only shown when [details] is
+ * non-null and the individual field is present; [currentProgress] formatting is delegated to
+ * [formatProgress]. The reading status (ROADMAP Task 6 Phase C) is rendered as a tappable
+ * [AssistChip] that opens a [DropdownMenu] of every [ReadingStatus] -- a quick, one-tap status
+ * change without leaving this screen for the full edit-metadata form (`EditBookScreen`'s status
+ * radio group is for a deliberate full-form edit; this chip is for the common "just finished this"
+ * / "started reading this" case). Hidden entirely when [details] is null (nothing to change yet —
+ * the data-integrity edge case documented on [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
  */
 @Composable
 private fun BookHeader(
@@ -536,6 +553,7 @@ private fun BookHeader(
     details: BookDetailsEntity?,
     currentProgress: Double?,
     coverStorageDir: String,
+    onStatusChange: (ReadingStatus) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -593,6 +611,38 @@ private fun BookHeader(
                     text = stringResource(R.string.progress_prefix, progressText),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (details != null) {
+                StatusChip(status = details.status, onStatusChange = onStatusChange)
+            }
+        }
+    }
+}
+
+/**
+ * Quick reading-status change control (ROADMAP Task 6 Phase C): an [AssistChip] showing [status]'s
+ * display label that opens a [DropdownMenu] of every [ReadingStatus] on tap. Selecting an entry
+ * calls [onStatusChange] and closes the menu; selecting the already-current status is a harmless
+ * no-op re-application (matches [com.hub.media.features.books.data.BookRepository.updateReadingStatus]'s
+ * own "re-saving the same FINISHED status preserves finishedAt" behavior).
+ */
+@Composable
+private fun StatusChip(status: ReadingStatus, onStatusChange: (ReadingStatus) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text(stringResource(R.string.status_prefix, status.displayLabel())) },
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ReadingStatus.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.displayLabel()) },
+                    onClick = {
+                        expanded = false
+                        onStatusChange(option)
+                    },
                 )
             }
         }
@@ -1629,6 +1679,7 @@ private fun BookDetailScreenReadyPreview() {
             onDeleteSession = {},
             onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
+            onStatusChange = {},
         )
     }
 }
@@ -1664,6 +1715,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             onDeleteSession = {},
             onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
+            onStatusChange = {},
         )
     }
 }
@@ -1690,6 +1742,7 @@ private fun BookDetailScreenLoadingPreview() {
             onDeleteSession = {},
             onEditSession = { _, _, _, _, _, _, _ -> },
             onEditBook = {},
+            onStatusChange = {},
         )
     }
 }

@@ -63,10 +63,20 @@ going wide. Movies & TV move to Task 8.
   numeric field in both session dialogs (positions, pages, duration) now gets the parse-once +
   isError + Save-gating validation the duration field already had, instead of silently collapsing
   bad input to `0`/`null`; fields are grouped into "When"/"How long"/"Progress" sections.
-- **Phase C — Reading status.** `TO_READ` / `READING` / `FINISHED` / `DNF` status on books —
-  the missing concept that forced deferring the "books finished" stat. Requires **Room
-  schema v3** (status column + tested `Migration_2_3` per AGENTS.md §8). Unlocks: the
-  books-finished stat (Stats screen), library filtering/sorting by status.
+- **Phase C — Reading status (done).** `ReadingStatus` (`TO_READ`/`READING`/`FINISHED`/`DNF`) added
+  to `BookDetailsEntity` — book-specific semantics, not promoted to `MediaItemEntity`; Task 8 will
+  scope its own movie/TV watch-state model rather than inherit this one. Room schema v3
+  (`book_details.status` + `book_details.finishedAt`) via a tested `MIGRATION_2_3` (simple
+  `ALTER TABLE ADD COLUMN`s, not a table rebuild — no existing constraint needed relaxing): a
+  pre-existing book with a `reading_sessions` row derives `READING`, every other pre-existing row
+  defaults to `TO_READ`; `finishedAt` starts `NULL` for all pre-existing rows (no pre-v3 signal ever
+  supports `FINISHED`). `BookRepository.updateBookMetadata`/new `updateReadingStatus` share a
+  `resolveFinishedAt` helper (stamps on entering `FINISHED`, preserves on staying, clears on
+  leaving); ingestion defaults new books to `TO_READ`. Unlocked: the books-finished stat — a
+  lifetime total (exact from v3 onward, no timestamp needed) plus a period-scoped "this week/month"
+  count via `finishedAt` (honest about only reflecting finishes recorded after this phase, never
+  fabricated for pre-v3 history) — and a library status filter (`FilterChip` row, client-side/
+  in-memory, sorting unchanged/still title-only).
 - **Phase D — Detail screen tabs.** Split the single scrolling column into tabs: Details /
   Reading history now; a Purchase & Borrow tab is deferred until purchase/borrow tracking
   exists as a feature (data model + schema work of its own).

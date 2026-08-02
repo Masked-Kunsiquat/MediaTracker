@@ -2,6 +2,7 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
@@ -65,7 +66,7 @@ class LibraryViewModelTest {
         val updated = viewModel.uiState.first { it.books.isNotEmpty() }
 
         assertEquals(1, updated.books.size)
-        assertEquals("Dune", updated.books.first().title)
+        assertEquals("Dune", updated.books.first().mediaItem.title)
         assertEquals(false, updated.isEmpty)
     }
 
@@ -82,5 +83,27 @@ class LibraryViewModelTest {
 
         val afterDelete = viewModel.uiState.first { it.books.isEmpty() }
         assertTrue(afterDelete.isEmpty)
+    }
+
+    @Test
+    fun setStatusFilter_narrowsFilteredBooksButNotBooks() = runTest {
+        val toReadResult = repository.addBook(title = "To Read Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(toReadResult)
+        val readingResult = repository.addBook(title = "Reading Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(readingResult)
+        repository.updateReadingStatus(readingResult.data, ReadingStatus.READING)
+
+        viewModel.uiState.first { it.books.size == 2 }
+
+        viewModel.setStatusFilter(ReadingStatus.READING)
+
+        val filtered = viewModel.uiState.first { it.statusFilter == ReadingStatus.READING }
+        assertEquals(2, filtered.books.size, "the unfiltered books list must be untouched by the filter")
+        assertEquals(1, filtered.filteredBooks.size)
+        assertEquals("Reading Book", filtered.filteredBooks.first().mediaItem.title)
+
+        viewModel.setStatusFilter(null)
+        val unfiltered = viewModel.uiState.first { it.statusFilter == null }
+        assertEquals(2, unfiltered.filteredBooks.size)
     }
 }

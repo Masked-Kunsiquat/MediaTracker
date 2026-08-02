@@ -7,9 +7,11 @@ import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -57,6 +59,26 @@ public class BookRepository(private val db: AppDatabase) {
         }
 
     /**
+     * Observes every book together with its [BookDetailsEntity] as a reactive stream (ROADMAP
+     * Task 6 Phase C: library status filtering needs each book's [BookDetailsEntity.status], which
+     * [observeAllBooks]'s bare [MediaItemEntity] list can't expose). Joins [observeAllBooks]'s
+     * title-ordered list with [com.hub.media.core.database.dao.BookDetailsDao.observeAll] by
+     * `mediaId`, preserving [observeAllBooks]'s title order — the join itself never reorders, it
+     * only attaches each item's details (or `null`, the same data-integrity edge case
+     * [observeBookDetail] documents) alongside it.
+     */
+    public fun observeAllBooksWithDetails(): Flow<List<BookWithDetails>> =
+        combine(
+            observeAllBooks(),
+            db.bookDetailsDao().observeAll(),
+        ) { mediaItems, allDetails ->
+            val detailsByMediaId = allDetails.associateBy { it.mediaId }
+            mediaItems.map { mediaItem ->
+                BookWithDetails(mediaItem = mediaItem, details = detailsByMediaId[mediaItem.id])
+            }
+        }
+
+    /**
      * Adds a new book with details and optional external identifiers in a single atomic
      * database transaction ([com.hub.media.core.database.dao.BookWriteDao.insertBookAtomically],
      * a `@Transaction` DAO method). If any of the inserts fails — including a duplicate
@@ -77,6 +99,11 @@ public class BookRepository(private val db: AppDatabase) {
      * @param externalIdentifiers Optional (provider, externalId) mappings to external catalogs.
      *   A duplicate provider in this list violates the composite primary key and fails the
      *   whole insert atomically.
+     * @param status Initial [ReadingStatus] (ROADMAP Task 6 Phase C). Defaults to
+     *   [ReadingStatus.TO_READ] — a book that was just added has, by definition, not been started
+     *   yet; [com.hub.media.features.books.domain.AddBookByIsbnUseCase] relies on this default
+     *   rather than passing it explicitly, since ISBN metadata carries no signal about whether the
+     *   user has already started/finished the physical copy they're cataloguing.
      * @return [Resource.Success] with the new media ID, or [Resource.Error] on failure.
      */
     public suspend fun addBook(
@@ -88,6 +115,7 @@ public class BookRepository(private val db: AppDatabase) {
         isbn: String? = null,
         coverImageHash: String? = null,
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
+        status: ReadingStatus = ReadingStatus.TO_READ,
     ): Resource<String> = try {
         val mediaId = newId()
         val now = Clock.System.now()
@@ -107,6 +135,7 @@ public class BookRepository(private val db: AppDatabase) {
             isbn = isbn,
             format = format,
             totalPages = totalPages,
+            status = status,
         )
 
         val identifierEntities = externalIdentifiers.map { (provider, externalId) ->
@@ -183,6 +212,8 @@ public class BookRepository(private val db: AppDatabase) {
      * @param purchasePrice New purchase price, or null to clear it.
      * @param totalPages New page count, or null for "unknown."
      * @param format New [BookFormat].
+     * @param status New [ReadingStatus] (ROADMAP Task 6 Phase C). [BookDetailsEntity.finishedAt] is
+     *   derived from the transition, not taken as a separate parameter — see [resolveFinishedAt].
      * @return [Resource.Success] if updated, or [Resource.Error] if [mediaId] does not exist or a
      *   validation rule above is violated (never throws).
      */
@@ -193,6 +224,7 @@ public class BookRepository(private val db: AppDatabase) {
         purchasePrice: Double? = null,
         totalPages: Int? = null,
         format: BookFormat,
+        status: ReadingStatus,
     ): Resource<Unit> {
         if (title.isBlank()) {
             return Resource.Error("Title must not be blank")
@@ -219,6 +251,11 @@ public class BookRepository(private val db: AppDatabase) {
                 releaseYear = releaseYear,
                 purchasePrice = purchasePrice,
             )
+            val finishedAt = resolveFinishedAt(
+                newStatus = status,
+                oldStatus = existingDetails?.status ?: ReadingStatus.TO_READ,
+                oldFinishedAt = existingDetails?.finishedAt,
+            )
             val updatedDetails = (
                 existingDetails ?: BookDetailsEntity(
                     mediaId = mediaId,
@@ -226,7 +263,7 @@ public class BookRepository(private val db: AppDatabase) {
                     format = format,
                     totalPages = totalPages,
                 )
-                ).copy(format = format, totalPages = totalPages)
+                ).copy(format = format, totalPages = totalPages, status = status, finishedAt = finishedAt)
 
             db.bookWriteDao().updateBookMetadataAtomically(
                 mediaItem = updatedMediaItem,
@@ -242,7 +279,68 @@ public class BookRepository(private val db: AppDatabase) {
         }
     }
 
+    /**
+     * Quick, single-field [ReadingStatus] change (ROADMAP Task 6 Phase C) — e.g. a status
+     * chip/dropdown on the Book Detail screen — without the full [updateBookMetadata] round-trip
+     * (re-entering title/release year/purchase price/total pages/format just to flip one enum).
+     * [BookDetailsEntity.finishedAt] is derived exactly like [updateBookMetadata]'s, via the same
+     * [resolveFinishedAt] helper, so both entry points can never disagree about when a book was
+     * "finished."
+     *
+     * Unlike [updateBookMetadata], this does not self-heal a missing [BookDetailsEntity] row (the
+     * data-integrity edge case documented on [observeBookDetail]) — there is no title/format/pages
+     * input here to construct a replacement row from, so a missing row is reported as an error
+     * instead of silently fabricating one with placeholder values.
+     *
+     * @param mediaId The media id whose status is changing.
+     * @param status The new [ReadingStatus].
+     * @return [Resource.Success] if updated, or [Resource.Error] if [mediaId] has no
+     *   [BookDetailsEntity] row (never expected via [addBook]'s atomic insert; see
+     *   [observeBookDetail]'s KDoc for how it can arise anyway).
+     */
+    public suspend fun updateReadingStatus(mediaId: String, status: ReadingStatus): Resource<Unit> = try {
+        val existingDetails = db.bookDetailsDao().getByMediaId(mediaId)
+            ?: return Resource.Error("No book details found for id=$mediaId")
+
+        val finishedAt = resolveFinishedAt(
+            newStatus = status,
+            oldStatus = existingDetails.status,
+            oldFinishedAt = existingDetails.finishedAt,
+        )
+        db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
+        Resource.Success(Unit)
+    } catch (e: Exception) {
+        Resource.Error(
+            message = "Failed to update reading status: ${e.message ?: "Unknown error"}",
+            cause = e,
+        )
+    }
+
     public companion object {
+
+        /**
+         * Derives the [BookDetailsEntity.finishedAt] value for a [ReadingStatus] transition
+         * (ROADMAP Task 6 Phase C), shared by [updateBookMetadata] and [updateReadingStatus] so the
+         * two entry points can never disagree:
+         * - Moving to any status other than [ReadingStatus.FINISHED] clears it to `null` — no other
+         *   value means "finished on this date" once the status itself says otherwise.
+         * - Staying [ReadingStatus.FINISHED] (already finished, saved again — e.g. editing an
+         *   already-finished book's title) preserves the original [oldFinishedAt] verbatim rather
+         *   than bumping it to "now," so re-saving unrelated fields never silently rewrites when a
+         *   book was actually finished.
+         * - Transitioning *into* [ReadingStatus.FINISHED] from anything else stamps [Clock.System]'s
+         *   current time as the finish moment.
+         */
+        internal fun resolveFinishedAt(
+            newStatus: ReadingStatus,
+            oldStatus: ReadingStatus,
+            oldFinishedAt: Instant?,
+        ): Instant? = when {
+            newStatus != ReadingStatus.FINISHED -> null
+            oldStatus == ReadingStatus.FINISHED && oldFinishedAt != null -> oldFinishedAt
+            else -> Clock.System.now()
+        }
+
         /**
          * Lower bound for [updateBookMetadata]'s [BookRepository.updateBookMetadata] `releaseYear`
          * validation: the Gutenberg Bible (~1455) is the conventional start of the printed-book

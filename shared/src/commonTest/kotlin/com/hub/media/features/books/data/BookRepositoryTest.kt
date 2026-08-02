@@ -8,6 +8,7 @@ import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import kotlin.test.AfterTest
@@ -238,6 +239,7 @@ class BookRepositoryTest {
             purchasePrice = 12.5,
             totalPages = 366,
             format = BookFormat.HARDCOVER,
+            status = ReadingStatus.READING,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -249,6 +251,7 @@ class BookRepositoryTest {
         val details = db.bookDetailsDao().getByMediaId(mediaId)
         assertEquals(366, details?.totalPages)
         assertEquals(BookFormat.HARDCOVER, details?.format)
+        assertEquals(ReadingStatus.READING, details?.status)
         // ISBN is not editable in this phase -- must be untouched.
         assertEquals("9780593135204", details?.isbn)
 
@@ -271,6 +274,7 @@ class BookRepositoryTest {
             title = "Some Book",
             totalPages = null,
             format = BookFormat.EBOOK,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -294,6 +298,7 @@ class BookRepositoryTest {
             title = "   ",
             totalPages = 999,
             format = BookFormat.EBOOK,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
 
@@ -315,6 +320,7 @@ class BookRepositoryTest {
             title = "Book",
             purchasePrice = -0.01,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
 
@@ -333,6 +339,7 @@ class BookRepositoryTest {
             title = "Book",
             totalPages = 0,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
 
@@ -351,6 +358,7 @@ class BookRepositoryTest {
             title = "Book",
             totalPages = -5,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
 
@@ -369,6 +377,7 @@ class BookRepositoryTest {
             title = "Book",
             releaseYear = 1000,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
 
@@ -387,6 +396,7 @@ class BookRepositoryTest {
             title = "Book",
             releaseYear = 9999,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
 
@@ -400,6 +410,7 @@ class BookRepositoryTest {
             mediaId = newId(),
             title = "Any Title",
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         assertIs<Resource.Error>(result)
         assertTrue(result.message.contains("not found"))
@@ -418,6 +429,7 @@ class BookRepositoryTest {
             title = "Repaired Title",
             totalPages = 150,
             format = BookFormat.PAPERBACK,
+            status = ReadingStatus.READING,
         )
         assertIs<Resource.Success<Unit>>(result)
 
@@ -430,6 +442,110 @@ class BookRepositoryTest {
         assertEquals(null, details?.isbn)
         assertEquals(150, details?.totalPages)
         assertEquals(BookFormat.PAPERBACK, details?.format)
+        assertEquals(ReadingStatus.READING, details?.status)
+    }
+
+    @Test
+    fun updateBookMetadata_transitionToFinished_stampsFinishedAt() = runTest {
+        val addResult = repo.addBook(title = "Finish Me", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Finish Me",
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.FINISHED,
+        )
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(ReadingStatus.FINISHED, details?.status)
+        assertTrue(details?.finishedAt != null, "finishedAt must be stamped on the FINISHED transition")
+    }
+
+    @Test
+    fun updateBookMetadata_reSavingAlreadyFinished_preservesOriginalFinishedAt() = runTest {
+        val addResult = repo.addBook(title = "Already Finished", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+        repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Already Finished",
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.FINISHED,
+        )
+        val firstFinishedAt = db.bookDetailsDao().getByMediaId(mediaId)?.finishedAt
+
+        val result = repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Already Finished (edited)",
+            format = BookFormat.HARDCOVER,
+            status = ReadingStatus.FINISHED,
+        )
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(firstFinishedAt, details?.finishedAt, "re-saving while FINISHED must not bump finishedAt")
+    }
+
+    @Test
+    fun updateBookMetadata_transitionAwayFromFinished_clearsFinishedAt() = runTest {
+        val addResult = repo.addBook(title = "Reopened", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+        repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Reopened",
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.FINISHED,
+        )
+
+        val result = repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Reopened",
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.READING,
+        )
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(ReadingStatus.READING, details?.status)
+        assertEquals(null, details?.finishedAt, "moving away from FINISHED must clear finishedAt")
+    }
+
+    @Test
+    fun updateReadingStatus_happyPath_updatesStatusOnly() = runTest {
+        val addResult = repo.addBook(title = "Quick Status Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repo.updateReadingStatus(mediaId, ReadingStatus.READING)
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(ReadingStatus.READING, details?.status)
+        assertEquals(null, details?.finishedAt)
+    }
+
+    @Test
+    fun updateReadingStatus_toFinished_stampsFinishedAt() = runTest {
+        val addResult = repo.addBook(title = "Quick Finish Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repo.updateReadingStatus(mediaId, ReadingStatus.FINISHED)
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(ReadingStatus.FINISHED, details?.status)
+        assertTrue(details?.finishedAt != null)
+    }
+
+    @Test
+    fun updateReadingStatus_unknownMediaId_returnsError() = runTest {
+        val result = repo.updateReadingStatus(newId(), ReadingStatus.READING)
+        assertIs<Resource.Error>(result)
     }
 
     // Partial-failure atomicity: addBook_duplicateProviderPair_rollsBackWholeTransaction (above)

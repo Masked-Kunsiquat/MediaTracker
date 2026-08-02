@@ -115,6 +115,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     row completely unchanged, editing a nonexistent session id, and — the duration-precision fix
     above — a position-only edit leaving a sub-minute-precision `durationSeconds` byte-identical.
 
+- **Reading status** (ROADMAP Task 6 Phase C) — `TO_READ`/`READING`/`FINISHED`/`DNF`, the missing
+  concept that had forced deferring the books-finished stat:
+  - `ReadingStatus` (`shared/.../core/database/entities/ReadingStatus.kt`), persisted on
+    `BookDetailsEntity` (not `MediaItemEntity`) — the four values are reading-specific (e.g. `DNF`
+    has no obvious watch-status analogue), and Task 8 will scope its own movie/TV watch-state model
+    rather than inherit this one sight-unseen; see the entity's KDoc for the full justification.
+  - **Room schema v3** (`shared/.../core/database/AppDatabase.kt`, version 2 → 3) adds
+    `book_details.status` (`TEXT NOT NULL DEFAULT 'TO_READ'`) and `book_details.finishedAt`
+    (`INTEGER`, nullable) via `MIGRATION_2_3` (`shared/.../core/database/Migrations.kt`). Simple
+    `ALTER TABLE ADD COLUMN` statements, not a table rebuild — unlike `MIGRATION_1_2`, this
+    migration only adds columns, and SQLite's `ALTER TABLE ADD COLUMN` already supports both a
+    `NOT NULL` addition with a constant default and a nullable addition with no default; verified
+    against the newly generated `shared/schemas/.../3.json`. A pre-existing book with at least one
+    `reading_sessions` row is derived to `'READING'` (someone has demonstrably started it) via a
+    follow-up `UPDATE ... WHERE EXISTS`; every other pre-existing row keeps the blanket `'TO_READ'`
+    default. `finishedAt` is `NULL` for every pre-existing row — safe, not lossy, since no row can
+    ever be derived to `'FINISHED'` (no pre-v3 signal supports it). 5 new `MigrationTest` cases
+    (`shared/src/jvmTest/...`) cover the derivation split, schema validation, and that the new
+    columns accept a `'FINISHED'` status with a real `finishedAt` going forward; the derivation
+    assertion was manually verified to fail against a deliberately neutered migration before being
+    reverted.
+  - `BookRepository.updateBookMetadata` gains a required `status` parameter; a new
+    `BookRepository.updateReadingStatus(mediaId, status)` supports a quick single-field change
+    without the full metadata round-trip. Both share a `resolveFinishedAt` helper: transitioning
+    *into* `FINISHED` stamps `finishedAt` to now, staying `FINISHED` on a re-save preserves the
+    original `finishedAt` (an unrelated edit must not silently rewrite when a book was actually
+    finished), and moving *away from* `FINISHED` clears it. `addBook`/`AddBookByIsbnUseCase` default
+    new books to `TO_READ` — nothing has been read the moment a book is added.
+  - `EditBookScreen` gains a status radio-button group alongside the existing format picker.
+    `BookDetailScreen`'s header gains a quick status `AssistChip` + `DropdownMenu` (all four
+    statuses, one tap) for the common "just started"/"just finished" case without a full edit
+    round-trip.
+  - **Books-finished stat** (`StatsDao`/`StatsRepository`/`StatsViewModel`/`StatsScreen`): a lifetime
+    total (`observeBooksFinishedTotal`, exact from the moment schema v3 exists — it counts current
+    `status`, no timestamp needed) shown as its own Stats-screen card, *and* a period-scoped count
+    (`observeBooksFinishedInRange`, using the new `finishedAt`) folded into the existing "This
+    week"/"This month" cards alongside time-read/sessions/pages-read. The period-scoped count is
+    honest, not fabricated: every pre-v3 row's `finishedAt` is `NULL` by construction, so it can only
+    ever reflect finishes recorded after this phase ships, never retroactive history.
+  - **Library status filter** (`LibraryUiState`/`LibraryViewModel`/`LibraryScreen`): a row of
+    Material 3 `FilterChip`s ("All" + one per status) above the book list — chosen over a dropdown
+    since the option count is small and fixed, so every option stays visible and one-tap-selectable.
+    Purely client-side/in-memory (an in-memory `MutableStateFlow<ReadingStatus?>` combined with the
+    existing reactive book list); does not re-query the database. `LibraryUiState.books` changed
+    shape from `List<MediaItemEntity>` to `List<BookWithDetails>` (via a new
+    `BookRepository.observeAllBooksWithDetails()`) since filtering needs each book's status, which a
+    bare `MediaItemEntity` can't expose. Sorting is unchanged (still title, from the existing
+    underlying query) — no new sort UI was added this phase.
+
 ### Changed
 
 - **Manual-entry redesign** (ROADMAP Task 6 Phase B) — `ManualSessionDialog`/`PendingSessionDialog`

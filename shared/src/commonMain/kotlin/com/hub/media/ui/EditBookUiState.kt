@@ -3,6 +3,7 @@ package com.hub.media.ui
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.ReadingStatus
 
 /** UI state for the edit-book-metadata screen (ROADMAP Task 6 Phase A). */
 public sealed class EditBookUiState {
@@ -25,6 +26,8 @@ public sealed class EditBookUiState {
      *   [com.hub.media.features.books.data.BookRepository.observeBookDetail] /
      *   [com.hub.media.features.books.data.BookRepository.updateBookMetadata]) — a save from this
      *   state self-heals by creating the missing row, see that method's KDoc.
+     * @property status Current [ReadingStatus] (ROADMAP Task 6 Phase C). Falls back to
+     *   [ReadingStatus.TO_READ] for the same missing-[BookDetailsEntity]-row edge case as [format].
      * @property errorMessage Message from the most recently failed [EditBookViewModel.save] call,
      *   or null.
      * @property isSaving True while a [EditBookViewModel.save] call is in flight, so the UI can
@@ -36,6 +39,7 @@ public sealed class EditBookUiState {
         val purchasePrice: Double?,
         val totalPages: Int?,
         val format: BookFormat,
+        val status: ReadingStatus = ReadingStatus.TO_READ,
         val errorMessage: String? = null,
         val isSaving: Boolean = false,
     ) : EditBookUiState()

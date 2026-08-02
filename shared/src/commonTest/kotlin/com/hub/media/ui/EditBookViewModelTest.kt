@@ -3,6 +3,7 @@ package com.hub.media.ui
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
@@ -56,6 +57,7 @@ class EditBookViewModelTest {
         purchasePrice: Double? = 27.99,
         totalPages: Int? = 384,
         format: BookFormat = BookFormat.PHYSICAL,
+        status: ReadingStatus = ReadingStatus.TO_READ,
     ) {
         db.mediaItemDao().insert(
             sampleMediaItem(
@@ -67,7 +69,7 @@ class EditBookViewModelTest {
             ),
         )
         db.bookDetailsDao().insert(
-            sampleBookDetails(mediaId = mediaId, format = format, totalPages = totalPages),
+            sampleBookDetails(mediaId = mediaId, format = format, totalPages = totalPages, status = status),
         )
     }
 
@@ -97,6 +99,7 @@ class EditBookViewModelTest {
             purchasePrice = 27.99,
             totalPages = 384,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.READING,
         )
         val viewModel = newViewModel()
 
@@ -107,6 +110,7 @@ class EditBookViewModelTest {
         assertEquals(27.99, ready.purchasePrice)
         assertEquals(384, ready.totalPages)
         assertEquals(BookFormat.PHYSICAL, ready.format)
+        assertEquals(ReadingStatus.READING, ready.status)
         assertNull(ready.errorMessage)
         assertEquals(false, ready.isSaving)
     }
@@ -123,6 +127,7 @@ class EditBookViewModelTest {
         assertEquals("Orphan", ready.title)
         assertNull(ready.totalPages)
         assertEquals(BookFormat.PHYSICAL, ready.format)
+        assertEquals(ReadingStatus.TO_READ, ready.status)
     }
 
     @Test
@@ -137,6 +142,7 @@ class EditBookViewModelTest {
             purchasePrice = 15.0,
             totalPages = 366,
             format = BookFormat.HARDCOVER,
+            status = ReadingStatus.FINISHED,
         )
 
         val state = viewModel.uiState.first { it is EditBookUiState.Saved }
@@ -149,6 +155,8 @@ class EditBookViewModelTest {
         val details = db.bookDetailsDao().getByMediaId(mediaId)
         assertEquals(366, details?.totalPages)
         assertEquals(BookFormat.HARDCOVER, details?.format)
+        assertEquals(ReadingStatus.FINISHED, details?.status)
+        assertTrue(details?.finishedAt != null)
     }
 
     @Test
@@ -163,6 +171,7 @@ class EditBookViewModelTest {
             purchasePrice = 27.99,
             totalPages = 384,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
 
         val ready = viewModel.uiState
@@ -187,6 +196,7 @@ class EditBookViewModelTest {
             purchasePrice = 27.99,
             totalPages = 384,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
         // Second call while the first is still in flight must no-op per the saveInFlight guard.
         viewModel.save(
@@ -195,6 +205,7 @@ class EditBookViewModelTest {
             purchasePrice = 27.99,
             totalPages = 384,
             format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
         )
 
         viewModel.uiState.first { it is EditBookUiState.Saved }

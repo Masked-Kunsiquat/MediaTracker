@@ -58,6 +58,14 @@
     <string name="pages_read_invalid_error">Enter a valid page count</string>
     <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
     <string name="pages_read_derived_placeholder">—</string>
+    <string name="status_prefix">Status: %1$s</string>
+    <string name="change_status_content_description">Change reading status</string>
+
+    <!-- ReadingStatus display labels (shared by BookDetailScreen, EditBookScreen, LibraryScreen) -->
+    <string name="reading_status_to_read">To read</string>
+    <string name="reading_status_reading">Reading</string>
+    <string name="reading_status_finished">Finished</string>
+    <string name="reading_status_dnf">Did not finish</string>
 
     <!-- EditBookScreen -->
     <string name="edit_book_title_bar">Edit book</string>
@@ -66,10 +74,14 @@
     <string name="edit_purchase_price_label">Purchase price (optional)</string>
     <string name="edit_total_pages_label">Total pages (optional)</string>
     <string name="edit_format_label">Format</string>
+    <string name="edit_status_label">Reading status</string>
     <string name="edit_title_required_error">Title is required</string>
     <string name="edit_release_year_invalid_error">Enter a year between %1$d and %2$d</string>
     <string name="edit_purchase_price_invalid_error">Enter a valid non-negative price</string>
     <string name="edit_total_pages_invalid_error">Enter a positive page count</string>
+
+    <!-- LibraryScreen status filter -->
+    <string name="library_filter_all">All</string>
 
     <!-- StatsScreen -->
     <string name="stats_title">Stats</string>
@@ -79,6 +91,8 @@
     <string name="stats_time_read_label">Time read: %1$s</string>
     <string name="stats_sessions_label">Sessions: %1$d</string>
     <string name="stats_pages_read_label">Pages read: %1$s</string>
+    <string name="stats_books_finished_label">Books finished: %1$d</string>
+    <string name="stats_books_finished_lifetime_title">Books finished (lifetime)</string>
     <string name="stats_unknown_value">—</string>
     <string name="stats_no_streak">No current streak</string>
     <plurals name="stats_streak_days">

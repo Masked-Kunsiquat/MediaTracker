@@ -59,3 +59,70 @@ public val MIGRATION_1_2: Migration = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * Schema v2 -> v3 (ROADMAP Task 6 Phase C): adds
+ * [com.hub.media.core.database.entities.BookDetailsEntity.status] and
+ * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] to `book_details` — see
+ * those properties' KDoc for the full column-level rationale.
+ *
+ * ### Why `ALTER TABLE ... ADD COLUMN`, not a table rebuild
+ * Unlike [MIGRATION_1_2] (which had to *relax* an existing `NOT NULL` constraint — something
+ * SQLite cannot do via `ALTER TABLE`), this migration only *adds* columns, and SQLite's
+ * `ALTER TABLE ADD COLUMN` supports both an addition with a constant `DEFAULT` (even when the new
+ * column is itself `NOT NULL`, as long as every existing row gets a real, non-null value from that
+ * default) and a nullable addition with no default (existing rows simply get `NULL`). Both of this
+ * migration's two new columns fit one of those two supported shapes directly, so no
+ * create-copy-drop-rename rebuild is needed — verified against the Room-generated
+ * `shared/schemas/.../3.json`, which records exactly these two `ALTER TABLE` statements as
+ * `book_details`'s only schema delta from v2.
+ *
+ * ### `status`: `NOT NULL DEFAULT 'TO_READ'`, then derived to `'READING'` where sessions exist
+ * Every pre-existing row needs a real, non-null [com.hub.media.core.database.entities.ReadingStatus]
+ * the moment this column exists — there is no "unknown" value in that enum to fall back on (unlike
+ * schema v2's nullable `durationSeconds`, this concept has no legitimate "we don't know" state; the
+ * enum's own semantics only distinguish never-started, in-progress, finished, and abandoned, not
+ * "not yet tracked". `'TO_READ'` is the honest default for a book with zero corroborating
+ * evidence: nothing in the pre-v3 schema records whether a book was ever opened.
+ *
+ * But a book that already has one or more `reading_sessions` rows is demonstrably NOT still
+ * "to read" — someone has logged time against it, whether or not it's finished. Leaving every
+ * pre-existing row at the blanket `'TO_READ'` default would be a strictly worse migration outcome
+ * than the one available for free from data already in the database: a second statement
+ * (`UPDATE ... WHERE EXISTS (SELECT 1 FROM reading_sessions ...)`) promotes exactly those rows to
+ * `'READING'` — not `'FINISHED'`, since a session existing says only "started," never "done" (there
+ * is no "book completed" signal anywhere in the pre-v3 schema to derive [FINISHED][com.hub.media.core.database.entities.ReadingStatus.FINISHED]
+ * from), and not [DNF][com.hub.media.core.database.entities.ReadingStatus.DNF] for the same reason
+ * (abandonment is a deliberate user decision this migration has no signal for). A book with zero
+ * sessions keeps the blanket `'TO_READ'` default from the `ALTER TABLE` itself — no second
+ * statement needed for that case, since `ADD COLUMN ... DEFAULT` already back-filled it.
+ *
+ * ### `finishedAt`: plain nullable `INTEGER`, no default, no derivation
+ * Every pre-existing row becomes `NULL` — including the rows just promoted to `'READING'` above.
+ * This is safe (not lossy) specifically *because* of the `status` derivation rule immediately
+ * above: no pre-existing row can ever end up `'FINISHED'` by this migration (only `'READING'` or
+ * `'TO_READ'`), so there is no row for which `finishedAt` "should" have a real backfilled value but
+ * doesn't. A future user-driven status change to `'FINISHED'`
+ * ([com.hub.media.features.books.data.BookRepository.updateReadingStatus] /
+ * [com.hub.media.features.books.data.BookRepository.updateBookMetadata]) is what populates this
+ * column going forward — see its KDoc.
+ *
+ * See `MigrationTest` (jvmTest) for a test that seeds a v2 database with a book that has a
+ * `reading_sessions` row and one that doesn't, runs this migration, and asserts the former lands on
+ * `'READING'` and the latter on `'TO_READ'`, both with `finishedAt` null and every pre-existing
+ * column value intact.
+ */
+public val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "ALTER TABLE `book_details` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'TO_READ'",
+        )
+        connection.execSQL(
+            "ALTER TABLE `book_details` ADD COLUMN `finishedAt` INTEGER DEFAULT NULL",
+        )
+        connection.execSQL(
+            "UPDATE `book_details` SET `status` = 'READING' " +
+                "WHERE EXISTS (SELECT 1 FROM `reading_sessions` WHERE `reading_sessions`.`mediaId` = `book_details`.`mediaId`)",
+        )
+    }
+}

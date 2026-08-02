@@ -1,6 +1,7 @@
 package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.ReadingStatus
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,24 @@ import kotlinx.datetime.toLocalDateTime
  * (`StatsViewModel`) that wants a displayable `0` for "no known data" makes that choice explicitly,
  * keeping "unknown" and "zero" distinguishable as far up the stack as useful.
  *
+ * ### Books-finished stat (ROADMAP Task 6 Phase C): lifetime total AND period-scoped, deliberately
+ * The schema has no "finished at" timestamp until `MIGRATION_2_3` adds
+ * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] in the same phase this stat
+ * ships in — so unlike the session-based stats above, "books finished this week/month" is not
+ * derivable from data that predates this phase. Two different, individually-honest queries cover
+ * this rather than one query stretched to answer both:
+ * - [observeBooksFinishedTotal] needs no timestamp at all — it counts the current
+ *   [com.hub.media.core.database.entities.BookDetailsEntity.status], which is exact and meaningful
+ *   from the moment schema v3 exists, independent of whether [finishedAt] happens to be known.
+ * - [observeBooksFinishedInRange] uses [finishedAt] and is therefore only ever honest about
+ *   finishes recorded *after* this phase ships: every pre-v3 row's [finishedAt] is `NULL` by
+ *   construction (`MIGRATION_2_3` never derives [com.hub.media.core.database.entities.ReadingStatus.FINISHED]
+ *   for a pre-existing row — see that migration's KDoc), so a period query run today can only ever
+ *   undercount relative to some hypothetical "true" historical total; it never overcounts or
+ *   fabricates a period-scoped number from data that can't support one. `StatsViewModel` wires this
+ *   into the same `week`/`month` [StatsUiState.Period] shape as the session-based stats, but the
+ *   caveat above is inherent to the data, not something the UI layer can paper over.
+ *
  * @param db The shared [AppDatabase], matching [com.hub.media.features.books.data.BookRepository]/
  *   [com.hub.media.features.books.data.ReadingSessionRepository]'s constructor shape.
  */
@@ -65,6 +84,26 @@ public class StatsRepository(private val db: AppDatabase) {
      */
     public fun observePagesReadInRange(from: Instant, to: Instant): Flow<Int?> =
         db.statsDao().observePagesReadInRange(from, to)
+
+    /**
+     * Lifetime count of books currently [ReadingStatus.FINISHED] — see class KDoc ("Books-finished
+     * stat") for why this coexists with [observeBooksFinishedInRange] instead of one query
+     * answering both.
+     */
+    public fun observeBooksFinishedTotal(): Flow<Int> =
+        db.statsDao().observeBooksFinishedTotal(ReadingStatus.FINISHED)
+
+    /**
+     * Count of books whose [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt]
+     * falls in `[from, to)` and whose status is [ReadingStatus.FINISHED] (a book can only have a
+     * non-null `finishedAt` while finished, per [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt]'s
+     * KDoc, so the status filter is technically redundant with a non-null-in-range `finishedAt` —
+     * it is kept explicit here anyway so this query's intent reads the same as
+     * [observeBooksFinishedTotal]'s, rather than relying on that invariant silently). See class
+     * KDoc for why this necessarily undercounts relative to any pre-v3 history.
+     */
+    public fun observeBooksFinishedInRange(from: Instant, to: Instant): Flow<Int> =
+        db.statsDao().observeBooksFinishedInRange(ReadingStatus.FINISHED, from, to)
 
     /**
      * Current reading streak: the number of consecutive calendar days — counting backward from

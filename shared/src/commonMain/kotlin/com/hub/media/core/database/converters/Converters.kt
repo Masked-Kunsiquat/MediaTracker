@@ -4,6 +4,7 @@ import androidx.room.TypeConverter
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadingStatus
 import kotlin.time.Instant
 
 /**
@@ -38,4 +39,10 @@ object Converters {
 
     @TypeConverter
     fun nameToIdentifierProvider(value: String): IdentifierProvider = IdentifierProvider.valueOf(value)
+
+    @TypeConverter
+    fun readingStatusToName(value: ReadingStatus): String = value.name
+
+    @TypeConverter
+    fun nameToReadingStatus(value: String): ReadingStatus = ReadingStatus.valueOf(value)
 }

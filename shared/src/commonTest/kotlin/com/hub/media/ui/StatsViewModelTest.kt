@@ -1,6 +1,8 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
@@ -158,5 +160,38 @@ class StatsViewModelTest {
         assertEquals(2, populated.month.sessionCount, "both June 10 and June 19 sessions are in this month")
         assertEquals(500L, populated.month.timeReadSeconds, "200 + 300")
         assertEquals(13, populated.month.pagesRead, "5 + 8")
+    }
+
+    // ---- books-finished stat (ROADMAP Task 6 Phase C) ----------------------------------------
+
+    @Test
+    fun uiState_booksFinished_lifetimeAndInWeekBothReflectFinishedBook() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = now),
+        )
+
+        val viewModel = newViewModel()
+        val populated = viewModel.uiState.first { !it.isLoading }
+
+        assertEquals(1, populated.lifetimeBooksFinished)
+        assertEquals(1, populated.week.booksFinished)
+        assertEquals(1, populated.month.booksFinished)
+    }
+
+    @Test
+    fun uiState_booksFinished_outsideWeekBounds_excludedFromWeekButCountsLifetime() = runTest {
+        insertBook()
+        val earlyMonthInstant = LocalDateTime(2024, 6, 10, 12, 0).toInstant(timeZone)
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = earlyMonthInstant),
+        )
+
+        val viewModel = newViewModel()
+        val populated = viewModel.uiState.first { !it.isLoading }
+
+        assertEquals(1, populated.lifetimeBooksFinished, "lifetime total is unaffected by any period bound")
+        assertEquals(0, populated.week.booksFinished, "June 10 falls outside the June 17-23 week")
+        assertEquals(1, populated.month.booksFinished, "June 10 is still within June")
     }
 }

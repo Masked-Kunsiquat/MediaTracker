@@ -2,6 +2,7 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
@@ -381,6 +382,26 @@ public class BookDetailViewModel(
     public fun deleteBook() {
         viewModelScope.launch {
             when (val result = bookRepository.deleteBook(bookId)) {
+                is Resource.Success -> Unit
+                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+            }
+        }
+    }
+
+    /**
+     * Quick [ReadingStatus] change for [bookId] (ROADMAP Task 6 Phase C — a status chip/dropdown
+     * in the Book Detail header, without a full [com.hub.media.ui.EditBookViewModel]-style
+     * round-trip). Fire-and-forget on success, matching [deleteBook]/[deleteSession]: [uiState]
+     * reflects the new status reactively via [BookRepository.observeBookDetail] once
+     * [BookRepository.updateReadingStatus] persists it. On [Resource.Error] (e.g. the
+     * data-integrity edge case where [bookId] has no [com.hub.media.core.database.entities.BookDetailsEntity]
+     * row — see [BookRepository.updateReadingStatus]'s KDoc), sets
+     * [BookDetailUiState.Ready.errorMessage] using the same surfacing convention as every other
+     * mutating method on this class.
+     */
+    public fun updateStatus(status: ReadingStatus) {
+        viewModelScope.launch {
+            when (val result = bookRepository.updateReadingStatus(bookId, status)) {
                 is Resource.Success -> Unit
                 is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
             }

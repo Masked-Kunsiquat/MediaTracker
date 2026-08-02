@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import kotlin.time.Duration.Companion.seconds
@@ -81,6 +82,7 @@ public class EditBookViewModel(
                 purchasePrice = bookDetail.mediaItem.purchasePrice,
                 totalPages = bookDetail.details?.totalPages,
                 format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
+                status = bookDetail.details?.status ?: ReadingStatus.TO_READ,
                 errorMessage = local.errorMessage,
                 isSaving = local.isSaving,
             )
@@ -107,6 +109,7 @@ public class EditBookViewModel(
         purchasePrice: Double?,
         totalPages: Int?,
         format: BookFormat,
+        status: ReadingStatus,
     ) {
         if (saveInFlight) return
         saveInFlight = true
@@ -121,6 +124,7 @@ public class EditBookViewModel(
                         purchasePrice = purchasePrice,
                         totalPages = totalPages,
                         format = format,
+                        status = status,
                     )
                 ) {
                     is Resource.Success -> _local.update { it.copy(isSaving = false, saved = true) }

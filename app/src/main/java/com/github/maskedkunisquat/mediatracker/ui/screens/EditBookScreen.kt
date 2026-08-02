@@ -47,6 +47,7 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditBookUiState
@@ -86,13 +87,14 @@ fun EditBookScreenRoute(
     EditBookScreen(
         uiState = uiState,
         onNavigateBack = onNavigateBack,
-        onSave = { title, releaseYear, purchasePrice, totalPages, format ->
+        onSave = { title, releaseYear, purchasePrice, totalPages, format, status ->
             viewModel.save(
                 title = title,
                 releaseYear = releaseYear,
                 purchasePrice = purchasePrice,
                 totalPages = totalPages,
                 format = format,
+                status = status,
             )
         },
     )
@@ -109,8 +111,8 @@ fun EditBookScreenRoute(
  *
  * @param uiState Current [EditBookUiState].
  * @param onNavigateBack Called when the back icon or Cancel button is pressed.
- * @param onSave Called with the edited (title, releaseYear, purchasePrice, totalPages, format)
- *   once the form passes client-side validation, wired to [EditBookViewModel.save].
+ * @param onSave Called with the edited (title, releaseYear, purchasePrice, totalPages, format,
+ *   status) once the form passes client-side validation, wired to [EditBookViewModel.save].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,6 +125,7 @@ fun EditBookScreen(
         purchasePrice: Double?,
         totalPages: Int?,
         format: BookFormat,
+        status: ReadingStatus,
     ) -> Unit,
 ) {
     Scaffold(
@@ -207,6 +210,7 @@ private fun EditBookForm(
         purchasePrice: Double?,
         totalPages: Int?,
         format: BookFormat,
+        status: ReadingStatus,
     ) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -215,6 +219,7 @@ private fun EditBookForm(
     var purchasePriceText by remember { mutableStateOf(state.purchasePrice?.let(::formatUnit) ?: "") }
     var totalPagesText by remember { mutableStateOf(state.totalPages?.toString() ?: "") }
     var format by remember { mutableStateOf(state.format) }
+    var status by remember { mutableStateOf(state.status) }
 
     val titleIsValid = titleText.isNotBlank()
 
@@ -341,6 +346,35 @@ private fun EditBookForm(
             }
         }
 
+        Text(
+            text = stringResource(R.string.edit_status_label),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Column(modifier = Modifier.selectableGroup()) {
+            ReadingStatus.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = status == option,
+                            onClick = { status = option },
+                            enabled = !state.isSaving,
+                            role = Role.RadioButton,
+                        )
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = status == option,
+                        onClick = null,
+                        enabled = !state.isSaving,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(option.displayLabel())
+                }
+            }
+        }
+
         val errorMessage = state.errorMessage
         if (errorMessage != null) {
             Text(
@@ -359,6 +393,7 @@ private fun EditBookForm(
                         validatedPurchasePrice,
                         validatedTotalPages,
                         format,
+                        status,
                     )
                 },
                 enabled = formIsValid && !state.isSaving,
@@ -388,7 +423,7 @@ private fun EditBookScreenReadyPreview() {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE,
             onNavigateBack = {},
-            onSave = { _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _ -> },
         )
     }
 }
@@ -401,7 +436,7 @@ private fun EditBookScreenErrorPreview() {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE.copy(errorMessage = "Total pages must be a positive number"),
             onNavigateBack = {},
-            onSave = { _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _ -> },
         )
     }
 }
@@ -414,7 +449,7 @@ private fun EditBookScreenLoadingPreview() {
         EditBookScreen(
             uiState = EditBookUiState.Loading,
             onNavigateBack = {},
-            onSave = { _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _ -> },
         )
     }
 }
