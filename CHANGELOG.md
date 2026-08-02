@@ -136,6 +136,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     total pages, no progress logged, an empty session list, and a session with unknown duration.
   - **Deferred to Phase D**: the Edit Book screen's own visual revamp (ROADMAP Task 7's separate
     "Edit screen revamp" bullet) is out of scope for this phase.
+- **Edit Book screen visual revamp** (ROADMAP Task 7 Phase D — final phase of Task 7,
+  `app/.../ui/screens/EditBookScreen.kt`) — the last screen still presenting as one undifferentiated
+  scrolling column of text fields and vertical radio groups; brought in line with the `SettingsScreen`/
+  `BookDetailScreen` visual language established in Phases B/C. Layout/control choices only — no
+  ViewModel, validation-bound, or `EditBookUiState` shape changes.
+  - **Four titled, card-backed sections** replace the flat field list, reusing `SettingsScreen`'s
+    "`Text` title above a `Card`" convention verbatim via a new private `FormSection`: **Book
+    details** (title, release year), **Physical** (format, total pages, tracking mode), **Status**
+    (reading status), **Purchase** (purchase price).
+  - **Each enum picker now uses the Material 3 control that fits its option count**, replacing three
+    identical vertical radio-button groups: `TrackingMode` (2 values) is a
+    `SingleChoiceSegmentedButtonRow`, matching `SettingsScreen`'s week-start-day control exactly;
+    `BookFormat` (5 values) is a read-only `ExposedDropdownMenuBox` dropdown, collapsing what used to
+    be five stacked radios for an infrequently-changed field into one closed field opened on demand;
+    `ReadingStatus` (4 values) is a `FilterChip` row, mirroring `LibraryScreen`'s existing
+    `StatusFilterRow` shape for the same enum so it renders consistently wherever it appears in the
+    app.
+  - **Save/Cancel move to a persistent, non-scrolling bottom action bar** (new `EditBookBottomBar`,
+    on an elevated `Surface` at the default `BottomAppBar` tonal elevation) instead of two inline
+    buttons at the end of the scrolling content, reading as one committed action pair that's always
+    reachable. The Save button shows an inline `CircularProgressIndicator` in place of its label
+    while `EditBookUiState.Ready.isSaving` is true, in addition to the existing disabled-fields
+    behavior.
+  - **Purchase price gets a "$" prefix and total pages a "pages" suffix** (`OutlinedTextField`'s
+    `prefix`/`suffix` slots) so each numeric field reads as the unit it represents; keyboard types
+    (`Decimal`/`Number`) are unchanged.
+  - **Parse-once validation is untouched**: title (non-blank), release year
+    (`BookRepository.MIN_RELEASE_YEAR`..`MAX_RELEASE_YEAR`), purchase price (`>= 0`), and total pages
+    (`> 0`) are still each parsed exactly once above the fields, with `isError`/`supportingText`
+    disambiguating blank/unparseable/out-of-range and gating the bottom bar's Save button — only the
+    surrounding layout changed. Two new strings (`edit_purchase_price_prefix`, `edit_total_pages_suffix`)
+    plus four new section-title strings (`edit_section_book_details`/`edit_section_physical`/
+    `edit_section_status`/`edit_section_purchase`) were added; no existing `EditBookScreen` string was
+    orphaned by the revamp. Previews cover light and dark theme, a validation error, a save in
+    progress, unknown total pages (with no purchase price on record), and a very long title.
+
+**Task 7 is now complete** — UI revamp & settings work across the Details/Reading-history/Edit
+screens plus the new Settings screen, explicit tracking mode, and Room schema v4 all landed above.
 
 ## [0.5.0] - 2026-08-02
 

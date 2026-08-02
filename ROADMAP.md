@@ -117,7 +117,7 @@ going wide. Movies & TV move to Task 13.
     one-book-at-a-time re-fetch affordance, but explicitly NOT used in any bulk/loop context this
     phase (see backlog for the deferred bulk-backfill item this constrains).
 
-## Task 7 — UI revamp & settings (next)
+## Task 7 — UI revamp & settings (done — ready for release)
 
 Task 6 made the book domain functionally complete; this task makes it pleasant. Prioritized
 ahead of search because these are the screens in daily use, and the rough edges were reported
@@ -131,7 +131,14 @@ from real use rather than inferred.
   Canvas-drawn rail with per-day date separators and per-session nodes), with each session's
   duration/position-range/pages-read rendered as distinct visual chips instead of one concatenated
   string.
-- **Edit screen revamp.** Same treatment — it is currently a bare column of text fields.
+- **Edit screen revamp (done).** Replaced the bare column of text fields and vertical radio groups
+  with four titled cards (Book details / Physical / Status / Purchase, matching `SettingsScreen`'s
+  card convention) and a per-enum control choice instead of three identical radio groups: a
+  `SingleChoiceSegmentedButtonRow` for the two-value tracking mode, a read-only
+  `ExposedDropdownMenuBox` for the five-value format, and a `FilterChip` row (matching
+  `LibraryScreen`'s status filter) for the four-value reading status. Save/Cancel moved to a
+  persistent bottom action bar. Parse-once validation (blank/unparseable/out-of-range, mirroring
+  `BookRepository`'s real bounds) is unchanged.
 - **Explicit per-book tracking mode (pages vs percent).** Today the mode is *inferred* from
   whether `totalPages` is known, which is invisible to the user and flips silently the moment
   total pages is edited. Replace with an explicit per-book field, editable on the Edit screen,

@@ -107,6 +107,14 @@
     <string name="edit_purchase_price_invalid_error">Enter a valid non-negative price</string>
     <string name="edit_total_pages_invalid_error">Enter a positive page count</string>
 
+    <!-- EditBookScreen: section headings + field affordances (ROADMAP Task 7 Phase D revamp) -->
+    <string name="edit_section_book_details">Book details</string>
+    <string name="edit_section_physical">Physical</string>
+    <string name="edit_section_status">Status</string>
+    <string name="edit_section_purchase">Purchase</string>
+    <string name="edit_purchase_price_prefix">$</string>
+    <string name="edit_total_pages_suffix">pages</string>
+
     <!-- LibraryScreen status filter -->
     <string name="library_filter_all">All</string>
 
