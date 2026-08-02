@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-01
+
+Stats milestone, plus the project's first Room schema migration. Schema v2 makes manual
+session durations optional (null = unknown, never a fake zero); the Stats screen shows
+weekly/monthly reading time, sessions, pages, and the current reading streak.
+
 ### Added
 
 - **Stats layer (ROADMAP Task 5 Phase B)** — reactive reading-statistics queries and shared
