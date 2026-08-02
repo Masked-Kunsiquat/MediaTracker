@@ -8,6 +8,7 @@ import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
+import com.hub.media.features.stats.data.StatsRepository
 
 /**
  * Manual composition root for the shared layer (AGENTS.md §5 "No Unnecessary Dependencies" —
@@ -45,6 +46,14 @@ public class AppContainer(
 
     /** Reading session logging/history, shared by future reading-session screens. */
     public val readingSessionRepository: ReadingSessionRepository = ReadingSessionRepository(database)
+
+    /**
+     * Reactive aggregate reading stats (ROADMAP Task 5), consumed by `StatsViewModel`. The
+     * ViewModel factory for the stats screen itself lands in Phase C — this wiring only prepares
+     * the repository, matching how [readingSessionRepository]/[bookRepository] are made available
+     * ahead of their consuming screens.
+     */
+    public val statsRepository: StatsRepository = StatsRepository(database)
 
     /**
      * Connects timer/manual reading-session results plus position bounds to

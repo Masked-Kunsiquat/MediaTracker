@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Stats layer (ROADMAP Task 5 Phase B)** — reactive reading-statistics queries and shared
+  `StatsRepository`/`StatsViewModel`, laid down in `shared/` ahead of the stats screen itself
+  (Phase C):
+  - `StatsDao` (`shared/.../core/database/dao/StatsDao.kt`), registered on `AppDatabase` with no
+    schema/version change (a new DAO does not alter the exported schema, which is derived solely
+    from `@Entity` tables — confirmed via `git status` on `shared/schemas/` after building).
+    Provides four `Flow`-based aggregate queries over `reading_sessions`, all bucketed by a
+    session's `timestampStart` over a half-open `[from, to)` range (a session starting exactly at
+    `to` is excluded, at `from` is included): total known duration (`SUM` over non-null
+    `durationSeconds`), total session count (all sessions, null-duration included), total pages
+    read (`SUM` over non-null `deltaPages`), and raw `timestampStart` values for streak
+    computation. SQLite's `SUM()` over zero/all-null matches returns `NULL`, surfaced faithfully
+    as `Long?`/`Int?` rather than coerced to `0` — see the DAO's KDoc for the full null-vs-`0`
+    rationale.
+  - `StatsRepository` (`shared/.../features/stats/data/`) wraps the DAO with the ROADMAP Task 5
+    domain semantics: time-read and pages-read totals sum only *known* values (a null
+    `durationSeconds`/`deltaPages` contributes nothing to its respective total but still counts
+    toward the session count — the entire point of schema v2), and page totals are always summed
+    per-session, never inferred from position continuity between sessions ("no gap
+    reconciliation"). Adds `observeReadingStreak(timeZone, clock)`: the current consecutive-day
+    reading streak, day-bucketed in Kotlin via kotlinx-datetime with an explicitly injected
+    `TimeZone` (never SQL/UTC-default — SQLite has no timezone-aware date function), counting
+    backward from today; a streak that ran through yesterday survives a today-with-no-session-yet,
+    but any other gap day stops the count. `timeZone`/`clock` are both injected parameters
+    (defaulting to the real system zone/`Clock.System`) so the day-math is deterministic under
+    test. Also adds `thisWeekBounds`/`thisMonthBounds` helpers computing `[from, to)` `Instant`
+    bounds for the current ISO week (Monday start) and calendar month in an injected timezone.
+  - `StatsUiState`/`StatsViewModel` (`shared/.../ui/`): a single `StateFlow` (via
+    `stateIn`/`WhileSubscribed`, matching `LibraryViewModel`/`BookDetailViewModel`) combining
+    week/month time-read, session-count, and pages-read totals (grouped into a reused
+    `StatsUiState.Period`) with the current streak. Period bounds are computed once at
+    construction, not re-derived as real time crosses midnight/week/month boundaries while a
+    `StatsViewModel` instance stays alive — an accepted simplification documented on the class,
+    matching the assumption that the stats screen gets a fresh ViewModel per visit.
+  - `AppContainer` now exposes `statsRepository`, wired the same way as `bookRepository`/
+    `readingSessionRepository`; the ViewModel factory wiring for the stats screen itself is
+    deferred to Phase C.
+  - Tests: `StatsDaoTest` (10, direct SQL semantics), `StatsRepositoryTest` (15, including
+    deterministic fixed-`Clock`/`TimeZone` streak cases — a 3-day streak, a gap breaking it,
+    today-without-a-session preserving yesterday's streak, zero sessions, a single today-only
+    session, and a timezone edge case proving late-evening sessions are bucketed by local calendar
+    date rather than UTC), and `StatsViewModelTest` (4, Loading → populated, reacting to a new
+    session insert, and null-duration non-contribution to time). The Room-backed classes
+    (`StatsRepositoryTest`, `StatsViewModelTest`) are excluded from the android unit-test variant
+    in `shared/build.gradle.kts` (package/exact-class-name filters), mirroring the existing books
+    DAO/repository/ViewModel test exclusions — `:shared:jvmTest` remains the authoritative gate.
+
 ### Changed
 
 - **Room schema v2 — optional reading-session duration** (ROADMAP Task 5 pre-phase,

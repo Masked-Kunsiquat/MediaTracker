@@ -90,14 +90,21 @@ dependencies {
 // class name rather than by package: AddBookViewModelTest lives in the same com.hub.media.ui
 // package but only depends on a hand-rolled BookIngestionUseCase fake (no Room), so it stays
 // runnable on the android unit-test variant instead of being swept up by a package-wide exclusion.
+// StatsRepositoryTest (ROADMAP Task 5) is likewise Room-backed and excluded by package
+// (com.hub.media.features.stats.*, mirroring com.hub.media.features.books.data.*); StatsDaoTest
+// lives under com.hub.media.core.database and is already covered by that package's exclusion.
+// StatsViewModelTest is excluded by exact class name for the same reason as
+// LibraryViewModelTest/BookDetailViewModelTest above.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
             excludeTestsMatching("com.hub.media.core.database.*")
             excludeTestsMatching("com.hub.media.features.books.data.*")
             excludeTestsMatching("com.hub.media.features.books.domain.*")
+            excludeTestsMatching("com.hub.media.features.stats.*")
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
             isFailOnNoMatchingTests = false
         }
     }
