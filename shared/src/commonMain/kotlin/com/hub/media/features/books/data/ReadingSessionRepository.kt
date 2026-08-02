@@ -117,7 +117,10 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
      *   `endUnit - startUnit`; percent-mode: manually entered, may be null).
      * @param notes Optional notes about the session.
      * @return [Resource.Success] on a successful update, or [Resource.Error] on validation
-     *   failure, an unknown [sessionId], or a DB failure.
+     *   failure, an unknown [sessionId], a DB failure, or the row vanishing (e.g. deleted by
+     *   another writer) between the [getById] check above and the write below -- detected via
+     *   [com.hub.media.core.database.dao.ReadingSessionDao.update]'s affected-row count rather than
+     *   assumed from the earlier [getById] alone.
      */
     public suspend fun updateSession(
         sessionId: String,
@@ -155,7 +158,10 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
                 notes = notes,
             )
 
-            db.readingSessionDao().update(updated)
+            val rowsAffected = db.readingSessionDao().update(updated)
+            if (rowsAffected == 0) {
+                return Resource.Error("Reading session not found: $sessionId")
+            }
             Resource.Success(Unit)
         } catch (e: Exception) {
             Resource.Error(

@@ -17,6 +17,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 
@@ -529,6 +531,33 @@ class BookRepositoryTest {
     }
 
     @Test
+    fun updateBookMetadata_transitionToFinished_usesInjectedClockNotSystemClock() = runTest {
+        // Finding #5: BookRepository must derive the FINISHED-transition timestamp from its
+        // injected Clock rather than calling Clock.System.now() directly, so this must be
+        // provable with a fake Clock pinned to a value far from the real wall clock.
+        val fixedInstant = Instant.fromEpochMilliseconds(1_000_000_000_000) // 2001-09-09, not "now"
+        val fixedClock = object : Clock {
+            override fun now(): Instant = fixedInstant
+        }
+        val repoWithFixedClock = BookRepository(db, fixedClock)
+
+        val addResult = repoWithFixedClock.addBook(title = "Clocked Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repoWithFixedClock.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Clocked Book",
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.FINISHED,
+        )
+        assertIs<Resource.Success<Unit>>(result)
+
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals(fixedInstant, details?.finishedAt, "finishedAt must come from the injected Clock")
+    }
+
+    @Test
     fun updateReadingStatus_toFinished_stampsFinishedAt() = runTest {
         val addResult = repo.addBook(title = "Quick Finish Book", format = BookFormat.PHYSICAL)
         assertIs<Resource.Success<String>>(addResult)
@@ -551,13 +580,14 @@ class BookRepositoryTest {
     // Partial-failure atomicity: addBook_duplicateProviderPair_rollsBackWholeTransaction (above)
     // forces a mid-transaction failure via a genuine uniqueness-constraint violation (a duplicate
     // (mediaId, provider) composite key among externalIdentifiers). updateBookMetadata's two writes
-    // have no analogous independently-triggerable constraint: the MediaItemEntity update targets a
-    // primary key already confirmed to exist (existingMediaItem was just read), and the
-    // BookDetailsEntity write either updates that same already-valid row or inserts a new one whose
-    // FK (mediaId) is that same already-existing MediaItemEntity -- there is no reachable input that
-    // makes one write satisfy its constraints while the other doesn't, so a forced-rollback test
-    // analogous to the addBook one isn't constructible without a mocking framework (which this
-    // project's kotlin.test-only test stack doesn't use). Atomicity here is enforced structurally by
+    // have no analogous independently-triggerable constraint: the targeted media_items UPDATE
+    // either affects the one already-existing row for mediaId or (if it doesn't exist) short-
+    // circuits before the book_details write is attempted at all, and the book_details write
+    // either updates that same already-valid row or self-heal-inserts a new one whose FK (mediaId)
+    // is that same already-existing MediaItemEntity -- there is no reachable input that makes one
+    // write satisfy its constraints while the other doesn't, so a forced-rollback test analogous to
+    // the addBook one isn't constructible without a mocking framework (which this project's
+    // kotlin.test-only test stack doesn't use). Atomicity here is enforced structurally by
     // BookWriteDao.updateBookMetadataAtomically's @Transaction default-body pattern (same mechanism
     // insertBookAtomically uses, which *is* covered by a forced-rollback test).
 

@@ -205,19 +205,29 @@ class StatsDaoTest {
     }
 
     @Test
-    fun observeBooksFinishedInRange_respectsFinishedAtBounds() = runTest {
+    fun observeBooksFinishedInRange_respectsFinishedAtBounds_fromIsInclusive() = runTest {
         insertBook()
         db.bookDetailsDao().insert(
-            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
         )
 
-        val inRange = db.statsDao()
+        val count = db.statsDao()
             .observeBooksFinishedInRange(ReadingStatus.FINISHED, instant(1_000), instant(2_000)).first()
-        val outOfRange = db.statsDao()
-            .observeBooksFinishedInRange(ReadingStatus.FINISHED, instant(2_000), instant(3_000)).first()
 
-        assertEquals(1, inRange)
-        assertEquals(0, outOfRange, "finishedAt exactly at `to` must be excluded, same half-open convention")
+        assertEquals(1, count, "a book finished exactly at `from` must be included")
+    }
+
+    @Test
+    fun observeBooksFinishedInRange_respectsFinishedAtBounds_toIsExclusive() = runTest {
+        insertBook()
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+        )
+
+        val count = db.statsDao()
+            .observeBooksFinishedInRange(ReadingStatus.FINISHED, instant(1_000), instant(2_000)).first()
+
+        assertEquals(0, count, "a book finished exactly at `to` must be excluded")
     }
 
     @Test

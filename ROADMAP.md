@@ -205,6 +205,13 @@ personal-scale libraries don't need one).
   barcode scanning" as three input paths, but only ISBN exists today — a book with no usable
   ISBN (older editions, self-published, damaged barcode) simply cannot be added. Needs a
   create-book form that writes straight through `BookRepository.addBook` with no provider lookup.
+- **Paste-to-add**: accept a pasted blob of arbitrary text (a message, a listing, a review) and
+  pull the ISBN out of it. Deliberately **regex-first, not ML** — ISBN-10/13 have well-defined
+  shapes, `AddBookByIsbnUseCase` already owns normalization and checksum validation, and a regex
+  costs no dependency, no Play Services, and no runtime model download. ML Kit Entity Extraction
+  was considered here and rejected for this job: it is designed to *discover* entities in unknown
+  text, which is a poor trade when the only entity we want has a strict, cheaply-matched format.
+  See Unscheduled features for the one case where it would actually pay off.
 
 ## Task 10 — Re-read modeling
 
@@ -313,6 +320,14 @@ past a couple of entries again, that is the signal to schedule rather than to ke
   Unscheduled because nothing downstream is currently waiting on it; schedule it when the
   financial analytics or the lending workflow actually matter. Schema bump + tested migration
   required.
+  - **Receipt parsing is where ML Kit Entity Extraction would pay off**, and the only place in
+    this app it plausibly does. It runs on-device (fits the privacy stance) and detects dates,
+    money, and addresses in one pass — so "photograph or paste a receipt → purchase date, price,
+    store source" is a real fit, unlike ISBN extraction where a regex is strictly better (see
+    Task 9's paste-to-add bullet). Costs: a Play Services/ML Kit dependency in the same family as
+    the barcode-scanner decision, plus a multi-MB language model downloaded at first use. Only
+    worth taking on if this feature is scheduled *and* receipt capture is actually wanted;
+    hand-entering a date and price is not obviously worse.
 
 ## Source of truth note
 

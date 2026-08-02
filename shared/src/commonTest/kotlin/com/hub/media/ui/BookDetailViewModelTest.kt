@@ -62,6 +62,10 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalCoroutinesApi::class)
 class BookDetailViewModelTest {
 
+    private companion object {
+        const val PROVIDER_ERROR_MESSAGE = "test provider error"
+    }
+
     private lateinit var db: AppDatabase
     private lateinit var bookRepository: BookRepository
     private lateinit var sessionRepository: ReadingSessionRepository
@@ -76,14 +80,15 @@ class BookDetailViewModelTest {
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
         useCase = LogReadingSessionUseCase(sessionRepository)
-        // No test in this file exercises refetchCover() itself (see RefetchCoverUseCaseTest for
-        // that coverage) -- this wiring only needs to exist so BookDetailViewModel can be
-        // constructed. The metadata provider is never invoked, and the image storage path is
+        // One test in this file exercises refetchCover() on the error path
+        // (see refetchCover_useCaseError_setsErrorMessageAndClearsInFlightFlag) -- this wiring
+        // must support that. Detailed use-case-level coverage (happy path, no-ISBN, provider
+        // coverless, download failure) lives in RefetchCoverUseCaseTest. The image storage path is
         // never written to (LocalImageStorageManager does no I/O until saveImage() is called).
         refetchCoverUseCase = RefetchCoverUseCase(
             metadataProvider = object : BookMetadataProvider {
                 override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> =
-                    Resource.Error("not used in BookDetailViewModelTest")
+                    Resource.Error(PROVIDER_ERROR_MESSAGE)
             },
             coverDownloader = CoverImageDownloader(createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) })),
             imageStorage = LocalImageStorageManager("unused"),
@@ -771,7 +776,7 @@ class BookDetailViewModelTest {
                 as BookDetailUiState.Ready
 
         assertNotNull(ready.errorMessage)
-        assertTrue(ready.errorMessage!!.contains("not used in BookDetailViewModelTest"))
+        assertTrue(ready.errorMessage!!.contains(PROVIDER_ERROR_MESSAGE))
         assertEquals(false, ready.isRefetchingCover)
     }
 

@@ -21,8 +21,15 @@ import kotlinx.coroutines.flow.combine
  *
  * Per AGENTS.md §5, all database write failures are wrapped in [Resource.Error] to prevent
  * crashes on offline/constraint-violation states.
+ *
+ * @param clock Source of "now" for [resolveFinishedAt]'s FINISHED-transition timestamp. Defaults
+ *   to [Clock.System] for production use; tests inject a fake [Clock] to assert on a deterministic
+ *   finish timestamp instead of a real wall-clock read (same injected-clock pattern as
+ *   [com.hub.media.features.stats.data.StatsRepository] / [com.hub.media.ui.StatsViewModel] /
+ *   [com.hub.media.features.books.timer.ReadingTimer]). The default keeps every existing
+ *   `BookRepository(db)` call site and test source-compatible.
  */
-public class BookRepository(private val db: AppDatabase) {
+public class BookRepository(private val db: AppDatabase, private val clock: Clock = Clock.System) {
 
     /**
      * Observes all books in the database as a reactive stream, ordered by title.
@@ -242,34 +249,32 @@ public class BookRepository(private val db: AppDatabase) {
         }
 
         return try {
-            val existingMediaItem = db.mediaItemDao().getById(mediaId)
-                ?: return Resource.Error("Book with id=$mediaId not found")
+            // Only read for resolveFinishedAt's transition decision (old status/finishedAt) --
+            // NOT to build a full-row copy to write back. The actual write below is a targeted
+            // UPDATE of just the requested columns, so this read being taken outside the
+            // transaction can never cause a concurrent writer's change to some *other* field to be
+            // silently reverted (see BookWriteDao.updateBookMetadataAtomically's KDoc).
             val existingDetails = db.bookDetailsDao().getByMediaId(mediaId)
-
-            val updatedMediaItem = existingMediaItem.copy(
-                title = title,
-                releaseYear = releaseYear,
-                purchasePrice = purchasePrice,
-            )
             val finishedAt = resolveFinishedAt(
                 newStatus = status,
                 oldStatus = existingDetails?.status ?: ReadingStatus.TO_READ,
                 oldFinishedAt = existingDetails?.finishedAt,
+                clock = clock,
             )
-            val updatedDetails = (
-                existingDetails ?: BookDetailsEntity(
-                    mediaId = mediaId,
-                    isbn = null,
-                    format = format,
-                    totalPages = totalPages,
-                )
-                ).copy(format = format, totalPages = totalPages, status = status, finishedAt = finishedAt)
 
-            db.bookWriteDao().updateBookMetadataAtomically(
-                mediaItem = updatedMediaItem,
-                bookDetails = updatedDetails,
-                hasExistingBookDetails = existingDetails != null,
+            val mediaRowsAffected = db.bookWriteDao().updateBookMetadataAtomically(
+                mediaId = mediaId,
+                title = title,
+                releaseYear = releaseYear,
+                purchasePrice = purchasePrice,
+                format = format,
+                totalPages = totalPages,
+                status = status,
+                finishedAt = finishedAt,
             )
+            if (mediaRowsAffected == 0) {
+                return Resource.Error("Book with id=$mediaId not found")
+            }
             Resource.Success(Unit)
         } catch (e: Exception) {
             Resource.Error(
@@ -307,12 +312,22 @@ public class BookRepository(private val db: AppDatabase) {
      *   a [MediaItemEntity] (never expected in practice — [RefetchCoverUseCase] only calls this
      *   right after successfully reading the same row via [getBookWithDetails]) or the underlying
      *   DB write throws.
+     *
+     * Uses [com.hub.media.core.database.dao.MediaItemDao.updateCoverImageHash], a targeted
+     * single-column `UPDATE`, rather than reading the row, `.copy()`-ing it, and writing the whole
+     * row back: that read-modify-write shape is only as fresh as the read, so any other field
+     * changed by a concurrent writer (e.g. [updateBookMetadata] editing title/releaseYear/
+     * purchasePrice) in between would be silently reverted. The targeted `UPDATE`'s own
+     * affected-row count (`0` vs `1`) is now how "no such book" is detected, since this no longer
+     * reads the row first to check.
      */
     public suspend fun updateCoverImageHash(mediaId: String, coverImageHash: String): Resource<Unit> = try {
-        val existing = db.mediaItemDao().getById(mediaId)
-            ?: return Resource.Error("Book with id=$mediaId not found")
-        db.mediaItemDao().update(existing.copy(coverImageHash = coverImageHash))
-        Resource.Success(Unit)
+        val rowsAffected = db.mediaItemDao().updateCoverImageHash(mediaId, coverImageHash)
+        if (rowsAffected == 0) {
+            Resource.Error("Book with id=$mediaId not found")
+        } else {
+            Resource.Success(Unit)
+        }
     } catch (e: Exception) {
         Resource.Error(
             message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
@@ -347,6 +362,7 @@ public class BookRepository(private val db: AppDatabase) {
             newStatus = status,
             oldStatus = existingDetails.status,
             oldFinishedAt = existingDetails.finishedAt,
+            clock = clock,
         )
         db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
         Resource.Success(Unit)
@@ -369,17 +385,20 @@ public class BookRepository(private val db: AppDatabase) {
          *   already-finished book's title) preserves the original [oldFinishedAt] verbatim rather
          *   than bumping it to "now," so re-saving unrelated fields never silently rewrites when a
          *   book was actually finished.
-         * - Transitioning *into* [ReadingStatus.FINISHED] from anything else stamps [Clock.System]'s
-         *   current time as the finish moment.
+         * - Transitioning *into* [ReadingStatus.FINISHED] from anything else stamps [clock]'s
+         *   current time as the finish moment. [clock] is the caller's injected [BookRepository.clock]
+         *   (production callers use the [Clock.System] default; tests can inject a fake [Clock] for
+         *   a deterministic, assertable finish timestamp).
          */
         internal fun resolveFinishedAt(
             newStatus: ReadingStatus,
             oldStatus: ReadingStatus,
             oldFinishedAt: Instant?,
+            clock: Clock,
         ): Instant? = when {
             newStatus != ReadingStatus.FINISHED -> null
             oldStatus == ReadingStatus.FINISHED && oldFinishedAt != null -> oldFinishedAt
-            else -> Clock.System.now()
+            else -> clock.now()
         }
 
         /**

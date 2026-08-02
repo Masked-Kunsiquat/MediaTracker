@@ -185,6 +185,78 @@ class EditBookViewModelTest {
     }
 
     @Test
+    fun save_validationFailure_outOfRangeReleaseYear_keepsReadyWithErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is EditBookUiState.Ready }
+
+        viewModel.save(
+            title = "Project Hail Mary",
+            releaseYear = 2101,
+            purchasePrice = 27.99,
+            totalPages = 384,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is EditBookUiState.Ready && (it as EditBookUiState.Ready).errorMessage != null }
+                as EditBookUiState.Ready
+
+        assertTrue(ready.errorMessage!!.contains("Release year"))
+        assertEquals(false, ready.isSaving)
+        assertEquals(2021, db.mediaItemDao().getById(mediaId)?.releaseYear)
+    }
+
+    @Test
+    fun save_validationFailure_negativePurchasePrice_keepsReadyWithErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is EditBookUiState.Ready }
+
+        viewModel.save(
+            title = "Project Hail Mary",
+            releaseYear = 2021,
+            purchasePrice = -10.0,
+            totalPages = 384,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is EditBookUiState.Ready && (it as EditBookUiState.Ready).errorMessage != null }
+                as EditBookUiState.Ready
+
+        assertTrue(ready.errorMessage!!.contains("Purchase price"))
+        assertEquals(false, ready.isSaving)
+        assertEquals(27.99, db.mediaItemDao().getById(mediaId)?.purchasePrice)
+    }
+
+    @Test
+    fun save_validationFailure_nonPositiveTotalPages_keepsReadyWithErrorMessage() = runTest {
+        insertBook()
+        val viewModel = newViewModel()
+        viewModel.uiState.first { it is EditBookUiState.Ready }
+
+        viewModel.save(
+            title = "Project Hail Mary",
+            releaseYear = 2021,
+            purchasePrice = 27.99,
+            totalPages = 0,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+        )
+
+        val ready = viewModel.uiState
+            .first { it is EditBookUiState.Ready && (it as EditBookUiState.Ready).errorMessage != null }
+                as EditBookUiState.Ready
+
+        assertTrue(ready.errorMessage!!.contains("Total pages"))
+        assertEquals(false, ready.isSaving)
+        assertEquals(384, db.bookDetailsDao().getByMediaId(mediaId)?.totalPages)
+    }
+
+    @Test
     fun save_doubleTapBeforeCompletion_persistsOnlyOnce() = runTest {
         insertBook()
         val viewModel = newViewModel()

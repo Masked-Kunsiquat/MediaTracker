@@ -15,8 +15,17 @@ interface ReadingSessionDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(session: ReadingSessionEntity)
 
+    /**
+     * @return The number of rows affected: `1` if [session]'s id resolved to an existing row,
+     *   `0` otherwise. Room's generated `@Update` silently no-ops (affects zero rows) rather than
+     *   throwing when the primary key doesn't match an existing row -- e.g. the row was deleted by
+     *   another writer between an earlier `getById` and this call -- so callers that need to
+     *   distinguish "updated" from "no matching row" must check this return value rather than
+     *   assuming success (see
+     *   [com.hub.media.features.books.data.ReadingSessionRepository.updateSession]).
+     */
     @Update
-    suspend fun update(session: ReadingSessionEntity)
+    suspend fun update(session: ReadingSessionEntity): Int
 
     @Delete
     suspend fun delete(session: ReadingSessionEntity)

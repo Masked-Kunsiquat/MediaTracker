@@ -2,9 +2,13 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.sampleBookDetails
+import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -92,18 +96,25 @@ class LibraryViewModelTest {
         val readingResult = repository.addBook(title = "Reading Book", format = BookFormat.PHYSICAL)
         assertIs<Resource.Success<String>>(readingResult)
         repository.updateReadingStatus(readingResult.data, ReadingStatus.READING)
+        // Add a book without a details row (data-integrity edge case) to verify it's excluded from
+        // filtered results when a non-null status filter is applied.
+        val noDetailsMediaId = newId()
+        db.mediaItemDao().insert(
+            sampleMediaItem(id = noDetailsMediaId, type = MediaType.BOOK, title = "No Details Book"),
+        )
 
-        viewModel.uiState.first { it.books.size == 2 }
+        viewModel.uiState.first { it.books.size == 3 }
 
         viewModel.setStatusFilter(ReadingStatus.READING)
 
         val filtered = viewModel.uiState.first { it.statusFilter == ReadingStatus.READING }
-        assertEquals(2, filtered.books.size, "the unfiltered books list must be untouched by the filter")
-        assertEquals(1, filtered.filteredBooks.size)
+        assertEquals(3, filtered.books.size, "the unfiltered books list must be untouched by the filter")
+        assertEquals(1, filtered.filteredBooks.size, "a book with no details row must not match a non-null filter")
         assertEquals("Reading Book", filtered.filteredBooks.first().mediaItem.title)
+        assertTrue(filtered.books.any { it.mediaItem.title == "No Details Book" }, "book without details must be in unfiltered list")
 
         viewModel.setStatusFilter(null)
         val unfiltered = viewModel.uiState.first { it.statusFilter == null }
-        assertEquals(2, unfiltered.filteredBooks.size)
+        assertEquals(3, unfiltered.filteredBooks.size, "all books must be in filteredBooks when filter is null")
     }
 }

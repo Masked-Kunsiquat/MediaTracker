@@ -338,6 +338,57 @@ class ReadingSessionRepositoryTest {
     }
 
     @Test
+    fun readingSessionDao_update_returnsZeroRowsAffectedWhenRowVanishedMidFlight() = runTest {
+        // Finding #4: updateSession's getById-then-update shape has a window where the row can be
+        // deleted by another writer between the two calls. ReadingSessionDao.update now returns
+        // the affected-row count (0 vs 1) specifically so that race is detectable rather than
+        // silently no-op'ing. This directly exercises that DAO-level contract: simulate the row
+        // vanishing after a caller already read it (as updateSession's `existing` would have), then
+        // confirm the subsequent update reports 0 rows affected instead of silently "succeeding."
+        val now = Clock.System.now()
+        val addResult = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = now,
+            timestampEnd = now,
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 0.0,
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        val existing = db.readingSessionDao().getById(sessionId)
+        assertTrue(existing != null)
+
+        // Simulate a concurrent delete winning the race between the read above and the write below.
+        db.readingSessionDao().deleteById(sessionId)
+
+        val rowsAffected = db.readingSessionDao().update(existing)
+        assertTrue(rowsAffected == 0, "update on a vanished row must report 0 affected rows, not silently succeed")
+    }
+
+    @Test
+    fun updateSession_happyPath_updateReportsOneRowAffected() = runTest {
+        // Complements the vanished-row case above: a genuine update against a still-existing row
+        // must report exactly one row affected, confirming the DAO's Int return isn't always 0/stub.
+        val now = Clock.System.now()
+        val addResult = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = now,
+            timestampEnd = now,
+            durationSeconds = 0,
+            startUnit = 0.0,
+            endUnit = 0.0,
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val sessionId = addResult.data
+        val existing = db.readingSessionDao().getById(sessionId)
+        assertTrue(existing != null)
+
+        val rowsAffected = db.readingSessionDao().update(existing.copy(notes = "Edited directly"))
+        assertTrue(rowsAffected == 1)
+    }
+
+    @Test
     fun updateSession_nonexistentId_returnsError() = runTest {
         val now = Clock.System.now()
 

@@ -798,13 +798,11 @@ private fun BookHeader(
                     DisableSelection {
                         IconButton(
                             onClick = { onCopyIsbn(isbn) },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .semantics { contentDescription = copyIsbnDescription },
+                            modifier = Modifier.size(32.dp),
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_content_copy),
-                                contentDescription = null,
+                                contentDescription = copyIsbnDescription,
                             )
                         }
                     }
@@ -1247,6 +1245,16 @@ private fun PendingSessionDialog(
 }
 
 /**
+ * Practical upper bound for [ManualSessionDialog]'s duration field, in minutes: 10 years
+ * (`10 * 365 * 24 * 60`). A manually-backlogged single reading session in the tens of years is
+ * never legitimate, so this exists to catch fat-fingered/overflowing input (see the duration
+ * field's KDoc on [ManualSessionDialog]) -- it is not derived from `Long.MAX_VALUE / 60` (the
+ * true limit before the entered-minutes-to-seconds conversion overflows), which is astronomically
+ * larger and would let obviously-bogus values like a 12-digit minute count through unrejected.
+ */
+private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
+
+/**
  * Dialog for logging -- or, since ROADMAP Task 6 Phase B, editing -- a session with no live timer
  * involved: session date + end time, duration (minutes), start/end position, pages-read (page-mode:
  * derived; percent-mode: manual/optional), and notes. Fields are grouped into "When" (date/time),
@@ -1379,15 +1387,6 @@ private fun PendingSessionDialog(
  * `state.errorMessage` as a banner in [BookDetailContent] once this dialog has closed, exactly as
  * a rejected create already was.
  */
-/**
- * Practical upper bound for [ManualSessionDialog]'s duration field, in minutes: 10 years
- * (`10 * 365 * 24 * 60`). A manually-backlogged single reading session in the tens of years is
- * never legitimate, so this exists to catch fat-fingered/overflowing input (see the duration
- * field's KDoc on [ManualSessionDialog]) -- it is not derived from `Long.MAX_VALUE / 60` (the
- * true limit before the entered-minutes-to-seconds conversion overflows), which is astronomically
- * larger and would let obviously-bogus values like a 12-digit minute count through unrejected.
- */
-private const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,000
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

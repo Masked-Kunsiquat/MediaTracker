@@ -3,11 +3,14 @@ package com.hub.media.core.database.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
+import androidx.room.Query
 import androidx.room.Transaction
-import androidx.room.Update
 import com.hub.media.core.database.entities.BookDetailsEntity
+import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.ReadingStatus
+import kotlin.time.Instant
 
 /**
  * Write-side DAO for the composite "add a book" operation.
@@ -29,11 +32,46 @@ interface BookWriteDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertExternalIdentifier(identifier: ExternalIdentifierEntity)
 
-    @Update
-    suspend fun updateMediaItem(item: MediaItemEntity)
+    /**
+     * Targeted single-row update of [MediaItemEntity]'s user-editable metadata columns only
+     * (title/releaseYear/purchasePrice) -- see [updateBookMetadataAtomically]'s KDoc for why this
+     * is a targeted `UPDATE` rather than a full-row read-modify-write.
+     *
+     * @return The number of rows affected: `1` if [mediaId] exists, `0` otherwise. This is the
+     *   authoritative, in-transaction "does this book exist" signal -- not a boolean the caller
+     *   computed from a read taken before the transaction opened.
+     */
+    @Query(
+        "UPDATE media_items SET title = :title, releaseYear = :releaseYear, " +
+            "purchasePrice = :purchasePrice WHERE id = :mediaId",
+    )
+    suspend fun updateMediaItemMetadata(
+        mediaId: String,
+        title: String,
+        releaseYear: Int?,
+        purchasePrice: Double?,
+    ): Int
 
-    @Update
-    suspend fun updateBookDetails(details: BookDetailsEntity)
+    /**
+     * Targeted single-row update of [BookDetailsEntity]'s user-editable metadata columns only
+     * (format/totalPages/status/finishedAt) -- see [updateBookMetadataAtomically]'s KDoc. Leaves
+     * [BookDetailsEntity.isbn] (and the row's identity) completely untouched.
+     *
+     * @return The number of rows affected: `1` if a [BookDetailsEntity] row exists for [mediaId],
+     *   `0` otherwise -- the in-transaction signal [updateBookMetadataAtomically] uses to decide
+     *   whether to self-heal by inserting a fresh row.
+     */
+    @Query(
+        "UPDATE book_details SET format = :format, totalPages = :totalPages, " +
+            "status = :status, finishedAt = :finishedAt WHERE mediaId = :mediaId",
+    )
+    suspend fun updateBookDetailsMetadata(
+        mediaId: String,
+        format: BookFormat,
+        totalPages: Int?,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    ): Int
 
     /**
      * Atomically updates a book's universal ([MediaItemEntity]) and book-specific
@@ -42,27 +80,56 @@ interface BookWriteDao {
      * Phase A). Follows the same `@Transaction` default-body pattern as [insertBookAtomically]:
      * both writes run on the same underlying connection, so a failure of either rolls back both.
      *
-     * @param hasExistingBookDetails Whether [bookDetails]'s row already exists. [Update] silently
-     *   no-ops (affects zero rows) rather than throwing when the primary key doesn't match an
-     *   existing row, so the caller must tell this method whether to UPDATE or INSERT — this
-     *   covers the data-integrity edge case where a [MediaItemEntity] has no [BookDetailsEntity]
-     *   row yet (never expected via [insertBookAtomically], but see
-     *   [com.hub.media.features.books.data.BookRepository.updateBookMetadata] KDoc for how a save
-     *   in that state self-heals by inserting the missing row instead of silently discarding the
-     *   format/totalPages input).
+     * Uses targeted `UPDATE ... SET <only the requested columns>` statements
+     * ([updateMediaItemMetadata], [updateBookDetailsMetadata]) rather than reading full rows,
+     * `.copy()`-ing them, and writing them back whole: a full-row write is only as fresh as the
+     * read that produced it, so any field touched by a concurrent writer between that read and
+     * this transaction (e.g. [com.hub.media.features.books.data.BookRepository.updateCoverImageHash]
+     * changing `coverImageHash` in between) would be silently reverted. Targeted columns can never
+     * clobber a field this method was never asked to change.
+     *
+     * This also removes the need for a caller-supplied "does the book_details row already exist"
+     * flag: [updateBookDetailsMetadata]'s own affected-row count, checked *inside* this
+     * transaction, is the current, race-free answer -- unlike a boolean computed from a read taken
+     * before the transaction opened, which could already be stale by the time this method runs
+     * (concurrent insert/delete of that row). Zero rows affected means no [BookDetailsEntity] row
+     * exists yet, so this self-heals by inserting a fresh one with the given format/totalPages/
+     * status/finishedAt and a `null` isbn (see
+     * [com.hub.media.features.books.data.BookRepository.updateBookMetadata] KDoc for the full
+     * data-integrity edge case this covers).
+     *
+     * @return The number of [MediaItemEntity] rows affected by [updateMediaItemMetadata]: `1` on
+     *   success, `0` if [mediaId] does not resolve to an existing [MediaItemEntity] (in which case
+     *   [updateBookDetailsMetadata]/the self-heal insert are never attempted).
      */
     @Transaction
     suspend fun updateBookMetadataAtomically(
-        mediaItem: MediaItemEntity,
-        bookDetails: BookDetailsEntity,
-        hasExistingBookDetails: Boolean,
-    ) {
-        updateMediaItem(mediaItem)
-        if (hasExistingBookDetails) {
-            updateBookDetails(bookDetails)
-        } else {
-            insertBookDetails(bookDetails)
+        mediaId: String,
+        title: String,
+        releaseYear: Int?,
+        purchasePrice: Double?,
+        format: BookFormat,
+        totalPages: Int?,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    ): Int {
+        val mediaRowsAffected = updateMediaItemMetadata(mediaId, title, releaseYear, purchasePrice)
+        if (mediaRowsAffected == 0) return 0
+
+        val detailsRowsAffected = updateBookDetailsMetadata(mediaId, format, totalPages, status, finishedAt)
+        if (detailsRowsAffected == 0) {
+            insertBookDetails(
+                BookDetailsEntity(
+                    mediaId = mediaId,
+                    isbn = null,
+                    format = format,
+                    totalPages = totalPages,
+                    status = status,
+                    finishedAt = finishedAt,
+                ),
+            )
         }
+        return mediaRowsAffected
     }
 
     /**

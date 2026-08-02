@@ -427,16 +427,23 @@ public class BookDetailViewModel(
      * [RefetchCoverUseCase.execute]'s KDoc), sets [BookDetailUiState.Ready.errorMessage] using the
      * same surfacing convention as every other mutating method on this class; the book's existing
      * cover is left completely untouched by [RefetchCoverUseCase] on every failure path.
+     *
+     * [isRefetchingCover] is reset in a `finally` block (same shape as [saveInFlight]'s reset in
+     * [saveSession]/[logManualSession]/[updateSession]): if [refetchCoverUseCase] throws instead of
+     * returning a [Resource], the flag still comes back down, so the affordance can't get stuck
+     * permanently "in flight" (spinner stuck forever, [refetchCover] permanently no-op'ing).
      */
     public fun refetchCover() {
         if (_local.value.isRefetchingCover) return
         _local.update { it.copy(isRefetchingCover = true, errorMessage = null) }
         viewModelScope.launch {
-            when (val result = refetchCoverUseCase.execute(bookId)) {
-                is Resource.Success -> _local.update { it.copy(isRefetchingCover = false) }
-                is Resource.Error -> _local.update {
-                    it.copy(isRefetchingCover = false, errorMessage = result.message)
+            try {
+                when (val result = refetchCoverUseCase.execute(bookId)) {
+                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
                 }
+            } finally {
+                _local.update { it.copy(isRefetchingCover = false) }
             }
         }
     }

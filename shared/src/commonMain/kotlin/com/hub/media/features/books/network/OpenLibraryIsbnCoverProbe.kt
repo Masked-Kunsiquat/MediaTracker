@@ -36,6 +36,19 @@ public class OpenLibraryIsbnCoverProbe(private val client: HttpClient) {
      *
      * @return The probed URL if the response is a 2xx success (a real cover exists), or `null` on
      *   a 404 (no cover), any other non-success status, or a network/parse failure. Never throws.
+     *
+     * ### On the network-failure branch being silent
+     * A thrown exception (TLS failure, DNS failure, timeout, connection reset, etc.) is
+     * deliberately indistinguishable from a confirmed "no cover" 404 here -- both just return
+     * `null`. This is a real loss of information (a caller can't tell "this book genuinely has no
+     * cover" from "we couldn't check"), but recording the exception would need a logging facility,
+     * and `shared/` has none: there is no `Logger`/`Napier`/equivalent anywhere in
+     * `commonMain`, and AGENTS.md §5 explicitly rules out adding third-party dependencies without
+     * project sign-off. Swallowing to `null` also matches the existing sibling pattern in this
+     * package -- [OpenLibraryClient.fetchAuthorName] silently drops a per-author lookup failure to
+     * `null` the same way -- so this isn't a one-off oversight, it's this codebase's established
+     * (if imperfect) convention for a "best-effort, never-throws" lookup. If/when `shared/` grows a
+     * logging facility, this is the first catch block that should start using it.
      */
     public suspend fun probeCoverUrl(isbn: String): String? {
         val url = "$OPEN_LIBRARY_COVERS_ISBN_URL/$isbn-L.jpg?default=false"
@@ -43,6 +56,9 @@ public class OpenLibraryIsbnCoverProbe(private val client: HttpClient) {
             val response = client.get(url)
             if (response.status.isSuccess()) url else null
         } catch (e: Exception) {
+            // See "On the network-failure branch being silent" above: no shared/ logging facility
+            // exists to record `e` against, so a network/TLS failure and a genuine "no cover" are
+            // indistinguishable to callers by design, not by accident.
             null
         }
     }
