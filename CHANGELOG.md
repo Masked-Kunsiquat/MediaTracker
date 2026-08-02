@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-02
+
+Books polish: the book domain becomes correctable and navigable rather than just functional.
+Book metadata is editable (including new Paperback/Hardcover formats), reading sessions can be
+edited instead of only deleted, books carry a reading status, and the Book Detail screen splits
+into Details / Reading history tabs. Covers fetch at full size from Google Books and can be
+re-fetched per book. Ships **Room schema v3** with a tested migration.
+
 ### Added
 
 - **Edit book metadata** (ROADMAP Task 6 Phase A) — a user-facing correction flow for provider
