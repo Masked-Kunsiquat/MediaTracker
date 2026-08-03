@@ -267,6 +267,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     instead of `LibraryCsvImporter`. `ImportViewModel` gained a matching `importGoodreads(...)`
     sharing its existing `Idle`/`Loading`/`Success`/`Error` state machine with `importData(...)`.
   - No schema change (`AppDatabase` stays at v4); no new dependency; no new permission.
+- **Fixed: every SAF file read/write on the Settings "Data" screen now runs off the main
+  thread.** `readCsvFromUri`/`writeCsvToUri`/`copyFileToUri`/`copyUriToFile` were all being called
+  directly inside `rememberLauncherForActivityResult` callbacks (or a `rememberCoroutineScope`
+  launch with no dispatcher), which run on the main thread — a large CSV or `.sqlite` file
+  (`copyUriToFile` streams the *whole database* during restore) could block the UI long enough to
+  ANR. Every call site now wraps the actual stream I/O in `withContext(Dispatchers.IO)`.
+- **Fixed: an interrupted `.sqlite` restore could no longer strand the app with a closed database
+  in a live process.** The restore-confirm handler's `appContainer.close()` → `commit()` →
+  `restartApp()` sequence ran in the `rememberCoroutineScope` scope tied to the Settings screen's
+  composition — a cancellation any time after `close()` (e.g. the composable leaving composition)
+  skipped `restartApp()` entirely, leaving a running process with a closed `AppContainer` and no
+  way back except force-killing the app by hand. The whole sequence, including `restartApp()`
+  itself, now runs inside a single `withContext(Dispatchers.IO + NonCancellable)` block, so once
+  started it always runs to completion regardless of what happens to the composition.
 
 ## [0.6.0] - 2026-08-02
 

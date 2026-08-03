@@ -88,6 +88,7 @@ import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -169,8 +170,13 @@ fun SettingsScreenRoute(
     ) { uri ->
         val libraryCsv = pendingLibraryCsvForImport
         pendingLibraryCsvForImport = null
-        val readingLogsCsv = uri?.let { readCsvFromUri(context, it) }
-        importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
+        // Off the main thread: reading a whole document via SAF is blocking I/O that runs
+        // straight inside this launcher callback, which is itself dispatched on the main thread --
+        // an unbounded read here (a large reading-logs export) would otherwise ANR the app.
+        coroutineScope.launch {
+            val readingLogsCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
+            importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
+        }
     }
 
     val libraryImportLauncher = rememberLauncherForActivityResult(
@@ -180,13 +186,17 @@ fun SettingsScreenRoute(
             coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
             return@rememberLauncherForActivityResult
         }
-        val content = readCsvFromUri(context, uri)
-        if (content == null) {
-            coroutineScope.launch { snackbarHostState.showSnackbar(importFailureMessage) }
-            return@rememberLauncherForActivityResult
+        // Off the main thread -- see readingLogsImportLauncher above; a large library export is
+        // the more likely of the two files to be big enough to matter.
+        coroutineScope.launch {
+            val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
+            if (content == null) {
+                snackbarHostState.showSnackbar(importFailureMessage)
+                return@launch
+            }
+            pendingLibraryCsvForImport = content
+            readingLogsImportLauncher.launch(arrayOf("text/*"))
         }
-        pendingLibraryCsvForImport = content
-        readingLogsImportLauncher.launch(arrayOf("text/*"))
     }
 
     // ---- Goodreads import (ROADMAP Task 8 Phase D) ---------------------------------------------
@@ -204,12 +214,15 @@ fun SettingsScreenRoute(
             coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
             return@rememberLauncherForActivityResult
         }
-        val content = readCsvFromUri(context, uri)
-        if (content == null) {
-            coroutineScope.launch { snackbarHostState.showSnackbar(importFailureMessage) }
-            return@rememberLauncherForActivityResult
+        // Off the main thread -- see the CSV import launchers above.
+        coroutineScope.launch {
+            val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
+            if (content == null) {
+                snackbarHostState.showSnackbar(importFailureMessage)
+                return@launch
+            }
+            importViewModel.importGoodreads(content, goodreadsDuplicatePolicy)
         }
-        importViewModel.importGoodreads(content, goodreadsDuplicatePolicy)
     }
 
     // Holds the generated bundle between the two sequential SAF "create document" picks below --
@@ -224,10 +237,11 @@ fun SettingsScreenRoute(
         pendingBundle = null
         exportViewModel.reset()
         coroutineScope.launch {
+            // Off the main thread: writing a whole document via SAF is blocking I/O.
             val message = when {
                 uri == null -> exportCancelledMessage
                 bundle == null -> exportFailureMessage
-                writeCsvToUri(context, uri, bundle.readingLogsCsv) -> exportSuccessMessage
+                withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.readingLogsCsv) } -> exportSuccessMessage
                 else -> exportFailureMessage
             }
             snackbarHostState.showSnackbar(message)
@@ -242,14 +256,19 @@ fun SettingsScreenRoute(
             pendingBundle = null
             exportViewModel.reset()
             coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-        } else if (writeCsvToUri(context, uri, bundle.libraryCsv)) {
-            // First file written; immediately prompt for the second file's destination so both
-            // documents come from the exact same generated snapshot.
-            readingLogsLauncher.launch("reading_logs_export.csv")
         } else {
-            pendingBundle = null
-            exportViewModel.reset()
-            coroutineScope.launch { snackbarHostState.showSnackbar(exportFailureMessage) }
+            // Off the main thread -- see readingLogsLauncher above.
+            coroutineScope.launch {
+                if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
+                    // First file written; immediately prompt for the second file's destination so
+                    // both documents come from the exact same generated snapshot.
+                    readingLogsLauncher.launch("reading_logs_export.csv")
+                } else {
+                    pendingBundle = null
+                    exportViewModel.reset()
+                    snackbarHostState.showSnackbar(exportFailureMessage)
+                }
+            }
         }
     }
 
@@ -296,15 +315,17 @@ fun SettingsScreenRoute(
         pendingBackupResult = null
         backupViewModel.reset()
         coroutineScope.launch {
+            // Off the main thread: copying the staged database snapshot via SAF is blocking I/O
+            // over a potentially large file.
             val message = when {
                 uri == null -> backupCancelledMessage
                 result == null -> backupFailureMessage
-                copyFileToUri(context, uri, result.stagedFilePath) -> backupSuccessMessage
+                withContext(Dispatchers.IO) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
                 else -> backupFailureMessage
             }
             // The staged snapshot is this screen's own private temp file (not the live database
             // itself) -- always clean it up once the SAF copy has been attempted, success or not.
-            result?.let { File(it.stagedFilePath).delete() }
+            result?.let { withContext(Dispatchers.IO) { File(it.stagedFilePath).delete() } }
             snackbarHostState.showSnackbar(message)
         }
     }
@@ -335,11 +356,17 @@ fun SettingsScreenRoute(
             return@rememberLauncherForActivityResult
         }
         val incomingFile = File(context.cacheDir, "restore-incoming-${System.currentTimeMillis()}.tmp")
-        if (!copyUriToFile(context, uri, incomingFile.absolutePath)) {
-            coroutineScope.launch { snackbarHostState.showSnackbar(restoreReadFailureMessage) }
-            return@rememberLauncherForActivityResult
+        // Off the main thread: this copies a whole database file via SAF, the largest single I/O
+        // operation on this screen -- doing it synchronously here (as before) would ANR on any
+        // real-sized library.
+        coroutineScope.launch {
+            val copied = withContext(Dispatchers.IO) { copyUriToFile(context, uri, incomingFile.absolutePath) }
+            if (!copied) {
+                snackbarHostState.showSnackbar(restoreReadFailureMessage)
+                return@launch
+            }
+            restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
         }
-        restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
     }
 
     LaunchedEffect(restoreUiState) {
@@ -357,15 +384,31 @@ fun SettingsScreenRoute(
                 // Deliberately NOT routed through restoreViewModel.viewModelScope: the very next
                 // step closes the AppContainer this ViewModel's own use case was wired from, and
                 // the process is killed immediately after -- see RestoreViewModel's KDoc.
+                //
+                // The launch itself still comes from rememberCoroutineScope, so its Job is
+                // cancelled the moment this composable leaves composition -- but everything from
+                // appContainer.close() onward runs inside a single NonCancellable block, not just
+                // on Dispatchers.IO. appContainer.close() happens first, so a cancellation landing
+                // anywhere after that point (including the resume-back-to-Main that would
+                // otherwise happen between the old withContext(Dispatchers.IO) block and a
+                // separate restartApp(context) call) would leave a closed AppContainer alive in a
+                // process that never restarts -- the exact "half-live container" AGENTS.md §1
+                // warns against, and worse than doing nothing since the user is left looking at a
+                // running app with no working database. NonCancellable (rather than, say, a
+                // longer-lived application-scoped CoroutineScope) is the minimal fix here: it
+                // guarantees this exact sequence runs to completion once started, without adding a
+                // new scope that would need its own lifecycle management. restartApp is called
+                // unconditionally, matching DefaultRestoreDatabaseUseCase.commit's own KDoc ("a
+                // full process restart follows every commit call, success or failure") -- commit
+                // itself never throws (it catches internally and always returns a Resource), so
+                // the only failure mode this guards against is cancellation, not an exception from
+                // commit.
                 coroutineScope.launch {
-                    // Off the main thread: closing the database/HTTP client and renaming files are
-                    // blocking calls. restartApp (Activity/process APIs) runs back on the launch's
-                    // original dispatcher once this completes.
-                    withContext(Dispatchers.IO) {
+                    withContext(Dispatchers.IO + NonCancellable) {
                         appContainer.close()
                         appContainer.restoreDatabaseUseCase.commit(state.info)
+                        restartApp(context)
                     }
-                    restartApp(context)
                 }
             },
             onCancel = {
