@@ -93,17 +93,46 @@ public suspend fun consumeRestoreMarker(liveDatabaseFilePath: String): RestoreMa
  *
  * Called once at the very start of [com.hub.media.ui.createAppContainer], *before* Room ever opens
  * [liveDatabaseFilePath]: if the live file is missing but a pre-restore backup exists, the backup
- * (and its `-wal`/`-shm` siblings, if any survived alongside it) is moved back into place first.
+ * (and its `-wal`/`-shm` siblings, if any survived alongside it) is moved back into place.
  * On every ordinary launch (the live file already exists) this is a single fast existence check
  * and a no-op.
+ *
+ * ### Ordering: sidecars first, main file last
+ * [fileExists] on [liveDatabaseFilePath] doubles as this function's own "already healed" sentinel
+ * (the early-return above). That sentinel is only trustworthy if it can't go true before the *set*
+ * of files it stands for is complete -- so the `-wal`/`-shm` siblings are moved back **before** the
+ * main database file, which is renamed **last**. If a process death interrupts this function
+ * between the two steps, the live file is still missing, so the next launch's self-heal call sees
+ * the same "not yet healed" state and simply finishes the job (moving whichever backup sidecars are
+ * still present, then the main file) -- idempotent regardless of exactly where it was interrupted.
+ * The previous ordering (main file first, sidecars last) had the opposite failure mode: a death
+ * right after the main-file rename left the live file present -- satisfying the sentinel -- while
+ * its `-wal` stayed stranded at [backupPath]`-wal`. Room would then open the live file *without*
+ * the WAL holding its most recent commits, silently losing them, with an orphaned `-wal` left
+ * behind at the backup path.
+ *
+ * ### The main-file rename only runs if both sidecar renames actually succeeded
+ * A process death is not the only way step order can matter: a sidecar rename can also simply
+ * *fail* (return `false`) while the process keeps running -- e.g. another handle on the file
+ * momentarily blocking a rename, which real filesystems do surface as ordinary rename failures, not
+ * just as theoretical crash windows. If the main-file rename ran unconditionally afterward anyway,
+ * a failed sidecar move would silently reproduce the exact same danger as the old ordering: the live
+ * file present (sentinel satisfied) with its WAL still stranded at the backup path, forever
+ * unreachable once this function's own early-return stops looking for it. So the main-file rename is
+ * gated on both sidecar renames having succeeded (or not having been needed in the first place); if
+ * either failed, this call leaves the live file still missing -- the exact "not yet healed" state the
+ * early-return above knows how to retry -- rather than ever presenting a half-healed database as
+ * whole.
  */
 public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String) {
     val backupPath = preRestoreBackupPath(liveDatabaseFilePath)
     if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return
 
-    renameFile(backupPath, liveDatabaseFilePath)
     val backupWal = "$backupPath-wal"
     val backupShm = "$backupPath-shm"
-    if (fileExists(backupWal)) renameFile(backupWal, "$liveDatabaseFilePath-wal")
-    if (fileExists(backupShm)) renameFile(backupShm, "$liveDatabaseFilePath-shm")
+    val walRestored = !fileExists(backupWal) || renameFile(backupWal, "$liveDatabaseFilePath-wal")
+    val shmRestored = !fileExists(backupShm) || renameFile(backupShm, "$liveDatabaseFilePath-shm")
+    if (walRestored && shmRestored) {
+        renameFile(backupPath, liveDatabaseFilePath)
+    }
 }

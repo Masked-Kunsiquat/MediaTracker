@@ -227,21 +227,35 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   pager (transparently merging main file + WAL, the same path every ordinary query already uses) and
   writes one fresh, compacted, WAL-free snapshot, proven in `DatabaseBackupUseCaseTest` (`jvmTest`)
   against a real file-backed database with a row confirmed to still be sitting only in `-wal` at
-  backup time. Restore validates a picked file *before* touching anything: the first 100 bytes are
-  parsed directly (no SQLite driver at all) for the magic string and `PRAGMA user_version` at its
-  fixed header offset, refusing a non-SQLite file or a `user_version` newer than
-  `APP_DATABASE_VERSION` with a clear message; an **older** version is accepted and
-  swapped in as-is, since the very next open goes through the exact same registered migration chain
-  every normal launch already uses -- verified end to end in `RestoreDatabaseUseCaseTest` (a real v2
-  file restored, reopened, and confirmed migrated to v4 with its data intact). The live file is
-  never deleted until the replacement is staged and validated: the picked document is streamed to a
-  private temp file, validated there, then swapped in via same-directory atomic renames (old file to
-  a fixed-name `.pre-restore-bak` safety net, then the validated file into the live path); a failed
-  final rename rolls the backup back automatically, and a `selfHealDatabaseIfNeeded` check at every
-  cold start closes the one unavoidable gap between those two renames (a process death in that exact
-  window would otherwise make Room create an empty database on next launch). `AppContainer` is
-  closed before the swap and the whole process is killed and relaunched immediately after,
-  success or failure -- the only clean way back to a fully working `AppContainer` rather than a
+  backup time. Restore validates a picked file *before* touching anything, in two passes: pass 1
+  parses the first 100 bytes directly (no SQLite driver at all) for the magic string and `PRAGMA
+  user_version` at its fixed header offset, refusing a non-SQLite file or a `user_version` newer than
+  `APP_DATABASE_VERSION` with a clear message. Pass 2 opens the candidate with a real
+  `BundledSQLiteDriver` connection and runs `PRAGMA integrity_check`, then confirms every table this
+  app has shipped since schema v1 is present -- a valid-looking 100-byte header can't tell a
+  truncated/corrupt file, or a structurally-valid SQLite file from a different program entirely,
+  apart from a genuine MediaTracker database, and this is the single most destructive action in the
+  app (AGENTS.md §1). An **older** version that passes both passes is accepted and swapped in as-is,
+  since the very next open goes through the exact same registered migration chain every normal
+  launch already uses -- verified end to end in `RestoreDatabaseUseCaseTest` (a real v2 file
+  restored, reopened, and confirmed migrated to v4 with its data intact; pass 2's table check
+  deliberately excludes `app_settings`, added at v4, so this legitimate older-backup path is never
+  itself rejected). A truncated file with an otherwise-valid header, and a structurally valid but
+  unrelated SQLite file, are both covered by dedicated tests proving the header check alone would
+  have wrongly accepted them. The live file is never deleted until the replacement is staged and
+  validated: the picked document is streamed to a private temp file, validated there, then swapped in
+  via same-directory atomic renames (`ATOMIC_MOVE` only -- no non-atomic fallback if the platform
+  provider rejects it, since a non-atomic copy could leave a truncated file a plain existence check
+  can't tell from a genuine one) -- old file (and its `-wal`/`-shm` sidecars, moved only once the
+  main-file rename itself succeeded, and only if both sidecar renames also succeed) to a fixed-name
+  `.pre-restore-bak` safety net, then the validated file into the live path; a failed final rename
+  rolls the backup back automatically (sidecars first, main file last), and a
+  `selfHealDatabaseIfNeeded` check at every cold start closes the one unavoidable gap between those
+  two renames (a process death in that exact window would otherwise make Room create an empty
+  database on next launch) using the same sidecars-first-main-last ordering, so its own "already
+  healed" sentinel can never go true before the WAL that belongs next to the live file has arrived.
+  `AppContainer` is closed before the swap and the whole process is killed and relaunched immediately
+  after, success or failure -- the only clean way back to a fully working `AppContainer` rather than a
   half-live one -- with the outcome persisted to a small marker file and surfaced once on the next
   launch. Confirmation is a dedicated modal requiring an explicit checkbox before a
   destructively-styled button enables, reached only after the file already passed validation. No

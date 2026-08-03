@@ -8,6 +8,7 @@ import com.hub.media.core.database.APP_DATABASE_VERSION
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.AppDatabaseConstructor
 import com.hub.media.core.database.RestoreMarker
+import com.hub.media.core.database.SQLITE_HEADER_SIZE
 import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
 import com.hub.media.core.database.entities.BookFormat
@@ -15,6 +16,7 @@ import com.hub.media.core.database.selfHealDatabaseIfNeeded
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.deleteExisting
@@ -142,6 +144,58 @@ class RestoreDatabaseUseCaseTest {
         assertEquals(APP_DATABASE_VERSION, result.data.schemaVersionFound)
         assertFalse(result.data.isOlderSchemaVersion)
         assertTrue(File(candidatePath).exists(), "an accepted candidate must not be deleted -- it's staged for commit")
+    }
+
+    // ==========================================================================================
+    // stage(): integrity validation beyond the 100-byte header (Finding 4)
+    // ==========================================================================================
+
+    /**
+     * The core "100-byte header is too low a bar" regression test: a file whose first 100 bytes are
+     * a completely legitimate MediaTracker header (real magic string, real current `user_version`)
+     * but whose body was chopped off entirely. Header-only validation cannot tell this apart from a
+     * genuinely intact database -- only actually opening it (this function's new second pass) can.
+     */
+    @Test
+    fun stage_truncatedFileWithValidHeader_isRejectedDespitePassingHeaderCheck() = runTest {
+        val candidatePath = path("truncated.db")
+        createFreshDatabaseFile(candidatePath)
+        val fullBytes = File(candidatePath).readBytes()
+        assertTrue(
+            fullBytes.size > SQLITE_HEADER_SIZE,
+            "sanity: a real database file must be larger than just its own header, or this test " +
+                "proves nothing",
+        )
+        // Keep the header completely intact (so the pre-existing magic-string/user_version check
+        // still passes it) but discard everything after it -- simulating a backup file truncated by
+        // an interrupted copy/upload.
+        File(candidatePath).writeBytes(fullBytes.copyOf(SQLITE_HEADER_SIZE + 16))
+
+        val result = DefaultRestoreDatabaseUseCase(path("live.db")).stage(candidatePath)
+
+        assertIs<Resource.Error>(result)
+        assertFalse(File(candidatePath).exists(), "a rejected candidate must be cleaned up, not left behind")
+    }
+
+    /**
+     * A structurally valid, openable SQLite file that simply isn't a MediaTracker database at all
+     * (unrelated table, `user_version` left at SQLite's own default of 0 -- which the pre-existing
+     * header check alone would accept, since 0 <= APP_DATABASE_VERSION). Proves the new
+     * expected-table check, not just the integrity check, actually runs: this file passes
+     * `PRAGMA integrity_check` cleanly (it's a perfectly valid SQLite file) but must still be
+     * refused because it has none of this app's tables.
+     */
+    @Test
+    fun stage_validSqliteFileThatIsNotAMediaTrackerDatabase_isRejected() = runTest {
+        val candidatePath = path("unrelated.db")
+        BundledSQLiteDriver().open(candidatePath).use { connection ->
+            connection.execSQL("CREATE TABLE some_other_apps_table (id INTEGER PRIMARY KEY, note TEXT)")
+        }
+
+        val result = DefaultRestoreDatabaseUseCase(path("live.db")).stage(candidatePath)
+
+        assertIs<Resource.Error>(result)
+        assertFalse(File(candidatePath).exists(), "a rejected candidate must be cleaned up, not left behind")
     }
 
     @Test
@@ -305,6 +359,58 @@ class RestoreDatabaseUseCaseTest {
         assertIs<RestoreMarker.Failure>(marker)
     }
 
+    /**
+     * Finding 2's exact scenario, reproduced deterministically: a live database's own `-wal` file
+     * fails to move aside during [DefaultRestoreDatabaseUseCase.commit]'s swap (simulated via an
+     * open [RandomAccessFile] blocking the rename on Windows -- a real, live-process failure mode,
+     * not a hand-waved crash). Before this fix, the sidecars' rename return values were never
+     * checked, so the swap would proceed to install the new database anyway -- returning
+     * [Resource.Success] while silently leaving the *old* database's most recent commits (the ones
+     * still only in its `-wal`) outside the safety-net backup, and a stray sidecar file sitting next
+     * to the brand-new live database under its own `-wal` name. The fix must instead abort the whole
+     * swap, roll the live file back, and report a truthful "nothing was changed" -- never a lie about
+     * "your original library was not affected" while its WAL is actually missing.
+     */
+    @Test
+    fun commit_walSidecarRenameFailure_abortsAndRestoresOriginal_neverReportingFalseSuccess() = runTest {
+        val livePath = path("live.db")
+        val walPath = "$livePath-wal"
+        val shmPath = "$livePath-shm"
+        File(livePath).writeText("ORIGINAL-MAIN-CONTENT")
+        File(walPath).writeText("ORIGINAL-WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS")
+        File(shmPath).writeText("ORIGINAL-SHM-CONTENT")
+
+        val stagedPath = path("candidate.db")
+        File(stagedPath).writeText("STAGED-REPLACEMENT-CONTENT")
+        val staged = StagedRestoreInfo(
+            stagedFilePath = stagedPath,
+            schemaVersionFound = APP_DATABASE_VERSION,
+            isOlderSchemaVersion = false,
+        )
+
+        val result = RandomAccessFile(walPath, "rw").use { lock ->
+            DefaultRestoreDatabaseUseCase(livePath).commit(staged)
+        }
+
+        assertIs<Resource.Error>(result)
+        assertTrue(
+            result.message.contains("Nothing was changed"),
+            "the failure message must be truthful, not merely present -- got: ${result.message}",
+        )
+        assertEquals(
+            "ORIGINAL-MAIN-CONTENT",
+            File(livePath).readText(),
+            "the live file must be exactly what it was -- never replaced when its WAL couldn't travel with it",
+        )
+        assertEquals(
+            "ORIGINAL-WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS",
+            File(walPath).readText(),
+            "the original WAL (holding whatever commits weren't yet checkpointed) must still be right " +
+                "next to the live file it belongs to, not stranded at the backup path or lost",
+        )
+        assertTrue(File(stagedPath).exists(), "the staged candidate must be untouched -- the swap never reached it")
+    }
+
     @Test
     fun commit_noLiveDatabaseExistedYet_stillSwapsInSuccessfully() = runTest {
         // A fresh install restoring a backup before any local data was ever created.
@@ -373,5 +479,54 @@ class RestoreDatabaseUseCaseTest {
         val livePath = path("live.db")
         selfHealDatabaseIfNeeded(livePath)
         assertFalse(File(livePath).exists())
+    }
+
+    /**
+     * Finding 1's exact failure mode, reproduced deterministically instead of hand-waved: a `-wal`
+     * rename can fail on a live process too, not only via a mid-syscall crash (e.g. another handle
+     * transiently blocking it -- simulated here via an open [RandomAccessFile] on Windows, which
+     * blocks renaming/deleting the file it holds open). The old ordering (main file first, sidecars
+     * last, with return values never checked) would rename the main file into place regardless,
+     * leaving the live file present -- satisfying [selfHealDatabaseIfNeeded]'s own "already healed"
+     * sentinel -- while the backup `-wal` stays permanently stranded, exactly as Finding 1 describes.
+     * The fixed ordering must instead leave the live file missing (so a later retry can still
+     * succeed) whenever a needed sidecar rename fails.
+     */
+    @Test
+    fun selfHeal_walRenameFailure_neverLeavesLiveFilePresentWithoutIt() = runTest {
+        val livePath = path("live.db")
+        val backupPath = "$livePath.pre-restore-bak"
+        val backupWalPath = "$backupPath-wal"
+        val backupShmPath = "$backupPath-shm"
+        File(backupPath).writeText("MAIN-CONTENT")
+        File(backupWalPath).writeText("WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS")
+        File(backupShmPath).writeText("SHM-CONTENT")
+
+        // Hold an open handle on the backup -wal file so its rename fails while the main file's
+        // rename (unlocked) would otherwise succeed -- exactly one sidecar rename failing, live
+        // process, no crash involved.
+        RandomAccessFile(backupWalPath, "rw").use { lock ->
+            selfHealDatabaseIfNeeded(livePath)
+
+            assertFalse(
+                File(livePath).exists(),
+                "the live file must NOT appear until its -wal sidecar successfully travels with it " +
+                    "-- otherwise the next launch would see 'live file present' and never look for " +
+                    "the stranded WAL again",
+            )
+            assertTrue(File(backupPath).exists(), "the main backup file must be untouched while the WAL move failed")
+            assertTrue(File(backupWalPath).exists(), "the WAL must still be at the backup path (its rename failed)")
+        }
+
+        // Lock released (as if the transient condition cleared) -- a subsequent call must finish
+        // the job completely, with no data lost.
+        selfHealDatabaseIfNeeded(livePath)
+
+        assertTrue(File(livePath).exists(), "retrying after the transient failure clears must complete the heal")
+        assertEquals("WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS", File("$livePath-wal").readText())
+        assertEquals("SHM-CONTENT", File("$livePath-shm").readText())
+        assertFalse(File(backupPath).exists())
+        assertFalse(File(backupWalPath).exists())
+        assertFalse(File(backupShmPath).exists())
     }
 }

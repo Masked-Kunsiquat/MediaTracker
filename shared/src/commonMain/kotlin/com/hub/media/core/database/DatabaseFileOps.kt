@@ -48,13 +48,19 @@ internal expect suspend fun writeFileBytes(path: String, bytes: ByteArray): Bool
 internal expect suspend fun deleteFileIfExists(path: String): Boolean
 
 /**
- * Moves the file at [fromPath] to [toPath], replacing any existing file already at [toPath].
- * Every call site in this codebase moves within the same parent directory (the database's own
- * directory), so an atomic same-filesystem rename is the expected, common case; a non-atomic
- * fallback is used only if the platform genuinely can't do an atomic move (defensive -- not
- * expected to trigger given same-directory moves, but cheap to handle).
+ * Moves the file at [fromPath] to [toPath] atomically, replacing any existing file already at
+ * [toPath]. Every call site in this codebase moves within the same parent directory (the
+ * database's own directory), so this is expected to succeed via a real atomic rename on any
+ * filesystem this app actually runs on. Deliberately **requires** the atomic path rather than
+ * falling back to a non-atomic copy-then-delete if the platform provider rejects it: the
+ * crash-recovery design built on top of this function ([selfHealDatabaseIfNeeded]'s "live file
+ * present" sentinel, [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.swap]'s
+ * rollback messaging) assumes every call either fully happens or fully doesn't -- a non-atomic
+ * fallback could leave a truncated file at [toPath] that a plain existence check can't tell apart
+ * from a genuine one if a process dies mid-copy, defeating that whole design silently.
  *
  * @return `true` on success, `false` if [fromPath] doesn't exist or the move failed for any
- *   reason (nothing at [toPath] is disturbed in that case).
+ *   reason, including the platform being unable to do an atomic move (nothing at [toPath] is
+ *   disturbed in that case).
  */
 internal expect suspend fun renameFile(fromPath: String, toPath: String): Boolean

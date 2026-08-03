@@ -2,7 +2,6 @@ package com.hub.media.core.database
 
 import java.io.File
 import java.io.RandomAccessFile
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
@@ -63,20 +62,24 @@ internal actual suspend fun renameFile(fromPath: String, toPath: String): Boolea
         val from = File(fromPath)
         if (!from.exists()) return@withContext false
         try {
-            try {
-                Files.move(
-                    from.toPath(),
-                    File(toPath).toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (e: AtomicMoveNotSupportedException) {
-                Files.move(
-                    from.toPath(),
-                    File(toPath).toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            }
+            // ATOMIC_MOVE only -- deliberately no REPLACE_EXISTING-only fallback if the platform
+            // provider rejects it (java.nio.file.AtomicMoveNotSupportedException, caught by the
+            // generic Exception handler below same as any other failure). Every call site in this
+            // codebase moves within the database's own directory, where an atomic rename is the
+            // only case that ever actually happens -- but the whole crash-recovery design
+            // (selfHealDatabaseIfNeeded's "live file present" sentinel, swap()'s rollback
+            // messaging) assumes a renameFile call either fully happens or fully doesn't. A
+            // non-atomic copy-then-delete fallback would break that: a process death mid-copy could
+            // leave a truncated file at toPath that still satisfies a plain existence check,
+            // silently defeating self-heal. Failing the whole rename (false) instead is strictly
+            // safer than proceeding non-atomically, and costs nothing in the one filesystem
+            // configuration this app ever actually runs on.
+            Files.move(
+                from.toPath(),
+                File(toPath).toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
             true
         } catch (e: Exception) {
             false
