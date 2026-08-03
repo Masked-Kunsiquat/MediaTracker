@@ -457,7 +457,19 @@ fun SettingsScreenRoute(
                 }
             },
             onCancel = {
-                File(state.info.stagedFilePath).delete()
+                // Declining the restore is the one place the staged copy is discarded by an
+                // explicit user action rather than a failure path -- but it is still a
+                // whole-database-sized file, so the delete belongs on Dispatchers.IO like every
+                // other file operation on this screen, not on the main thread inside a Compose
+                // callback. NonCancellable for the same reason the two sibling cleanup sites use
+                // it: `coroutineScope` is composition-scoped, so tapping Cancel and immediately
+                // leaving Settings would otherwise cancel this launch before the delete ran and
+                // leak the file with nothing left to clean it up.
+                coroutineScope.launch {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        File(state.info.stagedFilePath).delete()
+                    }
+                }
                 restoreViewModel.reset()
             },
         )
