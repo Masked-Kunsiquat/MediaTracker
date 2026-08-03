@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.features.books.data.BookRepository
@@ -10,6 +11,13 @@ import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.portability.data.ImportWriteRepository
+import com.hub.media.features.portability.domain.DatabaseBackupUseCase
+import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
+import com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase
+import com.hub.media.features.portability.domain.ExportDataUseCase
+import com.hub.media.features.portability.domain.ImportDataUseCase
+import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.stats.data.StatsRepository
 
@@ -37,10 +45,21 @@ import com.hub.media.features.stats.data.StatsRepository
  *   container; it is closed by [close].
  * @param imageStorage Content-addressed cover image storage rooted at a platform-appropriate
  *   directory (see the platform `coverStorageDirectory` helpers).
+ * @param databaseFilePath The live database's on-disk path (from
+ *   [com.hub.media.core.database.DatabaseFactory.databaseFilePath]), needed by
+ *   [backupDatabaseUseCase]/[restoreDatabaseUseCase] (ROADMAP Task 8 Phase C) to locate the real
+ *   file on disk -- everything else in this container only ever talks to [database] through Room.
+ * @param pendingRestoreMarker The outcome of a restore attempt that completed just before this
+ *   process was (re)launched, if any -- see [com.hub.media.core.database.consumeRestoreMarker]'s
+ *   KDoc for why this is surfaced exactly once per process launch rather than read reactively.
+ *   `null` on every ordinary launch (the overwhelming majority of launches, including every one
+ *   that never involves a restore at all).
  */
 public class AppContainer(
     private val database: AppDatabase,
     imageStorage: LocalImageStorageManager,
+    databaseFilePath: String,
+    public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
     private val httpClient = createHttpClient()
 
@@ -89,6 +108,51 @@ public class AppContainer(
         httpClient = httpClient,
         imageStorage = imageStorage,
         bookRepository = bookRepository,
+    )
+
+    /**
+     * CSV data-export workflow (ROADMAP Task 8 Phase A), consumed by [ExportViewModel] from the
+     * Settings screen. Pure Kotlin -- see [ExportDataUseCase]'s KDoc.
+     */
+    public val exportDataUseCase: ExportDataUseCase = ExportDataUseCase(
+        bookRepository = bookRepository,
+        readingSessionRepository = readingSessionRepository,
+    )
+
+    /**
+     * CSV data-import workflow (ROADMAP Task 8 Phase B), consumed by [ImportViewModel] from the
+     * Settings screen. [importWriteRepository] wraps the single all-or-nothing write transaction
+     * ([com.hub.media.core.database.dao.ImportWriteDao.importAtomically]); [bookRepository]/
+     * [readingSessionRepository] are reused for reading the current-library snapshot import needs
+     * for duplicate matching, same as [exportDataUseCase] reuses them for reading everything out.
+     */
+    private val importWriteRepository: ImportWriteRepository = ImportWriteRepository(database)
+
+    public val importDataUseCase: ImportDataUseCase = ImportDataUseCase(
+        bookRepository = bookRepository,
+        readingSessionRepository = readingSessionRepository,
+        importWriteRepository = importWriteRepository,
+    )
+
+    /**
+     * Whole-database `.sqlite` backup workflow (ROADMAP Task 8 Phase C), consumed by
+     * [BackupViewModel] from the Settings screen.
+     */
+    public val backupDatabaseUseCase: DatabaseBackupUseCase = DefaultDatabaseBackupUseCase(
+        database = database,
+        databaseFilePath = databaseFilePath,
+    )
+
+    /**
+     * Whole-database `.sqlite` restore workflow (ROADMAP Task 8 Phase C), consumed by
+     * [RestoreViewModel] from the Settings screen. See [DefaultRestoreDatabaseUseCase]'s KDoc for
+     * the full safety sequence -- notably, [close] must be called on this exact [AppContainer]
+     * instance before [RestoreDatabaseUseCase.commit] is invoked, and the process must be
+     * restarted afterward; neither of those steps can happen from within this container itself,
+     * since they're about the container's own lifecycle and the platform process, respectively.
+     */
+    public val restoreDatabaseUseCase: RestoreDatabaseUseCase = DefaultRestoreDatabaseUseCase(
+        liveDatabaseFilePath = databaseFilePath,
     )
 
     /**

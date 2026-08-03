@@ -167,14 +167,11 @@ public class LogReadingSessionUseCase(
      * copied per entry point where create and edit could silently drift apart.
      *
      * @return A [Resource.Error] describing the first invalid field, or `null` if both are valid.
+     *
+     * Delegates to [ReadingSessionValidation.validatePositions] (ROADMAP Task 8 Phase B
+     * extraction) so the CSV importer can apply this exact rule too, rather than forking a second
+     * copy -- see that object's KDoc.
      */
-    private fun validatePositions(startUnit: Double, endUnit: Double): Resource.Error? {
-        if (!startUnit.isFinite() || startUnit < 0.0) {
-            return Resource.Error("startUnit must be finite and >= 0 (was $startUnit)")
-        }
-        if (!endUnit.isFinite() || endUnit < 0.0) {
-            return Resource.Error("endUnit must be finite and >= 0 (was $endUnit)")
-        }
-        return null
-    }
+    private fun validatePositions(startUnit: Double, endUnit: Double): Resource.Error? =
+        ReadingSessionValidation.validatePositions(startUnit, endUnit)?.let { Resource.Error(it) }
 }

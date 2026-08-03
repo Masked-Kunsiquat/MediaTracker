@@ -7,6 +7,330 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CSV export** (ROADMAP Task 8 Phase A) — the app's first data-portability feature: a "Data"
+  section on the Settings screen generates `library_export.csv` (every `MediaItemEntity` +
+  `BookDetailsEntity` field, plus each book's `ExternalIdentifierEntity` rows packed into one
+  `external_identifiers` column) and `reading_logs_export.csv` (every `ReadingSessionEntity`
+  field), from one consistent database snapshot, and writes them to two user-picked locations via
+  the Storage Access Framework (`ActivityResultContracts.CreateDocument`) — no new permission, and
+  this is exactly the SAF plumbing the deferred "manual cover entry" backlog item was waiting on.
+  - Hand-rolled RFC 4180 CSV escaping (`shared/.../features/portability/csv/CsvUtil.kt`, no
+    third-party CSV dependency per AGENTS.md §5): a field is quoted (with embedded quotes doubled)
+    only when it contains a comma, quote, or newline, so free-text titles and session notes
+    round-trip unambiguously.
+  - **Nullable `durationSeconds` exports as an empty field, never `0`** — the one rule this phase
+    treats as load-bearing, since schema v2 made that column nullable specifically so "unknown
+    duration" and "a real zero-second session" would never collide; exporting `null` as `0` would
+    silently reintroduce that exact collision one layer up.
+  - A `csv_schema_version` column (currently `1`) is written on every row of both files rather than
+    a dedicated first line, so a Phase B importer can detect a file it doesn't understand while a
+    bare `.csv` still opens as an ordinary, uniform table in a spreadsheet. `Instant` fields export
+    as ISO-8601 UTC (`kotlin.time.Instant.toString()`), never a locale-dependent format.
+  - New `features/portability/` module (justified against AGENTS.md §6's blueprint as a
+    cross-cutting concern alongside `features/stats/`, not book-specific): pure Kotlin/KMP-clean
+    CSV generation (`csv/`) plus an `ExportDataUseCase`/`ExportUseCase` (`domain/`) wired through a
+    new `ExportViewModel` (`Idle`/`Loading`/`Success`/`Error`, mirroring `AddBookViewModel`'s
+    existing shape) — the app module owns all file I/O, per AGENTS.md §6.
+  - No schema change; Room stays at v4.
+- **CSV import** (ROADMAP Task 8 Phase B) — the harder half of data portability: the Settings
+  screen's "Data" section gains an "Import library" action alongside export, reading
+  `library_export.csv`/`reading_logs_export.csv` back via SAF `ActivityResultContracts.
+  OpenDocument` (still no new permission; manifest unchanged) and writing to the real database
+  through one all-or-nothing transaction.
+  - **A genuine RFC 4180 reader** (`CsvReader`), not `split(",")`: handles quoted commas/quotes and
+    embedded newlines (a multi-line session note parses as one field, not extra rows). An
+    unterminated quote fails the whole file closed rather than guessing where it ends; a
+    completely empty file parses to zero rows with no opinion on headers.
+  - **`CsvTableReader`** layers structural validation on top: refuses a file with an unrecognized
+    header, a data row whose column count doesn't match the header, or (deliverable: version
+    compatibility) a `csv_schema_version` **newer** than this build understands, with a message
+    telling the user to update the app rather than mis-parsing an unknown column layout.
+  - **`ImportDataUseCase`** with an explicit, user-visible `DuplicatePolicy` (`SKIP`/`REPLACE`/
+    **`MERGE`** — merge is a hard requirement per the Goodreads-import groundwork, not just
+    skip-or-replace): matches an incoming book by `media_id`, then ISBN, then case-insensitive
+    title+release-year as a last resort (documented weakness: no author column exists yet, so two
+    same-titled/same-year books by different authors would over-match on this last tier). MERGE
+    only backfills fields the existing row left null (releaseYear/purchasePrice/isbn/totalPages,
+    plus any external-identifier provider not already on record) and never overwrites a value
+    that's already set; REPLACE overwrites everything this importer manages except `createdAt`
+    and `coverImageHash` (CSV carries no image bytes, so a foreign hash is never written over an
+    existing cover reference).
+  - **All-or-nothing**: every resolved insert/update is queued and applied through one new
+    `ImportWriteDao.importAtomically` transaction (mirroring `BookWriteDao`'s existing
+    `@Transaction` pattern) — a constraint violation partway through rolls back everything already
+    applied in that same call, verified by a forced-mid-failure test. Structural file problems
+    (bad header, wrong column count, unterminated quote, unsupported version) refuse the entire
+    import before any write is attempted; a semantically bad *row* (blank title, out-of-range
+    year, a session whose `media_id` isn't a known book) is skipped and reported instead of
+    aborting everything else in the file.
+  - **Orphan reading-session rows are skipped-with-report, not silently dropped or fatal**: a
+    session whose `media_id` matches neither the existing library nor the library file being
+    imported alongside it is counted as a rejection with a reason, while every other valid row
+    still imports.
+  - **Fixed: two rows in the same file sharing a `media_id`/ISBN/title+year no longer collide.**
+    Duplicate matching now also resolves each row against every earlier row already added *by
+    this same import*, not only against what was already in the database. Previously, two rows
+    sharing a `media_id` within one file both inserted as "fresh," which collided on the
+    `media_items` primary key and aborted the **entire** atomic import; two rows sharing only an
+    ISBN silently created two separate books. In-file duplicates now follow the exact same
+    per-`DuplicatePolicy` field rules as a duplicate against an existing book (SKIP: earliest row
+    in the file wins; REPLACE: last row wins; MERGE: first row to set a field wins), counted with
+    the same imported/skipped/merged/replaced totals already shown.
+  - **Fixed: sessions no longer orphaned when their book matched by ISBN or title+year instead of
+    `media_id`.** A `reading_logs_export.csv` row references its book by the *file's own*
+    `media_id`, but when the matching library row instead landed on an existing (or in-file) book
+    via the ISBN or title+year tier, that file `media_id` was never recognized, so the session was
+    wrongly rejected as an orphan. Sessions are now also written under the book's actual resolved
+    id, so they land on the right book instead of being dropped.
+  - **Fixed: a `purchase_price` cell containing `NaN`/`Infinity`/`-Infinity` is now rejected, not
+    silently imported.** `String.toDoubleOrNull()` accepts all three per the JLS, and `NaN < 0.0`
+    is `false` (IEEE 754), so the existing `>= 0` bounds check could never catch a `NaN` — it would
+    have been persisted and poisoned every downstream sum/average/comparison over prices. The
+    parser (`parseOptionalDouble`/`parseRequiredDouble`) now rejects any non-finite value up front,
+    the same `isFinite`-based fix already applied to reading-session positions. Defence in depth:
+    `BookMetadataValidation.validatePurchasePrice` (shared with the manual Edit Book form) now also
+    rejects non-finite values directly, since that form's own Save-button gate only checks
+    `>= 0.0` — true for a hand-typed `Infinity`.
+  - **Fixed: an import update racing a concurrent delete no longer silently over-reports as
+    "updated."** `ImportWriteDao`'s book/session update statements now check Room's affected-row
+    count and fail the whole import (rolling back the transaction) if a row targeted for update was
+    deleted between `ImportDataUseCase`'s duplicate-resolution snapshot and the write — instead of
+    Room's `@Update` quietly no-oping while the returned summary still counted it as a success.
+  - **Fixed: a leading UTF-8 byte-order mark (BOM) no longer gets a valid export rejected.**
+    `CsvReader.parse` now strips a leading `U+FEFF` before tokenizing (`String.trim()` doesn't
+    strip it, so it previously became part of the first header cell's text) — a BOM-prefixed
+    `library_export.csv` or `goodreads_library_export.csv` (as Excel writes when saving a UTF-8
+    CSV) no longer fails the header check and gets rejected as unrecognized. Fixed once at the
+    shared tokenizer, so both this app's own CSV import and the Goodreads import below are covered.
+  - **The `PROVIDER:id|...` packed-identifier hazard is handled, not assumed away**: each `|`
+    segment splits on only its *first* `:`, so a provider id containing `:` round-trips correctly;
+    a segment with no `:` at all (the fallout of an id containing a literal `|`, which this
+    encoding cannot losslessly represent) is detected and rejects that row with a clear reason
+    instead of silently mis-splitting it.
+  - Validation reuses the existing rules instead of forking a second copy: extracted
+    `BookMetadataValidation` (title/price/pages/year bounds, ex-`BookRepository`) and
+    `ReadingSessionValidation` (timestamp/duration/position rules, ex-`ReadingSessionRepository`/
+    `LogReadingSessionUseCase`) are now shared by both the manual-edit paths and the importer.
+  - The import summary shown to the user always states counts (imported/skipped/merged/replaced,
+    per file) and every rejection's reason — never a bare "done."
+  - The strongest test added this phase: an export-then-import round trip over a populated
+    in-memory database, asserting the freshly-imported data matches the original field-for-field.
+  - No schema change; Room stays at v4 (`ImportWriteDao` is a new DAO only, like `StatsDao` before
+    it — no `@Entity` changed).
+- **`.sqlite` backup and restore** (ROADMAP Task 8 Phase C) — the Settings screen gains a
+  "Backup & restore" section, deliberately separate from (and styled at higher visual risk than)
+  the CSV export/import section above: a whole-database restore replaces everything, with no
+  cloud copy to fall back on (`android:allowBackup="true"` means Android *may* be silently
+  snapshotting to Google Drive, but that's invisible, size-capped, and not restorable on demand —
+  never the answer this app relies on).
+  - **Backup, and the WAL problem it actually has to solve**: `RoomDatabase.Builder` defaults to
+    `JournalMode.WRITE_AHEAD_LOGGING` (confirmed against the resolved `room-runtime` 2.8.4
+    bytecode) and this app never overrides it with `setJournalMode(TRUNCATE)`, so the live database
+    genuinely runs in WAL mode — meaning the most recently committed rows can live only in the
+    `-wal` sidecar file until SQLite next checkpoints them into the main `.db` file. A naive
+    `File.copyTo(...)` of just the main file can silently produce a backup missing whatever hasn't
+    been checkpointed yet. Rejected the "manual `PRAGMA wal_checkpoint(TRUNCATE)` then copy"
+    approach too (it would mutate the live database's own WAL state, and `TRUNCATE` can still leave
+    the WAL non-empty if a concurrent reader is active, reintroducing the same problem one layer
+    down). Instead, backup runs SQLite's own **`VACUUM INTO`** — reading through the normal pager
+    (the same path every ordinary query already uses, which transparently merges the main file with
+    anything still only in the WAL) and writing a fresh, compacted, single-file, WAL-free snapshot —
+    executed via Room KMP's `AppDatabase.useWriterConnection` + `Transactor.usePrepared("VACUUM
+    INTO ?")`, binding the destination path as a parameter. `DatabaseBackupUseCaseTest` (`jvmTest`,
+    a real file-backed database, not in-memory — in-memory can't prove anything about WAL) confirms
+    this concretely: it inserts a row, asserts the live database's own `-wal` file is genuinely
+    non-trivial at that moment (proof the row hasn't been checkpointed), then asserts the row is
+    present when the backup is opened fresh.
+  - **Restore validates before touching anything, in two passes.** Pass 1 parses the candidate
+    file's first 100 bytes directly — no SQLite driver, no Room, no database connection at all — for
+    the 16-byte `"SQLite format 3\0"` magic string and `PRAGMA user_version` at its fixed header
+    offset (new `parseSqliteHeader`, pure Kotlin, `SqliteHeaderTest` in `commonTest` with hand-built
+    byte arrays). A non-SQLite file, or a `user_version` newer than `APP_DATABASE_VERSION` (a new
+    named constant so the check and the `@Database` annotation can never silently drift), is refused
+    with a clear message before Room ever gets near it — exactly the "refuse loudly rather than let
+    Room fail obscurely" the task called for. Pass 2, reached only once pass 1 passes, opens the
+    candidate **read-only** (`SQLITE_OPEN_READONLY`, `BundledSQLiteDriver`; new
+    `validateStagedDatabaseIntegrity`) and runs `PRAGMA integrity_check`, then confirms the tables
+    that candidate's own `user_version` says it should have are actually present — a 100-byte header
+    alone can't tell a truncated/corrupt file, or a structurally-valid SQLite file belonging to a
+    completely different program, apart from a genuinely intact MediaTracker database, and for an
+    operation this destructive that bar was too low. Either failure is refused with a clear message
+    and the candidate deleted, same as pass 1. An **older** `user_version` that passes both passes is
+    legitimate and accepted: the very next time the swapped-in file is opened, it goes through the
+    exact same registered migration chain (`MIGRATION_1_2`/`MIGRATION_2_3`/`MIGRATION_3_4`) every
+    ordinary app launch already uses, with no separate "restore migration" path — proven, not just
+    assumed, by `RestoreDatabaseUseCaseTest`'s round trip: a real v2-schema file is restored, reopened
+    through the normal `buildAppDatabase` path, and asserted to land on the current schema with its
+    pre-migration data completely intact. Pass 2's required-table set is chosen **from the
+    candidate's own reported `user_version`**, not one fixed list for every candidate: a candidate
+    older than the version `app_settings` was added at (v4) is only held to the tables present since
+    v1, so a legitimate older backup is never itself rejected as "not a MediaTracker library" — but a
+    candidate that itself claims `user_version` 4 is held to that later table set too, so a v4 file
+    genuinely missing `app_settings` (corrupt, hand-crafted, or a botched edit) is correctly refused
+    rather than silently waved through the way excluding it unconditionally would have.
+    `RestoreDatabaseUseCaseTest` covers a truncated-but-header-valid file, a structurally valid but
+    unrelated SQLite file, and a v3-schema file whose `user_version` was hand-bumped to 4 while
+    genuinely missing `app_settings`, all three now refused where the header check (or an
+    unconditionally v1-only table check) alone would have accepted them — plus a direct check that
+    validating a candidate never needs, and is never granted, write access to it (opening
+    read-write, the pre-fix behavior, would let validation silently modify a candidate before the
+    user has confirmed anything destructive).
+  - **The live database is never deleted until the replacement is staged and validated.** The
+    picked SAF document is streamed into a private temp file (new binary-file counterparts to the
+    existing CSV `Uri`↔text helpers, `app/.../export/DatabaseFileIo.kt`) and validated *there*,
+    before anything destructive happens. The swap itself is same-directory atomic renames
+    (`java.nio.file.Files.move` with `ATOMIC_MOVE`, requiring the atomic path rather than falling
+    back to a non-atomic copy if the platform provider rejects it — a non-atomic fallback could
+    leave a truncated file indistinguishable from a genuine one if a process died mid-copy, which
+    would silently defeat the self-heal/rollback guarantees below): the live
+    file renames to a fixed-name `.pre-restore-bak` (each restore attempt replaces the previous
+    attempt's safety net rather than accumulating one per restore forever), carrying its own
+    `-wal`/`-shm` sidecars along with it — but only once the main-file rename itself has already
+    succeeded, and only if *both* sidecar renames succeed; if either doesn't (a live rename failure,
+    not only a crash — and the two sidecars can disagree, one landing while the other fails), the
+    rollback puts back whichever sidecar(s) actually moved *first*, then the main file, before
+    refusing the whole attempt — "nothing was changed" is only ever reported once all of that
+    actually holds, never assumed from the main file alone — rather than risking the live database's
+    most recent commits (still only in its `-wal`) being silently left stranded at the backup path.
+    The validated file only then renames into the live path. A failed final rename automatically
+    rolls the backup — sidecars first, main file last — back into place before returning an error.
+    The one gap this can't make atomic — a process death between the backup and activation renames,
+    which would otherwise make Room silently create an empty database on the next launch — is closed
+    by a `selfHealDatabaseIfNeeded` check that runs at the very start of every `createAppContainer`,
+    before Room ever opens anything: if the live file is missing but the safety-net backup exists,
+    its sidecars are moved back *first* and its main file *last*, so the "live file present" sentinel
+    this check relies on can never go true before the WAL that belongs next to it has already
+    arrived. `RestoreDatabaseUseCaseTest` covers header rejection, the too-new/older version rules,
+    the full round trip, a forced mid-swap failure (a `StagedRestoreInfo` pointing at a file that no
+    longer exists) leaving the original database completely intact and openable afterward, and — a
+    sidecar-rename failure forced via a directory placed at the rename's own target (portable across
+    platforms, unlike an open file handle, which only reliably blocks a rename on Windows) during
+    both the swap and the self-heal check — proving the live file is never left present without the
+    WAL that belongs next to it, and that a sidecar which *did* successfully move before its sibling
+    failed is never left stranded at the backup path while the rest of the database looks restored.
+  - **`AppContainer.close()` + a full process restart, not an in-place rebuild.** Every
+    ViewModel/repository already alive in the process holds references captured from the
+    `AppContainer` a restore's confirm handler closes right before the swap; rebuilding a fresh
+    container in place and hoping already-created ViewModels/Compose recompositions notice is
+    exactly the "half-live container" AGENTS.md §1 warns against. Instead, the app is killed and
+    relaunched immediately after the swap — success or failure alike, since the container is
+    already closed either way — through the exact same `createAppContainer` cold-start path every
+    ordinary launch uses, landing on whatever the swap left at the live path (the restored library
+    on success, the untouched/rolled-back original on failure). The outcome is written to a small
+    marker file as the swap's last step and consumed exactly once on the next launch
+    (`consumeRestoreMarker`), surfaced as a one-time Snackbar on the Settings screen.
+  - **Confirmation**: a dedicated modal (`RestoreConfirmationDialog`), reached only after the picked
+    file has already passed validation, states plainly what will be lost, and requires an explicit
+    checkbox acknowledgement before its destructively-`error`-colored confirm button enables — never
+    a single tap next to the export button. The restore button itself is an outlined, `error`-toned
+    control, visually distinct from every other action on the screen.
+  - No schema change (`AppDatabase` stays at v4); no new dependency; no new permission — reuses the
+    SAF `CreateDocument`/`OpenDocument` plumbing Phases A/B already established.
+- **Goodreads import** (ROADMAP Task 8 Phase D, completing Task 8) — a distinct "Import from
+  Goodreads" action on the Settings screen's "Data" section, separate from the app's own CSV
+  import so the two are never confused: its own visible `DuplicatePolicy` picker, its own button,
+  and a single-file SAF picker (a Goodreads export has no reading-logs equivalent to ask for
+  afterward).
+  - New `shared/.../features/portability/goodreads/` mapping layer
+    (`GoodreadsCsvTableReader`/`GoodreadsCsvImporter`) on top of the existing `CsvReader` — not a
+    new parser. Columns are matched **by header name**, never by position, so a reordered export,
+    unknown/extra columns, or missing optional columns all import cleanly; only `Title` is
+    required, and its absence refuses the whole file with a clear message.
+  - **Excel-armor stripping**: Goodreads writes an ISBN as `="9780593135204"` (including the
+    empty-ISBN case `=""`) to stop Excel mangling it — stripped before any ISBN handling, including
+    the empty-armor case, which unwraps to blank rather than a stray `=""`.
+  - **`Binding` → `BookFormat`**: Hardcover/Library Binding/Board Book/Leather Bound → `HARDCOVER`;
+    Paperback/Mass Market Paperback/Trade Paperback/Spiral-bound/Unbound → `PAPERBACK`; Kindle
+    Edition/ebook/Nook → `EBOOK`; Audiobook/Audio CD/Audible Audio → `AUDIOBOOK`; anything
+    unrecognized (including blank) falls back to `PHYSICAL` — the same "binding unknown" fallback
+    ISBN-sourced ingestion already uses.
+  - **`Exclusive Shelf` → `ReadingStatus`**: `read` → `FINISHED`, `currently-reading` → `READING`,
+    `to-read` → `TO_READ`; blank/unrecognized also falls back to `TO_READ`. Nothing maps to `DNF` —
+    Goodreads' exclusive shelf has no such state (a user-tracked DNF lives in the `Bookshelves`
+    column this phase drops, not here), so guessing at it was rejected as more likely to mislabel a
+    book than help.
+  - **`Date Read` → `finishedAt`**, but only when the shelf itself resolved to `FINISHED` — a stray
+    `Date Read` value alongside a `currently-reading`/`to-read` shelf is never used, so it can't
+    contradict `BookDetailsEntity.finishedAt`'s "when status most recently became FINISHED"
+    invariant. `Date Added` → `createdAt`, falling back to import time when blank/unparseable. Both
+    dates tolerate a blank or malformed cell as "unknown" (`null`) rather than rejecting the row —
+    foreign, Goodreads-controlled formatting isn't held to this app's own stricter timestamp rules.
+  - **`Year Published` vs `Original Publication Year` decided**: `releaseYear` prefers `Original
+    Publication Year` (the year the *work* first appeared) over `Year Published` (the specific
+    *edition/printing* Goodreads happened to catalog, which can be a much later reprint — the
+    "2026 anniversary printing masks an original 1926 publication" problem this bullet was written
+    to avoid), falling back to `Year Published` only when the original-year column is blank.
+  - **`My Rating`, `Bookshelves`, and `Read Count` are dropped, not staged** — the schema has no
+    rating/genre/read-through-count column yet (see Tasks 10/12), and per the standing decision no
+    staging table or schema bump is added speculatively. Instead, every import summary now carries
+    a `notes` list (new field on `ImportSummary`, default-empty for the app's own CSV import) that
+    the Goodreads path always populates with an explicit notice: which columns weren't imported,
+    why, and that **keeping `goodreads_library_export.csv`** lets a later re-import (once Tasks
+    10/12 land) backfill them automatically — `DuplicatePolicy.MERGE` only fills a blank and never
+    overwrites, so a repeat import is always safe. The Settings screen's import-summary dialog
+    renders every note in full, the same "no silent partial result" treatment rejections already
+    got.
+  - **`ImportDataUseCase` generalized, not duplicated**: the book-row duplicate-matching/insert/
+    update logic `execute()` already had was extracted into a private `resolveBookRows(existing,
+    identifiers, parsedRows, duplicatePolicy)` operating on already-parsed rows rather than raw CSV
+    text, so a new `executeGoodreads()` (added to the `ImportUseCase` interface) reuses it
+    unchanged — same duplicate-matching precedence, same per-`DuplicatePolicy` field rules, same
+    `ImportWriteRepository.importAtomically` transaction — fed from the Goodreads mapping layer
+    instead of `LibraryCsvImporter`. `ImportViewModel` gained a matching `importGoodreads(...)`
+    sharing its existing `Idle`/`Loading`/`Success`/`Error` state machine with `importData(...)`.
+  - No schema change (`AppDatabase` stays at v4); no new dependency; no new permission.
+- **Fixed: every SAF file read/write on the Settings "Data" screen now runs off the main
+  thread.** `readCsvFromUri`/`writeCsvToUri`/`copyFileToUri`/`copyUriToFile` were all being called
+  directly inside `rememberLauncherForActivityResult` callbacks (or a `rememberCoroutineScope`
+  launch with no dispatcher), which run on the main thread — a large CSV or `.sqlite` file
+  (`copyUriToFile` streams the *whole database* during restore) could block the UI long enough to
+  ANR. Every call site now wraps the actual stream I/O in `withContext(Dispatchers.IO)`.
+- **Fixed: an interrupted `.sqlite` restore could no longer strand the app with a closed database
+  in a live process.** The restore-confirm handler's `appContainer.close()` → `commit()` →
+  `restartApp()` sequence ran in the `rememberCoroutineScope` scope tied to the Settings screen's
+  composition — a cancellation any time after `close()` (e.g. the composable leaving composition)
+  skipped `restartApp()` entirely, leaving a running process with a closed `AppContainer` and no
+  way back except force-killing the app by hand. The whole sequence, including `restartApp()`
+  itself, now runs inside a single `withContext(Dispatchers.IO + NonCancellable)` block, so once
+  started it always runs to completion regardless of what happens to the composition.
+- **Fixed: a failed reading-logs read during CSV import was silently reported as a successful
+  library-only import.** The reading-logs picker's `null` result legitimately means "the user
+  skipped this optional file" and correctly proceeds as a library-only import, but a *non-null* uri
+  whose `readCsvFromUri` read then failed was folded into that exact same "no reading logs" case —
+  the read failure went unreported and `importData` ran anyway. The two are now distinguished:
+  a failed read of a file the user actually picked shows the same `importFailureMessage` the
+  library-file picker already shows in this situation, and stops before calling `importData`.
+- **Fixed: whole-database-sized temp copies could leak on cancellation or failure during `.sqlite`
+  backup/restore.** Both the backup-destination launcher's staged snapshot cleanup and the
+  restore-file-picker's `incomingFile` cleanup sat as plain statements after a suspension point;
+  since both run in the Settings screen's composition-scoped `rememberCoroutineScope`, navigating
+  away mid-copy cancelled the launch and skipped that cleanup outright, leaving a full private copy
+  of the database behind in `cacheDir`. Both cleanups now run in a `finally` block wrapped in
+  `NonCancellable`, so the temp file is always removed once ownership hasn't been handed off
+  elsewhere, regardless of how the coroutine exits.
+- **Fixed: a book added by ISBN and later re-imported from Goodreads could silently duplicate
+  instead of merging, because the two paths disagree about what `release_year` means.** ISBN
+  ingestion (`AddBookByIsbnUseCase` via `OpenLibraryClient`'s `/isbn/{isbn}.json` lookup) stores the
+  scanned *edition*'s publish year, while `GoodreadsCsvImporter` deliberately prefers the *work*'s
+  `Original Publication Year` — so the same book (e.g. a 2026 anniversary printing scanned into the
+  app, later shelved on Goodreads under its 1926 original-publication year, possibly under a
+  different edition's ISBN) could miss `ImportDataUseCase`'s `media_id` → `isbn` →
+  `title`+`release_year` matching tiers entirely and be inserted as a brand-new book rather than
+  merged into the existing one. `ImportDataUseCase` now has a fourth, last-resort matching tier:
+  case-insensitive **title only**, reached only when the stronger tiers (including exact
+  title+release-year) all fail — covering both a genuine year disagreement and either side simply
+  missing a year. Because matching on title alone (no year, no author column) carries a real risk
+  of conflating two different books that happen to share a title, every match made through this
+  tier is additionally surfaced in the import summary's advisory notes (`ImportSummary.notes`),
+  naming the row, the matched title, and both release years — so `DuplicatePolicy.MERGE` can
+  genuinely backfill the existing record in this scenario, but the lower-confidence match is never
+  applied silently. A matching ISBN still resolves at the stronger ISBN tier regardless of
+  differing years, with no note. This is a no-schema-change mitigation (`AppDatabase` stays at v4);
+  see `ROADMAP.md`'s Task 8 entry for the schema-based follow-up (storing both edition and work
+  year) this unblocks later.
+
 ## [0.6.0] - 2026-08-02
 
 UI revamp and settings. Every book-facing surface — Details, reading history, Edit Book, and

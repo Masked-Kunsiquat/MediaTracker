@@ -18,6 +18,17 @@ import kotlinx.coroutines.Dispatchers
 public expect class DatabaseFactory {
     /** Builds a [RoomDatabase.Builder] pointed at this platform's persistent database file. */
     public fun create(): RoomDatabase.Builder<AppDatabase>
+
+    /**
+     * The absolute path of this platform's persistent database file -- the same path [create]
+     * points its [RoomDatabase.Builder] at. Exposed for ROADMAP Task 8 Phase C (`.sqlite`
+     * backup/restore): [com.hub.media.ui.AppContainer] wires this into
+     * [com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase]/
+     * [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase], which need the
+     * real on-disk file location to `VACUUM INTO` a backup snapshot and to swap a validated
+     * replacement into place, respectively.
+     */
+    public fun databaseFilePath(): String
 }
 
 /**

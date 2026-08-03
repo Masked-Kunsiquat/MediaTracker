@@ -1,0 +1,235 @@
+package com.hub.media.features.portability.csv
+
+import com.hub.media.core.database.entities.BookDetailsEntity
+import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.ExternalIdentifierEntity
+import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.features.books.data.BookWithDetails
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.time.Instant
+
+/**
+ * Tests [LibraryCsvExporter] (ROADMAP Task 8 Phase A). Sample data below is entirely invented
+ * (no real titles/people/ISBNs beyond made-up placeholders) per this phase's "no PII" constraint.
+ */
+class LibraryCsvExporterTest {
+
+    // Fixed, well-known epoch millis (avoids depending on any Instant string-parsing API existing
+    // on this Kotlin version) -- ISO-8601-ness of the exported form is verified structurally via
+    // ISO_INSTANT_REGEX below, and exact-value equality is checked against createdAt.toString()
+    // itself, which is exactly the "one documented, unambiguous textual form" this phase's task
+    // brief requires (kotlin.time.Instant.toString() -> ISO-8601 UTC, never locale-dependent).
+    private val createdAt = Instant.fromEpochMilliseconds(1_700_000_000_000)
+    private val finishedAt = Instant.fromEpochMilliseconds(1_700_086_400_000)
+
+    @Test
+    fun export_emptyLibrary_producesOnlyHeaderRow() {
+        val csv = LibraryCsvExporter.export(emptyList(), emptyMap())
+        assertEquals(CsvUtil.buildLine(LibraryCsvExporter.HEADER), csv)
+    }
+
+    @Test
+    fun export_headerRow_includesSchemaVersionColumnFirst() {
+        val csv = LibraryCsvExporter.export(emptyList(), emptyMap())
+        val header = csv.substringBefore(CsvUtil.LINE_ENDING)
+        assertEquals(CSV_SCHEMA_VERSION_COLUMN, header.split(",").first())
+    }
+
+    @Test
+    fun export_everyDataRow_startsWithTheSchemaVersionValue() {
+        val book = bookWithDetails(mediaId = "m1")
+        val csv = LibraryCsvExporter.export(listOf(book), emptyMap())
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+        assertEquals(CSV_SCHEMA_VERSION.toString(), dataLine.split(",").first())
+    }
+
+    @Test
+    fun export_fullyPopulatedBook_includesEveryFieldInOrder() {
+        val mediaItem = MediaItemEntity(
+            id = "media-1",
+            type = MediaType.BOOK,
+            title = "A Sample Title",
+            releaseYear = 2019,
+            purchasePrice = 14.99,
+            createdAt = createdAt,
+            coverImageHash = "deadbeef.jpg",
+        )
+        val details = BookDetailsEntity(
+            mediaId = "media-1",
+            isbn = "9780000000001",
+            format = BookFormat.HARDCOVER,
+            totalPages = 342,
+            status = ReadingStatus.FINISHED,
+            finishedAt = finishedAt,
+            trackingMode = TrackingMode.PAGES,
+        )
+        val identifiers = listOf(
+            ExternalIdentifierEntity("media-1", IdentifierProvider.ISBN, "9780000000001"),
+            ExternalIdentifierEntity("media-1", IdentifierProvider.OPEN_LIBRARY, "OL999999M"),
+        )
+
+        val csv = LibraryCsvExporter.export(
+            books = listOf(BookWithDetails(mediaItem, details)),
+            identifiersByMediaId = mapOf("media-1" to identifiers),
+        )
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+        val fields = dataLine.split(",")
+
+        assertEquals(CSV_SCHEMA_VERSION.toString(), fields[0])
+        assertEquals("media-1", fields[1])
+        assertEquals("BOOK", fields[2])
+        assertEquals("A Sample Title", fields[3])
+        assertEquals("2019", fields[4])
+        assertEquals("14.99", fields[5])
+        assertEquals(createdAt.toString(), fields[6])
+        assertTrue(ISO_INSTANT_REGEX.matches(fields[6]), "created_at should be ISO-8601 UTC: ${fields[6]}")
+        assertEquals("deadbeef.jpg", fields[7])
+        assertEquals("9780000000001", fields[8])
+        assertEquals("HARDCOVER", fields[9])
+        assertEquals("342", fields[10])
+        assertEquals("FINISHED", fields[11])
+        assertEquals(finishedAt.toString(), fields[12])
+        assertTrue(ISO_INSTANT_REGEX.matches(fields[12]), "finished_at should be ISO-8601 UTC: ${fields[12]}")
+        assertEquals("PAGES", fields[13])
+        assertEquals("ISBN:9780000000001|OPEN_LIBRARY:OL999999M", fields[14])
+    }
+
+    @Test
+    fun export_minimalBook_nullableFieldsExportAsEmpty() {
+        val mediaItem = MediaItemEntity(
+            id = "media-2",
+            type = MediaType.BOOK,
+            title = "Minimal Book",
+            releaseYear = null,
+            purchasePrice = null,
+            createdAt = createdAt,
+            coverImageHash = null,
+        )
+        val details = BookDetailsEntity(
+            mediaId = "media-2",
+            isbn = null,
+            format = BookFormat.EBOOK,
+            totalPages = null,
+            status = ReadingStatus.TO_READ,
+            finishedAt = null,
+            trackingMode = TrackingMode.PERCENT,
+        )
+
+        val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details)), emptyMap())
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+        val fields = dataLine.split(",")
+
+        assertEquals("", fields[4]) // release_year
+        assertEquals("", fields[5]) // purchase_price
+        assertEquals("", fields[7]) // cover_image_hash
+        assertEquals("", fields[8]) // isbn
+        assertEquals("", fields[10]) // total_pages
+        assertEquals("", fields[12]) // finished_at
+        assertEquals("", fields[14]) // external_identifiers
+    }
+
+    @Test
+    fun export_missingBookDetailsRow_leavesBookDetailsColumnsEmptyWithoutCrashing() {
+        // Data-integrity edge case documented on BookRepository.observeBookDetail: a MediaItemEntity
+        // can (in theory) have no BookDetailsEntity row.
+        val mediaItem = MediaItemEntity(
+            id = "media-3",
+            type = MediaType.BOOK,
+            title = "Orphaned Media Item",
+            releaseYear = null,
+            purchasePrice = null,
+            createdAt = createdAt,
+            coverImageHash = null,
+        )
+        val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details = null)), emptyMap())
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+        val fields = dataLine.split(",")
+
+        assertEquals("", fields[8]) // isbn
+        assertEquals("", fields[9]) // format
+        assertEquals("", fields[10]) // total_pages
+        assertEquals("", fields[11]) // status
+        assertEquals("", fields[12]) // finished_at
+        assertEquals("", fields[13]) // tracking_mode
+    }
+
+    @Test
+    fun export_titleContainingCommaAndQuotes_isEscapedAndStillParsesAsOneField() {
+        val mediaItem = MediaItemEntity(
+            id = "media-4",
+            type = MediaType.BOOK,
+            title = "The \"Best\" Book, Ever",
+            releaseYear = null,
+            purchasePrice = null,
+            createdAt = createdAt,
+            coverImageHash = null,
+        )
+        val details = BookDetailsEntity(mediaId = "media-4", isbn = null, format = BookFormat.PHYSICAL, totalPages = null)
+
+        val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details)), emptyMap())
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+
+        assertTrue(dataLine.contains("\"The \"\"Best\"\" Book, Ever\""))
+    }
+
+    @Test
+    fun export_bookWithNoExternalIdentifiers_producesEmptyIdentifiersField() {
+        val book = bookWithDetails(mediaId = "media-5")
+        val csv = LibraryCsvExporter.export(listOf(book), identifiersByMediaId = emptyMap())
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+        assertEquals("", dataLine.split(",").last())
+    }
+
+    @Test
+    fun export_enumFields_exportByName() {
+        val book = bookWithDetails(
+            mediaId = "media-6",
+            format = BookFormat.PAPERBACK,
+            status = ReadingStatus.DNF,
+            trackingMode = TrackingMode.PERCENT,
+        )
+        val csv = LibraryCsvExporter.export(listOf(book), emptyMap())
+        val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
+        val fields = dataLine.split(",")
+        assertEquals(MediaType.BOOK.name, fields[2])
+        assertEquals(BookFormat.PAPERBACK.name, fields[9])
+        assertEquals(ReadingStatus.DNF.name, fields[11])
+        assertEquals(TrackingMode.PERCENT.name, fields[13])
+    }
+
+    private fun bookWithDetails(
+        mediaId: String,
+        format: BookFormat = BookFormat.PHYSICAL,
+        status: ReadingStatus = ReadingStatus.TO_READ,
+        trackingMode: TrackingMode = TrackingMode.PAGES,
+    ): BookWithDetails = BookWithDetails(
+        mediaItem = MediaItemEntity(
+            id = mediaId,
+            type = MediaType.BOOK,
+            title = "Sample Title $mediaId",
+            releaseYear = 2020,
+            purchasePrice = 9.99,
+            createdAt = createdAt,
+            coverImageHash = null,
+        ),
+        details = BookDetailsEntity(
+            mediaId = mediaId,
+            isbn = "9780000000000",
+            format = format,
+            totalPages = 200,
+            status = status,
+            trackingMode = trackingMode,
+        ),
+    )
+
+    private companion object {
+        /** Structural check for ISO-8601 UTC ("extended" form, kotlin.time.Instant.toString()'s shape). */
+        val ISO_INSTANT_REGEX = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z""")
+    }
+}

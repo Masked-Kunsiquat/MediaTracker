@@ -17,13 +17,20 @@ private const val APP_DATABASE_FILE_NAME = "media_tracker.db"
  * rather than test-only scaffolding.
  */
 public actual class DatabaseFactory {
-    public actual fun create(): RoomDatabase.Builder<AppDatabase> {
+    // Resolved once and reused by both create() and databaseFilePath() so the two can never
+    // disagree about where the live database file lives.
+    private val dbFile: File by lazy {
         val appDataDir = File(System.getProperty("user.home"), APP_DATA_DIR_NAME)
         appDataDir.mkdirs()
-        val dbFile = File(appDataDir, APP_DATABASE_FILE_NAME)
+        File(appDataDir, APP_DATABASE_FILE_NAME)
+    }
+
+    public actual fun create(): RoomDatabase.Builder<AppDatabase> {
         return Room.databaseBuilder<AppDatabase>(
             name = dbFile.absolutePath,
             factory = { AppDatabaseConstructor.initialize() },
         )
     }
+
+    public actual fun databaseFilePath(): String = dbFile.absolutePath
 }

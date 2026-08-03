@@ -3,8 +3,11 @@ package com.hub.media.ui
 import android.content.Context
 import com.hub.media.core.database.DatabaseFactory
 import com.hub.media.core.database.buildAppDatabase
+import com.hub.media.core.database.consumeRestoreMarker
+import com.hub.media.core.database.selfHealDatabaseIfNeeded
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.coverStorageDirectory
+import kotlinx.coroutines.runBlocking
 
 /**
  * Builds a production [AppContainer] from an Android [Context]: constructs the on-device
@@ -15,9 +18,29 @@ import com.hub.media.core.storage.coverStorageDirectory
  * and the result shared — this constructs a real database connection. The returned
  * [AppContainer] owns this database (see [AppContainer]'s "Ownership" section) and closes it
  * from [AppContainer.close].
+ *
+ * ### Restore recovery, run before Room ever opens anything (ROADMAP Task 8 Phase C)
+ * [selfHealDatabaseIfNeeded] and [consumeRestoreMarker] both do a single fast local-file check in
+ * the overwhelmingly common case (no restore was ever attempted, or the marker from a completed
+ * one was already consumed on a prior launch) -- a brief [runBlocking] here is deliberate rather
+ * than restructuring this function and both of its call sites (`MediaTrackerApplication`'s lazy
+ * property, `MainActivity.onCreate`) to be suspending, for what is normally sub-millisecond work
+ * that must complete *before* [DatabaseFactory.create]/[buildAppDatabase] touches the database
+ * file, not after.
  */
 public fun createAppContainer(context: Context): AppContainer {
-    val database = buildAppDatabase(DatabaseFactory(context).create())
+    val databaseFactory = DatabaseFactory(context)
+    val databaseFilePath = databaseFactory.databaseFilePath()
+    val pendingRestoreMarker = runBlocking {
+        selfHealDatabaseIfNeeded(databaseFilePath)
+        consumeRestoreMarker(databaseFilePath)
+    }
+    val database = buildAppDatabase(databaseFactory.create())
     val imageStorage = LocalImageStorageManager(coverStorageDirectory(context))
-    return AppContainer(database = database, imageStorage = imageStorage)
+    return AppContainer(
+        database = database,
+        imageStorage = imageStorage,
+        databaseFilePath = databaseFilePath,
+        pendingRestoreMarker = pendingRestoreMarker,
+    )
 }

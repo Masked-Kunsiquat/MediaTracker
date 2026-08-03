@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
+import com.hub.media.features.books.domain.ReadingSessionValidation
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 
@@ -24,6 +25,14 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
      */
     public fun observeSessionsForMedia(mediaId: String): Flow<List<ReadingSessionEntity>> =
         db.readingSessionDao().observeSessionsForMedia(mediaId)
+
+    /**
+     * Observes every reading session across the whole library as a reactive stream (ROADMAP
+     * Task 8 Phase A: `reading_logs_export.csv` needs every session, not just one book's — see
+     * [com.hub.media.features.portability.domain.ExportDataUseCase]).
+     */
+    public fun observeAllSessions(): Flow<List<ReadingSessionEntity>> =
+        db.readingSessionDao().observeAll()
 
     /**
      * Logs a new reading session with validation per AGENTS.md §7.
@@ -55,15 +64,10 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
         deltaPages: Int? = null,
         notes: String? = null,
     ): Resource<String> {
-        // Validation per AGENTS.md §7: timestampEnd must be >= timestampStart
-        if (timestampEnd < timestampStart) {
-            return Resource.Error("timestampEnd must be >= timestampStart")
-        }
-
-        // Validation: durationSeconds must be >= 0 when known; null (unknown) always passes.
-        if (durationSeconds != null && durationSeconds < 0) {
-            return Resource.Error("durationSeconds must be >= 0")
-        }
+        // Validation per AGENTS.md §7, delegated to ReadingSessionValidation (ROADMAP Task 8 Phase
+        // B extraction) so create/update/import share exactly one copy of these rules.
+        ReadingSessionValidation.validateTimestamps(timestampStart, timestampEnd)?.let { return Resource.Error(it) }
+        ReadingSessionValidation.validateDuration(durationSeconds)?.let { return Resource.Error(it) }
 
         return try {
             val sessionId = newId()
@@ -132,17 +136,10 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
         deltaPages: Int? = null,
         notes: String? = null,
     ): Resource<Unit> {
-        // Validation per AGENTS.md §7: timestampEnd must be >= timestampStart -- identical to
-        // logSession's check above.
-        if (timestampEnd < timestampStart) {
-            return Resource.Error("timestampEnd must be >= timestampStart")
-        }
-
-        // Validation: durationSeconds must be >= 0 when known; null (unknown) always passes --
-        // identical to logSession's check above.
-        if (durationSeconds != null && durationSeconds < 0) {
-            return Resource.Error("durationSeconds must be >= 0")
-        }
+        // Validation per AGENTS.md §7, delegated to ReadingSessionValidation -- identical to
+        // logSession's checks above (same shared functions, so they can never drift apart).
+        ReadingSessionValidation.validateTimestamps(timestampStart, timestampEnd)?.let { return Resource.Error(it) }
+        ReadingSessionValidation.validateDuration(durationSeconds)?.let { return Resource.Error(it) }
 
         return try {
             val existing = db.readingSessionDao().getById(sessionId)

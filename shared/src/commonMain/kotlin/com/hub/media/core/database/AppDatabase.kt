@@ -10,6 +10,7 @@ import com.hub.media.core.database.dao.AppSettingsDao
 import com.hub.media.core.database.dao.BookDetailsDao
 import com.hub.media.core.database.dao.BookWriteDao
 import com.hub.media.core.database.dao.ExternalIdentifierDao
+import com.hub.media.core.database.dao.ImportWriteDao
 import com.hub.media.core.database.dao.MediaItemDao
 import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
@@ -18,6 +19,18 @@ import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+
+/**
+ * The current Room schema version, as a named constant rather than a bare literal in the
+ * [Database] annotation below -- ROADMAP Task 8 Phase C (`.sqlite` backup/restore) needs this
+ * exact number outside of Room's own annotation processing, to reject a restored file whose own
+ * `PRAGMA user_version` (parsed directly from its raw header bytes by
+ * [com.hub.media.core.database.parseSqliteHeader], no SQLite connection required) is newer than
+ * this build understands, before Room ever tries to open it. Keeping one named constant (used both
+ * here and by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase]) means the
+ * two can never silently drift apart the way two independent literals could.
+ */
+public const val APP_DATABASE_VERSION: Int = 4
 
 /**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,
@@ -42,6 +55,11 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * [com.hub.media.core.database.entities.TrackingMode]'s KDoc) and the new [AppSettingEntity]
  * key-value settings table (see its KDoc for why that shape was chosen over a typed table), both
  * via [MIGRATION_3_4] (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
+ *
+ * [ImportWriteDao] (ROADMAP Task 8 Phase B, CSV import's single all-or-nothing write transaction)
+ * was likewise added on top of version 4 without a further version bump -- same reasoning as
+ * [StatsDao] above: a new DAO changes the Kotlin-visible query surface only, not the exported
+ * schema (no `@Entity` was added, changed, or removed).
  */
 @Database(
     entities = [
@@ -51,7 +69,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
         ReadingSessionEntity::class,
         AppSettingEntity::class,
     ],
-    version = 4,
+    version = APP_DATABASE_VERSION,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -64,6 +82,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookWriteDao(): BookWriteDao
     abstract fun statsDao(): StatsDao
     abstract fun appSettingsDao(): AppSettingsDao
+    abstract fun importWriteDao(): ImportWriteDao
 }
 
 /**

@@ -184,7 +184,7 @@ from real use rather than inferred.
   prefill, edit-mode prefill, and `PendingSessionDialog`'s not-dismissible-except-by-Discard rule)
   is unchanged — layout only.
 
-## Task 8 — Data portability
+## Task 8 — Data portability (done — ready for release)
 
 The vision doc calls CSV export/import and `.sqlite` backups "first-class support," but none of
 it exists — which means an app whose entire premise is *no cloud* currently offers the user no
@@ -193,54 +193,142 @@ scheduled ahead of search. (`android:allowBackup="true"` means Android Auto Back
 snapshotting the database to Google Drive, but that is invisible, size-capped, not restorable on
 demand, and depends on exactly the cloud this app's premise rejects — it is not the answer.)
 
-- **CSV export**: `library_export.csv` and `reading_logs_export.csv` per the vision doc. Must
-  round-trip everything the schema holds, including nullable `durationSeconds` (unknown must not
-  export as `0`), reading status, `finishedAt`, and formats.
-- **CSV import**: the harder half. Needs a duplicate policy (match on ISBN? on title+year?
-  skip/merge/replace), validation mirroring the use-case layer rather than a second divergent
-  copy, and an all-or-nothing transaction so a malformed row can't half-import a library. The
-  duplicate policy must support **merging into an existing book**, not only skip-or-replace — the
-  Goodreads import below depends on merge being available so a later re-import can backfill fields
-  the model doesn't have a home for yet, rather than needing a staging table now or blocking on
-  Task 12.
-- **`.sqlite` backup + restore**: whole-database file copy out, and restore back in. Restore must
-  refuse a file whose `user_version` is newer than the running app understands, rather than
-  letting Room fail obscurely at open time.
+- **CSV export (Phase A — done)**: `library_export.csv` and `reading_logs_export.csv`, generated
+  via a new `features/portability/` module (pure Kotlin CSV formatting + `ExportDataUseCase`) and
+  written to user-picked locations from the Settings screen via SAF `ActivityResultContracts.
+  CreateDocument` (no new permission). Covers every `MediaItemEntity`/`BookDetailsEntity`/
+  `ExternalIdentifierEntity` field for books and every `ReadingSessionEntity` field for sessions —
+  including nullable `durationSeconds` (exports as an empty field, never `0`), reading status,
+  `finishedAt`, and formats (enums by name). Hand-rolled RFC 4180 escaping, no CSV dependency. A
+  `csv_schema_version` column on every row is the version marker Phase B's importer will read.
+  **`app_settings` (the key-value settings table added at schema v4) is not exported at all — it
+  has no row-per-book/session shape to fit into either CSV file — and any other data outside the
+  four entities above is likewise excluded. The CSV files are not a full database backup; the
+  `.sqlite` backup (Phase C below) is the only export that covers the whole database, `app_settings`
+  included.** No schema change.
+- **CSV import (done)**: the harder half. A hand-rolled RFC 4180 reader (`CsvReader`, not
+  `split(",")`, handling quoted commas/quotes and embedded newlines as single fields) plus
+  `CsvTableReader`'s structural validation (header/column-count/`csv_schema_version` compatibility
+  — refuses a file newer than this build understands) sit under `ImportDataUseCase`, which
+  supports an explicit, user-visible `DuplicatePolicy` (`SKIP`/`REPLACE`/**`MERGE`**) matching an
+  incoming book by `media_id`, then ISBN, then title+release-year, then (PR review, second round)
+  title alone as a genuinely last resort — reached only when the release years disagree or either
+  side is missing one (see the `releaseYear` backlog item for why: ISBN ingestion stores an
+  edition's year, Goodreads import stores the work's year), with every title-only match surfaced in
+  `ImportSummary.notes` for the user to verify rather than applied silently. MERGE only
+  backfills fields the existing row left null, never overwriting a value already set — exactly
+  what a later Goodreads re-import needs to backfill fields the model doesn't have a home for yet
+  (see that bullet below), without a staging table or blocking on Task 12. Every resolved
+  insert/update is applied through one new `ImportWriteDao.importAtomically` transaction
+  (all-or-nothing, verified by a forced-mid-failure rollback test); structural file problems fail
+  the whole import before any write, while a semantically bad row (or an orphaned reading session
+  whose book isn't known) is skipped and reported rather than aborting everything else. Validation
+  reuses the existing use-case-layer rules (`BookMetadataValidation`/`ReadingSessionValidation`,
+  extracted from `BookRepository`/`ReadingSessionRepository`/`LogReadingSessionUseCase`) rather
+  than forking a divergent copy. No schema change; Room stays at v4.
+- **`.sqlite` backup + restore (done)**: a new "Backup & restore" Settings section, visually and
+  structurally separated from CSV export/import by risk. Backup runs SQLite's own `VACUUM INTO`
+  against the live database (via Room KMP's `useWriterConnection`/`Transactor.usePrepared`) rather
+  than a naive file copy or a manual `PRAGMA wal_checkpoint` + copy: `RoomDatabase.Builder` defaults
+  to `WRITE_AHEAD_LOGGING` and this app never overrides it, so the most recent commits can live only
+  in the `-wal` sidecar until SQLite next checkpoints them -- `VACUUM INTO` reads through the normal
+  pager (transparently merging main file + WAL, the same path every ordinary query already uses) and
+  writes one fresh, compacted, WAL-free snapshot, proven in `DatabaseBackupUseCaseTest` (`jvmTest`)
+  against a real file-backed database with a row confirmed to still be sitting only in `-wal` at
+  backup time. Restore validates a picked file *before* touching anything, in two passes: pass 1
+  parses the first 100 bytes directly (no SQLite driver at all) for the magic string and `PRAGMA
+  user_version` at its fixed header offset, refusing a non-SQLite file or a `user_version` newer than
+  `APP_DATABASE_VERSION` with a clear message. Pass 2 opens the candidate **read-only**
+  (`SQLITE_OPEN_READONLY` -- validation has no business needing, or being granted, write access) with
+  a real `BundledSQLiteDriver` connection and runs `PRAGMA integrity_check`, then confirms the tables
+  that candidate's own reported `user_version` should have are present -- a valid-looking 100-byte
+  header can't tell a truncated/corrupt file, or a structurally-valid SQLite file from a different
+  program entirely, apart from a genuine MediaTracker database, and this is the single most
+  destructive action in the app (AGENTS.md §1). An **older** version that passes both passes is
+  accepted and swapped in as-is, since the very next open goes through the exact same registered
+  migration chain every normal launch already uses -- verified end to end in
+  `RestoreDatabaseUseCaseTest` (a real v2 file restored, reopened, and confirmed migrated to v4 with
+  its data intact; pass 2's required-table set is chosen from the candidate's own `user_version`,
+  requiring `app_settings` only once that version is 4 -- so a legitimate older backup is never
+  itself rejected, but a v4 candidate genuinely missing `app_settings` is correctly refused rather
+  than silently waved through). A truncated file with an otherwise-valid header, a structurally
+  valid but unrelated SQLite file, and a v3-schema file hand-bumped to claim `user_version = 4`
+  while genuinely missing `app_settings` are all covered by dedicated tests proving the header check
+  (or an unconditional v1-only table check) alone would have wrongly accepted them. The live file is
+  never deleted until the replacement is staged and validated: the picked document is streamed to a
+  private temp file, validated there, then swapped in via same-directory atomic renames
+  (`ATOMIC_MOVE` only -- no non-atomic fallback if the platform provider rejects it, since a
+  non-atomic copy could leave a truncated file a plain existence check can't tell from a genuine
+  one) -- old file (and its `-wal`/`-shm` sidecars, moved only once the main-file rename itself
+  succeeded, and only if both sidecar renames also succeed) to a fixed-name `.pre-restore-bak` safety
+  net, then the validated file into the live path; if a sidecar rename fails, the rollback puts back
+  whichever sidecar(s) actually moved *first* (the two can disagree -- one landing, one failing) then
+  the main file, so "nothing was changed" is only ever reported once that's genuinely true, not
+  assumed from the main file alone. A failed final rename rolls the backup back automatically
+  (sidecars first, main file last), and a `selfHealDatabaseIfNeeded` check at every cold start closes
+  the one unavoidable gap between those two renames (a process death in that exact window would
+  otherwise make Room create an empty database on next launch) using the same sidecars-first-main-last
+  ordering, so its own "already healed" sentinel can never go true before the WAL that belongs next
+  to the live file has arrived.
+  `AppContainer` is closed before the swap and the whole process is killed and relaunched immediately
+  after, success or failure -- the only clean way back to a fully working `AppContainer` rather than a
+  half-live one -- with the outcome persisted to a small marker file and surfaced once on the next
+  launch. Confirmation is a dedicated modal requiring an explicit checkbox before a
+  destructively-styled button enables, reached only after the file already passed validation. No
+  schema change; no new dependency; no new permission (SAF only, reusing the `CreateDocument`/
+  `OpenDocument` plumbing Phases A/B established).
 - Establishes the Storage Access Framework / file-picker plumbing the app has never needed
   before — which also makes the deferred **manual cover entry** backlog item cheap afterward.
-- **Goodreads CSV import** (`goodreads_library_export.csv`), scheduled as the final phase of this
-  task, after the generic export/import/backup phases above exist. It is the same machinery those
-  phases already build — SAF file picking, CSV parsing, duplicate policy, validation, all-or-nothing
-  transaction — with only a column-mapping layer on top; building it separately later would mean
-  duplicating or retrofitting that pipeline.
-  - Mapping is largely clean against the current model: `Title`; `Number of Pages` →
-    `totalPages`; `Binding` → `BookFormat` (the `PAPERBACK`/`HARDCOVER` values Task 6 added);
-    `Exclusive Shelf` (`read`/`currently-reading`/`to-read`) → `ReadingStatus`; `Date Read` →
-    `finishedAt`. Goodreads exports both `Year Published` and `Original Publication Year` — the
-    edition-vs-work distinction that made a 2026 anniversary printing display instead of the 2016
-    original — so which one `releaseYear` takes must be decided and documented when this phase is
-    implemented.
-  - **Three columns have no home yet and would be silently dropped**: `Bookshelves` → genres
-    (Task 12), `Read Count` → read-throughs (Task 10), and `My Rating` → nothing at all, since the
-    model has no rating field. Mitigated by the merge duplicate policy required above: a later
-    re-import (once Task 10/12 land) can backfill shelves and read counts into books already
-    imported today, instead of staging the data or delaying this import until after Task 12.
-  - Parsing gotcha to record: Goodreads armors ISBNs against Excel as `="9780593135204"`, so a
-    naive parser reads that literal string and every ISBN match fails — strip the `="` / `"`
-    wrapper before validation. Verify the exact column set against a real export file rather than
-    trusting this list.
-  - **Handling the columns with no home yet — import staging, not speculative columns.** The
-    tempting fix is to migrate `rating`/shelves/read-count columns in now and leave them as
-    unread "shadow data" until their features ship. Rejected: under the §8 freeze rule every
-    shipped column is permanent, so that commits the schema to shapes for features not yet
-    designed — and it demonstrably gets them wrong, since ratings turn out to belong on the
-    read-through entity (Task 10), not on the book. The honest version is a generic
-    **import-staging table** holding unmapped columns as raw key/value pairs keyed by book id: it
-    commits to no shape, keeps the import lossless, and lets Task 10 (ratings, read counts) and
-    Task 12 (shelves → genres) backfill from it when those features land. The alternative — simply
-    sequencing the Goodreads import after Tasks 10 and 12 so everything maps first-class — is
-    cleaner still and needs no staging table at all; pick between them when this phase is
-    scheduled, based on how soon the import is actually wanted.
+- **Goodreads CSV import (Phase D — done)**: a distinct "Import from Goodreads" action on the
+  Settings screen's "Data" section (own `DuplicatePolicy` picker, own button, single-file SAF
+  picker — never sharing a control with the app's own CSV import, so the two can't be confused).
+  Reuses the exact machinery the phases above built — `CsvReader`, `ImportDataUseCase`'s duplicate
+  matching, the shared `BookMetadataValidation`, `ImportWriteRepository.importAtomically`'s
+  all-or-nothing transaction — through a new `features/portability/goodreads/` mapping layer, not a
+  parallel import path: `ImportDataUseCase.execute()`'s book-row duplicate-matching/insert/update
+  logic was extracted into a private `resolveBookRows(...)` operating on already-parsed rows, and a
+  new `executeGoodreads(...)` (added to the `ImportUseCase` interface) feeds it rows from the
+  Goodreads mapping layer instead of `LibraryCsvImporter`.
+  - Columns are matched **by header name** (`GoodreadsCsvTableReader`), never by position — a
+    reordered export, unknown/extra columns, or missing optional columns all import cleanly; only
+    `Title` is required, and its absence refuses the whole file with a clear message.
+  - Mapping decided: `Title`; `Number of Pages` → `totalPages`; `Binding` → `BookFormat` (Hardcover/
+    Library Binding/Board Book/Leather Bound → `HARDCOVER`; Paperback/Mass Market Paperback/Trade
+    Paperback/Spiral-bound/Unbound → `PAPERBACK`; Kindle Edition/ebook/Nook → `EBOOK`; Audiobook/
+    Audio CD/Audible Audio → `AUDIOBOOK`; anything else, including blank, → `PHYSICAL`); `Exclusive
+    Shelf` (`read`/`currently-reading`/`to-read`) → `ReadingStatus` (blank/unrecognized → `TO_READ`;
+    **nothing maps to `DNF`** — Goodreads' exclusive shelf has no such state, a user-tracked DNF
+    lives in the dropped `Bookshelves` column instead, and guessing at it risked mislabeling a book
+    the user never abandoned); `Date Read` → `finishedAt`, but only when the shelf resolved to
+    `FINISHED` (a stray value alongside `currently-reading`/`to-read` is never used, so it can't
+    contradict `BookDetailsEntity.finishedAt`'s "when status most recently became FINISHED"
+    invariant); `Date Added` → `createdAt`, falling back to import time when blank/unparseable.
+  - **`releaseYear` decided: `Original Publication Year` preferred over `Year Published`**, falling
+    back to `Year Published` only when the original-year column is blank. `Original Publication
+    Year` is the year the *work* first appeared; `Year Published` is the specific *edition/printing*
+    Goodreads happened to catalog, which can be a much later reprint — the "2026 anniversary
+    printing masks an original 1926 publication" edition-vs-work problem this bullet was written to
+    flag. A personal library tracker is about the work someone read, not one exact printing, so the
+    work-identity year wins whenever Goodreads recorded one; falling back to the edition year for
+    the (common) case where `Original Publication Year` is blank is still better than leaving
+    `releaseYear` `null`.
+  - **`My Rating`, `Bookshelves`, and `Read Count` are dropped, not staged — the decision made**:
+    no import-staging table and no schema bump (`AppDatabase` stays at v4). Instead, `ImportSummary`
+    gained a `notes: List<String>` field (default-empty; always empty for the app's own CSV import)
+    that this path always populates with an explicit notice naming the three dropped columns, why
+    they have nowhere to go yet (Task 10 for read-throughs/ratings, Task 12 for genres/shelves), and
+    that **the recovery path depends on the user keeping `goodreads_library_export.csv`**: once
+    those tasks land, re-importing that same file again will match every book already imported (by
+    ISBN, or by title+year) and backfill the new fields, because `DuplicatePolicy.MERGE` only fills
+    a blank and never overwrites a value already set — proven end-to-end in
+    `ImportDataUseCaseTest.executeGoodreads_mergePolicy_reimportBackfillsBlankReleaseYear_neverOverwritesTitle`.
+    The Settings screen's import-summary dialog renders every note in full, never truncated to a
+    count — this is the load-bearing mitigation for what would otherwise be a silent data loss on
+    `My Rating`, and it must keep working if Task 10/12 change the entity shapes those columns will
+    eventually feed.
+  - ISBN Excel-armor handled: Goodreads writes `="9780593135204"` (including the empty-ISBN case
+    `=""`) to stop Excel mangling it; stripped before any ISBN handling.
+  - No schema change; no new dependency; no new permission.
 
 ## Task 9 — Search & discovery
 
@@ -309,8 +397,12 @@ individual session histories per read-through."
   the second"), so a book-level column added now would have to be migrated onto the read-through
   entity by this task anyway. Adding it as a column on the read-through table the migration
   already creates costs one migration instead of two and puts it on the right entity first time.
-  This also means the Goodreads importer must not land before this task without a plan for its
-  `My Rating` column — see Task 8's import-staging note.
+  The Goodreads importer (Task 8 Phase D, done) landed before this task with a plan for `My
+  Rating` rather than waiting on it: the column is dropped on import, with an explicit notice
+  telling the user to keep `goodreads_library_export.csv` so a re-import once this task adds a
+  rating field can backfill it via `DuplicatePolicy.MERGE` — see that phase's ROADMAP bullet.
+  When this task lands the read-through rating column, double check that a re-import genuinely
+  fills it in for a book imported before this task existed.
 
 ## Task 11 — Analytics & stats revamp
 
@@ -380,6 +472,30 @@ numbered task rather than left to be rediscovered.
 - Orphaned cover files: deleting a book leaves its content-addressed cover on disk
   (dedup means the file may be shared by other books, so deletion needs a reference check
   or a periodic sweep).
+- **`releaseYear` now means different things depending on how a book was added.** ISBN ingestion
+  reads Open Library's *edition* record, so it stores the printing's year (a 2026 anniversary
+  edition of a 2016 novel stores 2026). The Goodreads importer (Task 8 Phase D) deliberately
+  prefers `Original Publication Year`, so the same book imported that way stores 2016. Both are
+  defensible in isolation, but one library holding both conventions means sorting or filtering by
+  year silently mixes "when this work was written" with "when my copy was printed". Decide on one
+  meaning and make both paths agree — and note that whichever is chosen, the *other* is genuinely
+  useful information the schema has nowhere to put, so the real fix may be storing both.
+  **Update (PR review, second round):** this was also a duplicate-book hazard, not just a
+  display/sort inconsistency — `ImportDataUseCase`'s `media_id` → `isbn` → `title`+`release_year`
+  matching could miss all three tiers for the exact "same book, disagreeing years, and/or a
+  different edition's ISBN" case this bullet describes, silently inserting a second copy instead of
+  the `DuplicatePolicy.MERGE` backfill the user expects. Mitigated **without a schema change**: a
+  fourth, last-resort case-insensitive **title-only** matching tier now catches this (reached only
+  when the stronger tiers, including exact title+year, all fail), with every such match surfaced in
+  `ImportSummary.notes` for the user to verify (title-only matching has a real false-positive risk
+  — two unrelated books sharing a title, with no year or author to disambiguate — so it is reported,
+  never applied silently). This closes the silent-duplicate hazard but does not fix the underlying
+  ambiguity above: the **proper fix is still the schema change this bullet already called for** —
+  add a second nullable year column (e.g. `originalReleaseYear` alongside the existing
+  edition-oriented `releaseYear`) so both are stored, `ImportDataUseCase` can match on either, and
+  sort/filter can pick one deliberately instead of whichever import path happened to run last. Not
+  done this round because a schema bump was out of scope for this fix; revisit alongside whichever
+  future task next needs a schema version bump.
 - Bulk cover backfill across a whole library (Task 6 Phase E only implemented the per-book
   re-fetch affordance). The last-resort `?default=false` ISBN cover probe
   (`OpenLibraryIsbnCoverProbe`) that a backfill would lean on most heavily is ISBN-keyed and

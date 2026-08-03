@@ -100,6 +100,12 @@ dependencies {
 // com.hub.media.features.books.data.* above).
 // SettingsViewModelTest (ROADMAP Task 7 Phase B) is excluded by exact class name for the same
 // reason as StatsViewModelTest/EditBookViewModelTest above.
+// ExportDataUseCaseTest (ROADMAP Task 8 Phase A) is likewise Room-backed (builds a real
+// AppDatabase to exercise BookRepository/ReadingSessionRepository end to end) and excluded by
+// package (com.hub.media.features.portability.domain.*, mirroring
+// com.hub.media.features.books.domain.* above). CsvUtilTest/LibraryCsvExporterTest/
+// ReadingLogCsvExporterTest live under com.hub.media.features.portability.csv -- pure Kotlin, no
+// Room, so that package is deliberately NOT excluded and keeps running on every variant.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
@@ -108,6 +114,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.features.books.domain.*")
             excludeTestsMatching("com.hub.media.features.stats.*")
             excludeTestsMatching("com.hub.media.features.settings.*")
+            excludeTestsMatching("com.hub.media.features.portability.domain.*")
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")

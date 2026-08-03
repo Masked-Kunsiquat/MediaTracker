@@ -337,6 +337,30 @@ class BookRepositoryTest {
     }
 
     @Test
+    fun updateBookMetadata_nonFinitePurchasePrice_rejectedAndPersistsNothing() = runTest {
+        // Double.NaN satisfies `purchasePrice < 0.0 == false` (IEEE 754), so a plain negativity
+        // check alone would silently let it through -- see BookMetadataValidation.validatePurchasePrice's
+        // KDoc. This is directly reachable from the manual edit form too: EditBookScreen only gates
+        // its Save button on `parsedPurchasePrice >= 0.0`, which typing "Infinity" also satisfies.
+        val addResult = repo.addBook(title = "Book", purchasePrice = 10.0, format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repo.updateBookMetadata(
+            mediaId = mediaId,
+            title = "Book",
+            purchasePrice = Double.NaN,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+            trackingMode = TrackingMode.PERCENT,
+        )
+        assertIs<Resource.Error>(result)
+
+        val mediaItem = db.mediaItemDao().getById(mediaId)
+        assertEquals(10.0, mediaItem?.purchasePrice)
+    }
+
+    @Test
     fun updateBookMetadata_zeroTotalPages_rejectedAndPersistsNothing() = runTest {
         val addResult = repo.addBook(title = "Book", totalPages = 250, format = BookFormat.PHYSICAL)
         assertIs<Resource.Success<String>>(addResult)
