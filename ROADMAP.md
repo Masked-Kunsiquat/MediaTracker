@@ -4,6 +4,21 @@ Living document tracking the project's task sequence. Updated as tasks complete 
 change; details for the active task live in the orchestration session, not here.
 Versioning follows AGENTS.md §8 — roughly one minor release per completed task.
 
+**Task numbers are stable identifiers, not priority.** Priority has been reshuffled several
+times (Movies & TV alone moved from 6 to 13), and renumbering sections meant hand-editing every
+cross-reference — which is how a stale "Task 9" reference survived into a PR once already.
+Numbers are now assigned once, on creation, and never change; the running order lives in the
+single list below and reordering is a one-line edit there.
+
+## Execution order
+
+1. **Task 14 — Bulk operations & cover backfill** ← next
+2. Task 9 — Search & discovery
+3. Task 10 — Re-read modeling (ratings land here)
+4. Task 11 — Analytics & stats revamp
+5. Task 12 — Genre tracking
+6. Task 13 — Movies & TV
+
 ## Done
 
 - **Task 1 — Data foundation** (`v0.1.0`): KMP `shared` module, Room KMP schema v1
@@ -446,6 +461,35 @@ and never implemented: there is no genre column, table, or UI anywhere today.
   once a second media type exists.
 - Library/media-type UI generalization (type filter, non-book detail screens).
 
+## Task 14 — Bulk operations & cover backfill
+
+Prompted by real use: importing a Goodreads library produced dozens of books with no covers,
+leaving the per-book re-fetch (Task 6 Phase E) as the only remedy — one tap at a time. Neither
+item here is a bugfix; both are missing capabilities, so this is a **minor** release, not a patch.
+
+- **Bulk cover backfill.** Promoted from the backlog, where it was deferred out of Task 6 Phase E.
+  Serves three cases that all produce coverless books: a Goodreads import (`GoodreadsCsvImporter`
+  sets `coverImageHash = null` by design — Goodreads exports carry no cover data), a CSV import
+  onto a **new device** (the CSV carries cover *hashes* but no image bytes, so every hash points at
+  a file that isn't there), and books added before the field-level cover fallback existed.
+  - **Throttling is the hard part, and the reason this was deferred.** The last-resort
+    `?default=false` ISBN probe (`OpenLibraryIsbnCoverProbe`) is ISBN-keyed and therefore subject
+    to Open Library's 100-requests-per-IP-per-5-minutes cover limit, unlike the ID-keyed fetches
+    `OpenLibraryClient` normally uses. A naive loop over `RefetchCoverUseCase` would trip it partway
+    and look like a broken feature. Needs rate limiting, resumability, and honest partial-progress
+    reporting rather than an all-or-nothing run.
+  - Needs progress and cancellation UI — this is a long-running network operation over a whole
+    library, not a single tap. Consider offering it directly after an import completes, since that
+    is the moment the need is obvious, as well as from Settings for a one-off pass.
+  - Books with no ISBN can never be backfilled from a provider; report them rather than retrying
+    forever, and note that manual cover entry (still in the backlog) is their only route.
+- **Library multi-select and bulk actions.** Long-press a library card to enter selection mode,
+  with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
+  bulk reading-status change is the obvious companion and probably cheap once selection exists.
+  Deletion of several books at once deserves the same confirmation care the single-book delete
+  already has, and interacts with the orphaned-cover-files backlog item (deleting many books at
+  once leaves that many content-addressed covers behind).
+
 ## Blocked on external changes
 
 Nothing to schedule — these unblock when an upstream dependency moves.
@@ -496,12 +540,8 @@ numbered task rather than left to be rediscovered.
   sort/filter can pick one deliberately instead of whichever import path happened to run last. Not
   done this round because a schema bump was out of scope for this fix; revisit alongside whichever
   future task next needs a schema version bump.
-- Bulk cover backfill across a whole library (Task 6 Phase E only implemented the per-book
-  re-fetch affordance). The last-resort `?default=false` ISBN cover probe
-  (`OpenLibraryIsbnCoverProbe`) that a backfill would lean on most heavily is ISBN-keyed and
-  therefore subject to Open Library's 100-requests-per-IP-per-5-minutes cover rate limit
-  (unlike the ID-keyed fetches `OpenLibraryClient` normally uses), so a bulk pass needs its own
-  throttling before it can safely loop `RefetchCoverUseCase` over an entire library.
+- Bulk cover backfill — **promoted out of the backlog to Task 14**, prompted by a Goodreads import
+  leaving a whole library coverless. See that task for the throttling constraints.
 - Manual cover entry (paste a URL or pick a local image, Task 6 Phase E). Deferred because a
   local-image picker needs a file-picker permission story (`ACTION_OPEN_DOCUMENT`/photo picker
   scoped storage considerations) — Task 8 establishes exactly that plumbing for CSV/backup, so
