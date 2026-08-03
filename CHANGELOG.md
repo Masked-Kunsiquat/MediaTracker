@@ -151,23 +151,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     named constant so the check and the `@Database` annotation can never silently drift), is refused
     with a clear message before Room ever gets near it — exactly the "refuse loudly rather than let
     Room fail obscurely" the task called for. Pass 2, reached only once pass 1 passes, opens the
-    candidate with a real `BundledSQLiteDriver` connection (new `validateStagedDatabaseIntegrity`)
-    and runs `PRAGMA integrity_check`, then confirms every table this app has shipped since schema
-    v1 is actually present — a 100-byte header alone can't tell a truncated/corrupt file, or a
-    structurally-valid SQLite file belonging to a completely different program, apart from a
-    genuinely intact MediaTracker database, and for an operation this destructive that bar was too
-    low. Either failure is refused with a clear message and the candidate deleted, same as pass 1.
-    An **older** `user_version` that passes both passes is legitimate and accepted: the very next
-    time the swapped-in file is opened, it goes through the exact same registered migration chain
-    (`MIGRATION_1_2`/`MIGRATION_2_3`/`MIGRATION_3_4`) every ordinary app launch already uses, with no
-    separate "restore migration" path — proven, not just assumed, by `RestoreDatabaseUseCaseTest`'s
-    round trip: a real v2-schema file is restored, reopened through the normal `buildAppDatabase`
-    path, and asserted to land on the current schema with its pre-migration data completely intact.
-    Pass 2's table check deliberately only requires tables present since v1 (not `app_settings`,
-    added at v4), so this legitimate older-backup path is never itself rejected as "not a
-    MediaTracker library." `RestoreDatabaseUseCaseTest` covers a truncated-but-header-valid file and
-    a structurally valid but unrelated SQLite file, both now refused where the header check alone
-    would have accepted them.
+    candidate **read-only** (`SQLITE_OPEN_READONLY`, `BundledSQLiteDriver`; new
+    `validateStagedDatabaseIntegrity`) and runs `PRAGMA integrity_check`, then confirms the tables
+    that candidate's own `user_version` says it should have are actually present — a 100-byte header
+    alone can't tell a truncated/corrupt file, or a structurally-valid SQLite file belonging to a
+    completely different program, apart from a genuinely intact MediaTracker database, and for an
+    operation this destructive that bar was too low. Either failure is refused with a clear message
+    and the candidate deleted, same as pass 1. An **older** `user_version` that passes both passes is
+    legitimate and accepted: the very next time the swapped-in file is opened, it goes through the
+    exact same registered migration chain (`MIGRATION_1_2`/`MIGRATION_2_3`/`MIGRATION_3_4`) every
+    ordinary app launch already uses, with no separate "restore migration" path — proven, not just
+    assumed, by `RestoreDatabaseUseCaseTest`'s round trip: a real v2-schema file is restored, reopened
+    through the normal `buildAppDatabase` path, and asserted to land on the current schema with its
+    pre-migration data completely intact. Pass 2's required-table set is chosen **from the
+    candidate's own reported `user_version`**, not one fixed list for every candidate: a candidate
+    older than the version `app_settings` was added at (v4) is only held to the tables present since
+    v1, so a legitimate older backup is never itself rejected as "not a MediaTracker library" — but a
+    candidate that itself claims `user_version` 4 is held to that later table set too, so a v4 file
+    genuinely missing `app_settings` (corrupt, hand-crafted, or a botched edit) is correctly refused
+    rather than silently waved through the way excluding it unconditionally would have.
+    `RestoreDatabaseUseCaseTest` covers a truncated-but-header-valid file, a structurally valid but
+    unrelated SQLite file, and a v3-schema file whose `user_version` was hand-bumped to 4 while
+    genuinely missing `app_settings`, all three now refused where the header check (or an
+    unconditionally v1-only table check) alone would have accepted them — plus a direct check that
+    validating a candidate never needs, and is never granted, write access to it (opening
+    read-write, the pre-fix behavior, would let validation silently modify a candidate before the
+    user has confirmed anything destructive).
   - **The live database is never deleted until the replacement is staged and validated.** The
     picked SAF document is streamed into a private temp file (new binary-file counterparts to the
     existing CSV `Uri`↔text helpers, `app/.../export/DatabaseFileIo.kt`) and validated *there*,
@@ -180,22 +189,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     attempt's safety net rather than accumulating one per restore forever), carrying its own
     `-wal`/`-shm` sidecars along with it — but only once the main-file rename itself has already
     succeeded, and only if *both* sidecar renames succeed; if either doesn't (a live rename failure,
-    not only a crash), the main-file move is rolled back and the whole attempt is refused with a
-    truthful "nothing was changed" rather than risking the live database's most recent commits (still
-    only in its `-wal`) being left out of the safety net — then the validated file renames into the
-    live path. A failed final rename automatically rolls the backup — sidecars first, main file last
-    — back into place before returning an error. The one gap this can't make atomic — a process death
-    between the backup and activation renames, which would otherwise make Room silently create an
-    empty database on the next launch — is closed by a `selfHealDatabaseIfNeeded` check that runs at
-    the very start of every `createAppContainer`, before Room ever opens anything: if the live file is
-    missing but the safety-net backup exists, its sidecars are moved back *first* and its main file
-    *last*, so the "live file present" sentinel this check relies on can never go true before the WAL
-    that belongs next to it has already arrived. `RestoreDatabaseUseCaseTest` covers header rejection,
-    the too-new/older version rules, the full round trip, a forced mid-swap failure (a
-    `StagedRestoreInfo` pointing at a file that no longer exists) leaving the original database
-    completely intact and openable afterward, and — reproducing a real Windows file-lock rather than
-    a hand-waved crash — a sidecar-rename failure during both the swap and the self-heal check, in
-    each case proving the live file is never left present without the WAL that belongs next to it.
+    not only a crash — and the two sidecars can disagree, one landing while the other fails), the
+    rollback puts back whichever sidecar(s) actually moved *first*, then the main file, before
+    refusing the whole attempt — "nothing was changed" is only ever reported once all of that
+    actually holds, never assumed from the main file alone — rather than risking the live database's
+    most recent commits (still only in its `-wal`) being silently left stranded at the backup path.
+    The validated file only then renames into the live path. A failed final rename automatically
+    rolls the backup — sidecars first, main file last — back into place before returning an error.
+    The one gap this can't make atomic — a process death between the backup and activation renames,
+    which would otherwise make Room silently create an empty database on the next launch — is closed
+    by a `selfHealDatabaseIfNeeded` check that runs at the very start of every `createAppContainer`,
+    before Room ever opens anything: if the live file is missing but the safety-net backup exists,
+    its sidecars are moved back *first* and its main file *last*, so the "live file present" sentinel
+    this check relies on can never go true before the WAL that belongs next to it has already
+    arrived. `RestoreDatabaseUseCaseTest` covers header rejection, the too-new/older version rules,
+    the full round trip, a forced mid-swap failure (a `StagedRestoreInfo` pointing at a file that no
+    longer exists) leaving the original database completely intact and openable afterward, and — a
+    sidecar-rename failure forced via a directory placed at the rename's own target (portable across
+    platforms, unlike an open file handle, which only reliably blocks a rename on Windows) during
+    both the swap and the self-heal check — proving the live file is never left present without the
+    WAL that belongs next to it, and that a sidecar which *did* successfully move before its sibling
+    failed is never left stranded at the backup path while the rest of the database looks restored.
   - **`AppContainer.close()` + a full process restart, not an in-place rebuild.** Every
     ViewModel/repository already alive in the process holds references captured from the
     `AppContainer` a restore's confirm handler closes right before the swap; rebuilding a fresh

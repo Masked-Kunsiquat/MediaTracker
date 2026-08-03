@@ -2,7 +2,9 @@ package com.hub.media.features.portability.domain
 
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.SQLiteException
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
 import androidx.sqlite.execSQL
 import com.hub.media.core.database.APP_DATABASE_VERSION
 import com.hub.media.core.database.AppDatabase
@@ -16,7 +18,6 @@ import com.hub.media.core.database.selfHealDatabaseIfNeeded
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import java.io.File
-import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.deleteExisting
@@ -25,6 +26,7 @@ import kotlin.io.path.exists
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -146,6 +148,56 @@ class RestoreDatabaseUseCaseTest {
         assertTrue(File(candidatePath).exists(), "an accepted candidate must not be deleted -- it's staged for commit")
     }
 
+    /**
+     * Finding 2's exact scenario: [com.hub.media.core.database.validateStagedDatabaseIntegrity]
+     * used to open the candidate with `BundledSQLiteDriver`'s default flags (`SQLITE_OPEN_READWRITE
+     * or SQLITE_OPEN_CREATE`) -- so merely *validating* a picked file, before the user has
+     * confirmed anything destructive, opened it with write access it never actually exercises
+     * (only `PRAGMA integrity_check` and a `SELECT` against `sqlite_master` run, never a write).
+     *
+     * A behavioral, integration-level reproduction (holding the candidate's own OS file-permission
+     * read-only, and separately confirming no `-wal`/`-shm` sidecar or byte-level change survives
+     * validation across several realistic candidate shapes -- a checkpointed WAL-mode file, a
+     * WAL-free `VACUUM INTO` backup, and a WAL-mode file with genuinely uncommitted `-wal` content)
+     * was tried first and abandoned: on this JVM/`BundledSQLiteDriver` 2.7.0/Windows combination, a
+     * connection that only ever issues `SELECT`/`PRAGMA integrity_check` (never an `INSERT`/
+     * `UPDATE`/DDL statement) does not observably differ on disk between the two open flags for any
+     * of those shapes -- confirmed empirically, not assumed. So this test instead verifies the one
+     * guarantee [SQLITE_OPEN_READONLY] actually, unconditionally provides on every platform: **any**
+     * attempted write through a connection opened with it is rejected outright by SQLite itself,
+     * regardless of what the calling code goes on to do with the connection. That's exactly why the
+     * fix closes Finding 2's hazard even though this specific function's current query pattern
+     * happens not to trip it today: if a future edit to [com.hub.media.core.database
+     * .validateStagedDatabaseIntegrity] ever added a write (accidentally or otherwise), the
+     * `SQLITE_OPEN_READONLY` connection it already opens would make that write fail loudly and
+     * immediately, rather than silently succeeding against a user's about-to-be-restored candidate
+     * file the way the pre-fix `SQLITE_OPEN_READWRITE` open would have let it.
+     */
+    @Test
+    fun sqliteOpenReadOnlyFlag_rejectsWrites_thatTheDefaultOpenFlagsWouldSilentlyAllow() = runTest {
+        val candidatePath = path("read-only-flag-check.db")
+        createFreshDatabaseFile(candidatePath)
+
+        // The exact flag validateStagedDatabaseIntegrity now opens the candidate with: any write
+        // attempt on this connection must be rejected outright, never silently applied.
+        BundledSQLiteDriver().open(candidatePath, SQLITE_OPEN_READONLY).use { readOnlyConnection ->
+            assertFailsWith<SQLiteException>(
+                "SQLITE_OPEN_READONLY must make any write attempt fail outright -- if this " +
+                    "connection can still write, opening the candidate with this flag protects " +
+                    "nothing",
+            ) {
+                readOnlyConnection.execSQL("CREATE TABLE should_never_be_created (id INTEGER)")
+            }
+        }
+
+        // Sanity check on the other side: the exact flags the pre-fix (buggy) code used really do
+        // permit that same write -- so the assertion above is genuinely exercising the difference
+        // this fix makes, not something SQLite would have refused either way.
+        BundledSQLiteDriver().open(candidatePath).use { readWriteConnection ->
+            readWriteConnection.execSQL("CREATE TABLE should_be_creatable_here (id INTEGER)")
+        }
+    }
+
     // ==========================================================================================
     // stage(): integrity validation beyond the 100-byte header (Finding 4)
     // ==========================================================================================
@@ -195,6 +247,34 @@ class RestoreDatabaseUseCaseTest {
         val result = DefaultRestoreDatabaseUseCase(path("live.db")).stage(candidatePath)
 
         assertIs<Resource.Error>(result)
+        assertFalse(File(candidatePath).exists(), "a rejected candidate must be cleaned up, not left behind")
+    }
+
+    /**
+     * Finding 3's exact scenario: the expected-table check used to *always* exclude
+     * `app_settings` from the required set (so a genuinely older backup wouldn't be wrongly
+     * rejected) -- but that meant a candidate that itself claims `user_version = 4` while
+     * genuinely missing `app_settings` (corrupt, hand-crafted, or a botched hand-edit of a real
+     * backup) sailed through undetected. Built by seeding a real v3-schema file (so
+     * `app_settings` genuinely does not exist) and then hand-bumping only its `user_version` to 4
+     * -- exactly what a file lying about its own schema version looks like on disk. The required
+     * set must now be chosen from the candidate's own reported version, so this is rejected
+     * before [DefaultRestoreDatabaseUseCase.commit] is ever reachable.
+     */
+    @Test
+    fun stage_v4DatabaseMissingAppSettingsTable_isRejectedBeforeCommit() = runTest {
+        migrationHelper.createDatabase(3).use { db ->
+            db.execSQL("PRAGMA user_version = 4")
+        }
+        val candidatePath = tempDir.resolve("migration-seed.db").toString()
+
+        val result = DefaultRestoreDatabaseUseCase(path("live.db")).stage(candidatePath)
+
+        assertIs<Resource.Error>(result)
+        assertTrue(
+            result.message.contains("app_settings"),
+            "the failure message should name the missing table -- got: ${result.message}",
+        )
         assertFalse(File(candidatePath).exists(), "a rejected candidate must be cleaned up, not left behind")
     }
 
@@ -360,16 +440,22 @@ class RestoreDatabaseUseCaseTest {
     }
 
     /**
-     * Finding 2's exact scenario, reproduced deterministically: a live database's own `-wal` file
-     * fails to move aside during [DefaultRestoreDatabaseUseCase.commit]'s swap (simulated via an
-     * open [RandomAccessFile] blocking the rename on Windows -- a real, live-process failure mode,
-     * not a hand-waved crash). Before this fix, the sidecars' rename return values were never
-     * checked, so the swap would proceed to install the new database anyway -- returning
-     * [Resource.Success] while silently leaving the *old* database's most recent commits (the ones
-     * still only in its `-wal`) outside the safety-net backup, and a stray sidecar file sitting next
-     * to the brand-new live database under its own `-wal` name. The fix must instead abort the whole
-     * swap, roll the live file back, and report a truthful "nothing was changed" -- never a lie about
-     * "your original library was not affected" while its WAL is actually missing.
+     * Finding 1's exact scenario, reproduced deterministically: a live database's own `-wal` file
+     * fails to move aside during [DefaultRestoreDatabaseUseCase.commit]'s swap. Forced by placing a
+     * *directory* at the rename's target (`<live>.pre-restore-bak-wal`) rather than holding a file
+     * lock open -- `Files.move` refuses to replace an existing directory with a file on every
+     * platform, whereas a lock on the source file only reliably blocks a rename on Windows (on
+     * Linux/macOS the rename typically still succeeds through an open handle), which would make this
+     * test silently stop proving anything on those platforms.
+     *
+     * Before Finding 1's fix, the rollback taken here only ever restored the *main* database file --
+     * it never moved an already-renamed sidecar back. Here the `-wal` rename is the one forced to
+     * fail (so it never leaves `walPath`), but the `-shm` rename genuinely succeeds first (real
+     * content actually lands at the backup path) -- exactly the "one sidecar moved, the other didn't"
+     * split Finding 1 describes. The old rollback would restore the main file, report "Nothing was
+     * changed," and leave the real `-shm` content stranded at the backup path with `shmPath` missing
+     * entirely -- making that message a lie. The fixed rollback must put `-shm` back too before it's
+     * allowed to say nothing changed.
      */
     @Test
     fun commit_walSidecarRenameFailure_abortsAndRestoresOriginal_neverReportingFalseSuccess() = runTest {
@@ -388,8 +474,14 @@ class RestoreDatabaseUseCaseTest {
             isOlderSchemaVersion = false,
         )
 
-        val result = RandomAccessFile(walPath, "rw").use { lock ->
+        // A directory sitting at the wal rename's target makes it fail on every platform -- the
+        // shm rename (a different target, untouched) is left free to succeed normally.
+        val backupWalPath = "$livePath.pre-restore-bak-wal"
+        File(backupWalPath).mkdirs()
+        val result = try {
             DefaultRestoreDatabaseUseCase(livePath).commit(staged)
+        } finally {
+            File(backupWalPath).delete()
         }
 
         assertIs<Resource.Error>(result)
@@ -407,6 +499,13 @@ class RestoreDatabaseUseCaseTest {
             File(walPath).readText(),
             "the original WAL (holding whatever commits weren't yet checkpointed) must still be right " +
                 "next to the live file it belongs to, not stranded at the backup path or lost",
+        )
+        assertEquals(
+            "ORIGINAL-SHM-CONTENT",
+            File(shmPath).readText(),
+            "Finding 1: the SHM sidecar DID successfully move aside to the backup path before the WAL " +
+                "rename failed -- the rollback must move it back too, not just the main file, or " +
+                "'Nothing was changed' would be a lie while it sat stranded at the backup path",
         )
         assertTrue(File(stagedPath).exists(), "the staged candidate must be untouched -- the swap never reached it")
     }
@@ -482,15 +581,18 @@ class RestoreDatabaseUseCaseTest {
     }
 
     /**
-     * Finding 1's exact failure mode, reproduced deterministically instead of hand-waved: a `-wal`
-     * rename can fail on a live process too, not only via a mid-syscall crash (e.g. another handle
-     * transiently blocking it -- simulated here via an open [RandomAccessFile] on Windows, which
-     * blocks renaming/deleting the file it holds open). The old ordering (main file first, sidecars
-     * last, with return values never checked) would rename the main file into place regardless,
-     * leaving the live file present -- satisfying [selfHealDatabaseIfNeeded]'s own "already healed"
-     * sentinel -- while the backup `-wal` stays permanently stranded, exactly as Finding 1 describes.
-     * The fixed ordering must instead leave the live file missing (so a later retry can still
-     * succeed) whenever a needed sidecar rename fails.
+     * A `-wal` rename can fail on a live process too, not only via a mid-syscall crash (e.g.
+     * another handle transiently blocking it). Forced here by placing a *directory* at the
+     * rename's target (`<live>-wal`) rather than holding a file lock open -- `Files.move` refuses
+     * to replace an existing directory with a file on every platform, whereas a lock on the
+     * backup's `-wal` file (the rename's *source*) only reliably blocks the rename on Windows (on
+     * Linux/macOS the rename typically still succeeds through an open handle), which would make
+     * this test silently stop proving anything on those platforms. The old ordering (main file
+     * first, sidecars last, with return values never checked) would rename the main file into
+     * place regardless, leaving the live file present -- satisfying [selfHealDatabaseIfNeeded]'s
+     * own "already healed" sentinel -- while the backup `-wal` stays permanently stranded. The
+     * fixed ordering must instead leave the live file missing (so a later retry can still succeed)
+     * whenever a needed sidecar rename fails.
      */
     @Test
     fun selfHeal_walRenameFailure_neverLeavesLiveFilePresentWithoutIt() = runTest {
@@ -502,24 +604,25 @@ class RestoreDatabaseUseCaseTest {
         File(backupWalPath).writeText("WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS")
         File(backupShmPath).writeText("SHM-CONTENT")
 
-        // Hold an open handle on the backup -wal file so its rename fails while the main file's
-        // rename (unlocked) would otherwise succeed -- exactly one sidecar rename failing, live
-        // process, no crash involved.
-        RandomAccessFile(backupWalPath, "rw").use { lock ->
-            selfHealDatabaseIfNeeded(livePath)
+        // A directory sitting at the wal rename's target (livePath-wal) makes the rename fail on
+        // every platform -- exactly one sidecar rename failing, live process, no crash involved.
+        val walPath = "$livePath-wal"
+        File(walPath).mkdirs()
 
-            assertFalse(
-                File(livePath).exists(),
-                "the live file must NOT appear until its -wal sidecar successfully travels with it " +
-                    "-- otherwise the next launch would see 'live file present' and never look for " +
-                    "the stranded WAL again",
-            )
-            assertTrue(File(backupPath).exists(), "the main backup file must be untouched while the WAL move failed")
-            assertTrue(File(backupWalPath).exists(), "the WAL must still be at the backup path (its rename failed)")
-        }
+        selfHealDatabaseIfNeeded(livePath)
 
-        // Lock released (as if the transient condition cleared) -- a subsequent call must finish
-        // the job completely, with no data lost.
+        assertFalse(
+            File(livePath).exists(),
+            "the live file must NOT appear until its -wal sidecar successfully travels with it " +
+                "-- otherwise the next launch would see 'live file present' and never look for " +
+                "the stranded WAL again",
+        )
+        assertTrue(File(backupPath).exists(), "the main backup file must be untouched while the WAL move failed")
+        assertTrue(File(backupWalPath).exists(), "the WAL must still be at the backup path (its rename failed)")
+
+        // Directory cleared (as if the transient condition cleared) -- a subsequent call must
+        // finish the job completely, with no data lost.
+        File(walPath).delete()
         selfHealDatabaseIfNeeded(livePath)
 
         assertTrue(File(livePath).exists(), "retrying after the transient failure clears must complete the heal")

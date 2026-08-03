@@ -74,16 +74,18 @@ public data class StagedRestoreInfo(
  *   message telling the user to update the app, rather than letting Room fail obscurely trying to
  *   open a schema it has never seen (this task's explicit brief). Candidate deleted.
  *
- * **Pass 2**, reached only once pass 1 passes, opens the candidate with a real
+ * **Pass 2**, reached only once pass 1 passes, opens the candidate **read-only** with a real
  * [androidx.sqlite.driver.bundled.BundledSQLiteDriver] connection (see
  * [com.hub.media.core.database.validateStagedDatabaseIntegrity]) and runs SQLite's own `PRAGMA
- * integrity_check`, then confirms the tables every schema version this app has ever shipped defines
- * are actually present. A 100-byte header alone cannot tell a genuinely intact database apart from
- * one truncated mid-write, corrupted in transit, or -- despite starting with the same standard
- * SQLite magic string -- belonging to a completely different program; for an operation this
- * destructive (AGENTS.md §1: no cloud copy to fall back on), that bar was too low. Either failure
- * mode is refused with a clear message and the candidate is deleted, exactly like pass 1's
- * rejections.
+ * integrity_check`, then confirms the tables that schema version defines are actually present. A
+ * 100-byte header alone cannot tell a genuinely intact database apart from one truncated mid-write,
+ * corrupted in transit, or -- despite starting with the same standard SQLite magic string --
+ * belonging to a completely different program; for an operation this destructive (AGENTS.md §1: no
+ * cloud copy to fall back on), that bar was too low. Either failure mode is refused with a clear
+ * message and the candidate is deleted, exactly like pass 1's rejections. Opening the connection
+ * read-only matters too: this pass only ever *validates* the candidate, so it must never itself be
+ * able to modify the file or spawn `-wal`/`-shm` sidecars next to it -- that would be a side effect
+ * of merely picking a file to look at, before the user has even confirmed anything destructive.
  *
  * `user_version` older than or equal to the current version, having passed both passes -> accepted.
  * An **older** version is legitimate and deliberately allowed through: [com.hub.media.core.database.buildAppDatabase]
@@ -94,9 +96,13 @@ public data class StagedRestoreInfo(
  * builds a real v2-schema file, "restores" it via [commit], reopens it through
  * [com.hub.media.core.database.buildAppDatabase] exactly like a normal app launch would, and
  * asserts it ends up on the current schema version with its pre-migration data intact. Pass 2's
- * expected-table check deliberately only requires tables present since schema v1 (not, say,
- * `app_settings`, added at v4) so this legitimate older-backup path is never itself rejected as
- * "not a MediaTracker library."
+ * expected-table check is chosen **from the candidate's own reported `user_version`**, not a single
+ * fixed set: a candidate older than the version `app_settings` was added at (v4) is only ever held
+ * to the tables present since schema v1, so this legitimate older-backup path is never itself
+ * rejected as "not a MediaTracker library" -- but a candidate that itself *claims* `user_version`
+ * 4 or newer is held to that later table set too, so a v4 (or newer) file genuinely missing
+ * `app_settings` -- corrupt, hand-crafted, or otherwise not what it claims to be -- is correctly
+ * refused rather than silently waved through.
  *
  * ### Why staging happens *before* this use case is even called
  * The candidate arrives via SAF (`ActivityResultContracts.OpenDocument`), which only ever hands the
@@ -137,9 +143,12 @@ public data class StagedRestoreInfo(
  *    a sidecar rename can fail on a live process too, not only via a crash (e.g. another handle
  *    transiently blocking it), and letting step 3 proceed anyway would swap in the new database
  *    while silently leaving the old one's most recent commits stranded outside the safety-net
- *    backup. If either sidecar rename fails, [commit] rolls step 1 back (the same rollback step 3's
- *    own failure uses, below) and returns an error naming the WAL/SHM move specifically -- nothing
- *    beyond that point is ever attempted.
+ *    backup. If either sidecar rename fails, [commit] rolls back **whichever of the two sidecar
+ *    renames actually succeeded** (a rename can fail for the `-wal` and land for the `-shm`, or vice
+ *    versa -- rolling back only "step 1" and ignoring a sidecar that did move would strand it at the
+ *    backup path while reporting "nothing was changed") and then step 1 itself, same
+ *    sidecars-first-then-main-file ordering step 3's own failure uses below, and returns an error
+ *    naming the WAL/SHM move specifically -- nothing beyond that point is ever attempted.
  * 3. **Rename the staged, already-validated candidate into the live path.** *Death here* (the one
  *    genuinely dangerous window: the live path is briefly missing entirely between steps 1 and 3) --
  *    would otherwise make Room silently create a fresh, empty database on the next launch. This is
@@ -208,7 +217,7 @@ public class DefaultRestoreDatabaseUseCase(
                     "Update the app before restoring it. Nothing was changed.",
             )
         }
-        val integrityFailure = validateStagedDatabaseIntegrity(incomingFilePath)
+        val integrityFailure = validateStagedDatabaseIntegrity(incomingFilePath, info.userVersion)
         if (integrityFailure != null) {
             deleteFileIfExists(incomingFilePath)
             return Resource.Error(
@@ -267,9 +276,20 @@ public class DefaultRestoreDatabaseUseCase(
                 // the safety-net backup would be silently incomplete. Undo step 1 (if it happened)
                 // before reporting, so this failure mode gets the same honest "nothing was changed"
                 // guarantee as an outright failure in step 1 itself.
+                //
+                // Sidecars first, main file last -- the same ordering the activation-failure
+                // rollback below uses (and selfHealDatabaseIfNeeded's own ordering). Critically,
+                // walMoved/shmMoved can disagree (one sidecar can succeed while the other fails):
+                // only reverse the ones that actually moved, so a sidecar whose rename never ran
+                // is never touched, and one that DID land at backupWalPath/backupShmPath is never
+                // left stranded there with the main file already back at its live path -- which is
+                // exactly what "Nothing was changed" must mean to be true.
+                val walRolledBack = !walMoved || renameFile(backupWalPath, walPath)
+                val shmRolledBack = !shmMoved || renameFile(backupShmPath, shmPath)
                 val mainRolledBack = !liveExisted || renameFile(backupPath, liveDatabaseFilePath)
+                val rolledBack = walRolledBack && shmRolledBack && mainRolledBack
                 return Resource.Error(
-                    if (mainRolledBack) {
+                    if (rolledBack) {
                         "Restore aborted: could not move the current database's WAL/SHM files aside. " +
                             "Nothing was changed."
                     } else {

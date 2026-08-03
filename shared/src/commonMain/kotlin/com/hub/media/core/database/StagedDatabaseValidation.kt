@@ -1,6 +1,7 @@
 package com.hub.media.core.database
 
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -13,19 +14,52 @@ import kotlinx.coroutines.withContext
  * normal migration chain upgrades it on next open, see that class's KDoc) -- checking for a table a
  * later migration added would wrongly reject exactly the older-backup case this feature is built to
  * support.
+ *
+ * Used for any candidate reporting a `user_version` older than the version `app_settings` was
+ * introduced at ([APP_SETTINGS_INTRODUCED_AT_VERSION]) -- see [requiredTableNamesFor], which picks
+ * between this set and [REQUIRED_TABLE_NAMES_WITH_APP_SETTINGS] based on the candidate's own
+ * reported version, rather than always using this smaller set for every candidate regardless of
+ * version (which would let a v4 candidate genuinely missing `app_settings` pass undetected).
  */
 private val REQUIRED_TABLE_NAMES = listOf("media_items", "book_details", "external_identifiers", "reading_sessions")
 
+/** The `user_version` [MIGRATION_3_4] introduced `app_settings` at -- see [requiredTableNamesFor]. */
+private const val APP_SETTINGS_INTRODUCED_AT_VERSION = 4
+
 /**
- * Opens the candidate file at [path] with a real SQLite connection and runs the checks a 100-byte
- * header parse ([parseSqliteHeader]) cannot: whether the file is *actually* an intact SQLite
- * database, and whether it is recognizably *this app's* database rather than some other program's.
+ * [REQUIRED_TABLE_NAMES] plus `app_settings`, for any candidate reporting a `user_version` at or
+ * after [APP_SETTINGS_INTRODUCED_AT_VERSION] -- see [requiredTableNamesFor].
+ */
+private val REQUIRED_TABLE_NAMES_WITH_APP_SETTINGS = REQUIRED_TABLE_NAMES + "app_settings"
+
+/**
+ * Picks the table set [validateStagedDatabaseIntegrity] requires, based on the candidate's own
+ * [schemaVersion] rather than always using the pre-`app_settings` set for every candidate: a
+ * candidate reporting `user_version` [APP_SETTINGS_INTRODUCED_AT_VERSION] or newer genuinely ought
+ * to have `app_settings` (its own schema says so), so one that's missing it despite claiming that
+ * version is a corrupt or hand-crafted file, not a legitimate older backup, and must be rejected --
+ * not silently waved through the way always excluding `app_settings` from the check would.
+ */
+private fun requiredTableNamesFor(schemaVersion: Int): List<String> =
+    if (schemaVersion >= APP_SETTINGS_INTRODUCED_AT_VERSION) {
+        REQUIRED_TABLE_NAMES_WITH_APP_SETTINGS
+    } else {
+        REQUIRED_TABLE_NAMES
+    }
+
+/**
+ * Opens the candidate file at [path] with a real, **read-only** SQLite connection and runs the
+ * checks a 100-byte header parse ([parseSqliteHeader]) cannot: whether the file is *actually* an
+ * intact SQLite database, and whether it is recognizably *this app's* database rather than some
+ * other program's.
  *
  * Called by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.stage] only
  * after the header check already passed (magic bytes present, `user_version` not newer than this
  * build) -- so this never runs against something that isn't SQLite at all or is unambiguously from
  * a future app version, and the header check keeps doing the cheap job of producing those two
- * specific, actionable messages.
+ * specific, actionable messages. [schemaVersion] is that same already-parsed `user_version` --
+ * passed in rather than re-read here, since [stage] already has it -- and picks which table set
+ * [requiredTableNamesFor] requires (see below).
  *
  * ### Why the header check alone is not enough (this task's whole reason for existing)
  * A file's first 100 bytes being well-formed says nothing about the other pages: a file truncated
@@ -42,44 +76,57 @@ private val REQUIRED_TABLE_NAMES = listOf("media_items", "book_details", "extern
  *    `"ok"` -- or the connection/query throwing outright, which is exactly what a truncated file
  *    does (SQLite reports "database disk image is malformed" rather than silently returning
  *    partial data) -- is treated as corrupt.
- * 2. **Expected-table check** -- queries `sqlite_master` for every name in [REQUIRED_TABLE_NAMES]
- *    (the tables present since this app's very first shipped schema). A structurally-valid SQLite
- *    file that simply isn't a MediaTracker database at all (some other app's file, or a hand-crafted
- *    file that happens to pass `integrity_check`) is refused here rather than being swapped in as an
- *    empty-looking, wrongly-shaped "library."
+ * 2. **Expected-table check** -- queries `sqlite_master` for every name [requiredTableNamesFor]
+ *    returns for [schemaVersion] (the tables present since this app's very first shipped schema,
+ *    plus `app_settings` once the candidate itself claims a `user_version` new enough to have it).
+ *    A structurally-valid SQLite file that simply isn't a MediaTracker database at all (some other
+ *    app's file, or a hand-crafted file that happens to pass `integrity_check`) is refused here
+ *    rather than being swapped in as an empty-looking, wrongly-shaped "library" -- and so is a file
+ *    claiming a `user_version` whose tables don't actually match that claim.
+ *
+ * ### Opened read-only -- this is validation, not a write
+ * [BundledSQLiteDriver.open] is called with [SQLITE_OPEN_READONLY] rather than its default flags.
+ * Without it, merely *validating* a candidate could itself modify the file on disk and spawn
+ * `-wal`/`-shm` sidecars next to it -- surprising and unwanted side effects for a function whose
+ * entire job, at this point in [stage], is to look without touching (the destructive work is
+ * [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.commit]'s job alone, and
+ * only after explicit user confirmation).
  *
  * Runs on [Dispatchers.IO]: like the raw file reads in `DatabaseFileOps`, opening a real SQLite
  * connection and running these queries is blocking I/O, never the caller's own dispatcher.
  *
+ * @param schemaVersion The candidate's own `PRAGMA user_version`, as already parsed by
+ *   [parseSqliteHeader] in [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.stage].
  * @return `null` if the file passed both checks; otherwise a user-facing description of which check
  *   failed and why, suitable for embedding directly in [com.hub.media.core.util.Resource.Error].
  */
-internal suspend fun validateStagedDatabaseIntegrity(path: String): String? = withContext(Dispatchers.IO) {
-    try {
-        var failureReason: String? = null
-        BundledSQLiteDriver().open(path).use { connection ->
-            connection.prepare("PRAGMA integrity_check").use { statement ->
-                failureReason = if (statement.step()) {
-                    val verdict = statement.getText(0)
-                    if (verdict != "ok") "failed SQLite's integrity check: $verdict" else null
-                } else {
-                    "SQLite's integrity check produced no result"
+internal suspend fun validateStagedDatabaseIntegrity(path: String, schemaVersion: Int): String? =
+    withContext(Dispatchers.IO) {
+        try {
+            var failureReason: String? = null
+            BundledSQLiteDriver().open(path, SQLITE_OPEN_READONLY).use { connection ->
+                connection.prepare("PRAGMA integrity_check").use { statement ->
+                    failureReason = if (statement.step()) {
+                        val verdict = statement.getText(0)
+                        if (verdict != "ok") "failed SQLite's integrity check: $verdict" else null
+                    } else {
+                        "SQLite's integrity check produced no result"
+                    }
+                }
+                if (failureReason == null) {
+                    val foundTables = mutableSetOf<String>()
+                    connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").use { statement ->
+                        while (statement.step()) foundTables += statement.getText(0)
+                    }
+                    val missing = requiredTableNamesFor(schemaVersion).filterNot { it in foundTables }
+                    if (missing.isNotEmpty()) {
+                        failureReason = "this doesn't look like a MediaTracker library (missing table" +
+                            (if (missing.size > 1) "s" else "") + ": ${missing.joinToString(", ")})"
+                    }
                 }
             }
-            if (failureReason == null) {
-                val foundTables = mutableSetOf<String>()
-                connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").use { statement ->
-                    while (statement.step()) foundTables += statement.getText(0)
-                }
-                val missing = REQUIRED_TABLE_NAMES.filterNot { it in foundTables }
-                if (missing.isNotEmpty()) {
-                    failureReason = "this doesn't look like a MediaTracker library (missing table" +
-                        (if (missing.size > 1) "s" else "") + ": ${missing.joinToString(", ")})"
-                }
-            }
+            failureReason
+        } catch (e: Exception) {
+            "the file could not be opened as a SQLite database (${e.message ?: e::class.simpleName})"
         }
-        failureReason
-    } catch (e: Exception) {
-        "the file could not be opened as a SQLite database (${e.message ?: e::class.simpleName})"
     }
-}

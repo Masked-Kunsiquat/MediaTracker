@@ -230,30 +230,38 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   backup time. Restore validates a picked file *before* touching anything, in two passes: pass 1
   parses the first 100 bytes directly (no SQLite driver at all) for the magic string and `PRAGMA
   user_version` at its fixed header offset, refusing a non-SQLite file or a `user_version` newer than
-  `APP_DATABASE_VERSION` with a clear message. Pass 2 opens the candidate with a real
-  `BundledSQLiteDriver` connection and runs `PRAGMA integrity_check`, then confirms every table this
-  app has shipped since schema v1 is present -- a valid-looking 100-byte header can't tell a
-  truncated/corrupt file, or a structurally-valid SQLite file from a different program entirely,
-  apart from a genuine MediaTracker database, and this is the single most destructive action in the
-  app (AGENTS.md §1). An **older** version that passes both passes is accepted and swapped in as-is,
-  since the very next open goes through the exact same registered migration chain every normal
-  launch already uses -- verified end to end in `RestoreDatabaseUseCaseTest` (a real v2 file
-  restored, reopened, and confirmed migrated to v4 with its data intact; pass 2's table check
-  deliberately excludes `app_settings`, added at v4, so this legitimate older-backup path is never
-  itself rejected). A truncated file with an otherwise-valid header, and a structurally valid but
-  unrelated SQLite file, are both covered by dedicated tests proving the header check alone would
-  have wrongly accepted them. The live file is never deleted until the replacement is staged and
-  validated: the picked document is streamed to a private temp file, validated there, then swapped in
-  via same-directory atomic renames (`ATOMIC_MOVE` only -- no non-atomic fallback if the platform
-  provider rejects it, since a non-atomic copy could leave a truncated file a plain existence check
-  can't tell from a genuine one) -- old file (and its `-wal`/`-shm` sidecars, moved only once the
-  main-file rename itself succeeded, and only if both sidecar renames also succeed) to a fixed-name
-  `.pre-restore-bak` safety net, then the validated file into the live path; a failed final rename
-  rolls the backup back automatically (sidecars first, main file last), and a
-  `selfHealDatabaseIfNeeded` check at every cold start closes the one unavoidable gap between those
-  two renames (a process death in that exact window would otherwise make Room create an empty
-  database on next launch) using the same sidecars-first-main-last ordering, so its own "already
-  healed" sentinel can never go true before the WAL that belongs next to the live file has arrived.
+  `APP_DATABASE_VERSION` with a clear message. Pass 2 opens the candidate **read-only**
+  (`SQLITE_OPEN_READONLY` -- validation has no business needing, or being granted, write access) with
+  a real `BundledSQLiteDriver` connection and runs `PRAGMA integrity_check`, then confirms the tables
+  that candidate's own reported `user_version` should have are present -- a valid-looking 100-byte
+  header can't tell a truncated/corrupt file, or a structurally-valid SQLite file from a different
+  program entirely, apart from a genuine MediaTracker database, and this is the single most
+  destructive action in the app (AGENTS.md §1). An **older** version that passes both passes is
+  accepted and swapped in as-is, since the very next open goes through the exact same registered
+  migration chain every normal launch already uses -- verified end to end in
+  `RestoreDatabaseUseCaseTest` (a real v2 file restored, reopened, and confirmed migrated to v4 with
+  its data intact; pass 2's required-table set is chosen from the candidate's own `user_version`,
+  requiring `app_settings` only once that version is 4 -- so a legitimate older backup is never
+  itself rejected, but a v4 candidate genuinely missing `app_settings` is correctly refused rather
+  than silently waved through). A truncated file with an otherwise-valid header, a structurally
+  valid but unrelated SQLite file, and a v3-schema file hand-bumped to claim `user_version = 4`
+  while genuinely missing `app_settings` are all covered by dedicated tests proving the header check
+  (or an unconditional v1-only table check) alone would have wrongly accepted them. The live file is
+  never deleted until the replacement is staged and validated: the picked document is streamed to a
+  private temp file, validated there, then swapped in via same-directory atomic renames
+  (`ATOMIC_MOVE` only -- no non-atomic fallback if the platform provider rejects it, since a
+  non-atomic copy could leave a truncated file a plain existence check can't tell from a genuine
+  one) -- old file (and its `-wal`/`-shm` sidecars, moved only once the main-file rename itself
+  succeeded, and only if both sidecar renames also succeed) to a fixed-name `.pre-restore-bak` safety
+  net, then the validated file into the live path; if a sidecar rename fails, the rollback puts back
+  whichever sidecar(s) actually moved *first* (the two can disagree -- one landing, one failing) then
+  the main file, so "nothing was changed" is only ever reported once that's genuinely true, not
+  assumed from the main file alone. A failed final rename rolls the backup back automatically
+  (sidecars first, main file last), and a `selfHealDatabaseIfNeeded` check at every cold start closes
+  the one unavoidable gap between those two renames (a process death in that exact window would
+  otherwise make Room create an empty database on next launch) using the same sidecars-first-main-last
+  ordering, so its own "already healed" sentinel can never go true before the WAL that belongs next
+  to the live file has arrived.
   `AppContainer` is closed before the swap and the whole process is killed and relaunched immediately
   after, success or failure -- the only clean way back to a fully working `AppContainer` rather than a
   half-live one -- with the outcome persisted to a small marker file and surfaced once on the next
