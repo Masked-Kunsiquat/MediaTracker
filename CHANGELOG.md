@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-03
+
+Data portability. The app's premise is local-first with no cloud, which until now meant there
+was no way to get your data out or protect it. This release adds CSV export and import of books
+and reading sessions, whole-database `.sqlite` backup and restore, and a Goodreads importer.
+
+Backup uses SQLite's `VACUUM INTO` so a WAL-mode database is captured completely; restore
+validates a candidate file (SQLite header, schema version, integrity check, expected tables)
+before anything is replaced, and never leaves the live database missing. Import is transactional
+and reports every skipped row with a reason. Note the CSV files cover books and reading logs
+only — the `.sqlite` backup is the complete one. No schema change: still v4.
+
 ### Added
 
 - **CSV export** (ROADMAP Task 8 Phase A) — the app's first data-portability feature: a "Data"
