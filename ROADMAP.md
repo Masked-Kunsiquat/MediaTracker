@@ -376,6 +376,17 @@ personal-scale libraries don't need one).
   ethos, and rules out de-Googled devices/F-Droid). The alternative, bundled ML Kit + CameraX,
   avoids Play Services but requires the CAMERA permission, a camera preview implementation, and
   ~2.2MB of APK.
+  - **Play Feature Delivery / dynamic feature modules do not solve this** — worth recording, since
+    it looks like it should. Dynamic modules are downloaded *by the Play Store* from an app bundle,
+    so the mechanism presupposes Play is installed; isolating the scanner that way would make
+    F-Droid distribution harder, not easier.
+  - The established way to ship both is **Gradle product flavors** — a Play flavor and a FOSS
+    flavor behind one scanner interface — deferrable until F-Droid distribution actually matters,
+    since the interface is the only part that must exist up front.
+  - Note for the FOSS flavor: bundled ML Kit avoids Play Services *at runtime* but is itself a
+    proprietary binary, so F-Droid's main repo would reject it too. A genuinely F-Droid-acceptable
+    scanner means **ZXing / zxing-cpp** (Apache 2.0) with CameraX — more scanning UI to write and
+    somewhat lower decode accuracy than ML Kit, in exchange for being fully open.
 - Implementation notes: restrict the scanner to EAN-13 (book barcodes are Bookland EAN-13;
   restricting formats speeds detection and avoids capturing the EAN-5 price add-on barcode
   printed beside the ISBN on many covers), and use the 978/979 prefix to confirm a scan is a
