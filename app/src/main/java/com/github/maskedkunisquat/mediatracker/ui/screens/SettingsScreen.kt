@@ -175,6 +175,15 @@ fun SettingsScreenRoute(
         // an unbounded read here (a large reading-logs export) would otherwise ANR the app.
         coroutineScope.launch {
             val readingLogsCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
+            // A null uri means the user cancelled this second, optional picker -- that's a
+            // legitimate "library only" import (see pendingLibraryCsvForImport's KDoc above). A
+            // null readingLogsCsv from a uri the user *did* pick means the read itself failed --
+            // matching libraryImportLauncher's own null-content handling below, report it and stop
+            // before importData silently drops the reading logs and reports a clean success.
+            if (uri != null && readingLogsCsv == null) {
+                snackbarHostState.showSnackbar(importFailureMessage)
+                return@launch
+            }
             importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
         }
     }
@@ -315,18 +324,28 @@ fun SettingsScreenRoute(
         pendingBackupResult = null
         backupViewModel.reset()
         coroutineScope.launch {
-            // Off the main thread: copying the staged database snapshot via SAF is blocking I/O
-            // over a potentially large file.
-            val message = when {
-                uri == null -> backupCancelledMessage
-                result == null -> backupFailureMessage
-                withContext(Dispatchers.IO) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
-                else -> backupFailureMessage
+            try {
+                // Off the main thread: copying the staged database snapshot via SAF is blocking
+                // I/O over a potentially large file.
+                val message = when {
+                    uri == null -> backupCancelledMessage
+                    result == null -> backupFailureMessage
+                    withContext(Dispatchers.IO) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
+                    else -> backupFailureMessage
+                }
+                snackbarHostState.showSnackbar(message)
+            } finally {
+                // The staged snapshot is this screen's own private temp file (not the live
+                // database itself) -- always clean it up once the SAF copy has been attempted,
+                // success, failure, or cancellation. This `finally` (rather than a plain statement
+                // after the `when`, as before) matters because `coroutineScope` comes from
+                // `rememberCoroutineScope()`: leaving Settings while the copy above is still
+                // running cancels this launch, and a plain post-`when` statement sitting after that
+                // suspension point would simply never run, leaking a whole-database-sized file in
+                // cacheDir. Wrapped in `NonCancellable` so the delete itself can't be skipped by
+                // that same cancellation.
+                result?.let { withContext(NonCancellable + Dispatchers.IO) { File(it.stagedFilePath).delete() } }
             }
-            // The staged snapshot is this screen's own private temp file (not the live database
-            // itself) -- always clean it up once the SAF copy has been attempted, success or not.
-            result?.let { withContext(Dispatchers.IO) { File(it.stagedFilePath).delete() } }
-            snackbarHostState.showSnackbar(message)
         }
     }
 
@@ -360,18 +379,44 @@ fun SettingsScreenRoute(
         // operation on this screen -- doing it synchronously here (as before) would ANR on any
         // real-sized library.
         coroutineScope.launch {
-            val copied = withContext(Dispatchers.IO) { copyUriToFile(context, uri, incomingFile.absolutePath) }
-            if (!copied) {
-                snackbarHostState.showSnackbar(restoreReadFailureMessage)
-                return@launch
+            // Tracks whether incomingFile's lifecycle has been handed off to
+            // validateSelectedFile -- once that call is made, RestoreDatabaseUseCase.stage owns
+            // the file (it deletes it on every rejection path) and, on success, ownership passes
+            // again to the AwaitingConfirmation/commit flow below. Until that handoff happens,
+            // nothing else ever takes ownership, so the `finally` below must clean it up itself.
+            var handedOffToValidation = false
+            try {
+                val copied = withContext(Dispatchers.IO) { copyUriToFile(context, uri, incomingFile.absolutePath) }
+                if (!copied) {
+                    snackbarHostState.showSnackbar(restoreReadFailureMessage)
+                    return@launch
+                }
+                handedOffToValidation = true
+                restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
+            } finally {
+                // `coroutineScope` is composition-scoped: leaving Settings while the copy above is
+                // still running cancels this launch. Without this `finally`, that cancellation (or
+                // a plain copy failure -- copyUriToFile already deletes its own partial output on
+                // an IOException, but not when the resolver simply couldn't open the input stream)
+                // would leave a whole-database-sized temp file behind in cacheDir with nothing left
+                // to ever clean it up. NonCancellable so the delete itself can't be skipped by that
+                // same cancellation.
+                if (!handedOffToValidation) {
+                    withContext(NonCancellable + Dispatchers.IO) { incomingFile.delete() }
+                }
             }
-            restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
         }
     }
 
     LaunchedEffect(restoreUiState) {
         val state = restoreUiState
         if (state is RestoreUiState.Error) {
+            // No staged-file cleanup needed here, and none is possible: RestoreUiState.Error only
+            // ever comes from RestoreViewModel.validateSelectedFile's Resource.Error branch, i.e.
+            // RestoreDatabaseUseCase.stage -- which already deletes incomingFilePath via
+            // deleteFileIfExists on every one of its rejection paths before it ever returns
+            // Resource.Error. RestoreUiState.Error also carries no file path (see its KDoc), so
+            // there is nothing this layer could delete even if the cleanup belonged here.
             snackbarHostState.showSnackbar(state.message)
             restoreViewModel.reset()
         }

@@ -295,6 +295,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   way back except force-killing the app by hand. The whole sequence, including `restartApp()`
   itself, now runs inside a single `withContext(Dispatchers.IO + NonCancellable)` block, so once
   started it always runs to completion regardless of what happens to the composition.
+- **Fixed: a failed reading-logs read during CSV import was silently reported as a successful
+  library-only import.** The reading-logs picker's `null` result legitimately means "the user
+  skipped this optional file" and correctly proceeds as a library-only import, but a *non-null* uri
+  whose `readCsvFromUri` read then failed was folded into that exact same "no reading logs" case —
+  the read failure went unreported and `importData` ran anyway. The two are now distinguished:
+  a failed read of a file the user actually picked shows the same `importFailureMessage` the
+  library-file picker already shows in this situation, and stops before calling `importData`.
+- **Fixed: whole-database-sized temp copies could leak on cancellation or failure during `.sqlite`
+  backup/restore.** Both the backup-destination launcher's staged snapshot cleanup and the
+  restore-file-picker's `incomingFile` cleanup sat as plain statements after a suspension point;
+  since both run in the Settings screen's composition-scoped `rememberCoroutineScope`, navigating
+  away mid-copy cancelled the launch and skipped that cleanup outright, leaving a full private copy
+  of the database behind in `cacheDir`. Both cleanups now run in a `finally` block wrapped in
+  `NonCancellable`, so the temp file is always removed once ownership hasn't been handed off
+  elsewhere, regardless of how the coroutine exits.
 
 ## [0.6.0] - 2026-08-02
 
