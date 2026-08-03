@@ -24,13 +24,36 @@ internal fun parseOptionalInt(raw: String, field: String): Int? =
 internal fun parseOptionalLong(raw: String, field: String): Long? =
     if (raw.isBlank()) null else raw.toLongOrNull() ?: reject("$field is not a valid integer: '$raw'")
 
-/** Parses an optional double field: blank -> `null`; non-blank and unparseable -> rejects. */
-internal fun parseOptionalDouble(raw: String, field: String): Double? =
-    if (raw.isBlank()) null else raw.toDoubleOrNull() ?: reject("$field is not a valid number: '$raw'")
+/**
+ * Parses an optional double field: blank -> `null`; non-blank and unparseable -> rejects.
+ *
+ * [String.toDoubleOrNull] happily accepts `"NaN"`, `"Infinity"`, and `"-Infinity"` as valid
+ * doubles -- Kotlin/JVM's parser mirrors [Double.parseDouble], which recognizes those literals per
+ * the JLS. Left unchecked, a `purchase_price` cell containing literally `NaN` would parse to
+ * [Double.NaN] and sail through [com.hub.media.features.books.domain.BookMetadataValidation
+ * .validatePurchasePrice]'s `purchasePrice < 0.0` check -- every comparison involving `NaN` other
+ * than `!=` is `false` per IEEE 754, so `NaN < 0.0` is `false` and the value is accepted, then
+ * poisons every downstream sum/average/comparison that reads it back out. This is the same bug
+ * class [ReadingSessionValidation.validatePositions] already guards against for reading-session
+ * positions (see that function's KDoc) -- [isFinite] rejects `NaN` and both infinities up front, at
+ * the parser, before any business-rule check ever sees the value.
+ */
+internal fun parseOptionalDouble(raw: String, field: String): Double? {
+    if (raw.isBlank()) return null
+    val value = raw.toDoubleOrNull() ?: reject("$field is not a valid number: '$raw'")
+    if (!value.isFinite()) reject("$field is not a valid number: '$raw'")
+    return value
+}
 
-/** Parses a required double field; blank or unparseable both reject. */
-internal fun parseRequiredDouble(raw: String, field: String): Double =
-    raw.toDoubleOrNull() ?: reject("$field is not a valid number: '$raw'")
+/**
+ * Parses a required double field; blank or unparseable both reject. See [parseOptionalDouble]'s
+ * KDoc for why `NaN`/`Infinity`/`-Infinity` are rejected here too, not just non-numeric garbage.
+ */
+internal fun parseRequiredDouble(raw: String, field: String): Double {
+    val value = raw.toDoubleOrNull() ?: reject("$field is not a valid number: '$raw'")
+    if (!value.isFinite()) reject("$field is not a valid number: '$raw'")
+    return value
+}
 
 /** Parses a required ISO-8601 instant field (matches [kotlin.time.Instant.toString]'s format). */
 internal fun parseRequiredInstant(raw: String, field: String): Instant = try {

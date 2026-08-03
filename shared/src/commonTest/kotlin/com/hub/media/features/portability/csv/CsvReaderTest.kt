@@ -105,6 +105,31 @@ class CsvReaderTest {
         assertEquals(listOf(listOf("a", "", "c")), result.rows)
     }
 
+    // --- leading UTF-8 BOM (Finding 3: a BOM must not become part of the first header cell) ---
+
+    @Test
+    fun parse_leadingBom_isStrippedNotKeptAsFieldData() {
+        val result = CsvReader.parse("\uFEFFTitle,Author\r\nDune,Herbert\r\n")
+        assertIs<CsvParseResult.Success>(result)
+        assertEquals(listOf(listOf("Title", "Author"), listOf("Dune", "Herbert")), result.rows)
+    }
+
+    @Test
+    fun parse_bomOnlyThenEmpty_returnsEmptyRows() {
+        val result = CsvReader.parse("\uFEFF")
+        assertIs<CsvParseResult.Success>(result)
+        assertEquals(emptyList(), result.rows)
+    }
+
+    @Test
+    fun parse_bomNotAtStart_isPreservedAsOrdinaryData() {
+        // Only a *leading* BOM is stripped -- one appearing mid-document (e.g. inside a field,
+        // however unusual) is left alone as ordinary data, not treated as invisible everywhere.
+        val result = CsvReader.parse("a,b\r\nc\uFEFF,d\r\n")
+        assertIs<CsvParseResult.Success>(result)
+        assertEquals(listOf(listOf("a", "b"), listOf("c\uFEFF", "d")), result.rows)
+    }
+
     @Test
     fun roundTrip_exportedLibraryCsvWithTrickyFields_parsesBackExactly() {
         // The strongest reader-level test: run real exporter output (with a comma, embedded

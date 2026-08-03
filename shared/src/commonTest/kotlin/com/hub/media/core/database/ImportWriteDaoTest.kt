@@ -1,6 +1,7 @@
 package com.hub.media.core.database
 
 import com.hub.media.core.database.dao.ImportBookInsert
+import com.hub.media.core.database.dao.ImportBookUpdate
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -89,5 +90,63 @@ class ImportWriteDaoTest {
         // The pre-existing row is untouched -- exactly one row (the one that was already there
         // before this call) remains.
         assertEquals(listOf(preExisting), db.mediaItemDao().observeAll().first())
+    }
+
+    @Test
+    fun importAtomically_bookUpdateTargetingMissingMediaItem_throwsAndRollsBackWholeCall() = runTest {
+        // Simulates the PR review's Finding 2: the update's target media item is not in the
+        // database at transaction time -- e.g. it was deleted by another writer in the window
+        // between ImportDataUseCase reading its pre-write duplicate-resolution snapshot and this
+        // transaction actually running. Room's generated @Update silently no-ops (0 rows affected)
+        // rather than throwing in that case, which -- unless explicitly checked -- would let this
+        // method return normally and ImportDataUseCase's summary over-report the row as "updated"
+        // when nothing was actually written.
+        val insert = ImportBookInsert(
+            mediaItem = sampleMediaItem(id = "media-1", title = "Fresh Book"),
+            details = sampleBookDetails(mediaId = "media-1"),
+            identifiers = emptyList(),
+        )
+        val updateForMissingBook = ImportBookUpdate(
+            mediaItem = sampleMediaItem(id = "media-missing", title = "Ghost"),
+            details = sampleBookDetails(mediaId = "media-missing"),
+            identifiers = emptyList(),
+            replaceIdentifiers = false,
+        )
+
+        assertFailsWith<Exception> {
+            db.importWriteDao().importAtomically(
+                listOf(insert),
+                listOf(updateForMissingBook),
+                emptyList(),
+                emptyList(),
+            )
+        }
+
+        // The insert queued earlier in the same call must NOT survive -- the whole transaction
+        // rolled back, exactly like the constraint-violation case above.
+        assertNull(db.mediaItemDao().getById("media-1"))
+    }
+
+    @Test
+    fun importAtomically_sessionUpdateTargetingMissingSession_throwsAndRollsBackWholeCall() = runTest {
+        // Same race as above, for a reading-session update rather than a book update.
+        val bookInsert = ImportBookInsert(
+            mediaItem = sampleMediaItem(id = "media-1", title = "Fresh Book"),
+            details = sampleBookDetails(mediaId = "media-1"),
+            identifiers = emptyList(),
+        )
+        val updateForMissingSession = sampleReadingSession(mediaId = "media-1", id = "session-missing")
+
+        assertFailsWith<Exception> {
+            db.importWriteDao().importAtomically(
+                listOf(bookInsert),
+                emptyList(),
+                emptyList(),
+                listOf(updateForMissingSession),
+            )
+        }
+
+        // The book insert queued earlier in the same call must NOT survive either.
+        assertNull(db.mediaItemDao().getById("media-1"))
     }
 }

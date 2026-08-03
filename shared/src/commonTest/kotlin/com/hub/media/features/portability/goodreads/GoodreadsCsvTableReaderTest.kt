@@ -30,6 +30,19 @@ class GoodreadsCsvTableReaderTest {
     }
 
     @Test
+    fun read_titleHeaderWithLeadingBom_stillRecognized() {
+        // PR review finding: a UTF-8 BOM (U+FEFF) prepended to the file -- as Excel does when
+        // saving a UTF-8 CSV -- must not make a genuine Goodreads export get rejected as
+        // unrecognized. String.trim() does NOT strip U+FEFF (it isn't Unicode whitespace), so
+        // without stripping it upstream (in CsvReader), the first header cell would parse as
+        // "\uFEFFTitle" and never match GoodreadsColumns.TITLE.
+        val csv = "\uFEFF" + CsvUtil.buildLine(listOf(GoodreadsColumns.TITLE)) + CsvUtil.buildLine(listOf("Some Title"))
+        val result = GoodreadsCsvTableReader.read(csv)
+        assertIs<GoodreadsCsvTableResult.Success>(result)
+        assertEquals(mapOf(GoodreadsColumns.TITLE to 0), result.columnIndex)
+    }
+
+    @Test
     fun read_titleOnlyHeader_succeeds() {
         // Every other column this importer knows about is missing -- still a valid, if minimal,
         // Goodreads export as far as structural validation is concerned.

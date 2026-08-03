@@ -84,6 +84,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     via the ISBN or title+year tier, that file `media_id` was never recognized, so the session was
     wrongly rejected as an orphan. Sessions are now also written under the book's actual resolved
     id, so they land on the right book instead of being dropped.
+  - **Fixed: a `purchase_price` cell containing `NaN`/`Infinity`/`-Infinity` is now rejected, not
+    silently imported.** `String.toDoubleOrNull()` accepts all three per the JLS, and `NaN < 0.0`
+    is `false` (IEEE 754), so the existing `>= 0` bounds check could never catch a `NaN` — it would
+    have been persisted and poisoned every downstream sum/average/comparison over prices. The
+    parser (`parseOptionalDouble`/`parseRequiredDouble`) now rejects any non-finite value up front,
+    the same `isFinite`-based fix already applied to reading-session positions. Defence in depth:
+    `BookMetadataValidation.validatePurchasePrice` (shared with the manual Edit Book form) now also
+    rejects non-finite values directly, since that form's own Save-button gate only checks
+    `>= 0.0` — true for a hand-typed `Infinity`.
+  - **Fixed: an import update racing a concurrent delete no longer silently over-reports as
+    "updated."** `ImportWriteDao`'s book/session update statements now check Room's affected-row
+    count and fail the whole import (rolling back the transaction) if a row targeted for update was
+    deleted between `ImportDataUseCase`'s duplicate-resolution snapshot and the write — instead of
+    Room's `@Update` quietly no-oping while the returned summary still counted it as a success.
+  - **Fixed: a leading UTF-8 byte-order mark (BOM) no longer gets a valid export rejected.**
+    `CsvReader.parse` now strips a leading `U+FEFF` before tokenizing (`String.trim()` doesn't
+    strip it, so it previously became part of the first header cell's text) — a BOM-prefixed
+    `library_export.csv` or `goodreads_library_export.csv` (as Excel writes when saving a UTF-8
+    CSV) no longer fails the header check and gets rejected as unrecognized. Fixed once at the
+    shared tokenizer, so both this app's own CSV import and the Goodreads import below are covered.
   - **The `PROVIDER:id|...` packed-identifier hazard is handled, not assumed away**: each `|`
     segment splits on only its *first* `:`, so a provider id containing `:` round-trips correctly;
     a segment with no `:` at all (the fallout of an id containing a literal `|`, which this

@@ -15,11 +15,19 @@ import kotlin.test.assertTrue
  * and deliverable #4 -- the `PROVIDER:id|...` packed-identifier hazard, including an id that
  * itself contains a `:` (must round-trip) and a malformed segment with no `:` at all (must reject
  * the row rather than silently mis-splitting it).
+ *
+ * [SAMPLE_MEDIA_ID] deliberately looks like the real, generated-UUID `media_id` a genuine
+ * MediaTracker export carries (AGENTS.md §3.1) rather than a placeholder like `"media-1"` --
+ * [LibraryCsvImporter] itself doesn't enforce UUID syntax (see that class's KDoc on
+ * [LibraryCsvImporter.parseRow]'s `media_id` handling for why), but these fixtures should still
+ * model what well-formed data actually looks like rather than implying a non-UUID id is the norm.
  */
 class LibraryCsvImporterTest {
 
+    private val SAMPLE_MEDIA_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
     private fun validRow(
-        mediaId: String = "media-1",
+        mediaId: String = SAMPLE_MEDIA_ID,
         type: String = "BOOK",
         title: String = "Dune",
         releaseYear: String = "1965",
@@ -43,7 +51,7 @@ class LibraryCsvImporterTest {
         val result = LibraryCsvImporter.parseRow(validRow())
         assertIs<LibraryRowParseResult.Parsed>(result)
         val row = result.row
-        assertEquals("media-1", row.mediaId)
+        assertEquals(SAMPLE_MEDIA_ID, row.mediaId)
         assertEquals("Dune", row.title)
         assertEquals(1965, row.releaseYear)
         assertEquals(9.99, row.purchasePrice)
@@ -60,6 +68,19 @@ class LibraryCsvImporterTest {
         val result = LibraryCsvImporter.parseRow(validRow(mediaId = ""))
         assertIs<LibraryRowParseResult.Rejected>(result)
         assertTrue(result.reason.contains("media_id"))
+    }
+
+    @Test
+    fun parseRow_nonUuidMediaId_isAcceptedByDesign() {
+        // Deliberate, not an oversight -- see LibraryCsvImporter.buildRow's KDoc on its media_id
+        // handling. AGENTS.md §3.1 governs ids this app *generates*; a non-blank, human-chosen id
+        // in a file this app is *consuming* (a hand-crafted or hand-edited library_export.csv) is a
+        // different situation with no corresponding safety benefit to rejecting it -- nothing
+        // downstream requires or assumes UUID syntax. This test pins that decision so it isn't
+        // silently reversed by a future "id looks wrong, let's validate it" change.
+        val result = LibraryCsvImporter.parseRow(validRow(mediaId = "book-1"))
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        assertEquals("book-1", result.row.mediaId)
     }
 
     @Test
@@ -81,6 +102,32 @@ class LibraryCsvImporterTest {
         val result = LibraryCsvImporter.parseRow(validRow(purchasePrice = "-5.00"))
         assertIs<LibraryRowParseResult.Rejected>(result)
         assertTrue(result.reason.contains("Purchase price"))
+    }
+
+    // --- non-finite purchase_price (Finding 1: NaN/Infinity must not silently pass validation) ---
+
+    @Test
+    fun parseRow_nanPurchasePrice_isRejected() {
+        // String.toDoubleOrNull() happily parses "NaN" to Double.NaN, and NaN < 0.0 is false (IEEE
+        // 754) -- without an explicit finite check, this would sail past
+        // BookMetadataValidation.validatePurchasePrice's negativity check and get persisted.
+        val result = LibraryCsvImporter.parseRow(validRow(purchasePrice = "NaN"))
+        assertIs<LibraryRowParseResult.Rejected>(result)
+        assertTrue(result.reason.contains("purchase_price"))
+    }
+
+    @Test
+    fun parseRow_infinityPurchasePrice_isRejected() {
+        val result = LibraryCsvImporter.parseRow(validRow(purchasePrice = "Infinity"))
+        assertIs<LibraryRowParseResult.Rejected>(result)
+        assertTrue(result.reason.contains("purchase_price"))
+    }
+
+    @Test
+    fun parseRow_negativeInfinityPurchasePrice_isRejected() {
+        val result = LibraryCsvImporter.parseRow(validRow(purchasePrice = "-Infinity"))
+        assertIs<LibraryRowParseResult.Rejected>(result)
+        assertTrue(result.reason.contains("purchase_price"))
     }
 
     @Test

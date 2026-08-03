@@ -20,9 +20,27 @@ public object BookMetadataValidation {
     public fun validateTitle(title: String): String? =
         if (title.isBlank()) "Title must not be blank" else null
 
-    /** A known [purchasePrice] must be `>= 0`; `null` ("unknown") always passes. */
-    public fun validatePurchasePrice(purchasePrice: Double?): String? =
-        if (purchasePrice != null && purchasePrice < 0.0) "Purchase price must not be negative" else null
+    /**
+     * A known [purchasePrice] must be finite and `>= 0`; `null` ("unknown") always passes.
+     *
+     * The finite check is defence in depth, not just a CSV-import concern: `purchasePrice < 0.0` is
+     * `false` for [Double.NaN] (every comparison involving `NaN` other than `!=` is `false` per
+     * IEEE 754), so a plain negativity check alone would silently accept `NaN` and let it poison
+     * this book's price everywhere it's later summed/averaged/compared. This isn't hypothetical for
+     * this function's callers: [com.hub.media.features.portability.csv.parseRequiredDouble]/
+     * `parseOptionalDouble` already reject non-finite CSV cells before calling this, but
+     * [com.hub.media.features.books.data.BookRepository.updateBookMetadata]'s other caller -- a
+     * hand-typed manual edit form -- parses its text field with a bare `toDoubleOrNull()` and only
+     * gates its Save button on `parsedPurchasePrice >= 0.0`, which is `true` for
+     * `Double.POSITIVE_INFINITY` (`"Infinity"` typed into the field). This check is what actually
+     * stops that value from being persisted, regardless of what the UI layer's own gate lets through.
+     */
+    public fun validatePurchasePrice(purchasePrice: Double?): String? = when {
+        purchasePrice == null -> null
+        !purchasePrice.isFinite() -> "Purchase price must be a finite number"
+        purchasePrice < 0.0 -> "Purchase price must not be negative"
+        else -> null
+    }
 
     /** A known [totalPages] must be `> 0`; `null` ("unknown") always passes. */
     public fun validateTotalPages(totalPages: Int?): String? =

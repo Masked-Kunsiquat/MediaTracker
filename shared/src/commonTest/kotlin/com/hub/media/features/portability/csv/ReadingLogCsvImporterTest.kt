@@ -80,9 +80,15 @@ class ReadingLogCsvImporterTest {
 
     @Test
     fun parseRow_nanEndUnit_isRejected() {
+        // Caught by parseRequiredDouble itself now (Finding 1: non-finite values must be rejected
+        // at the parser, before any business-rule check ever sees them) -- previously "NaN" parsed
+        // through to Double.NaN and was only caught one layer up, by
+        // ReadingSessionValidation.validatePositions's `endUnit must be finite...` message. The row
+        // is still rejected either way; only the reason text's field-name spelling changed (the raw
+        // CSV column name "end_unit", not the validation function's parameter name "endUnit").
         val result = ReadingLogCsvImporter.parseRow(validRow(endUnit = "NaN"))
         assertIs<SessionRowParseResult.Rejected>(result)
-        assertTrue(result.reason.contains("endUnit"))
+        assertTrue(result.reason.contains("end_unit"))
     }
 
     @Test

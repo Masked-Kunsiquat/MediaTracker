@@ -45,10 +45,26 @@ public sealed class CsvParseResult {
  * verbatim as data, never treated as a row break. A trailing row terminator at end-of-file does
  * not produce a fictitious empty trailing row (mirrors [CsvUtil.buildLine] always terminating its
  * last line the same way its interior lines are terminated).
+ *
+ * ### A leading UTF-8 BOM is stripped, not treated as data
+ * A file that starts with `U+FEFF` (the byte-order mark some tools, notably Excel, prepend to a
+ * UTF-8 export so other software can detect the encoding) would otherwise become part of the first
+ * header cell's text: [String.trim] does not strip `U+FEFF` (it isn't Unicode whitespace), so a
+ * genuinely well-formed Goodreads or MediaTracker export whose bytes were decoded as UTF-8 upstream
+ * (see e.g. the Android `readCsvFromUri`) would parse its first header cell as `"\uFEFFTitle"`,
+ * which then matches neither [GoodreadsCsvTableReader]'s nor [CsvTableReader]'s expected column
+ * name and gets the whole file rejected as unrecognized. This is fixed here, at the one tokenizer
+ * every reader (this app's own format and Goodreads') funnels through, rather than in each
+ * byte-decoding call site: a platform-specific file reader is exactly the kind of place a future
+ * KMP target (iOS, desktop) could add without remembering this stripping rule, whereas every text
+ * this app ever parses as CSV -- regardless of platform or source -- passes through [parse]. Only a
+ * single *leading* BOM is stripped (mirrors how a real UTF-8 BOM can only ever appear at byte
+ * offset 0); a `U+FEFF` anywhere else in the text is left untouched as ordinary (if unusual) data.
  */
 public object CsvReader {
 
-    public fun parse(text: String): CsvParseResult {
+    public fun parse(rawText: String): CsvParseResult {
+        val text = rawText.removePrefix(BYTE_ORDER_MARK)
         if (text.isEmpty()) return CsvParseResult.Success(emptyList())
 
         val rows = mutableListOf<List<String>>()
@@ -102,4 +118,7 @@ public object CsvReader {
 
         return CsvParseResult.Success(rows)
     }
+
+    /** The UTF-8 byte-order mark, as the single character it decodes to -- see [parse]'s KDoc. */
+    private const val BYTE_ORDER_MARK: String = "\uFEFF"
 }

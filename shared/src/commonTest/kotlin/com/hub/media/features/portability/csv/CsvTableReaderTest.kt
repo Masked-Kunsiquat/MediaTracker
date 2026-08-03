@@ -23,6 +23,17 @@ class CsvTableReaderTest {
     }
 
     @Test
+    fun read_leadingBom_doesNotBreakHeaderRecognition() {
+        // PR review finding: a UTF-8 BOM prepended to a genuine MediaTracker export must not make
+        // it get rejected as "unrecognized header" -- see CsvReader.parse's KDoc for where this is
+        // stripped.
+        val csv = "\uFEFF" + CsvUtil.buildLine(header) + CsvUtil.buildLine(listOf("1", "x", "y"))
+        val result = CsvTableReader.read(csv, header)
+        assertIs<CsvTableResult.Success>(result)
+        assertEquals(header, result.header)
+    }
+
+    @Test
     fun read_unrecognizedHeader_fails() {
         val csv = CsvUtil.buildLine(listOf("wrong", "header", "row"))
         val result = CsvTableReader.read(csv, header)

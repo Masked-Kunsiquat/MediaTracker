@@ -67,11 +67,22 @@ public interface ImportWriteDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertBookDetails(details: BookDetailsEntity)
 
+    /**
+     * @return The number of rows affected: `1` if [item]'s id resolved to an existing row, `0`
+     *   otherwise. Room's generated `@Update` silently no-ops rather than throwing when the primary
+     *   key doesn't match an existing row -- e.g. the row was deleted by another writer between the
+     *   pre-write snapshot [com.hub.media.features.portability.domain.ImportDataUseCase] resolved
+     *   duplicates against and this transaction actually running -- so [importAtomically] must check
+     *   this return value rather than assuming success (mirrors
+     *   [ReadingSessionDao.update]/[com.hub.media.features.books.data.ReadingSessionRepository
+     *   .updateSession]'s identical guard for the exact same Room behavior).
+     */
     @Update
-    public suspend fun updateMediaItem(item: MediaItemEntity)
+    public suspend fun updateMediaItem(item: MediaItemEntity): Int
 
+    /** @return Rows affected -- see [updateMediaItem]'s KDoc; the same guard applies here. */
     @Update
-    public suspend fun updateBookDetails(details: BookDetailsEntity)
+    public suspend fun updateBookDetails(details: BookDetailsEntity): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     public suspend fun upsertExternalIdentifier(identifier: ExternalIdentifierEntity)
@@ -82,8 +93,9 @@ public interface ImportWriteDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertSession(session: ReadingSessionEntity)
 
+    /** @return Rows affected -- see [updateMediaItem]'s KDoc; the same guard applies here. */
     @Update
-    public suspend fun updateSession(session: ReadingSessionEntity)
+    public suspend fun updateSession(session: ReadingSessionEntity): Int
 
     /**
      * Applies every queued book insert/update, then every queued session insert/update, all in one
@@ -96,6 +108,17 @@ public interface ImportWriteDao {
      * plus this same import's own book rows). The `reading_sessions.mediaId` foreign key would
      * catch an actual ordering bug anyway (it throws, rolling back the whole transaction), but
      * correct resolution logic upstream means it is never expected to fire.
+     *
+     * ### Every update's affected-row count is checked
+     * [updateMediaItem]/[updateBookDetails]/[updateSession] resolve duplicates against a snapshot
+     * read *before* this transaction opened -- so a row present in that snapshot could have been
+     * deleted by a concurrent writer in the window between the read and this call. Room's `@Update`
+     * does not throw in that case, it just affects zero rows, which would otherwise let this method
+     * (and [com.hub.media.features.portability.domain.ImportDataUseCase]'s summary) silently report
+     * a delete-raced row as "updated" when nothing was actually written. Each call below is checked
+     * against that zero-rows-affected signal and throws (rolling back the whole transaction, same as
+     * a genuine constraint violation) rather than letting it pass silently -- AGENTS.md §1 requires
+     * the write path fail loudly here rather than let the summary over-report.
      */
     @Transaction
     public suspend fun importAtomically(
@@ -110,10 +133,17 @@ public interface ImportWriteDao {
             insert.identifiers.forEach { upsertExternalIdentifier(it) }
         }
         for (update in bookUpdates) {
-            updateMediaItem(update.mediaItem)
-            updateBookDetails(update.details)
+            val mediaId = update.mediaItem.id
+            check(updateMediaItem(update.mediaItem) != 0) {
+                "Import update failed: media item '$mediaId' no longer exists -- it may have been " +
+                    "deleted after this import's duplicate-resolution snapshot was read"
+            }
+            check(updateBookDetails(update.details) != 0) {
+                "Import update failed: book details for '$mediaId' no longer exist -- it may have " +
+                    "been deleted after this import's duplicate-resolution snapshot was read"
+            }
             if (update.replaceIdentifiers) {
-                deleteExternalIdentifiersForMedia(update.mediaItem.id)
+                deleteExternalIdentifiersForMedia(mediaId)
             }
             update.identifiers.forEach { upsertExternalIdentifier(it) }
         }
@@ -121,7 +151,10 @@ public interface ImportWriteDao {
             insertSession(session)
         }
         for (session in sessionUpdates) {
-            updateSession(session)
+            check(updateSession(session) != 0) {
+                "Import update failed: reading session '${session.id}' no longer exists -- it may " +
+                    "have been deleted after this import's duplicate-resolution snapshot was read"
+            }
         }
     }
 }

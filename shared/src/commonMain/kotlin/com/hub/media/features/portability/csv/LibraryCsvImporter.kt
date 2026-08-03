@@ -56,6 +56,27 @@ public object LibraryCsvImporter {
     }
 
     private fun buildRow(row: List<String>): ParsedLibraryRow {
+        // media_id is required non-blank, but deliberately NOT validated as UUID-shaped, even
+        // though AGENTS.md §3.1 requires every id *this app generates* to be one. That rule governs
+        // generation, not every string this app is ever asked to accept as a primary key: this
+        // importer is consuming a file, not minting an id, and the row's own media_id (whatever it
+        // is) becomes a fresh insert's primary key whenever it doesn't match an existing/in-file
+        // book -- see ImportDataUseCase's KDoc "In-file duplicates"/matching precedence. Two
+        // considerations kept this permissive rather than adding a UUID-syntax check:
+        // 1. A genuine MediaTracker re-export always carries a real newId()-generated UUID here
+        //    (this column round-trips the row's own database primary key unchanged), so a syntax
+        //    check would never fire against normal round-trip use -- it would only ever reject a
+        //    hand-edited or hand-crafted file.
+        // 2. Rejecting that case has a real cost: a user hand-building a library_export.csv-shaped
+        //    file to bulk-add books they haven't gone through AddBookByIsbnUseCase for is a
+        //    legitimate use of this format (nothing else in this importer requires the file to have
+        //    originated from this app's own exporter), and such a user has no obvious reason to know
+        //    generated ids must be UUID-shaped -- that's an internal implementation detail, not
+        //    something the CSV format's own documentation asks of a file's author. Hard-rejecting a
+        //    plausible, human-chosen id like "book-1" over a technicality this format doesn't itself
+        //    need enforced would violate AGENTS.md §1's "user data safety over shortcuts" for no
+        //    corresponding safety benefit -- nothing downstream (SQLite's TEXT primary key, the
+        //    matching tiers above) requires or assumes UUID syntax to function correctly.
         val mediaId = row[COL_MEDIA_ID].ifBlank { reject("media_id is required") }
 
         val type = try {
