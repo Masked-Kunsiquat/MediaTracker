@@ -189,6 +189,29 @@ fun SettingsScreenRoute(
         readingLogsImportLauncher.launch(arrayOf("text/*"))
     }
 
+    // ---- Goodreads import (ROADMAP Task 8 Phase D) ---------------------------------------------
+    // A deliberately separate action from the CSV import above (own duplicate-policy choice, own
+    // button, own single-file SAF picker -- a Goodreads export has no reading-logs equivalent to
+    // ask for) so the two are never confused, even though both ultimately run through
+    // ImportViewModel's shared Idle/Loading/Success/Error state -- they write to the same library
+    // and can't usefully run concurrently.
+    var goodreadsDuplicatePolicy by remember { mutableStateOf(DuplicatePolicy.SKIP) }
+
+    val goodreadsImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
+            return@rememberLauncherForActivityResult
+        }
+        val content = readCsvFromUri(context, uri)
+        if (content == null) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(importFailureMessage) }
+            return@rememberLauncherForActivityResult
+        }
+        importViewModel.importGoodreads(content, goodreadsDuplicatePolicy)
+    }
+
     // Holds the generated bundle between the two sequential SAF "create document" picks below --
     // see SettingsScreen.kt's class-level export section KDoc for why both files are written from
     // one cached bundle rather than two independent ExportDataUseCase runs.
@@ -361,6 +384,9 @@ fun SettingsScreenRoute(
         duplicatePolicy = duplicatePolicy,
         onDuplicatePolicyChange = { duplicatePolicy = it },
         onImportClick = { libraryImportLauncher.launch(arrayOf("text/*")) },
+        goodreadsDuplicatePolicy = goodreadsDuplicatePolicy,
+        onGoodreadsDuplicatePolicyChange = { goodreadsDuplicatePolicy = it },
+        onImportGoodreadsClick = { goodreadsImportLauncher.launch(arrayOf("text/*")) },
         backupInProgress = backupUiState is BackupUiState.Loading,
         onBackupClick = backupViewModel::backupData,
         restoreInProgress = restoreUiState is RestoreUiState.Validating,
@@ -408,6 +434,20 @@ private fun ImportSummaryDialog(summary: ImportSummary, onDismiss: () -> Unit) {
                         summary.sessionsMerged,
                     ),
                 )
+                // Advisory notes (ROADMAP Task 8 Phase D) -- e.g. the Goodreads importer's "these
+                // columns weren't imported, keep the file to backfill later" notice. Rendered
+                // in full, the same "no silent partial result" rule ImportSummary's KDoc applies
+                // to rejections -- never truncated or summarized down to a count.
+                if (summary.notes.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(R.string.import_summary_notes_title),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    summary.notes.forEach { note ->
+                        Text(text = note, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 if (summary.rejections.isEmpty()) {
                     Text(stringResource(R.string.import_summary_no_rejections))
                 } else {
@@ -520,6 +560,15 @@ private fun RestoreConfirmationDialog(
  * @param onImportClick Called when the import button is tapped, wired to launch the library-file
  *   SAF picker. The actual SAF file-picker/read sequence and the resulting summary dialog happen
  *   in the route composable, not here.
+ * @param goodreadsDuplicatePolicy The currently-selected [DuplicatePolicy] for the *Goodreads*
+ *   import row (ROADMAP Task 8 Phase D) -- deliberately a separate choice from [duplicatePolicy],
+ *   not shared state, since the two import actions are meant to read as distinct.
+ * @param onGoodreadsDuplicatePolicyChange Called with the newly selected [DuplicatePolicy] for the
+ *   Goodreads import row.
+ * @param onImportGoodreadsClick Called when the "Import from Goodreads" button is tapped, wired to
+ *   launch a single-file SAF picker (a Goodreads export has no reading-logs equivalent to ask for
+ *   afterward, unlike [onImportClick]'s two-file sequence). The resulting summary dialog is the
+ *   same [ImportSummaryDialog] [onImportClick] uses -- both populate the same [ImportUiState].
  * @param backupInProgress Whether a `.sqlite` backup snapshot is currently being generated
  *   (ROADMAP Task 8 Phase C) -- wired to `BackupUiState.Loading`.
  * @param onBackupClick Called when the backup button is tapped, wired to
@@ -545,6 +594,9 @@ fun SettingsScreen(
     duplicatePolicy: DuplicatePolicy,
     onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
     onImportClick: () -> Unit,
+    goodreadsDuplicatePolicy: DuplicatePolicy,
+    onGoodreadsDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
+    onImportGoodreadsClick: () -> Unit,
     backupInProgress: Boolean,
     onBackupClick: () -> Unit,
     restoreInProgress: Boolean,
@@ -598,6 +650,13 @@ fun SettingsScreen(
                             duplicatePolicy = duplicatePolicy,
                             onDuplicatePolicyChange = onDuplicatePolicyChange,
                             onImportClick = onImportClick,
+                        )
+                        HorizontalDivider()
+                        ImportGoodreadsDataSetting(
+                            importInProgress = importInProgress,
+                            duplicatePolicy = goodreadsDuplicatePolicy,
+                            onDuplicatePolicyChange = onGoodreadsDuplicatePolicyChange,
+                            onImportClick = onImportGoodreadsClick,
                         )
                     }
                 }
@@ -812,6 +871,74 @@ private fun ImportDataSetting(
 }
 
 /**
+ * The Goodreads-import setting row (ROADMAP Task 8 Phase D) -- structurally a near-twin of
+ * [ImportDataSetting] (label/description, a visible [DuplicatePolicy] choice, a single button
+ * launching an SAF picker), but a genuinely **separate** action with its own state, not a shared
+ * control: this phase's brief calls for the Goodreads import to be distinct from the app's own CSV
+ * import "so the two aren't confused" -- a user with both a `library_export.csv` and a
+ * `goodreads_library_export.csv` on hand must never be unsure which button reads which file
+ * format. Only a single-file SAF picker is launched (no second "reading logs" prompt) -- a
+ * Goodreads export carries no session-level history, only Goodreads' own book-level shelf/date
+ * fields (mapped by `GoodreadsCsvImporter` in the shared module).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImportGoodreadsDataSetting(
+    importInProgress: Boolean,
+    duplicatePolicy: DuplicatePolicy,
+    onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
+    onImportClick: () -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_import_goodreads_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_import_goodreads_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Text(
+            text = stringResource(R.string.settings_import_duplicate_policy_label),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text = stringResource(R.string.settings_import_duplicate_policy_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        val options = DuplicatePolicy.entries
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = duplicatePolicy == option,
+                    onClick = { onDuplicatePolicyChange(option) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    label = { Text(option.displayLabel()) },
+                )
+            }
+        }
+        Button(
+            onClick = onImportClick,
+            enabled = !importInProgress,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            if (importInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(stringResource(R.string.settings_import_goodreads_button))
+            }
+        }
+    }
+}
+
+/**
  * The `.sqlite` backup setting row (ROADMAP Task 8 Phase C): a label, a short description, and a
  * single button that produces a complete database snapshot and then prompts (via the route
  * composable's SAF `CreateDocument` launcher) for where to save it. Non-destructive -- unlike
@@ -914,6 +1041,9 @@ private fun SettingsScreenMondayPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
+            onGoodreadsDuplicatePolicyChange = {},
+            onImportGoodreadsClick = {},
             backupInProgress = false,
             onBackupClick = {},
             restoreInProgress = false,
@@ -938,6 +1068,9 @@ private fun SettingsScreenSundayPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
+            onGoodreadsDuplicatePolicyChange = {},
+            onImportGoodreadsClick = {},
             backupInProgress = false,
             onBackupClick = {},
             restoreInProgress = false,
@@ -962,6 +1095,9 @@ private fun SettingsScreenExportingPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
+            onGoodreadsDuplicatePolicyChange = {},
+            onImportGoodreadsClick = {},
             backupInProgress = false,
             onBackupClick = {},
             restoreInProgress = false,
@@ -986,6 +1122,9 @@ private fun SettingsScreenBackingUpPreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
+            onGoodreadsDuplicatePolicyChange = {},
+            onImportGoodreadsClick = {},
             backupInProgress = true,
             onBackupClick = {},
             restoreInProgress = false,
@@ -1010,6 +1149,9 @@ private fun SettingsScreenValidatingRestorePreview() {
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
             onImportClick = {},
+            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
+            onGoodreadsDuplicatePolicyChange = {},
+            onImportGoodreadsClick = {},
             backupInProgress = false,
             onBackupClick = {},
             restoreInProgress = true,

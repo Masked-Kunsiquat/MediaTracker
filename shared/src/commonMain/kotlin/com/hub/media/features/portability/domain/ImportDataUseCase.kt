@@ -22,13 +22,21 @@ import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvImporter
 import com.hub.media.features.portability.csv.SessionRowParseResult
 import com.hub.media.features.portability.csv.CsvTableReader
+import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
+import com.hub.media.features.portability.goodreads.GoodreadsCsvTableReader
+import com.hub.media.features.portability.goodreads.GoodreadsCsvTableResult
 import kotlinx.coroutines.flow.first
 
-/** See [ImportDataUseCase.execute]. */
+/** See [ImportDataUseCase.execute] and [ImportDataUseCase.executeGoodreads]. */
 public interface ImportUseCase {
     public suspend fun execute(
         libraryCsv: String?,
         readingLogsCsv: String?,
+        duplicatePolicy: DuplicatePolicy,
+    ): Resource<ImportSummary>
+
+    public suspend fun executeGoodreads(
+        goodreadsCsv: String,
         duplicatePolicy: DuplicatePolicy,
     ): Resource<ImportSummary>
 }
@@ -142,10 +150,10 @@ public class ImportDataUseCase(
             return Resource.Error("Nothing to import -- no file was selected.")
         }
 
-        val libraryDataRows = if (libraryCsv != null) {
+        val libraryParseResults = if (libraryCsv != null) {
             when (val table = CsvTableReader.read(libraryCsv, LibraryCsvExporter.HEADER)) {
                 is CsvTableResult.Failure -> return Resource.Error("library_export.csv: ${table.message}")
-                is CsvTableResult.Success -> table.rows
+                is CsvTableResult.Success -> table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
             }
         } else {
             emptyList()
@@ -165,58 +173,9 @@ public class ImportDataUseCase(
             val existingIdentifiersByMediaId = bookRepository.observeAllExternalIdentifiers().first().groupBy { it.mediaId }
             val existingSessionsById = readingSessionRepository.observeAllSessions().first().associateBy { it.id }
 
-            val byMediaId = existingBooks.associateBy { it.mediaItem.id }.toMutableMap()
-            val byIsbn = existingBooks
-                .mapNotNull { book -> book.details?.isbn?.takeIf { it.isNotBlank() }?.let { it to book } }
-                .toMap()
-                .toMutableMap()
-            val byTitleYear = existingBooks
-                .associateBy { titleYearKey(it.mediaItem.title, it.mediaItem.releaseYear) }
-                .toMutableMap()
-            val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
-
-            val rejections = mutableListOf<ImportRejection>()
-            val bookInserts = mutableListOf<ImportBookInsert>()
-            val bookUpdates = mutableListOf<ImportBookUpdate>()
-            var booksImported = 0
-            var booksSkipped = 0
-            var booksMerged = 0
-            var booksReplaced = 0
-
-            libraryDataRows.forEachIndexed { index, rawRow ->
-                val rowNumber = index + 2
-                when (val parsed = LibraryCsvImporter.parseRow(rawRow)) {
-                    is LibraryRowParseResult.Rejected ->
-                        rejections += ImportRejection(ImportRowSource.BOOK, rowNumber, parsed.reason)
-
-                    is LibraryRowParseResult.Parsed -> {
-                        val row = parsed.row
-                        val match = byMediaId[row.mediaId]
-                            ?: row.isbn?.let(byIsbn::get)
-                            ?: byTitleYear[titleYearKey(row.title, row.releaseYear)]
-
-                        if (match == null) {
-                            bookInserts += buildInsert(row)
-                            booksImported++
-                            knownMediaIds += row.mediaId
-                        } else {
-                            knownMediaIds += match.mediaItem.id
-                            when (duplicatePolicy) {
-                                DuplicatePolicy.SKIP -> booksSkipped++
-                                DuplicatePolicy.REPLACE -> {
-                                    bookUpdates += buildReplace(match, row)
-                                    booksReplaced++
-                                }
-                                DuplicatePolicy.MERGE -> {
-                                    val existingIdentifiers = existingIdentifiersByMediaId[match.mediaItem.id].orEmpty()
-                                    bookUpdates += buildMerge(match, row, existingIdentifiers)
-                                    booksMerged++
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            val bookResolution = resolveBookRows(existingBooks, existingIdentifiersByMediaId, libraryParseResults, duplicatePolicy)
+            val rejections = bookResolution.rejections.toMutableList()
+            val knownMediaIds = bookResolution.knownMediaIds.toMutableSet()
 
             val sessionInserts = mutableListOf<ReadingSessionEntity>()
             val sessionUpdates = mutableListOf<ReadingSessionEntity>()
@@ -265,8 +224,8 @@ public class ImportDataUseCase(
             }
 
             val writeResult = importWriteRepository.importAtomically(
-                bookInserts = bookInserts,
-                bookUpdates = bookUpdates,
+                bookInserts = bookResolution.inserts,
+                bookUpdates = bookResolution.updates,
                 sessionInserts = sessionInserts,
                 sessionUpdates = sessionUpdates,
             )
@@ -274,10 +233,10 @@ public class ImportDataUseCase(
 
             Resource.Success(
                 ImportSummary(
-                    booksImported = booksImported,
-                    booksSkipped = booksSkipped,
-                    booksMerged = booksMerged,
-                    booksReplaced = booksReplaced,
+                    booksImported = bookResolution.imported,
+                    booksSkipped = bookResolution.skipped,
+                    booksMerged = bookResolution.merged,
+                    booksReplaced = bookResolution.replaced,
                     sessionsImported = sessionsImported,
                     sessionsSkipped = sessionsSkipped,
                     sessionsMerged = sessionsMerged,
@@ -288,6 +247,157 @@ public class ImportDataUseCase(
         } catch (e: Exception) {
             Resource.Error("Import failed: ${e.message ?: "Unknown error"}", e)
         }
+    }
+
+    /**
+     * Runs the Goodreads-import pipeline (ROADMAP Task 8 Phase D) -- deliberately reusing every
+     * piece of [execute]'s machinery that isn't specific to *this app's own* CSV shape:
+     * [resolveBookRows] (duplicate matching + insert/update construction, identical to [execute]'s
+     * book half), [ImportWriteRepository.importAtomically] (the same single all-or-nothing
+     * transaction), and [ImportRejection]/[ImportSummary] (the same per-row reporting shape). The
+     * only Goodreads-specific pieces are the parsing layer
+     * ([com.hub.media.features.portability.goodreads.GoodreadsCsvTableReader]/
+     * [GoodreadsCsvImporter], which map a completely different file shape into the same
+     * [ParsedLibraryRow]/[LibraryRowParseResult] types [execute] already produces from its own
+     * format) and this method's glue -- exactly the "small generalization to accept a different row
+     * source" this phase called for: [resolveBookRows] was extracted from [execute]'s inline logic
+     * to operate on `List<LibraryRowParseResult>` rather than raw CSV text, so both callers can feed
+     * it already-parsed rows regardless of which file format produced them.
+     *
+     * There is no reading-logs equivalent -- a Goodreads export carries no session-level history,
+     * only per-book state (`Exclusive Shelf`, `Date Read`) -- so `sessionInserts`/`sessionUpdates`
+     * are always empty here and every `sessions*` count on the returned [ImportSummary] is always
+     * `0`.
+     *
+     * @return [Resource.Success] with [ImportSummary.notes] always containing
+     *   [GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE] -- see that constant's KDoc for why this
+     *   notice must never be silently dropped (the user decision this phase implements). Structural
+     *   file problems (no recognizable `Title` column, a row with the wrong field count, a CSV
+     *   parse failure) refuse the whole import via [Resource.Error] before any write, exactly like
+     *   [execute]'s structural failures.
+     */
+    public override suspend fun executeGoodreads(
+        goodreadsCsv: String,
+        duplicatePolicy: DuplicatePolicy,
+    ): Resource<ImportSummary> {
+        val parseResults = when (val table = GoodreadsCsvTableReader.read(goodreadsCsv)) {
+            is GoodreadsCsvTableResult.Failure -> return Resource.Error("goodreads_library_export.csv: ${table.message}")
+            is GoodreadsCsvTableResult.Success -> table.rows.map { row -> GoodreadsCsvImporter.parseRow(table.columnIndex, row) }
+        }
+
+        return try {
+            val existingBooks = bookRepository.observeAllBooksWithDetails().first()
+            val existingIdentifiersByMediaId = bookRepository.observeAllExternalIdentifiers().first().groupBy { it.mediaId }
+
+            val bookResolution = resolveBookRows(existingBooks, existingIdentifiersByMediaId, parseResults, duplicatePolicy)
+
+            val writeResult = importWriteRepository.importAtomically(
+                bookInserts = bookResolution.inserts,
+                bookUpdates = bookResolution.updates,
+                sessionInserts = emptyList(),
+                sessionUpdates = emptyList(),
+            )
+            if (writeResult is Resource.Error) return writeResult
+
+            Resource.Success(
+                ImportSummary(
+                    booksImported = bookResolution.imported,
+                    booksSkipped = bookResolution.skipped,
+                    booksMerged = bookResolution.merged,
+                    booksReplaced = bookResolution.replaced,
+                    sessionsImported = 0,
+                    sessionsSkipped = 0,
+                    sessionsMerged = 0,
+                    sessionsReplaced = 0,
+                    rejections = bookResolution.rejections,
+                    notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE),
+                ),
+            )
+        } catch (e: Exception) {
+            Resource.Error("Goodreads import failed: ${e.message ?: "Unknown error"}", e)
+        }
+    }
+
+    /** Outcome of [resolveBookRows] -- everything [execute]/[executeGoodreads] need to finish the job. */
+    private data class BookRowResolution(
+        val inserts: List<ImportBookInsert>,
+        val updates: List<ImportBookUpdate>,
+        val rejections: List<ImportRejection>,
+        val imported: Int,
+        val skipped: Int,
+        val merged: Int,
+        val replaced: Int,
+        /** Every media id known after this resolution: pre-existing books plus every fresh insert. */
+        val knownMediaIds: Set<String>,
+    )
+
+    /**
+     * The book-row half of [execute]'s original inline logic (ROADMAP Task 8 Phase B), extracted
+     * (Phase D) so [executeGoodreads] can reuse the exact same duplicate-matching precedence,
+     * per-[DuplicatePolicy] field rules, and insert/update construction documented in this class's
+     * KDoc -- operating on already-parsed [LibraryRowParseResult]s rather than raw CSV text, which
+     * is what makes it reusable across two completely different file formats. See this class's
+     * top-level KDoc for the matching precedence (`media_id` -> `isbn` -> `title`+`release_year`)
+     * and the per-policy field rules; nothing about that logic changed by being extracted here, only
+     * where it lives.
+     */
+    private fun resolveBookRows(
+        existingBooks: List<BookWithDetails>,
+        existingIdentifiersByMediaId: Map<String, List<ExternalIdentifierEntity>>,
+        parseResults: List<LibraryRowParseResult>,
+        duplicatePolicy: DuplicatePolicy,
+    ): BookRowResolution {
+        val byMediaId = existingBooks.associateBy { it.mediaItem.id }
+        val byIsbn = existingBooks
+            .mapNotNull { book -> book.details?.isbn?.takeIf { it.isNotBlank() }?.let { it to book } }
+            .toMap()
+        val byTitleYear = existingBooks.associateBy { titleYearKey(it.mediaItem.title, it.mediaItem.releaseYear) }
+        val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
+
+        val rejections = mutableListOf<ImportRejection>()
+        val inserts = mutableListOf<ImportBookInsert>()
+        val updates = mutableListOf<ImportBookUpdate>()
+        var imported = 0
+        var skipped = 0
+        var merged = 0
+        var replaced = 0
+
+        parseResults.forEachIndexed { index, parsed ->
+            val rowNumber = index + 2
+            when (parsed) {
+                is LibraryRowParseResult.Rejected ->
+                    rejections += ImportRejection(ImportRowSource.BOOK, rowNumber, parsed.reason)
+
+                is LibraryRowParseResult.Parsed -> {
+                    val row = parsed.row
+                    val match = byMediaId[row.mediaId]
+                        ?: row.isbn?.let(byIsbn::get)
+                        ?: byTitleYear[titleYearKey(row.title, row.releaseYear)]
+
+                    if (match == null) {
+                        inserts += buildInsert(row)
+                        imported++
+                        knownMediaIds += row.mediaId
+                    } else {
+                        knownMediaIds += match.mediaItem.id
+                        when (duplicatePolicy) {
+                            DuplicatePolicy.SKIP -> skipped++
+                            DuplicatePolicy.REPLACE -> {
+                                updates += buildReplace(match, row)
+                                replaced++
+                            }
+                            DuplicatePolicy.MERGE -> {
+                                val existingIdentifiers = existingIdentifiersByMediaId[match.mediaItem.id].orEmpty()
+                                updates += buildMerge(match, row, existingIdentifiers)
+                                merged++
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return BookRowResolution(inserts, updates, rejections, imported, skipped, merged, replaced, knownMediaIds)
     }
 
     private fun titleYearKey(title: String, releaseYear: Int?): String =

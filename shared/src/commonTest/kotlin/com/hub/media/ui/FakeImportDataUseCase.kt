@@ -28,7 +28,15 @@ internal class FakeImportDataUseCase(
     var lastArgs: Triple<String?, String?, DuplicatePolicy>? = null
         private set
 
-    /** When true, [execute] suspends on an internal gate until [release] is called. */
+    /** Number of times [executeGoodreads] has been called (ROADMAP Task 8 Phase D). */
+    var goodreadsCallCount: Int = 0
+        private set
+
+    /** The arguments [executeGoodreads] was most recently called with, or `null` if never called. */
+    var lastGoodreadsArgs: Pair<String, DuplicatePolicy>? = null
+        private set
+
+    /** When true, [execute]/[executeGoodreads] suspend on an internal gate until [release] is called. */
     var awaitGate: Boolean = false
 
     private val gate = CompletableDeferred<Unit>()
@@ -44,7 +52,17 @@ internal class FakeImportDataUseCase(
         return result
     }
 
-    /** Releases a pending [execute] call started while [awaitGate] was true. */
+    override suspend fun executeGoodreads(
+        goodreadsCsv: String,
+        duplicatePolicy: DuplicatePolicy,
+    ): Resource<ImportSummary> {
+        goodreadsCallCount++
+        lastGoodreadsArgs = goodreadsCsv to duplicatePolicy
+        if (awaitGate) gate.await()
+        return result
+    }
+
+    /** Releases a pending [execute]/[executeGoodreads] call started while [awaitGate] was true. */
     fun release() {
         gate.complete(Unit)
     }

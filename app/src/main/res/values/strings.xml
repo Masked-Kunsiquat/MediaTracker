@@ -172,6 +172,12 @@
     <string name="import_summary_rejections_title">Not imported (%1$d row(s)):</string>
     <string name="import_summary_rejection_line">%1$s row %2$d: %3$s</string>
     <string name="import_summary_no_rejections">Every row imported cleanly.</string>
+    <string name="import_summary_notes_title">Notes</string>
+
+    <!-- SettingsScreen: Goodreads import (ROADMAP Task 8 Phase D) -->
+    <string name="settings_import_goodreads_label">Import from Goodreads</string>
+    <string name="settings_import_goodreads_description">Import your library from a Goodreads export (goodreads_library_export.csv). Ratings, shelves, and read counts have no home in MediaTracker yet — see the summary after importing for what to do about that.</string>
+    <string name="settings_import_goodreads_button">Import from Goodreads</string>
 
     <!-- SettingsScreen: .sqlite backup (ROADMAP Task 8 Phase C) -->
     <string name="settings_section_backup_restore">Backup &amp; restore</string>

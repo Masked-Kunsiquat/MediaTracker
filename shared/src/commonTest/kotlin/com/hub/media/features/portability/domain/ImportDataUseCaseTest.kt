@@ -14,9 +14,12 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.BookWithDetails
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION
+import com.hub.media.features.portability.csv.CsvUtil
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.data.ImportWriteRepository
+import com.hub.media.features.portability.goodreads.GoodreadsColumns
+import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -414,5 +417,183 @@ class ImportDataUseCaseTest {
         val result = useCase.execute(malformed, null, DuplicatePolicy.SKIP)
         assertIs<Resource.Error>(result)
         assertTrue(bookRepository.observeAllBooksWithDetails().first().isEmpty())
+    }
+
+    // ---- executeGoodreads (ROADMAP Task 8 Phase D) ---------------------------------------------
+    // Every title/author/date below is invented -- no real personal Goodreads export was used.
+
+    private val goodreadsHeader = listOf(
+        "Book Id", GoodreadsColumns.TITLE, "Author", GoodreadsColumns.ISBN, GoodreadsColumns.ISBN13,
+        GoodreadsColumns.MY_RATING, "Average Rating", "Publisher", GoodreadsColumns.BINDING,
+        GoodreadsColumns.NUMBER_OF_PAGES, GoodreadsColumns.YEAR_PUBLISHED, GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR,
+        GoodreadsColumns.DATE_READ, GoodreadsColumns.DATE_ADDED, GoodreadsColumns.BOOKSHELVES,
+        GoodreadsColumns.EXCLUSIVE_SHELF, GoodreadsColumns.READ_COUNT,
+    )
+
+    private fun goodreadsRow(
+        bookId: String,
+        title: String,
+        isbn: String = "",
+        isbn13: String = "",
+        myRating: String = "0",
+        binding: String = "",
+        numberOfPages: String = "",
+        yearPublished: String = "",
+        originalPublicationYear: String = "",
+        dateRead: String = "",
+        dateAdded: String = "",
+        bookshelves: String = "",
+        exclusiveShelf: String = "to-read",
+        readCount: String = "0",
+    ): List<String> = listOf(
+        bookId, title, "Some Author", isbn, isbn13, myRating, "4.10", "Some Publisher", binding,
+        numberOfPages, yearPublished, originalPublicationYear, dateRead, dateAdded, bookshelves,
+        exclusiveShelf, readCount,
+    )
+
+    private fun goodreadsCsv(vararg rows: List<String>): String = buildString {
+        append(CsvUtil.buildLine(goodreadsHeader))
+        rows.forEach { append(CsvUtil.buildLine(it)) }
+    }
+
+    @Test
+    fun executeGoodreads_realisticMultiRowFixture_importsBooksWithExpectedFields() = runTest {
+        val csv = goodreadsCsv(
+            goodreadsRow(
+                bookId = "1",
+                title = "The Clockwork Atlas",
+                isbn13 = "=\"9780593135204\"",
+                myRating = "5",
+                binding = "Hardcover",
+                numberOfPages = "412",
+                yearPublished = "2026",
+                originalPublicationYear = "1926",
+                dateRead = "2023/06/01",
+                dateAdded = "2022/01/01",
+                bookshelves = "fantasy, adventure",
+                exclusiveShelf = "read",
+                readCount = "2",
+            ),
+            goodreadsRow(
+                bookId = "2",
+                title = "Nebula's Edge",
+                binding = "Paperback",
+                yearPublished = "2015",
+                dateAdded = "2023/03/10",
+                exclusiveShelf = "currently-reading",
+            ),
+            goodreadsRow(
+                bookId = "3",
+                title = "Salt and Ember",
+                exclusiveShelf = "to-read",
+            ),
+        )
+
+        val result = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(3, result.data.booksImported)
+        assertTrue(result.data.rejections.isEmpty())
+        assertEquals(listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE), result.data.notes)
+
+        val books = bookRepository.observeAllBooksWithDetails().first().associateBy { it.mediaItem.title }
+        assertEquals(3, books.size)
+
+        val atlas = books.getValue("The Clockwork Atlas")
+        assertEquals(1926, atlas.mediaItem.releaseYear, "Original Publication Year preferred over Year Published")
+        assertEquals("9780593135204", atlas.details?.isbn, "Excel-armor stripped")
+        assertEquals(BookFormat.HARDCOVER, atlas.details?.format)
+        assertEquals(412, atlas.details?.totalPages)
+        assertEquals(ReadingStatus.FINISHED, atlas.details?.status)
+        assertTrue(atlas.details?.finishedAt != null, "read shelf with a Date Read must produce a finishedAt")
+        val atlasIdentifiers = bookRepository.observeAllExternalIdentifiers().first()
+            .filter { it.mediaId == atlas.mediaItem.id }
+        assertEquals(listOf(IdentifierProvider.ISBN to "9780593135204"), atlasIdentifiers.map { it.provider to it.externalId })
+
+        val nebula = books.getValue("Nebula's Edge")
+        assertEquals(2015, nebula.mediaItem.releaseYear, "Original Publication Year blank -- falls back to Year Published")
+        assertEquals(null, nebula.details?.isbn)
+        assertEquals(ReadingStatus.READING, nebula.details?.status)
+        assertEquals(null, nebula.details?.finishedAt)
+
+        val salt = books.getValue("Salt and Ember")
+        assertEquals(null, salt.mediaItem.releaseYear)
+        assertEquals(BookFormat.PHYSICAL, salt.details?.format, "blank Binding falls back to PHYSICAL")
+        assertEquals(ReadingStatus.TO_READ, salt.details?.status)
+    }
+
+    @Test
+    fun executeGoodreads_missingTitleColumn_refusesWholeImport_nothingWritten() = runTest {
+        val csv = "${GoodreadsColumns.ISBN},${GoodreadsColumns.BINDING}\r\n9780000000001,Hardcover\r\n"
+
+        val result = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Error>(result)
+        assertTrue(bookRepository.observeAllBooksWithDetails().first().isEmpty())
+    }
+
+    @Test
+    fun executeGoodreads_blankTitleRow_isSkippedWithReport_othersStillImport() = runTest {
+        val csv = goodreadsCsv(
+            goodreadsRow(bookId = "1", title = "Valid Goodreads Book"),
+            goodreadsRow(bookId = "2", title = ""),
+        )
+
+        val result = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksImported)
+        assertEquals(1, result.data.rejections.size)
+        assertEquals(ImportRowSource.BOOK, result.data.rejections.single().source)
+        assertTrue(bookRepository.observeAllBooksWithDetails().first().any { it.mediaItem.title == "Valid Goodreads Book" })
+    }
+
+    @Test
+    fun executeGoodreads_reimportSameFile_matchesByIsbnAndSkips() = runTest {
+        val csv = goodreadsCsv(
+            goodreadsRow(bookId = "1", title = "Reimported Book", isbn13 = "=\"9780593135204\"", exclusiveShelf = "read"),
+        )
+
+        val first = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(first)
+        assertEquals(1, first.data.booksImported)
+
+        // The user kept goodreads_library_export.csv and re-imports the exact same file later --
+        // ROADMAP Task 8's documented recovery path. Even with a fresh mediaId generated for the
+        // row both times, the ISBN tier must still recognize this as the same book.
+        val second = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(second)
+        assertEquals(0, second.data.booksImported)
+        assertEquals(1, second.data.booksSkipped)
+        assertEquals(1, bookRepository.observeAllBooksWithDetails().first().size, "must not have duplicated the book")
+    }
+
+    @Test
+    fun executeGoodreads_mergePolicy_reimportBackfillsBlankReleaseYear_neverOverwritesTitle() = runTest {
+        // Simulates the "keep the file, re-import later" recovery path: the first import has no
+        // year data at all for this book; a later export of the same library (Goodreads finally
+        // cataloged an Original Publication Year) backfills it via MERGE without disturbing
+        // anything else already recorded.
+        val firstCsv = goodreadsCsv(
+            goodreadsRow(bookId = "1", title = "Backfill Candidate", isbn13 = "=\"9781111111111\"", exclusiveShelf = "to-read"),
+        )
+        val first = useCase.executeGoodreads(firstCsv, DuplicatePolicy.MERGE)
+        assertIs<Resource.Success<ImportSummary>>(first)
+        assertEquals(1, first.data.booksImported)
+        assertEquals(null, bookRepository.observeAllBooksWithDetails().first().single().mediaItem.releaseYear)
+
+        val secondCsv = goodreadsCsv(
+            goodreadsRow(
+                bookId = "1",
+                title = "A Different Title Goodreads Might Show", // must NOT overwrite the existing title
+                isbn13 = "=\"9781111111111\"",
+                originalPublicationYear = "1987",
+                exclusiveShelf = "to-read",
+            ),
+        )
+        val second = useCase.executeGoodreads(secondCsv, DuplicatePolicy.MERGE)
+        assertIs<Resource.Success<ImportSummary>>(second)
+        assertEquals(1, second.data.booksMerged)
+
+        val merged = bookRepository.observeAllBooksWithDetails().first().single()
+        assertEquals("Backfill Candidate", merged.mediaItem.title, "title is identity -- merge must never touch it")
+        assertEquals(1987, merged.mediaItem.releaseYear, "releaseYear was null -- merge should backfill it")
     }
 }

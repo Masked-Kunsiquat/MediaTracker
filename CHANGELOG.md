@@ -157,6 +157,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     control, visually distinct from every other action on the screen.
   - No schema change (`AppDatabase` stays at v4); no new dependency; no new permission — reuses the
     SAF `CreateDocument`/`OpenDocument` plumbing Phases A/B already established.
+- **Goodreads import** (ROADMAP Task 8 Phase D, completing Task 8) — a distinct "Import from
+  Goodreads" action on the Settings screen's "Data" section, separate from the app's own CSV
+  import so the two are never confused: its own visible `DuplicatePolicy` picker, its own button,
+  and a single-file SAF picker (a Goodreads export has no reading-logs equivalent to ask for
+  afterward).
+  - New `shared/.../features/portability/goodreads/` mapping layer
+    (`GoodreadsCsvTableReader`/`GoodreadsCsvImporter`) on top of the existing `CsvReader` — not a
+    new parser. Columns are matched **by header name**, never by position, so a reordered export,
+    unknown/extra columns, or missing optional columns all import cleanly; only `Title` is
+    required, and its absence refuses the whole file with a clear message.
+  - **Excel-armor stripping**: Goodreads writes an ISBN as `="9780593135204"` (including the
+    empty-ISBN case `=""`) to stop Excel mangling it — stripped before any ISBN handling, including
+    the empty-armor case, which unwraps to blank rather than a stray `=""`.
+  - **`Binding` → `BookFormat`**: Hardcover/Library Binding/Board Book/Leather Bound → `HARDCOVER`;
+    Paperback/Mass Market Paperback/Trade Paperback/Spiral-bound/Unbound → `PAPERBACK`; Kindle
+    Edition/ebook/Nook → `EBOOK`; Audiobook/Audio CD/Audible Audio → `AUDIOBOOK`; anything
+    unrecognized (including blank) falls back to `PHYSICAL` — the same "binding unknown" fallback
+    ISBN-sourced ingestion already uses.
+  - **`Exclusive Shelf` → `ReadingStatus`**: `read` → `FINISHED`, `currently-reading` → `READING`,
+    `to-read` → `TO_READ`; blank/unrecognized also falls back to `TO_READ`. Nothing maps to `DNF` —
+    Goodreads' exclusive shelf has no such state (a user-tracked DNF lives in the `Bookshelves`
+    column this phase drops, not here), so guessing at it was rejected as more likely to mislabel a
+    book than help.
+  - **`Date Read` → `finishedAt`**, but only when the shelf itself resolved to `FINISHED` — a stray
+    `Date Read` value alongside a `currently-reading`/`to-read` shelf is never used, so it can't
+    contradict `BookDetailsEntity.finishedAt`'s "when status most recently became FINISHED"
+    invariant. `Date Added` → `createdAt`, falling back to import time when blank/unparseable. Both
+    dates tolerate a blank or malformed cell as "unknown" (`null`) rather than rejecting the row —
+    foreign, Goodreads-controlled formatting isn't held to this app's own stricter timestamp rules.
+  - **`Year Published` vs `Original Publication Year` decided**: `releaseYear` prefers `Original
+    Publication Year` (the year the *work* first appeared) over `Year Published` (the specific
+    *edition/printing* Goodreads happened to catalog, which can be a much later reprint — the
+    "2026 anniversary printing masks an original 1926 publication" problem this bullet was written
+    to avoid), falling back to `Year Published` only when the original-year column is blank.
+  - **`My Rating`, `Bookshelves`, and `Read Count` are dropped, not staged** — the schema has no
+    rating/genre/read-through-count column yet (see Tasks 10/12), and per the standing decision no
+    staging table or schema bump is added speculatively. Instead, every import summary now carries
+    a `notes` list (new field on `ImportSummary`, default-empty for the app's own CSV import) that
+    the Goodreads path always populates with an explicit notice: which columns weren't imported,
+    why, and that **keeping `goodreads_library_export.csv`** lets a later re-import (once Tasks
+    10/12 land) backfill them automatically — `DuplicatePolicy.MERGE` only fills a blank and never
+    overwrites, so a repeat import is always safe. The Settings screen's import-summary dialog
+    renders every note in full, the same "no silent partial result" treatment rejections already
+    got.
+  - **`ImportDataUseCase` generalized, not duplicated**: the book-row duplicate-matching/insert/
+    update logic `execute()` already had was extracted into a private `resolveBookRows(existing,
+    identifiers, parsedRows, duplicatePolicy)` operating on already-parsed rows rather than raw CSV
+    text, so a new `executeGoodreads()` (added to the `ImportUseCase` interface) reuses it
+    unchanged — same duplicate-matching precedence, same per-`DuplicatePolicy` field rules, same
+    `ImportWriteRepository.importAtomically` transaction — fed from the Goodreads mapping layer
+    instead of `LibraryCsvImporter`. `ImportViewModel` gained a matching `importGoodreads(...)`
+    sharing its existing `Idle`/`Loading`/`Success`/`Error` state machine with `importData(...)`.
+  - No schema change (`AppDatabase` stays at v4); no new dependency; no new permission.
 
 ## [0.6.0] - 2026-08-02
 

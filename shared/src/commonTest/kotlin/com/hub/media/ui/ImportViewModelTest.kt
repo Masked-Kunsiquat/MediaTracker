@@ -119,4 +119,56 @@ class ImportViewModelTest {
         assertEquals(2, fake.callCount)
         assertIs<ImportUiState.Success>(viewModel.uiState.value)
     }
+
+    // ---- importGoodreads (ROADMAP Task 8 Phase D) ----------------------------------------------
+
+    @Test
+    fun importGoodreads_emitsIdleThenLoadingThenSuccess() = runTest {
+        val fake = FakeImportDataUseCase(result = Resource.Success(sampleSummary)).apply { awaitGate = true }
+        val viewModel = newViewModel(fake)
+
+        assertEquals(ImportUiState.Idle, viewModel.uiState.value)
+
+        viewModel.importGoodreads("goodreads-csv", DuplicatePolicy.MERGE)
+        assertEquals(ImportUiState.Loading, viewModel.uiState.value)
+
+        fake.release()
+        val finalState = viewModel.uiState.first { it is ImportUiState.Success }
+        assertEquals(ImportUiState.Success(sampleSummary), finalState)
+        assertEquals("goodreads-csv" to DuplicatePolicy.MERGE, fake.lastGoodreadsArgs)
+        assertEquals(1, fake.goodreadsCallCount)
+        assertEquals(0, fake.callCount, "must not have also called the native execute() path")
+    }
+
+    @Test
+    fun importGoodreads_useCaseError_setsErrorState() = runTest {
+        val fake = FakeImportDataUseCase(result = Resource.Error("Goodreads import failed: boom"))
+        val viewModel = newViewModel(fake)
+
+        viewModel.importGoodreads("goodreads-csv", DuplicatePolicy.SKIP)
+
+        val finalState = viewModel.uiState.value
+        assertIs<ImportUiState.Error>(finalState)
+        assertEquals("Goodreads import failed: boom", finalState.message)
+    }
+
+    @Test
+    fun importGoodreads_whileNativeImportLoading_isIgnored() = runTest {
+        // The two import actions share one Idle/Loading/Success/Error state machine (both write to
+        // the same library) -- a Goodreads import cannot start while a native CSV import is still
+        // in flight, same double-tap guard as two concurrent importData calls.
+        val fake = FakeImportDataUseCase().apply { awaitGate = true }
+        val viewModel = newViewModel(fake)
+
+        viewModel.importData("a", null, DuplicatePolicy.SKIP)
+        assertEquals(ImportUiState.Loading, viewModel.uiState.value)
+
+        viewModel.importGoodreads("goodreads-csv", DuplicatePolicy.SKIP)
+        assertEquals(0, fake.goodreadsCallCount)
+
+        fake.release()
+        viewModel.uiState.first { it is ImportUiState.Success }
+        assertEquals(1, fake.callCount)
+        assertEquals(0, fake.goodreadsCallCount)
+    }
 }

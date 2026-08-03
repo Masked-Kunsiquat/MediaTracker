@@ -49,6 +49,32 @@ public class ImportViewModel(
         }
     }
 
+    /**
+     * Runs a Goodreads import (ROADMAP Task 8 Phase D) against already-read
+     * `goodreads_library_export.csv` text -- the app layer owns reading the user-picked file via
+     * SAF, same split as [importData]. Shares [uiState]/the double-tap guard with [importData]
+     * rather than a separate state machine: it is the same underlying pipeline
+     * ([com.hub.media.features.portability.domain.ImportDataUseCase.executeGoodreads] reuses
+     * [com.hub.media.features.portability.domain.ImportDataUseCase.execute]'s duplicate-matching
+     * and write path almost entirely, see that method's KDoc), just fed from a different file
+     * format -- so a Goodreads import in flight blocks a concurrent CSV import and vice versa,
+     * which is the correct behavior for two paths that both write to the same library.
+     *
+     * @param goodreadsCsv `goodreads_library_export.csv` text.
+     * @param duplicatePolicy The user's chosen [DuplicatePolicy] for this import.
+     */
+    public fun importGoodreads(goodreadsCsv: String, duplicatePolicy: DuplicatePolicy) {
+        if (_uiState.value is ImportUiState.Loading) return
+
+        _uiState.value = ImportUiState.Loading
+        viewModelScope.launch {
+            _uiState.value = when (val result = importDataUseCase.executeGoodreads(goodreadsCsv, duplicatePolicy)) {
+                is Resource.Success -> ImportUiState.Success(result.data)
+                is Resource.Error -> ImportUiState.Error(result.message)
+            }
+        }
+    }
+
     /** Resets state back to [ImportUiState.Idle], e.g. after a result has been shown to the user. */
     public fun reset() {
         _uiState.value = ImportUiState.Idle
