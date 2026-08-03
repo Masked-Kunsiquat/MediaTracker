@@ -335,6 +335,133 @@ class ImportDataUseCaseTest {
         assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
     }
 
+    // ---- Finding 2: ISBN-ingestion (edition year) vs Goodreads (work year) release-year mismatch ----
+    // These reproduce the "2026 anniversary printing masks a 2016 original" scenario: a book added
+    // via ISBN stores the scanned edition's year, a later Goodreads import prefers the work's
+    // Original Publication Year. Without a title-only fallback tier, media_id/isbn/title+year all
+    // miss and the book would be silently duplicated instead of merged.
+
+    @Test
+    fun execute_titleOnly_differingReleaseYears_matchesAndReportsReviewNote() = runTest {
+        // Existing book was added by ISBN scan of a later reprint -- stores the EDITION year.
+        val existingMediaId = addBook(
+            title = "The Long Way Home",
+            releaseYear = 2026,
+            isbn = "9781111111111",
+            repository = bookRepository,
+        )
+
+        // Incoming row (e.g. Goodreads) has no ISBN in common and stores the WORK year instead.
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = "different-id", title = "The Long Way Home", releaseYear = 2016),
+                details = sampleBookDetails(mediaId = "different-id", isbn = null),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(
+            1,
+            result.data.booksMerged,
+            "differing release years must not defeat matching -- this would otherwise silently duplicate the book (Finding 2)",
+        )
+        assertEquals(0, result.data.booksImported, "must not have been inserted as a brand-new book")
+
+        // MERGE must never overwrite the existing (non-null) edition year with the incoming one.
+        val merged = bookRepository.getBookWithDetails(existingMediaId)
+        assertEquals(2026, merged?.mediaItem?.releaseYear, "existing releaseYear was already set -- merge must not overwrite it")
+
+        assertEquals(1, result.data.notes.size, "a title-only match must be reported, never applied silently")
+        val note = result.data.notes.single()
+        assertTrue(note.contains("The Long Way Home"))
+        assertTrue(note.contains("2026"))
+        assertTrue(note.contains("2016"))
+    }
+
+    @Test
+    fun execute_titleOnly_missingIsbnOnOneSide_stillMatchesByTitleWhenYearsDiffer() = runTest {
+        // Existing book has an ISBN on record (e.g. added by ISBN scan); incoming row has none at
+        // all (e.g. an older Goodreads entry with a blank ISBN13 column) and a different year.
+        val existingMediaId = addBook(
+            title = "Salt and Ember",
+            releaseYear = 2026,
+            isbn = "9782222222222",
+            repository = bookRepository,
+        )
+
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = "goodreads-id", title = "Salt and Ember", releaseYear = 1990),
+                details = sampleBookDetails(mediaId = "goodreads-id", isbn = null),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksMerged, "missing ISBN on the incoming side must still fall through to the title-only tier")
+        assertEquals(0, result.data.booksImported)
+        assertEquals(1, result.data.notes.size)
+
+        assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+    }
+
+    @Test
+    fun execute_titleOnly_missingIsbnOnBothSides_stillMatchesByTitleWhenYearsDiffer() = runTest {
+        val existingMediaId = addBook(
+            title = "Nebula's Edge",
+            releaseYear = 2015,
+            isbn = null,
+            repository = bookRepository,
+        )
+
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = "goodreads-id", title = "Nebula's Edge", releaseYear = 1975),
+                details = sampleBookDetails(mediaId = "goodreads-id", isbn = null),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksMerged, "no ISBN on either side must still fall through to the title-only tier when years differ")
+        assertEquals(0, result.data.booksImported)
+        assertEquals(1, result.data.notes.size)
+
+        assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+    }
+
+    @Test
+    fun execute_matchingIsbns_matchesOnIsbnTier_regardlessOfDifferingYears_noReviewNote() = runTest {
+        // Same physical edition (same ISBN) but two different recorded years -- the ISBN tier
+        // should resolve this with full confidence, never falling through to the title-only tier.
+        val existingMediaId = addBook(
+            title = "The Long Way Home",
+            releaseYear = 2026,
+            isbn = "9783333333333",
+            repository = bookRepository,
+        )
+
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = "different-id", title = "The Long Way Home", releaseYear = 2016),
+                details = sampleBookDetails(mediaId = "different-id", isbn = "9783333333333"),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksMerged, "matching ISBNs must match on the ISBN tier even when years disagree")
+        assertEquals(0, result.data.booksImported)
+        assertTrue(result.data.notes.isEmpty(), "an ISBN-tier match is high-confidence and must not be flagged for review")
+
+        assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+    }
+
     // ---- In-file duplicates: later rows must resolve against earlier rows from the SAME file ----
 
     @Test

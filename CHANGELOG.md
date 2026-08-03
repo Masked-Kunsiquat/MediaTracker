@@ -310,6 +310,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the database behind in `cacheDir`. Both cleanups now run in a `finally` block wrapped in
   `NonCancellable`, so the temp file is always removed once ownership hasn't been handed off
   elsewhere, regardless of how the coroutine exits.
+- **Fixed: a book added by ISBN and later re-imported from Goodreads could silently duplicate
+  instead of merging, because the two paths disagree about what `release_year` means.** ISBN
+  ingestion (`AddBookByIsbnUseCase` via `OpenLibraryClient`'s `/isbn/{isbn}.json` lookup) stores the
+  scanned *edition*'s publish year, while `GoodreadsCsvImporter` deliberately prefers the *work*'s
+  `Original Publication Year` — so the same book (e.g. a 2026 anniversary printing scanned into the
+  app, later shelved on Goodreads under its 1926 original-publication year, possibly under a
+  different edition's ISBN) could miss `ImportDataUseCase`'s `media_id` → `isbn` →
+  `title`+`release_year` matching tiers entirely and be inserted as a brand-new book rather than
+  merged into the existing one. `ImportDataUseCase` now has a fourth, last-resort matching tier:
+  case-insensitive **title only**, reached only when the stronger tiers (including exact
+  title+release-year) all fail — covering both a genuine year disagreement and either side simply
+  missing a year. Because matching on title alone (no year, no author column) carries a real risk
+  of conflating two different books that happen to share a title, every match made through this
+  tier is additionally surfaced in the import summary's advisory notes (`ImportSummary.notes`),
+  naming the row, the matched title, and both release years — so `DuplicatePolicy.MERGE` can
+  genuinely backfill the existing record in this scenario, but the lower-confidence match is never
+  applied silently. A matching ISBN still resolves at the stronger ISBN tier regardless of
+  differing years, with no note. This is a no-schema-change mitigation (`AppDatabase` stays at v4);
+  see `ROADMAP.md`'s Task 8 entry for the schema-based follow-up (storing both edition and work
+  year) this unblocks later.
 
 ## [0.6.0] - 2026-08-02
 

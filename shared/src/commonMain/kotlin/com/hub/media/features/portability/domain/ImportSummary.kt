@@ -43,10 +43,14 @@ public data class ImportSummary(
      * Free-text advisory notes about this import that aren't per-row problems and don't fit the
      * counts above (ROADMAP Task 8 Phase D) -- e.g. a Goodreads import's notice that some columns
      * had nowhere to be stored and were dropped, with instructions for recovering them later (see
-     * [com.hub.media.features.portability.goodreads.GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE]).
-     * Always empty for [ImportDataUseCase.execute] (this app's own CSV format round-trips every
-     * column it exports, so there is never anything to caveat there). The UI is expected to render
-     * every note here, not just the numeric counts and [rejections] -- the same "no silent partial
+     * [com.hub.media.features.portability.goodreads.GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE]),
+     * or a book-row that only matched an existing book via the low-confidence title-only tier (see
+     * [ImportDataUseCase]'s KDoc, "Duplicate matching precedence" tier 4) -- surfaced so a book
+     * added by ISBN (which stores the scanned *edition*'s year) and later re-imported from
+     * Goodreads (which stores the *work*'s original year) can still be recognized as the same book
+     * without silently trusting a title-only match. Not exclusive to Goodreads imports: [execute]
+     * populates this too whenever its own tier-4 match fires. The UI is expected to render every
+     * note here, not just the numeric counts and [rejections] -- the same "no silent partial
      * result" rule this phase's brief applies to rejected rows applies here too.
      */
     public val notes: List<String> = emptyList(),

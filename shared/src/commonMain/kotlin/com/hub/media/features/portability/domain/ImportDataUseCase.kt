@@ -68,14 +68,29 @@ public interface ImportUseCase {
  *    `media_id` was never shared. Two distinct physical copies of the same book legitimately share
  *    an ISBN; this deliberately treats them as "the same book" for merge purposes (an accepted
  *    tradeoff -- see ROADMAP Task 8's Goodreads bullet, which depends on exactly this).
- * 3. **`title` + `release_year`** (case-insensitive title, exact year match) -- last-resort
- *    fallback for a book with no ISBN on record. **Known weakness**: this schema has no author
- *    column, so two different books sharing a title and release year (a common title, a reboot/
- *    revival, etc.) would incorrectly match here. Accepted because it only ever applies when the
- *    stronger ISBN tier already failed to match, and the alternative (never matching at all) means
- *    every ISBN-less duplicate is treated as brand new every re-import.
+ * 3. **`title` + `release_year`** (case-insensitive title, exact year match) -- fallback for a book
+ *    with no ISBN on record, when both sides agree on a release year. **Known weakness**: this
+ *    schema has no author column, so two different books sharing a title and release year (a
+ *    common title, a reboot/revival, etc.) would incorrectly match here. Accepted because it only
+ *    ever applies when the stronger ISBN tier already failed to match, and the alternative (never
+ *    matching at all) means every ISBN-less duplicate is treated as brand new every re-import.
+ * 4. **`title` only** (case-insensitive, ignoring `release_year` entirely) -- last-resort fallback
+ *    for when tiers 1-3 all failed to match, reached only when the release years disagree or either
+ *    side is missing one. This exists because ISBN ingestion ([com.hub.media.features.books.domain.
+ *    AddBookByIsbnUseCase] via [com.hub.media.features.books.network.OpenLibraryClient]) stores the
+ *    scanned *edition*'s publish year, while [GoodreadsCsvImporter] deliberately prefers the
+ *    *work*'s `Original Publication Year` -- so the same book added by ISBN and later re-imported
+ *    from Goodreads can carry two different `release_year` values (a 2026 anniversary printing vs.
+ *    the 1926 original) and/or two different ISBNs (the scanned edition vs. whichever edition
+ *    Goodreads happened to catalog the shelved book under). Without this tier, such a book would
+ *    silently miss all three stronger tiers and be inserted as a brand-new duplicate -- exactly the
+ *    failure `DuplicatePolicy.MERGE` exists to prevent. This tier carries strictly more collision
+ *    risk than tier 3 (two unrelated books sharing only a title, with no year to disambiguate, are
+ *    now enough to match), so every match made *only* by this tier is additionally recorded as an
+ *    [ImportSummary.notes] entry naming the row, the matched title, and both release years -- never
+ *    silently applied. See [titleOnlyReviewNote].
  *
- * A row matching none of the three is always a fresh insert, regardless of [DuplicatePolicy].
+ * A row matching none of the four is always a fresh insert, regardless of [DuplicatePolicy].
  *
  * ### In-file duplicates (two rows in the same file sharing a key)
  * The three lookup tiers above are seeded from the pre-existing library, then **kept current as
@@ -137,8 +152,8 @@ public interface ImportUseCase {
  * `reading_logs_export.csv` rows reference a book via `media_id`. This use case always resolves
  * every library row *before* looking at any session row, building the complete set of "known"
  * media ids: every pre-existing book, every book this same import freshly inserts, **and** --
- * for a library row that matched an existing (or in-file) book via the isbn or title+year tier
- * rather than an exact `media_id` match -- both the matched book's real id *and* the file's own
+ * for a library row that matched an existing (or in-file) book via the isbn, title+year, or
+ * title-only tier rather than an exact `media_id` match -- both the matched book's real id *and* the file's own
  * `media_id` for that row. Without that second id, a `reading_logs_export.csv` row using the
  * file's `media_id` (the only id it can possibly reference) would be wrongly rejected as an
  * orphan even though its book demonstrably was imported, just under a different id. A session can
@@ -290,6 +305,7 @@ public class ImportDataUseCase(
                     sessionsMerged = sessionsMerged,
                     sessionsReplaced = sessionsReplaced,
                     rejections = rejections,
+                    notes = bookResolution.reviewNotes,
                 ),
             )
         } catch (e: Exception) {
@@ -358,7 +374,7 @@ public class ImportDataUseCase(
                     sessionsMerged = 0,
                     sessionsReplaced = 0,
                     rejections = bookResolution.rejections,
-                    notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE),
+                    notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE) + bookResolution.reviewNotes,
                 ),
             )
         } catch (e: Exception) {
@@ -389,6 +405,12 @@ public class ImportDataUseCase(
          * landed on rather than the (possibly different) id its own file row carried.
          */
         val resolvedMediaId: Map<String, String>,
+        /**
+         * One entry per row matched *only* by the title-only tier (see class KDoc, tier 4) -- never
+         * populated for a media_id/isbn/title+year match. Surfaced verbatim as
+         * [ImportSummary.notes] so a lower-confidence match is never silently applied (Finding 2).
+         */
+        val reviewNotes: List<String>,
     )
 
     /**
@@ -397,9 +419,9 @@ public class ImportDataUseCase(
      * per-[DuplicatePolicy] field rules, and insert/update construction documented in this class's
      * KDoc -- operating on already-parsed [LibraryRowParseResult]s rather than raw CSV text, which
      * is what makes it reusable across two completely different file formats. See this class's
-     * top-level KDoc for the matching precedence (`media_id` -> `isbn` -> `title`+`release_year`)
-     * and the per-policy field rules; nothing about that logic changed by being extracted here, only
-     * where it lives.
+     * top-level KDoc for the matching precedence (`media_id` -> `isbn` -> `title`+`release_year` ->
+     * `title` only) and the per-policy field rules; nothing about that logic changed by being
+     * extracted here, only where it lives.
      */
     private fun resolveBookRows(
         existingBooks: List<BookWithDetails>,
@@ -415,9 +437,15 @@ public class ImportDataUseCase(
             .mapNotNull { book -> book.details?.isbn?.takeIf { it.isNotBlank() }?.let { it to book } }
             .toMap(mutableMapOf())
         val byTitleYear = existingBooks.associateByTo(mutableMapOf()) { titleYearKey(it.mediaItem.title, it.mediaItem.releaseYear) }
+        // Tier 4 (title only, ignoring release_year) -- see class KDoc. Deliberately last resort:
+        // two different pre-existing books sharing a title would collide here (the later one wins
+        // the map entry), a strictly higher collision risk than tier 3's title+year pairing. Every
+        // match resolved *through this map* is reported via reviewNotes below, never applied silently.
+        val byTitleOnly = existingBooks.associateByTo(mutableMapOf()) { titleOnlyKey(it.mediaItem.title) }
         val currentIdentifiersByMediaId = existingIdentifiersByMediaId.toMutableMap()
         val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
         val resolvedMediaId = mutableMapOf<String, String>()
+        val reviewNotes = mutableListOf<String>()
 
         val rejections = mutableListOf<ImportRejection>()
         val inserts = mutableListOf<ImportBookInsert>()
@@ -427,7 +455,7 @@ public class ImportDataUseCase(
         var merged = 0
         var replaced = 0
 
-        // Records a book's current-as-of-this-file state into the three lookup tiers plus the
+        // Records a book's current-as-of-this-file state into the four lookup tiers plus the
         // identifier tracker, so a later row in the file that duplicates `id` sees this row's
         // result rather than either nothing (Finding 1) or a stale pre-import snapshot.
         fun registerCurrentState(
@@ -440,6 +468,7 @@ public class ImportDataUseCase(
             byMediaId[id] = state
             details.isbn?.takeIf { it.isNotBlank() }?.let { byIsbn[it] = state }
             byTitleYear[titleYearKey(mediaItem.title, mediaItem.releaseYear)] = state
+            byTitleOnly[titleOnlyKey(mediaItem.title)] = state
             currentIdentifiersByMediaId[id] = identifiers
         }
 
@@ -451,9 +480,17 @@ public class ImportDataUseCase(
 
                 is LibraryRowParseResult.Parsed -> {
                     val row = parsed.row
-                    val match = byMediaId[row.mediaId]
+                    val strongMatch = byMediaId[row.mediaId]
                         ?: row.isbn?.let(byIsbn::get)
                         ?: byTitleYear[titleYearKey(row.title, row.releaseYear)]
+                    // Tier 4 only runs when tiers 1-3 all failed -- reached when the release years
+                    // disagree (edition year vs. work year, Finding 2) or either side is missing one.
+                    val titleOnlyMatch = if (strongMatch == null) byTitleOnly[titleOnlyKey(row.title)] else null
+                    val match = strongMatch ?: titleOnlyMatch
+
+                    if (titleOnlyMatch != null) {
+                        reviewNotes += titleOnlyReviewNote(rowNumber, row.title, row.releaseYear, titleOnlyMatch.mediaItem.releaseYear)
+                    }
 
                     if (match == null) {
                         val insert = buildInsert(row)
@@ -465,8 +502,8 @@ public class ImportDataUseCase(
                     } else {
                         val matchedId = match.mediaItem.id
                         // Both ids are "known": the book's real id, and this row's own media_id,
-                        // which may differ from it (isbn/title+year tier) -- a session referencing
-                        // either must not be treated as an orphan (Finding 2).
+                        // which may differ from it (isbn/title+year/title-only tier) -- a session
+                        // referencing either must not be treated as an orphan (Finding 2).
                         knownMediaIds += matchedId
                         knownMediaIds += row.mediaId
                         resolvedMediaId[row.mediaId] = matchedId
@@ -491,11 +528,24 @@ public class ImportDataUseCase(
             }
         }
 
-        return BookRowResolution(inserts, updates, rejections, imported, skipped, merged, replaced, knownMediaIds, resolvedMediaId)
+        return BookRowResolution(inserts, updates, rejections, imported, skipped, merged, replaced, knownMediaIds, resolvedMediaId, reviewNotes)
     }
 
     private fun titleYearKey(title: String, releaseYear: Int?): String =
         "${title.trim().lowercase()}::${releaseYear ?: ""}"
+
+    private fun titleOnlyKey(title: String): String = title.trim().lowercase()
+
+    /**
+     * Human-readable note for a book-row resolved only by tier 4 (title-only, see class KDoc) --
+     * surfaced via [ImportSummary.notes] so the user can confirm this wasn't two different books
+     * sharing a title (Finding 2's "never silent" requirement).
+     */
+    private fun titleOnlyReviewNote(rowNumber: Int, importedTitle: String, importedYear: Int?, existingYear: Int?): String =
+        "Row $rowNumber: '$importedTitle' matched an existing book by title only, with no ISBN to confirm it -- " +
+            "release years disagree or are missing (existing: ${existingYear?.toString() ?: "unknown"}, " +
+            "imported: ${importedYear?.toString() ?: "unknown"}). Please verify this is the same book and not " +
+            "an accidental duplicate/incorrect merge before trusting the result."
 
     private fun buildInsert(row: ParsedLibraryRow): ImportBookInsert {
         val mediaItem = MediaItemEntity(

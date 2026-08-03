@@ -196,18 +196,26 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
 - **CSV export (Phase A — done)**: `library_export.csv` and `reading_logs_export.csv`, generated
   via a new `features/portability/` module (pure Kotlin CSV formatting + `ExportDataUseCase`) and
   written to user-picked locations from the Settings screen via SAF `ActivityResultContracts.
-  CreateDocument` (no new permission). Round-trips everything the schema holds — every
-  `MediaItemEntity`/`BookDetailsEntity`/`ExternalIdentifierEntity` field for books, every
-  `ReadingSessionEntity` field for sessions — including nullable `durationSeconds` (exports as an
-  empty field, never `0`), reading status, `finishedAt`, and formats (enums by name). Hand-rolled
-  RFC 4180 escaping, no CSV dependency. A `csv_schema_version` column on every row is the version
-  marker Phase B's importer will read. No schema change.
+  CreateDocument` (no new permission). Covers every `MediaItemEntity`/`BookDetailsEntity`/
+  `ExternalIdentifierEntity` field for books and every `ReadingSessionEntity` field for sessions —
+  including nullable `durationSeconds` (exports as an empty field, never `0`), reading status,
+  `finishedAt`, and formats (enums by name). Hand-rolled RFC 4180 escaping, no CSV dependency. A
+  `csv_schema_version` column on every row is the version marker Phase B's importer will read.
+  **`app_settings` (the key-value settings table added at schema v4) is not exported at all — it
+  has no row-per-book/session shape to fit into either CSV file — and any other data outside the
+  four entities above is likewise excluded. The CSV files are not a full database backup; the
+  `.sqlite` backup (Phase C below) is the only export that covers the whole database, `app_settings`
+  included.** No schema change.
 - **CSV import (done)**: the harder half. A hand-rolled RFC 4180 reader (`CsvReader`, not
   `split(",")`, handling quoted commas/quotes and embedded newlines as single fields) plus
   `CsvTableReader`'s structural validation (header/column-count/`csv_schema_version` compatibility
   — refuses a file newer than this build understands) sit under `ImportDataUseCase`, which
   supports an explicit, user-visible `DuplicatePolicy` (`SKIP`/`REPLACE`/**`MERGE`**) matching an
-  incoming book by `media_id`, then ISBN, then title+release-year as a last resort. MERGE only
+  incoming book by `media_id`, then ISBN, then title+release-year, then (PR review, second round)
+  title alone as a genuinely last resort — reached only when the release years disagree or either
+  side is missing one (see the `releaseYear` backlog item for why: ISBN ingestion stores an
+  edition's year, Goodreads import stores the work's year), with every title-only match surfaced in
+  `ImportSummary.notes` for the user to verify rather than applied silently. MERGE only
   backfills fields the existing row left null, never overwriting a value already set — exactly
   what a later Goodreads re-import needs to backfill fields the model doesn't have a home for yet
   (see that bullet below), without a staging table or blocking on Task 12. Every resolved
@@ -472,6 +480,22 @@ numbered task rather than left to be rediscovered.
   year silently mixes "when this work was written" with "when my copy was printed". Decide on one
   meaning and make both paths agree — and note that whichever is chosen, the *other* is genuinely
   useful information the schema has nowhere to put, so the real fix may be storing both.
+  **Update (PR review, second round):** this was also a duplicate-book hazard, not just a
+  display/sort inconsistency — `ImportDataUseCase`'s `media_id` → `isbn` → `title`+`release_year`
+  matching could miss all three tiers for the exact "same book, disagreeing years, and/or a
+  different edition's ISBN" case this bullet describes, silently inserting a second copy instead of
+  the `DuplicatePolicy.MERGE` backfill the user expects. Mitigated **without a schema change**: a
+  fourth, last-resort case-insensitive **title-only** matching tier now catches this (reached only
+  when the stronger tiers, including exact title+year, all fail), with every such match surfaced in
+  `ImportSummary.notes` for the user to verify (title-only matching has a real false-positive risk
+  — two unrelated books sharing a title, with no year or author to disambiguate — so it is reported,
+  never applied silently). This closes the silent-duplicate hazard but does not fix the underlying
+  ambiguity above: the **proper fix is still the schema change this bullet already called for** —
+  add a second nullable year column (e.g. `originalReleaseYear` alongside the existing
+  edition-oriented `releaseYear`) so both are stored, `ImportDataUseCase` can match on either, and
+  sort/filter can pick one deliberately instead of whichever import path happened to run last. Not
+  done this round because a schema bump was out of scope for this fix; revisit alongside whichever
+  future task next needs a schema version bump.
 - Bulk cover backfill across a whole library (Task 6 Phase E only implemented the per-book
   re-fetch affordance). The last-resort `?default=false` ISBN cover probe
   (`OpenLibraryIsbnCoverProbe`) that a backfill would lean on most heavily is ISBN-keyed and
