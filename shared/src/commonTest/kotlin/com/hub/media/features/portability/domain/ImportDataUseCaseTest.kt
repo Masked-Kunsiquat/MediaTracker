@@ -335,6 +335,156 @@ class ImportDataUseCaseTest {
         assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
     }
 
+    // ---- In-file duplicates: later rows must resolve against earlier rows from the SAME file ----
+
+    @Test
+    fun execute_inFileDuplicateByMediaId_doesNotAbortImport_skipPolicyKeepsFirstRow() = runTest {
+        val sharedMediaId = "shared-media-id"
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = sharedMediaId, title = "First Row"),
+                details = sampleBookDetails(mediaId = sharedMediaId, isbn = "9781111111111"),
+            ),
+            BookWithDetails(
+                // Same media_id as the row above -- a re-exported file can legitimately contain
+                // this (e.g. two edits of the same book queued in one export), and inserting both
+                // as fresh rows would collide on media_items' primary key (OnConflictStrategy.ABORT)
+                // and abort the ENTIRE atomic import, not just this one row.
+                mediaItem = sampleMediaItem(id = sharedMediaId, title = "Second Row (same media_id)"),
+                details = sampleBookDetails(mediaId = sharedMediaId, isbn = "9782222222222"),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result, "two rows sharing a media_id within one file must not abort the whole atomic import")
+        assertEquals(1, result.data.booksImported, "first row is a fresh insert")
+        assertEquals(1, result.data.booksSkipped, "second row must resolve against the first row this same import already added, not attempt a second insert")
+
+        val books = bookRepository.observeAllBooksWithDetails().first()
+        assertEquals(1, books.size, "must not end up with two rows sharing the same primary key")
+        assertEquals("First Row", books.single().mediaItem.title, "SKIP: earliest row in the file wins")
+    }
+
+    @Test
+    fun execute_inFileDuplicateByMediaId_replacePolicy_lastRowInFileWins() = runTest {
+        val sharedMediaId = "shared-media-id"
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = sharedMediaId, title = "First Row", releaseYear = 2000),
+                details = sampleBookDetails(mediaId = sharedMediaId, isbn = "9781111111111"),
+            ),
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = sharedMediaId, title = "Second Row", releaseYear = 2010),
+                details = sampleBookDetails(mediaId = sharedMediaId, isbn = "9782222222222"),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.REPLACE)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksImported)
+        assertEquals(1, result.data.booksReplaced)
+
+        val books = bookRepository.observeAllBooksWithDetails().first()
+        assertEquals(1, books.size)
+        val book = books.single()
+        assertEquals("Second Row", book.mediaItem.title, "REPLACE: last row in the file wins for managed fields")
+        assertEquals(2010, book.mediaItem.releaseYear)
+        assertEquals("9782222222222", book.details?.isbn)
+    }
+
+    @Test
+    fun execute_inFileDuplicateByIsbn_doesNotCreateTwoBooks() = runTest {
+        val sharedIsbn = "9783333333333"
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = "media-1", title = "First Copy"),
+                details = sampleBookDetails(mediaId = "media-1", isbn = sharedIsbn),
+            ),
+            BookWithDetails(
+                // Different media_id, same isbn -- without matching against rows already added by
+                // this same import, this would insert as a second, unrelated book despite the ISBN
+                // tier's whole purpose being to recognize re-imports of the same book.
+                mediaItem = sampleMediaItem(id = "media-2", title = "Second Copy"),
+                details = sampleBookDetails(mediaId = "media-2", isbn = sharedIsbn),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksImported)
+        assertEquals(1, result.data.booksSkipped, "second row shares an isbn with a row this same import already added -- must be treated as a duplicate")
+
+        val books = bookRepository.observeAllBooksWithDetails().first()
+        assertEquals(1, books.size, "a duplicate ISBN within the same file must not silently create two books")
+        assertEquals("media-1", books.single().mediaItem.id, "the fresh-inserted media_id (\"media-1\") is the one that actually exists")
+        assertEquals(null, bookRepository.getBookWithDetails("media-2"), "the second row's own media_id was never written as its own book")
+    }
+
+    // ---- Sessions must land on a book matched by isbn/title+year, not only an exact media_id ----
+
+    @Test
+    fun execute_sessionForBook_matchedByIsbn_isNotOrphaned_andRewrittenToMatchedBooksId() = runTest {
+        val existingMediaId = addBook(title = "Existing Book", isbn = "9784444444444", repository = bookRepository)
+
+        // The library row re-imports the SAME book under a different media_id than the one already
+        // in the database (e.g. a Goodreads-style import, or a restore where ids were regenerated)
+        // -- it must match the existing book via the isbn tier rather than insert a duplicate.
+        val fileMediaId = "file-own-media-id"
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = fileMediaId, title = "Existing Book (re-imported)"),
+                details = sampleBookDetails(mediaId = fileMediaId, isbn = "9784444444444"),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        // A real reading_logs_export.csv from the same source references the file's OWN media_id,
+        // not the pre-existing book's real (different) id.
+        val session = sampleReadingSession(mediaId = fileMediaId)
+        val logsCsv = ReadingLogCsvExporter.export(listOf(session))
+
+        val result = useCase.execute(libraryCsv, logsCsv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertTrue(result.data.rejections.isEmpty(), "session must not be rejected as an orphan just because its book matched by isbn under a different media_id")
+        assertEquals(1, result.data.sessionsImported)
+
+        val sessionsOnExistingBook = sessionRepository.observeSessionsForMedia(existingMediaId).first()
+        assertEquals(1, sessionsOnExistingBook.size, "session must be rewritten onto the existing book's real id")
+        assertEquals(session.id, sessionsOnExistingBook.single().id)
+
+        val sessionsOnFileMediaId = sessionRepository.observeSessionsForMedia(fileMediaId).first()
+        assertTrue(sessionsOnFileMediaId.isEmpty(), "session must not remain attached to the file's own media_id, which was never written as a book")
+    }
+
+    @Test
+    fun execute_sessionForBook_matchedByTitleAndYear_isNotOrphaned_andRewrittenToMatchedBooksId() = runTest {
+        val existingMediaId = addBook(title = "Foundation", releaseYear = 1951, isbn = null, repository = bookRepository)
+
+        val fileMediaId = "file-own-media-id"
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = fileMediaId, title = "FOUNDATION", releaseYear = 1951),
+                details = sampleBookDetails(mediaId = fileMediaId, isbn = null),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, emptyMap())
+
+        val session = sampleReadingSession(mediaId = fileMediaId)
+        val logsCsv = ReadingLogCsvExporter.export(listOf(session))
+
+        val result = useCase.execute(libraryCsv, logsCsv, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertTrue(result.data.rejections.isEmpty(), "session must not be rejected as an orphan just because its book matched by title+year under a different media_id")
+        assertEquals(1, result.data.sessionsImported)
+
+        val sessionsOnExistingBook = sessionRepository.observeSessionsForMedia(existingMediaId).first()
+        assertEquals(1, sessionsOnExistingBook.size, "session must be rewritten onto the existing book's real id")
+        assertEquals(session.id, sessionsOnExistingBook.single().id)
+    }
+
     @Test
     fun execute_orphanSession_isSkippedAndReported_otherRowsStillImport() = runTest {
         val mediaId = addBook(title = "Known Book", repository = bookRepository)

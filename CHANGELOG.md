@@ -69,6 +69,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     session whose `media_id` matches neither the existing library nor the library file being
     imported alongside it is counted as a rejection with a reason, while every other valid row
     still imports.
+  - **Fixed: two rows in the same file sharing a `media_id`/ISBN/title+year no longer collide.**
+    Duplicate matching now also resolves each row against every earlier row already added *by
+    this same import*, not only against what was already in the database. Previously, two rows
+    sharing a `media_id` within one file both inserted as "fresh," which collided on the
+    `media_items` primary key and aborted the **entire** atomic import; two rows sharing only an
+    ISBN silently created two separate books. In-file duplicates now follow the exact same
+    per-`DuplicatePolicy` field rules as a duplicate against an existing book (SKIP: earliest row
+    in the file wins; REPLACE: last row wins; MERGE: first row to set a field wins), counted with
+    the same imported/skipped/merged/replaced totals already shown.
+  - **Fixed: sessions no longer orphaned when their book matched by ISBN or title+year instead of
+    `media_id`.** A `reading_logs_export.csv` row references its book by the *file's own*
+    `media_id`, but when the matching library row instead landed on an existing (or in-file) book
+    via the ISBN or title+year tier, that file `media_id` was never recognized, so the session was
+    wrongly rejected as an orphan. Sessions are now also written under the book's actual resolved
+    id, so they land on the right book instead of being dropped.
   - **The `PROVIDER:id|...` packed-identifier hazard is handled, not assumed away**: each `|`
     segment splits on only its *first* `:`, so a provider id containing `:` round-trips correctly;
     a segment with no `:` at all (the fallout of an id containing a literal `|`, which this

@@ -77,6 +77,34 @@ public interface ImportUseCase {
  *
  * A row matching none of the three is always a fresh insert, regardless of [DuplicatePolicy].
  *
+ * ### In-file duplicates (two rows in the same file sharing a key)
+ * The three lookup tiers above are seeded from the pre-existing library, then **kept current as
+ * each row resolves** so a later row is matched against every earlier row *from this same file*
+ * too, not only against what was already in the database before the import started. This matters
+ * because book inserts use `OnConflictStrategy.ABORT`: two rows sharing a `media_id` that were
+ * both (wrongly) treated as fresh inserts would collide on the `media_items.id` primary key and
+ * abort the *entire* atomic import, and two rows sharing an `isbn` would silently create two
+ * separate books despite the ISBN tier's whole purpose being to recognize them as the same one.
+ *
+ * An in-file duplicate is a genuinely different situation from a collision with an existing
+ * library book -- neither row has been written yet, so there is no "device-owned" copy to
+ * protect -- but this deliberately reuses the *exact same* per-[DuplicatePolicy] field rules
+ * below rather than inventing a fourth behavior, applied to "the row's resolved state so far in
+ * this file" instead of "the row already in the database":
+ * - [DuplicatePolicy.SKIP]: the earliest row in the file to claim a key wins; every later row
+ *   sharing that key is skipped and left untouched, exactly as SKIP treats a pre-existing book.
+ * - [DuplicatePolicy.REPLACE]: each later duplicate overwrites the managed fields again, so the
+ *   **last** row in the file wins for those fields (createdAt/coverImageHash still only ever come
+ *   from the original insert -- REPLACE never touches them, in-file or not).
+ * - [DuplicatePolicy.MERGE]: each later duplicate only backfills fields still blank, so the
+ *   **first** row in the file to set a field wins for that field -- the opposite of REPLACE.
+ *
+ * These resolutions are counted with the exact same imported/skipped/merged/replaced buckets
+ * [ImportSummary] already has -- an in-file duplicate is not a new bucket, it is reported
+ * identically to a duplicate against an existing book -- so the four counts always sum to the
+ * number of valid (non-rejected) rows in the file, and the summary never implies more books were
+ * freshly inserted than the file could actually have contributed.
+ *
  * ### What each [DuplicatePolicy] does, field by field
  * - [DuplicatePolicy.SKIP]: the existing row is left completely untouched.
  * - [DuplicatePolicy.REPLACE]: every field this importer manages (title, releaseYear,
@@ -107,16 +135,30 @@ public interface ImportUseCase {
  *
  * ### Ordering and orphan sessions
  * `reading_logs_export.csv` rows reference a book via `media_id`. This use case always resolves
- * every library row (building the complete set of "known" media ids -- every pre-existing book,
- * plus every book this same import inserts or matches) *before* looking at any session row, so a
- * session can never be wrongly orphaned just because its book happened to be processed later in
- * the same import. A session whose `media_id` isn't in that known set (the book exists in neither
- * the current database nor the library file being imported alongside it) is **skipped, and
- * reported** as an [ImportRejection] -- not silently dropped, and not a reason to fail the whole
- * import. Failing the entire import over one dangling session would be disproportionate to a
- * single data-quality issue (e.g. the user only has a reading-logs export without its matching
- * library export, or that session's book row was itself rejected above); skip-with-report keeps
- * every other valid row importing while still surfacing the problem.
+ * every library row *before* looking at any session row, building the complete set of "known"
+ * media ids: every pre-existing book, every book this same import freshly inserts, **and** --
+ * for a library row that matched an existing (or in-file) book via the isbn or title+year tier
+ * rather than an exact `media_id` match -- both the matched book's real id *and* the file's own
+ * `media_id` for that row. Without that second id, a `reading_logs_export.csv` row using the
+ * file's `media_id` (the only id it can possibly reference) would be wrongly rejected as an
+ * orphan even though its book demonstrably was imported, just under a different id. A session can
+ * never be wrongly orphaned just because its book happened to be processed later in the same
+ * import, or matched under a different id than the file used. A session whose `media_id` isn't in
+ * that known set (the book exists in neither the current database nor the library file being
+ * imported alongside it) is **skipped, and reported** as an [ImportRejection] -- not silently
+ * dropped, and not a reason to fail the whole import. Failing the entire import over one dangling
+ * session would be disproportionate to a single data-quality issue (e.g. the user only has a
+ * reading-logs export without its matching library export, or that session's book row was itself
+ * rejected above); skip-with-report keeps every other valid row importing while still surfacing
+ * the problem.
+ *
+ * Because a session can be "known" under an id that isn't the book's real id (the isbn/title+year
+ * match case above), a fresh-insert or REPLACE session write always rewrites `mediaId` to the
+ * book's actual resolved id before it is queued -- inserting or replacing with the file's raw
+ * `media_id` in that case would either violate the `reading_sessions.mediaId` foreign key (no book
+ * row exists under that id) or silently attach the session to an unrelated book that happens to
+ * share that id. A MERGE onto an *existing* session never touches `mediaId` (see below) -- that
+ * session already points at a real book from a previous import.
  *
  * Sessions themselves are matched for duplicates by `session_id` (their own primary key) using the
  * same [DuplicatePolicy] as books: MERGE backfills only `durationSeconds`/`deltaPages`/`notes`
@@ -201,15 +243,21 @@ public class ImportDataUseCase(
                                     "session skipped",
                             )
                         } else {
+                            // The book this session's own media_id resolved to -- may differ from
+                            // row.mediaId when the library row matched an existing/in-file book via
+                            // the isbn or title+year tier (see class KDoc, "Ordering and orphan
+                            // sessions"). Falls back to row.mediaId itself for a book that was
+                            // already in the database and untouched by this import's library file.
+                            val resolvedMediaId = bookResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
                             val existing = existingSessionsById[row.sessionId]
                             if (existing == null) {
-                                sessionInserts += toSessionEntity(row)
+                                sessionInserts += toSessionEntity(row, resolvedMediaId)
                                 sessionsImported++
                             } else {
                                 when (duplicatePolicy) {
                                     DuplicatePolicy.SKIP -> sessionsSkipped++
                                     DuplicatePolicy.REPLACE -> {
-                                        sessionUpdates += toSessionEntity(row)
+                                        sessionUpdates += toSessionEntity(row, resolvedMediaId)
                                         sessionsReplaced++
                                     }
                                     DuplicatePolicy.MERGE -> {
@@ -327,8 +375,20 @@ public class ImportDataUseCase(
         val skipped: Int,
         val merged: Int,
         val replaced: Int,
-        /** Every media id known after this resolution: pre-existing books plus every fresh insert. */
+        /**
+         * Every media id known after this resolution: pre-existing books, every fresh insert, and
+         * -- for a row that matched an existing/in-file book on the isbn or title+year tier -- both
+         * the matched book's real id and the row's own `media_id` (see class KDoc, "Ordering and
+         * orphan sessions").
+         */
         val knownMediaIds: Set<String>,
+        /**
+         * Every library row's own `media_id` (as it appeared in the file) mapped to the id it
+         * actually resolved to in the database: itself for a fresh insert, or the matched book's
+         * real id for a duplicate. Used to rewrite a session's `mediaId` onto the book it actually
+         * landed on rather than the (possibly different) id its own file row carried.
+         */
+        val resolvedMediaId: Map<String, String>,
     )
 
     /**
@@ -347,12 +407,17 @@ public class ImportDataUseCase(
         parseResults: List<LibraryRowParseResult>,
         duplicatePolicy: DuplicatePolicy,
     ): BookRowResolution {
-        val byMediaId = existingBooks.associateBy { it.mediaItem.id }
+        // Seeded from the pre-existing library, then kept current as each row below resolves, so a
+        // later row in *this same file* matches an earlier one too -- see class KDoc, "In-file
+        // duplicates" -- not only rows already in the database before this import started.
+        val byMediaId = existingBooks.associateByTo(mutableMapOf()) { it.mediaItem.id }
         val byIsbn = existingBooks
             .mapNotNull { book -> book.details?.isbn?.takeIf { it.isNotBlank() }?.let { it to book } }
-            .toMap()
-        val byTitleYear = existingBooks.associateBy { titleYearKey(it.mediaItem.title, it.mediaItem.releaseYear) }
+            .toMap(mutableMapOf())
+        val byTitleYear = existingBooks.associateByTo(mutableMapOf()) { titleYearKey(it.mediaItem.title, it.mediaItem.releaseYear) }
+        val currentIdentifiersByMediaId = existingIdentifiersByMediaId.toMutableMap()
         val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
+        val resolvedMediaId = mutableMapOf<String, String>()
 
         val rejections = mutableListOf<ImportRejection>()
         val inserts = mutableListOf<ImportBookInsert>()
@@ -361,6 +426,22 @@ public class ImportDataUseCase(
         var skipped = 0
         var merged = 0
         var replaced = 0
+
+        // Records a book's current-as-of-this-file state into the three lookup tiers plus the
+        // identifier tracker, so a later row in the file that duplicates `id` sees this row's
+        // result rather than either nothing (Finding 1) or a stale pre-import snapshot.
+        fun registerCurrentState(
+            id: String,
+            mediaItem: MediaItemEntity,
+            details: BookDetailsEntity,
+            identifiers: List<ExternalIdentifierEntity>,
+        ) {
+            val state = BookWithDetails(mediaItem, details)
+            byMediaId[id] = state
+            details.isbn?.takeIf { it.isNotBlank() }?.let { byIsbn[it] = state }
+            byTitleYear[titleYearKey(mediaItem.title, mediaItem.releaseYear)] = state
+            currentIdentifiersByMediaId[id] = identifiers
+        }
 
         parseResults.forEachIndexed { index, parsed ->
             val rowNumber = index + 2
@@ -375,21 +456,34 @@ public class ImportDataUseCase(
                         ?: byTitleYear[titleYearKey(row.title, row.releaseYear)]
 
                     if (match == null) {
-                        inserts += buildInsert(row)
+                        val insert = buildInsert(row)
+                        inserts += insert
                         imported++
                         knownMediaIds += row.mediaId
+                        resolvedMediaId[row.mediaId] = row.mediaId
+                        registerCurrentState(row.mediaId, insert.mediaItem, insert.details, insert.identifiers)
                     } else {
-                        knownMediaIds += match.mediaItem.id
+                        val matchedId = match.mediaItem.id
+                        // Both ids are "known": the book's real id, and this row's own media_id,
+                        // which may differ from it (isbn/title+year tier) -- a session referencing
+                        // either must not be treated as an orphan (Finding 2).
+                        knownMediaIds += matchedId
+                        knownMediaIds += row.mediaId
+                        resolvedMediaId[row.mediaId] = matchedId
                         when (duplicatePolicy) {
                             DuplicatePolicy.SKIP -> skipped++
                             DuplicatePolicy.REPLACE -> {
-                                updates += buildReplace(match, row)
+                                val update = buildReplace(match, row)
+                                updates += update
                                 replaced++
+                                registerCurrentState(matchedId, update.mediaItem, update.details, update.identifiers)
                             }
                             DuplicatePolicy.MERGE -> {
-                                val existingIdentifiers = existingIdentifiersByMediaId[match.mediaItem.id].orEmpty()
-                                updates += buildMerge(match, row, existingIdentifiers)
+                                val existingIdentifiers = currentIdentifiersByMediaId[matchedId].orEmpty()
+                                val update = buildMerge(match, row, existingIdentifiers)
+                                updates += update
                                 merged++
+                                registerCurrentState(matchedId, update.mediaItem, update.details, existingIdentifiers + update.identifiers)
                             }
                         }
                     }
@@ -397,7 +491,7 @@ public class ImportDataUseCase(
             }
         }
 
-        return BookRowResolution(inserts, updates, rejections, imported, skipped, merged, replaced, knownMediaIds)
+        return BookRowResolution(inserts, updates, rejections, imported, skipped, merged, replaced, knownMediaIds, resolvedMediaId)
     }
 
     private fun titleYearKey(title: String, releaseYear: Int?): String =
@@ -480,9 +574,9 @@ public class ImportDataUseCase(
         return ImportBookUpdate(mediaItem, details, newIdentifiers, replaceIdentifiers = false)
     }
 
-    private fun toSessionEntity(row: ParsedSessionRow): ReadingSessionEntity = ReadingSessionEntity(
+    private fun toSessionEntity(row: ParsedSessionRow, mediaId: String): ReadingSessionEntity = ReadingSessionEntity(
         id = row.sessionId,
-        mediaId = row.mediaId,
+        mediaId = mediaId,
         timestampStart = row.timestampStart,
         timestampEnd = row.timestampEnd,
         durationSeconds = row.durationSeconds,
