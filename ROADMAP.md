@@ -476,8 +476,22 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
     `?default=false` ISBN probe (`OpenLibraryIsbnCoverProbe`) is ISBN-keyed and therefore subject
     to Open Library's 100-requests-per-IP-per-5-minutes cover limit, unlike the ID-keyed fetches
     `OpenLibraryClient` normally uses. A naive loop over `RefetchCoverUseCase` would trip it partway
-    and look like a broken feature. Needs rate limiting, resumability, and honest partial-progress
-    reporting rather than an all-or-nothing run.
+    and look like a broken feature.
+  - **One limiter, shared by every ISBN-keyed probe — not a bulk-only one.** The quota is per IP,
+    so a backfill and the interactive per-book re-fetch draw on the *same* budget: giving the bulk
+    path its own limiter while the interactive path stays unthrottled means a user tapping
+    "re-fetch cover" during a backfill can silently push the total over the limit, and the backfill
+    takes the blame. The limiter belongs at the `OpenLibraryIsbnCoverProbe` layer that both call
+    paths already funnel through, tracking consumed quota across both. Requirements:
+    - **Shared quota tracking** across bulk and interactive callers.
+    - **Honour 429s with backoff** rather than treating a rate-limit response as "this book has no
+      cover" — the current probe maps every non-2xx to "no cover", which would permanently mark
+      books coverless for what is really a temporary refusal. This is the one place the existing
+      probe's behaviour is actively wrong for bulk use and must change, not just be wrapped.
+    - **Persisted resume state**, so a backfill interrupted by the quota, by cancellation, or by
+      process death continues from where it stopped instead of restarting or being abandoned.
+      Partial progress must be reported honestly ("312 of 480 done, paused until the quota
+      resets"), never surfaced as an all-or-nothing failure.
   - Needs progress and cancellation UI — this is a long-running network operation over a whole
     library, not a single tap. Consider offering it directly after an import completes, since that
     is the moment the need is obvious, as well as from Settings for a one-off pass.
@@ -487,8 +501,22 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
   with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
   bulk reading-status change is the obvious companion and probably cheap once selection exists.
   Deletion of several books at once deserves the same confirmation care the single-book delete
-  already has, and interacts with the orphaned-cover-files backlog item (deleting many books at
-  once leaves that many content-addressed covers behind).
+  already has.
+  - **Cover cleanup must be decided explicitly, not left implicit.** Covers are stored
+    content-addressed (SHA-256 of the image bytes), so two books with the same cover share **one
+    file** — deleting a book therefore cannot simply delete its cover file without checking whether
+    anything else still references it. Bulk delete multiplies both the risk and the waste: delete
+    the file naively and a surviving book loses its cover; delete nothing and a bulk purge strands
+    that many files forever. Pick one and say so:
+    - **Reference-aware removal** through `LocalImageStorageManager`: delete a cover only when no
+      remaining `MediaItemEntity` references that hash. This also retires the standing
+      orphaned-cover-files backlog item rather than growing it.
+    - **Or explicitly defer** cleanup, and document the resulting disk growth as accepted — but
+      then say it in the release notes, because "deleted books still cost storage" is surprising.
+  - Tests must cover **both** directions, since each failure mode is invisible in the other's test:
+    a shared cover file that must **survive** deletion of one of its referencing books, and an
+    unreferenced file that must actually **be removed**. A cleanup that only tests the second
+    passes while silently breaking surviving books' covers.
 
 ## Blocked on external changes
 
