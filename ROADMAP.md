@@ -623,14 +623,26 @@ numbered task rather than left to be rediscovered.
 - **No book rating field.** The schema has nothing to hold a per-book rating today, which is also
   why the Goodreads import (Task 8) has no home for the `My Rating` column. Worth considering on
   its own merits independent of that import, not only as an import-completeness gap.
-- **Normalized authors table** (promote `book_details.authors` off Task 9 Phase A's single
-  denormalized `String` column). A contained follow-up, not urgent: the current column already
-  captures every author this app can source, and nothing today needs per-author identity — this
-  only becomes worth doing once "tap an author → see every other book by them" is an actual
-  feature, at which point the table can be *derived* from the strings already stored (parse on
-  `AUTHOR_SEPARATOR`, dedupe by normalized name, backfill a join table) rather than requiring a
-  fresh migration from a blank column. See `BookDetailsEntity.authors`'s KDoc for the full
-  denormalized-vs-table rationale.
+- **Normalized `people` table with role-qualified relations** — the eventual right shape, and a
+  better target than the "authors table" this note originally proposed. A `people` table plus a
+  `person ↔ media ↔ role` join generalizes past authors to narrators and cover artists, and then
+  to directors and actors when Task 13 adds movies/TV; an authors-only table would have to be
+  rebuilt at that point. Promotes `book_details.authors` off Task 9 Phase A's single denormalized
+  `String` column.
+  - Not urgent, and deliberately not done first: the column already captures every name this app
+    can source, and Phase A's priority was that author data was being *destroyed* on every
+    ingestion, so capturing something immediately beat capturing it perfectly. The choice is
+    reversible in the direction that matters — people rows can be *derived* from the stored
+    strings (split on `AUTHOR_SEPARATOR`, dedupe by normalized name, backfill the join table),
+    whereas names never stored are unrecoverable.
+  - Note the table does **not** solve name identity by itself: providers disagree on formatting
+    ("J.R.R. Tolkien" vs Goodreads' `Author l-f` "Tolkien, J. R. R."), so establishing that two
+    strings are one person is fuzzy-matching work that has to happen on the way in either way.
+    That work — not the schema — is the real cost, which is why it waits until a feature needs
+    per-person identity ("tap an author → every other book by them").
+  - Sequencing note: worth doing **before or with Task 13**, since movies/TV will otherwise
+    invent their own parallel credits model. See `BookDetailsEntity.authors`'s KDoc for the
+    per-column rationale.
 
 ## Unscheduled features
 
