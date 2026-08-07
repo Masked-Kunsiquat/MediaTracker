@@ -12,8 +12,13 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 9 — Search & discovery** ← in progress (Phase A done: authors + local search)
-2. Task 14 — Bulk operations & cover backfill
+1. **Task 14 — Bulk operations & cover backfill** ← next
+2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+   search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
+   manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
+   providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
+   rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
+   retroactively for books added before it.
 3. Task 10 — Re-read modeling (ratings land here)
 4. Task 11 — Analytics & stats revamp
 5. Task 12 — Genre tracking
