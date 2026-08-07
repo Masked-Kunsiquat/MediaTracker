@@ -68,6 +68,7 @@ class LibraryCsvExporterTest {
             status = ReadingStatus.FINISHED,
             finishedAt = finishedAt,
             trackingMode = TrackingMode.PAGES,
+            authors = "Ann Sample Author",
         )
         val identifiers = listOf(
             ExternalIdentifierEntity("media-1", IdentifierProvider.ISBN, "9780000000001"),
@@ -85,19 +86,20 @@ class LibraryCsvExporterTest {
         assertEquals("media-1", fields[1])
         assertEquals("BOOK", fields[2])
         assertEquals("A Sample Title", fields[3])
-        assertEquals("2019", fields[4])
-        assertEquals("14.99", fields[5])
-        assertEquals(createdAt.toString(), fields[6])
-        assertTrue(ISO_INSTANT_REGEX.matches(fields[6]), "created_at should be ISO-8601 UTC: ${fields[6]}")
-        assertEquals("deadbeef.jpg", fields[7])
-        assertEquals("9780000000001", fields[8])
-        assertEquals("HARDCOVER", fields[9])
-        assertEquals("342", fields[10])
-        assertEquals("FINISHED", fields[11])
-        assertEquals(finishedAt.toString(), fields[12])
-        assertTrue(ISO_INSTANT_REGEX.matches(fields[12]), "finished_at should be ISO-8601 UTC: ${fields[12]}")
-        assertEquals("PAGES", fields[13])
-        assertEquals("ISBN:9780000000001|OPEN_LIBRARY:OL999999M", fields[14])
+        assertEquals("Ann Sample Author", fields[4])
+        assertEquals("2019", fields[5])
+        assertEquals("14.99", fields[6])
+        assertEquals(createdAt.toString(), fields[7])
+        assertTrue(ISO_INSTANT_REGEX.matches(fields[7]), "created_at should be ISO-8601 UTC: ${fields[7]}")
+        assertEquals("deadbeef.jpg", fields[8])
+        assertEquals("9780000000001", fields[9])
+        assertEquals("HARDCOVER", fields[10])
+        assertEquals("342", fields[11])
+        assertEquals("FINISHED", fields[12])
+        assertEquals(finishedAt.toString(), fields[13])
+        assertTrue(ISO_INSTANT_REGEX.matches(fields[13]), "finished_at should be ISO-8601 UTC: ${fields[13]}")
+        assertEquals("PAGES", fields[14])
+        assertEquals("ISBN:9780000000001|OPEN_LIBRARY:OL999999M", fields[15])
     }
 
     @Test
@@ -125,13 +127,14 @@ class LibraryCsvExporterTest {
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
 
-        assertEquals("", fields[4]) // release_year
-        assertEquals("", fields[5]) // purchase_price
-        assertEquals("", fields[7]) // cover_image_hash
-        assertEquals("", fields[8]) // isbn
-        assertEquals("", fields[10]) // total_pages
-        assertEquals("", fields[12]) // finished_at
-        assertEquals("", fields[14]) // external_identifiers
+        assertEquals("", fields[4]) // authors
+        assertEquals("", fields[5]) // release_year
+        assertEquals("", fields[6]) // purchase_price
+        assertEquals("", fields[8]) // cover_image_hash
+        assertEquals("", fields[9]) // isbn
+        assertEquals("", fields[11]) // total_pages
+        assertEquals("", fields[13]) // finished_at
+        assertEquals("", fields[15]) // external_identifiers
     }
 
     @Test
@@ -151,12 +154,13 @@ class LibraryCsvExporterTest {
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
 
-        assertEquals("", fields[8]) // isbn
-        assertEquals("", fields[9]) // format
-        assertEquals("", fields[10]) // total_pages
-        assertEquals("", fields[11]) // status
-        assertEquals("", fields[12]) // finished_at
-        assertEquals("", fields[13]) // tracking_mode
+        assertEquals("", fields[4]) // authors
+        assertEquals("", fields[9]) // isbn
+        assertEquals("", fields[10]) // format
+        assertEquals("", fields[11]) // total_pages
+        assertEquals("", fields[12]) // status
+        assertEquals("", fields[13]) // finished_at
+        assertEquals("", fields[14]) // tracking_mode
     }
 
     @Test
@@ -198,9 +202,9 @@ class LibraryCsvExporterTest {
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
         assertEquals(MediaType.BOOK.name, fields[2])
-        assertEquals(BookFormat.PAPERBACK.name, fields[9])
-        assertEquals(ReadingStatus.DNF.name, fields[11])
-        assertEquals(TrackingMode.PERCENT.name, fields[13])
+        assertEquals(BookFormat.PAPERBACK.name, fields[10])
+        assertEquals(ReadingStatus.DNF.name, fields[12])
+        assertEquals(TrackingMode.PERCENT.name, fields[14])
     }
 
     private fun bookWithDetails(

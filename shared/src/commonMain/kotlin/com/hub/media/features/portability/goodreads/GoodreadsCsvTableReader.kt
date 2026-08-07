@@ -5,14 +5,18 @@ import com.hub.media.features.portability.csv.CsvReader
 
 /**
  * The `goodreads_library_export.csv` column names this importer looks for, by exact header text
- * (ROADMAP Task 8 Phase D). Verified against Goodreads' actual export (approximately): `Book Id,
- * Title, Author, Author l-f, Additional Authors, ISBN, ISBN13, My Rating, Average Rating,
- * Publisher, Binding, Number of Pages, Year Published, Original Publication Year, Date Read, Date
- * Added, Bookshelves, Bookshelves with positions, Exclusive Shelf, My Review, Spoiler, Private
- * Notes, Read Count, Owned Copies` -- every column not named here (`Book Id`, `Author`, `Author
- * l-f`, `Additional Authors`, `Average Rating`, `Publisher`, `Bookshelves with positions`, `My
- * Review`, `Spoiler`, `Private Notes`, `Owned Copies`) is simply never looked up, exactly as
- * tolerated for any other unknown/extra column (see [GoodreadsCsvTableReader]'s KDoc).
+ * (ROADMAP Task 8 Phase D; `Author`/`Additional Authors` added ROADMAP Task 9 Phase A). Verified
+ * against Goodreads' actual export (approximately): `Book Id, Title, Author, Author l-f,
+ * Additional Authors, ISBN, ISBN13, My Rating, Average Rating, Publisher, Binding, Number of
+ * Pages, Year Published, Original Publication Year, Date Read, Date Added, Bookshelves,
+ * Bookshelves with positions, Exclusive Shelf, My Review, Spoiler, Private Notes, Read Count,
+ * Owned Copies` -- every column not named here (`Book Id`, `Author l-f`, `Average Rating`,
+ * `Publisher`, `Bookshelves with positions`, `My Review`, `Spoiler`, `Private Notes`, `Owned
+ * Copies`) is simply never looked up, exactly as tolerated for any other unknown/extra column (see
+ * [GoodreadsCsvTableReader]'s KDoc). **`Author l-f` is deliberately never looked up either**, even
+ * though it now has a home ([com.hub.media.core.database.entities.BookDetailsEntity.authors]) --
+ * see [GoodreadsCsvImporter]'s KDoc for why it would just be a redundant, differently-formatted
+ * copy of [AUTHOR].
  */
 public object GoodreadsColumns {
     public const val TITLE: String = "Title"
@@ -25,6 +29,21 @@ public object GoodreadsColumns {
     public const val EXCLUSIVE_SHELF: String = "Exclusive Shelf"
     public const val DATE_READ: String = "Date Read"
     public const val DATE_ADDED: String = "Date Added"
+
+    /**
+     * The book's primary author, in `"First Last"` display order (ROADMAP Task 9 Phase A) --
+     * [GoodreadsCsvImporter] combines this with [ADDITIONAL_AUTHORS] into
+     * [com.hub.media.core.database.entities.BookDetailsEntity.authors]. See that importer's KDoc.
+     */
+    public const val AUTHOR: String = "Author"
+
+    /**
+     * Every co-author beyond [AUTHOR], comma-separated by Goodreads itself (ROADMAP Task 9 Phase
+     * A) -- e.g. `"Neil Gaiman, Terry Pratchett"`. [GoodreadsCsvImporter] splits this on `,` (this
+     * column's own separator, distinct from [com.hub.media.core.database.entities.BookDetailsEntity.AUTHOR_SEPARATOR]
+     * this app re-joins the combined list with) and appends each name after [AUTHOR].
+     */
+    public const val ADDITIONAL_AUTHORS: String = "Additional Authors"
 
     /** No home in the schema yet -- see [GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE]. */
     public const val MY_RATING: String = "My Rating"

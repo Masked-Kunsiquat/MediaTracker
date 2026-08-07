@@ -30,6 +30,7 @@ class LibraryCsvImporterTest {
         mediaId: String = SAMPLE_MEDIA_ID,
         type: String = "BOOK",
         title: String = "Dune",
+        authors: String = "Frank Herbert",
         releaseYear: String = "1965",
         purchasePrice: String = "9.99",
         createdAt: String = "2024-01-01T00:00:00Z",
@@ -42,7 +43,7 @@ class LibraryCsvImporterTest {
         trackingMode: String = "PAGES",
         externalIdentifiers: String = "ISBN:9780441013593",
     ): List<String> = listOf(
-        CSV_SCHEMA_VERSION.toString(), mediaId, type, title, releaseYear, purchasePrice, createdAt,
+        CSV_SCHEMA_VERSION.toString(), mediaId, type, title, authors, releaseYear, purchasePrice, createdAt,
         coverImageHash, isbn, format, totalPages, status, finishedAt, trackingMode, externalIdentifiers,
     )
 
@@ -53,6 +54,7 @@ class LibraryCsvImporterTest {
         val row = result.row
         assertEquals(SAMPLE_MEDIA_ID, row.mediaId)
         assertEquals("Dune", row.title)
+        assertEquals("Frank Herbert", row.authors)
         assertEquals(1965, row.releaseYear)
         assertEquals(9.99, row.purchasePrice)
         assertEquals("9780441013593", row.isbn)
@@ -162,6 +164,7 @@ class LibraryCsvImporterTest {
     fun parseRow_blankOptionalFields_parseAsNullWithDefaults() {
         val result = LibraryCsvImporter.parseRow(
             validRow(
+                authors = "",
                 releaseYear = "",
                 purchasePrice = "",
                 isbn = "",
@@ -175,6 +178,7 @@ class LibraryCsvImporterTest {
         )
         assertIs<LibraryRowParseResult.Parsed>(result)
         val row = result.row
+        assertEquals(null, row.authors)
         assertEquals(null, row.releaseYear)
         assertEquals(null, row.purchasePrice)
         assertEquals(null, row.isbn)
@@ -220,5 +224,45 @@ class LibraryCsvImporterTest {
     fun parseRow_identifierWithEmptyId_isRejected() {
         val result = LibraryCsvImporter.parseRow(validRow(externalIdentifiers = "ISBN:"))
         assertIs<LibraryRowParseResult.Rejected>(result)
+    }
+
+    // --- authors (schema v5 / CSV v2, ROADMAP Task 9 Phase A) -------------------------------------
+
+    @Test
+    fun parseRow_authorsPopulated_passedThroughVerbatim() {
+        val result = LibraryCsvImporter.parseRow(validRow(authors = "Ann Sample Author; B. Other Author"))
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        assertEquals("Ann Sample Author; B. Other Author", result.row.authors)
+    }
+
+    @Test
+    fun parseRow_blankAuthors_parsesAsNull() {
+        val result = LibraryCsvImporter.parseRow(validRow(authors = ""))
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        assertEquals(null, result.row.authors)
+    }
+
+    // --- padLegacyV1Row (ROADMAP Task 9 Phase A: a v1 file must still import) ---------------------
+
+    @Test
+    fun padLegacyV1Row_insertsBlankAuthorsAtCorrectPosition() {
+        val v1Row = listOf(
+            "1", SAMPLE_MEDIA_ID, "BOOK", "Dune", "1965", "9.99", "2024-01-01T00:00:00Z",
+            "", "9780441013593", "PAPERBACK", "412", "READING", "", "PAGES", "ISBN:9780441013593",
+        )
+        val padded = LibraryCsvImporter.padLegacyV1Row(v1Row)
+
+        // Same 15 values, now 16 fields long, with a blank inserted right after "Dune" (index 3).
+        assertEquals(16, padded.size)
+        assertEquals("Dune", padded[3])
+        assertEquals("", padded[4])
+        assertEquals("1965", padded[5])
+        assertEquals("ISBN:9780441013593", padded.last())
+
+        // And the padded row parses exactly like a genuine blank-authors v2 row would.
+        val result = LibraryCsvImporter.parseRow(padded)
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        assertEquals(null, result.row.authors)
+        assertEquals("Dune", result.row.title)
     }
 }

@@ -2,6 +2,7 @@ package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
@@ -75,6 +76,11 @@ public class AddBookByIsbnUseCase(
      * known (`PAGES` when known, `PERCENT` otherwise), which is exactly the signal available at
      * this call site, so there is nothing for this use case to add on top of that default.
      *
+     * [BookMetadata.authors] (schema v5, ROADMAP Task 9 Phase A) IS passed explicitly, via
+     * [joinAuthors] — both providers already resolve author names (Open Library makes an extra
+     * `/authors/{key}` round-trip specifically for this), so keeping them is simply a matter of not
+     * discarding data already being paid for in network calls.
+     *
      * @param isbn Raw ISBN-10 or ISBN-13, with or without hyphens/spaces.
      * @return [Resource.Success] with the new media ID, or [Resource.Error] describing why
      *   ingestion failed. Never throws.
@@ -102,6 +108,7 @@ public class AddBookByIsbnUseCase(
             isbn = normalizedIsbn,
             coverImageHash = coverImageHash,
             externalIdentifiers = buildExternalIdentifiers(metadata, normalizedIsbn),
+            authors = joinAuthors(metadata.authors),
         )
     }
 

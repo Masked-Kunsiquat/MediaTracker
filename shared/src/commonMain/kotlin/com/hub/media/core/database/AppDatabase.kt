@@ -30,7 +30,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * here and by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase]) means the
  * two can never silently drift apart the way two independent literals could.
  */
-public const val APP_DATABASE_VERSION: Int = 4
+public const val APP_DATABASE_VERSION: Int = 5
 
 /**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,
@@ -60,6 +60,10 @@ public const val APP_DATABASE_VERSION: Int = 4
  * was likewise added on top of version 4 without a further version bump -- same reasoning as
  * [StatsDao] above: a new DAO changes the Kotlin-visible query surface only, not the exported
  * schema (no `@Entity` was added, changed, or removed).
+ *
+ * Version 5 (ROADMAP Task 9 Phase A) adds [BookDetailsEntity.authors] -- see that property's KDoc
+ * for the denormalized-column-vs-authors-table rationale -- via [MIGRATION_4_5] (`Migrations.kt`),
+ * wired in by [com.hub.media.core.database.buildAppDatabase].
  */
 @Database(
     entities = [

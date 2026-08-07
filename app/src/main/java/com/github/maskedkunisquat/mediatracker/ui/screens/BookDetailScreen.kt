@@ -945,6 +945,17 @@ private fun MetadataCard(details: BookDetailsEntity, onCopyIsbn: (String) -> Uni
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            val authors = details.authors
+            if (!authors.isNullOrBlank()) {
+                // Degrades cleanly when absent (ROADMAP Task 9 Phase A): most existing books have
+                // no author on record until re-fetched -- this row is simply omitted, matching the
+                // ISBN row's own conditional-display pattern just below, rather than showing a
+                // "detail_value_unknown" placeholder every book would otherwise carry.
+                MetadataRow(label = stringResource(R.string.detail_label_authors)) {
+                    Text(text = authors, style = MaterialTheme.typography.bodyMedium)
+                }
+                HorizontalDivider()
+            }
             val isbn = details.isbn
             if (!isbn.isNullOrBlank()) {
                 val copyIsbnDescription = stringResource(R.string.isbn_copy_content_description)

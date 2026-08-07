@@ -4,6 +4,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.BookMetadataValidation
 import com.hub.media.features.portability.csv.LibraryRowParseResult
@@ -29,6 +30,19 @@ import kotlinx.datetime.atStartOfDayIn
  * ### Field-by-field mapping
  * - [GoodreadsColumns.TITLE] -> [ParsedLibraryRow.title] (required; blank/missing rejects the row,
  *   validated through the same [BookMetadataValidation.validateTitle] a manual edit uses).
+ * - [GoodreadsColumns.AUTHOR] + [GoodreadsColumns.ADDITIONAL_AUTHORS] ->
+ *   [ParsedLibraryRow.authors] (schema v5, ROADMAP Task 9 Phase A). Goodreads splits one book's
+ *   authorship across three columns; this importer combines exactly two of them: [GoodreadsColumns.AUTHOR]
+ *   (the primary author, already in `"First Last"` order) first, followed by every name in
+ *   [GoodreadsColumns.ADDITIONAL_AUTHORS] (co-authors, which Goodreads itself comma-separates --
+ *   split on `,`, each name trimmed, blank entries dropped), then re-joined with this app's own
+ *   [com.hub.media.core.database.entities.BookDetailsEntity.AUTHOR_SEPARATOR] via [joinAuthors] so
+ *   the stored form is uniform regardless of source. **Goodreads' `Author l-f` column is
+ *   deliberately never used** -- it is the *same* primary author Goodreads already gives in
+ *   [GoodreadsColumns.AUTHOR], just re-formatted `"Last, First"`; including it too would duplicate
+ *   that one person as a second, differently-punctuated entry rather than add a name this importer
+ *   doesn't already have. Both source columns are optional -- a row with neither present, or both
+ *   blank, gets `null` [ParsedLibraryRow.authors] like any other book with no author on record.
  * - [GoodreadsColumns.NUMBER_OF_PAGES] -> [ParsedLibraryRow.totalPages].
  * - [GoodreadsColumns.BINDING] -> [ParsedLibraryRow.format]; see [mapBinding]'s KDoc for the exact
  *   mapping table and its fallback.
@@ -139,6 +153,13 @@ public object GoodreadsCsvImporter {
         val title = row.column(columnIndex, GoodreadsColumns.TITLE)
         BookMetadataValidation.validateTitle(title)?.let { reject(it) }
 
+        val primaryAuthor = row.column(columnIndex, GoodreadsColumns.AUTHOR)
+        val additionalAuthors = row.column(columnIndex, GoodreadsColumns.ADDITIONAL_AUTHORS)
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        val authors = joinAuthors(listOf(primaryAuthor) + additionalAuthors)
+
         val originalYear = parseOptionalInt(
             row.column(columnIndex, GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR),
             GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR,
@@ -178,6 +199,7 @@ public object GoodreadsCsvImporter {
         return ParsedLibraryRow(
             mediaId = newId(),
             title = title,
+            authors = authors,
             releaseYear = releaseYear,
             purchasePrice = null,
             createdAt = createdAt,

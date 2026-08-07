@@ -33,8 +33,19 @@ package com.hub.media.features.portability.csv
  * *newer* than [CSV_SCHEMA_VERSION] -- see that object's KDoc for the exact check and for the
  * forward plan on what an *older* value would mean once a `v2` format exists (nothing today: `v1`
  * is still the only version ever produced).
+ *
+ * **ROADMAP Task 9 Phase A update: `v2` now exists.** [LibraryCsvExporter] gained an `authors`
+ * column (see [com.hub.media.core.database.entities.BookDetailsEntity.authors]'s KDoc), which is a
+ * column-set change an importer must know about -- exactly what this constant exists to signal.
+ * `reading_logs_export.csv`'s own column set is unchanged by this bump (this marker is shared by
+ * both files, per this KDoc's opening paragraph, even though only one of them actually changed
+ * shape). The forward plan mentioned above is now exercised for real:
+ * [com.hub.media.features.portability.csv.CsvTableReader] accepts a `v1` file (no `authors` column)
+ * via a registered legacy-header adapter that pads each row with an empty `authors` field before
+ * handing it to [LibraryCsvImporter] -- see that object's KDoc and `LibraryCsvExporter.HEADER_V1`.
+ * A `v1` file must still import cleanly; only the *exporter* ever writes `v2` now.
  */
-public const val CSV_SCHEMA_VERSION: Int = 1
+public const val CSV_SCHEMA_VERSION: Int = 2
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

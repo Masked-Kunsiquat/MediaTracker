@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Author capture and local library search (ROADMAP Task 9 Phase A). Both providers already resolved
+author names during ISBN ingestion — Open Library even makes an extra `/authors/{key}` round-trip
+for it — but nothing kept them; this closes that gap and lets the library be searched by title or
+author.
+
+### Added
+
+- **Author capture** (Room schema v5, `MIGRATION_4_5`) — `BookDetailsEntity` gained a nullable
+  `authors` column: a single denormalized `String`, multiple names joined with `"; "`
+  (`BookDetailsEntity.AUTHOR_SEPARATOR`), not a normalized authors table. A comma was ruled out as
+  the separator since Goodreads' own `Author l-f` column already writes one name as
+  `"Tolkien, J. R. R."` — a comma *inside* a name — which would make a comma-joined multi-author
+  field structurally ambiguous. Existing rows land `NULL` (no pre-v5 signal ever recorded an
+  author — honest, not fabricated); `AddBookByIsbnUseCase` now persists
+  `BookMetadata.authors` on every new ISBN-ingested book instead of discarding it.
+- **CSV export/import carries authors** — `library_export.csv` gained an `authors` column
+  (`CSV_SCHEMA_VERSION` bumped `1` → `2`); a pre-existing `v1` file (no `authors` column) still
+  imports cleanly via a registered legacy-header adapter in `CsvTableReader`, landing `authors`
+  `null` for every row exactly as a blank cell in a `v2` file would.
+- **Goodreads import now captures authors** — `Author` (primary) plus `Additional Authors`
+  (Goodreads' own comma-separated co-author list) are combined and re-joined with this app's `"; "`
+  separator. `Author l-f` is intentionally not used (same person as `Author`, just re-formatted).
+- **Local library search** — a search field on the Library screen filters the already-loaded
+  library by title or author, case-insensitive substring match, entirely in-memory (no schema/index
+  work). Composes with the existing reading-status filter chips as an intersection (AND): both
+  narrow the same list together, never either-or.
+- Author now displays on library list rows (when known) and on the Book Detail screen's metadata
+  block, omitted entirely for a book with no author on record rather than showing a placeholder.
+
+### Changed
+
+- `library_export.csv`'s format version (`csv_schema_version`) is now `2`. Files this app itself
+  produced before this release (`csv_schema_version=1`) remain importable.
+
 ## [0.7.0] - 2026-08-03
 
 Data portability. The app's premise is local-first with no cloud, which until now meant there

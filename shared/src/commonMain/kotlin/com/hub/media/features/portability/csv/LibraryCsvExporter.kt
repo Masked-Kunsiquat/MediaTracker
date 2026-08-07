@@ -19,20 +19,26 @@ import com.hub.media.features.books.data.BookWithDetails
  * 3. `type` -- [com.hub.media.core.database.entities.MediaItemEntity.type], by enum **name**
  *    (matches how [com.hub.media.core.database.converters.Converters] persists it).
  * 4. `title`
- * 5. `release_year` -- empty when null.
- * 6. `purchase_price` -- empty when null.
- * 7. `created_at` -- ISO-8601 UTC (`kotlin.time.Instant.toString()`), never a locale-dependent
+ * 5. `authors` (schema v5 / CSV `v2`, ROADMAP Task 9 Phase A) --
+ *    [com.hub.media.core.database.entities.BookDetailsEntity.authors]'s stored form verbatim
+ *    (already `"; "`-joined -- see that property's KDoc), empty when null or when
+ *    [BookWithDetails.details] is null. Placed right after `title` rather than appended at the end,
+ *    since author is the natural next fact about a book after its title, unlike the other v5
+ *    additions.
+ * 6. `release_year` -- empty when null.
+ * 7. `purchase_price` -- empty when null.
+ * 8. `created_at` -- ISO-8601 UTC (`kotlin.time.Instant.toString()`), never a locale-dependent
  *    format.
- * 8. `cover_image_hash` -- empty when null (no cover downloaded).
- * 9. `isbn` -- empty when null, or when this book has no [BookWithDetails.details] row at all
+ * 9. `cover_image_hash` -- empty when null (no cover downloaded).
+ * 10. `isbn` -- empty when null, or when this book has no [BookWithDetails.details] row at all
  *    (the data-integrity edge case documented on
  *    [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
- * 10. `format` -- by enum name; empty when [BookWithDetails.details] is null.
- * 11. `total_pages` -- empty when null.
- * 12. `status` -- by enum name; empty when [BookWithDetails.details] is null.
- * 13. `finished_at` -- ISO-8601 UTC; empty when null.
- * 14. `tracking_mode` -- by enum name; empty when [BookWithDetails.details] is null.
- * 15. `external_identifiers` -- every [ExternalIdentifierEntity] for this book packed into one
+ * 11. `format` -- by enum name; empty when [BookWithDetails.details] is null.
+ * 12. `total_pages` -- empty when null.
+ * 13. `status` -- by enum name; empty when [BookWithDetails.details] is null.
+ * 14. `finished_at` -- ISO-8601 UTC; empty when null.
+ * 15. `tracking_mode` -- by enum name; empty when [BookWithDetails.details] is null.
+ * 16. `external_identifiers` -- every [ExternalIdentifierEntity] for this book packed into one
  *     field as `PROVIDER:externalId` pairs joined by `|` (e.g. `ISBN:9780143127796|OPEN_LIBRARY:
  *     OL123M`), empty when there are none. A book has at most a handful of these (one per
  *     provider, per AGENTS.md §3.3's composite-key model), so packing into a single field avoids
@@ -47,6 +53,34 @@ public object LibraryCsvExporter {
 
     /** Header row, in column order -- see class KDoc for what each column holds. */
     public val HEADER: List<String> = listOf(
+        CSV_SCHEMA_VERSION_COLUMN,
+        "media_id",
+        "type",
+        "title",
+        "authors",
+        "release_year",
+        "purchase_price",
+        "created_at",
+        "cover_image_hash",
+        "isbn",
+        "format",
+        "total_pages",
+        "status",
+        "finished_at",
+        "tracking_mode",
+        "external_identifiers",
+    )
+
+    /**
+     * The `csv_schema_version=1` header shape (ROADMAP Task 9 Phase A) -- every column [HEADER]
+     * has today, minus `authors` (which didn't exist yet). Never written by [export] (which always
+     * writes the current [HEADER]/`v2` shape) -- kept only so
+     * [com.hub.media.features.portability.domain.ImportDataUseCase] can register it as a
+     * [CsvTableReader] legacy header, letting a genuine pre-Task-9 export still import cleanly. See
+     * [LibraryCsvImporter.padLegacyV1Row] for the adapter that bridges a matched `v1` row into the
+     * current row shape.
+     */
+    public val HEADER_V1: List<String> = listOf(
         CSV_SCHEMA_VERSION_COLUMN,
         "media_id",
         "type",
@@ -92,6 +126,7 @@ public object LibraryCsvExporter {
             mediaItem.id,
             mediaItem.type.name,
             mediaItem.title,
+            details?.authors.orEmpty(),
             mediaItem.releaseYear?.toString().orEmpty(),
             mediaItem.purchasePrice?.toString().orEmpty(),
             mediaItem.createdAt.toString(),

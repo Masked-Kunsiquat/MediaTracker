@@ -193,3 +193,43 @@ public val MIGRATION_3_4: Migration = object : Migration(3, 4) {
         )
     }
 }
+
+/**
+ * Schema v4 -> v5 (ROADMAP Task 9 Phase A): adds
+ * [com.hub.media.core.database.entities.BookDetailsEntity.authors] to `book_details` — see that
+ * property's KDoc for the full denormalized-single-column-vs-authors-table rationale and the
+ * `AUTHOR_SEPARATOR` encoding decision.
+ *
+ * ### `ALTER TABLE ... ADD COLUMN`, not a table rebuild — same reasoning as [MIGRATION_2_3]/[MIGRATION_3_4]
+ * `authors` is a plain nullable `TEXT` column with no `DEFAULT` clause, which SQLite's `ALTER TABLE
+ * ADD COLUMN` supports directly (verified against the Room-generated `shared/schemas/.../5.json`,
+ * which records exactly this shape as `book_details`'s only delta from v4) — no
+ * create-copy-drop-rename rebuild needed.
+ *
+ * ### Every pre-existing row becomes `NULL` — honest, not lossy
+ * Unlike `status`/`trackingMode` (schema v3/v4), there is no pre-v5 signal anywhere in this
+ * database that this migration could derive an author from — no prior column, table, or provider
+ * response was ever persisted. Leaving every pre-existing row's `authors` at `NULL` ("unknown") is
+ * therefore the only honest outcome, exactly matching [com.hub.media.core.database.entities.BookDetailsEntity.authors]'
+ * own `null` = "no author on record" convention — this is expected, not a data-loss bug: most
+ * pre-v5 books will show no author until re-fetched or hand-edited, which is stated up front rather
+ * than papered over with a fabricated placeholder.
+ *
+ * ### Ingestion going forward (not this migration's concern, documented for completeness)
+ * Freshly-ingested books apply [com.hub.media.core.database.entities.joinAuthors] to
+ * [com.hub.media.features.books.network.BookMetadata.authors] at insert time — see
+ * [com.hub.media.features.books.data.BookRepository.addBook]'s KDoc — so only pre-v5 rows are ever
+ * affected by this migration's `NULL` backfill.
+ *
+ * See `MigrationTest` (jvmTest) for a test that seeds a v4 database with existing `book_details`
+ * rows, runs this migration, and asserts every pre-existing column survives untouched with the new
+ * `authors` column landing `NULL`, plus a "new capability" test proving the relaxed schema accepts
+ * a real `authors` value going forward.
+ */
+public val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "ALTER TABLE `book_details` ADD COLUMN `authors` TEXT DEFAULT NULL",
+        )
+    }
+}

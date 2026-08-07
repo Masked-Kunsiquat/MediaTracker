@@ -13,7 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,6 +24,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -85,6 +88,7 @@ fun LibraryScreenRoute(
         onNavigateToStats = onNavigateToStats,
         onNavigateToSettings = onNavigateToSettings,
         onStatusFilterChange = viewModel::setStatusFilter,
+        onSearchQueryChange = viewModel::setSearchQuery,
     )
 }
 
@@ -108,6 +112,9 @@ fun LibraryScreenRoute(
  *   Settings screen (ROADMAP Task 7 Phase B).
  * @param onStatusFilterChange Called with the newly selected filter (`null` for "All") when a
  *   filter chip is tapped (ROADMAP Task 6 Phase C).
+ * @param onSearchQueryChange Called with the new search text on every edit of the search field
+ *   (ROADMAP Task 9 Phase A) — filters [uiState.filteredBooks] by title or author, composing with
+ *   [onStatusFilterChange]'s filter as an intersection (see [LibraryUiState.filteredBooks]'s KDoc).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,6 +126,7 @@ fun LibraryScreen(
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onStatusFilterChange: (ReadingStatus?) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -172,14 +180,20 @@ fun LibraryScreen(
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    LibrarySearchField(
+                        query = uiState.searchQuery,
+                        onQueryChange = onSearchQueryChange,
+                    )
                     StatusFilterRow(
                         selected = uiState.statusFilter,
                         onSelectedChange = onStatusFilterChange,
                     )
                     val filteredBooks = uiState.filteredBooks
                     if (filteredBooks.isEmpty()) {
-                        // A filter is active and nothing in the library currently has that status --
-                        // distinct from the whole-library-empty case above (uiState.isEmpty).
+                        // The status filter and/or search query narrowed the (non-empty) library
+                        // down to nothing -- distinct from the whole-library-empty case above
+                        // (uiState.isEmpty). One shared message covers both filters (and their
+                        // combination) rather than trying to distinguish which one is responsible.
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -188,7 +202,7 @@ fun LibraryScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(
-                                text = "No books with this status",
+                                text = stringResource(R.string.library_filtered_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -216,6 +230,49 @@ fun LibraryScreen(
             }
         }
     }
+}
+
+/**
+ * Local library search field (ROADMAP Task 9 Phase A): a plain [OutlinedTextField] filtering
+ * [uiState.filteredBooks][LibraryUiState.filteredBooks] by title or author as the user types --
+ * see that property's KDoc for the exact match rule and how it composes with [StatusFilterRow].
+ * No debounce/minimum-length gate here (unlike the *external*-provider type-ahead search elsewhere
+ * in ROADMAP Task 9): this filters an already-in-memory list with no network/DB round-trip per
+ * keystroke, so there is nothing expensive to throttle.
+ *
+ * A trailing clear [IconButton] appears only once [query] is non-empty, mirroring the standard
+ * Material search-field affordance.
+ */
+@Composable
+private fun LibrarySearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = stringResource(R.string.library_search_content_description),
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Filled.Clear,
+                        contentDescription = stringResource(R.string.library_search_clear_content_description),
+                    )
+                }
+            }
+        },
+        singleLine = true,
+    )
 }
 
 /**
@@ -305,6 +362,20 @@ private fun BookCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            val authors = book.details?.authors
+            if (!authors.isNullOrBlank()) {
+                // Degrades cleanly when absent (ROADMAP Task 9 Phase A): most pre-existing books
+                // have no author on record yet (schema v5's MIGRATION_4_5 backfills NULL, honestly,
+                // rather than fabricating one) -- this row is simply omitted rather than showing a
+                // placeholder, the same pattern releaseYear/status already use below.
+                Text(
+                    text = authors,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (mediaItem.releaseYear != null) {
                 Text(
                     text = "Released: ${mediaItem.releaseYear}",
@@ -368,6 +439,7 @@ private fun LibraryScreenPreview() {
             onNavigateToStats = {},
             onNavigateToSettings = {},
             onStatusFilterChange = {},
+            onSearchQueryChange = {},
         )
     }
 }

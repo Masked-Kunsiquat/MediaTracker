@@ -37,17 +37,31 @@ public sealed class CsvTableResult {
  * user to update the app rather than silently mis-parsing a column layout this build was never
  * written for.
  *
- * An **older** value cannot occur today: `v1` is both the current and the only version this app
- * has ever produced, so this branch is unreachable in practice. The forward plan for when a `v2`
- * format exists: this is where a per-version migration/adapter step would run *before* handing
- * [Success.rows] to [LibraryCsvImporter]/[ReadingLogCsvImporter] -- translating an older row shape
- * into the current one -- rather than teaching every downstream consumer about every historical
- * version. Building that machinery now, for a version that has never existed, would be exactly the
- * kind of speculative complexity this phase's brief asks to defer.
+ * An older value used to be unreachable (`v1` was both the current and the only version this app
+ * ever produced), but ROADMAP Task 9 Phase A made it real: `library_export.csv` bumped to `v2`
+ * (see [CSV_SCHEMA_VERSION]'s KDoc), and a `v1` file must still import cleanly. That forward plan is
+ * implemented via [legacyHeaders]: a per-historical-header row adapter, run *before* [Success.rows]
+ * is handed to [LibraryCsvImporter]/[ReadingLogCsvImporter] -- translating an older row shape into
+ * the current one -- rather than teaching every downstream consumer about every historical version.
+ *
+ * @param expectedHeader The current header shape a well-formed, up-to-date export carries. A file
+ *   whose header equals this is read as-is.
+ * @param legacyHeaders Maps a recognized *older* header shape to a function that pads/reshapes one
+ *   of its data rows into [expectedHeader]'s current shape (e.g. inserting a blank value at the
+ *   position a since-added column now occupies). A file whose header matches one of these keys is
+ *   accepted -- every data row is passed through the matching adapter before the row-length and
+ *   `csv_schema_version` checks below run, so downstream code always sees rows shaped like
+ *   [expectedHeader] regardless of which historical version the file was actually exported by.
+ *   Empty by default (no legacy shape recognized) -- [ReadingLogCsvExporter]'s callers pass nothing
+ *   here today since that file's column set hasn't changed since `v1`.
  */
 public object CsvTableReader {
 
-    public fun read(text: String, expectedHeader: List<String>): CsvTableResult {
+    public fun read(
+        text: String,
+        expectedHeader: List<String>,
+        legacyHeaders: Map<List<String>, (List<String>) -> List<String>> = emptyMap(),
+    ): CsvTableResult {
         val parsed = CsvReader.parse(text)
         val rows = when (parsed) {
             is CsvParseResult.Failure -> return CsvTableResult.Failure(parsed.message)
@@ -58,15 +72,20 @@ public object CsvTableReader {
             return CsvTableResult.Failure("The file is empty -- no header row was found.")
         }
 
-        val header = rows.first()
-        if (header != expectedHeader) {
+        val fileHeader = rows.first()
+        val legacyAdapter = legacyHeaders[fileHeader]
+        if (fileHeader != expectedHeader && legacyAdapter == null) {
             return CsvTableResult.Failure(
                 "Unrecognized header row -- this doesn't look like a MediaTracker export. " +
                     "Expected columns: ${expectedHeader.joinToString()}.",
             )
         }
+        // Downstream code always sees the current header/shape: a recognized legacy file is
+        // reported (and its rows adapted) as if it were expectedHeader-shaped, since every row was
+        // just normalized to match it.
+        val header = expectedHeader
 
-        val dataRows = rows.drop(1)
+        val dataRows = rows.drop(1).let { raw -> if (legacyAdapter != null) raw.map(legacyAdapter) else raw }
         dataRows.forEachIndexed { index, row ->
             if (row.size != header.size) {
                 return CsvTableResult.Failure(
@@ -90,7 +109,10 @@ public object CsvTableReader {
                         "(v$CSV_SCHEMA_VERSION). Update the app before importing this file.",
                 )
             }
-            // fileVersion < CSV_SCHEMA_VERSION: unreachable today (see class KDoc's forward plan).
+            // fileVersion < CSV_SCHEMA_VERSION: expected for a recognized legacy header (its
+            // adapted rows still carry their original, older version value in this column -- that's
+            // fine, this reader only ever refuses a *newer* file, never an older one it knows how to
+            // adapt).
         }
 
         return CsvTableResult.Success(header, dataRows)

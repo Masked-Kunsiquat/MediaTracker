@@ -28,6 +28,10 @@ import org.junit.Rule
  *   [com.hub.media.core.database.entities.BookDetailsEntity.trackingMode] plus the new
  *   `app_settings` table — see that migration's KDoc (`Migrations.kt`) for the derivation rules its
  *   tests below assert.
+ * - `MIGRATION_4_5` (ROADMAP Task 9 Phase A): the schema v4 -> v5 `ALTER TABLE` that adds
+ *   [com.hub.media.core.database.entities.BookDetailsEntity.authors] — see that migration's KDoc
+ *   (`Migrations.kt`) for the full rationale (denormalized column, `AUTHOR_SEPARATOR`, and why
+ *   every pre-existing row honestly lands `NULL` rather than a derived/fabricated value).
  *
  * Uses Room KMP's [MigrationTestHelper] against the real exported schemas in `shared/schemas`
  * (the `room { schemaDirectory(...) }` config in `shared/build.gradle.kts`) rather than
@@ -458,6 +462,115 @@ class MigrationTest {
             db.prepare("SELECT COUNT(*) FROM app_settings WHERE `key` = 'week_start_day'").use { stmt ->
                 assertTrue(stmt.step())
                 assertEquals(1, stmt.getInt(0), "re-inserting under the same key must replace, not duplicate")
+            }
+        }
+    }
+
+    // ==========================================================================================
+    // MIGRATION_4_5 (ROADMAP Task 9 Phase A): adds `book_details.authors`. See that migration's
+    // KDoc (`Migrations.kt`) for the full `ALTER TABLE`/denormalized-column rationale.
+    // ==========================================================================================
+
+    /**
+     * The core deliverable (task requirement): a v4 database seeded with an existing `book_details`
+     * row must, after migrating to v5, land `authors` `NULL` (no pre-v5 signal could ever justify a
+     * fabricated value — see `MIGRATION_4_5`'s KDoc) while every pre-existing `book_details` column
+     * (`isbn`/`format`/`totalPages`/`status`/`finishedAt`/`trackingMode`) and the seeded
+     * `media_items` row survive completely untouched.
+     *
+     * ### Kill-test actually run (per task instructions), then reverted -- three breaks, all failed
+     * All three were executed for real (`./gradlew :shared:jvmTest --tests
+     * com.hub.media.core.database.MigrationTest`), not just reasoned about, then reverted:
+     * 1. `ALTER TABLE book_details ADD COLUMN authors TEXT NOT NULL DEFAULT ''` (wrong column
+     *    *shape*, not just a wrong value: `NOT NULL` + a non-null default instead of a plain
+     *    nullable column) made **every** `migrate4To5*` test fail with `IllegalStateException`
+     *    before any of their own assertions ran at all -- Room's `runMigrationsAndValidate`
+     *    compares the migrated database's live schema against the exported `5.json` and refused
+     *    the mismatch outright.
+     * 2. `ALTER TABLE book_details ADD COLUMN authors TEXT DEFAULT ''` (right shape -- still a
+     *    plain nullable column, so schema validation passes -- but the *wrong value*: an empty-
+     *    string default instead of `NULL`) passed schema validation and let
+     *    [migrate4To5_preservesExistingRows_authorsColumnLandsNull] actually run, where it failed
+     *    exactly as expected: `assertTrue(stmt.isNull(0), ...)` failed because the migrated row
+     *    read back `""`, not `null`. This is the one break that could only be caught by asserting
+     *    on the migrated *data*, not the schema shape.
+     * 3. Deleting `MIGRATION_4_5`'s `ALTER TABLE` statement entirely (a no-op migration claiming to
+     *    reach v5 without adding the column) reproduced break 1's failure mode: `IllegalStateException`
+     *    from schema validation, before any assertion ran, on all three `migrate4To5*` tests.
+     *
+     * All three were reverted immediately after confirming the failure, restoring `MIGRATION_4_5` to
+     * its committed shape (verified green again afterward).
+     */
+    @Test
+    fun migrate4To5_preservesExistingRows_authorsColumnLandsNull() {
+        helper.createDatabase(4).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-1', 'BOOK', 'Test Book', 2020, 9.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt, trackingMode) " +
+                    "VALUES ('media-1', '9780000000000', 'PHYSICAL', 300, 'READING', NULL, 'PAGES')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(5, listOf(MIGRATION_4_5)).use { db ->
+            db.prepare(
+                "SELECT authors, isbn, format, totalPages, status, finishedAt, trackingMode " +
+                    "FROM book_details WHERE mediaId = 'media-1'",
+            ).use { stmt ->
+                assertTrue(stmt.step(), "the pre-existing book_details row must survive")
+                assertTrue(stmt.isNull(0), "authors must land NULL for a pre-existing row -- no signal to derive it from")
+                assertEquals("9780000000000", stmt.getText(1))
+                assertEquals("PHYSICAL", stmt.getText(2))
+                assertEquals(300, stmt.getInt(3))
+                assertEquals("READING", stmt.getText(4))
+                assertTrue(stmt.isNull(5))
+                assertEquals("PAGES", stmt.getText(6))
+            }
+        }
+    }
+
+    /**
+     * Proves the migration actually relaxed the schema to accept a real `authors` value going
+     * forward (not just that it left v4 data alone) — mirroring
+     * [migrate3To4_newColumnAcceptsExplicitTrackingModeIndependentOfTotalPages]'s "new capability"
+     * shape. Uses a semicolon-joined value (`"; "`, [com.hub.media.core.database.entities.BookDetailsEntity.AUTHOR_SEPARATOR])
+     * to confirm the column stores the encoding this phase actually writes, not just any string.
+     */
+    @Test
+    fun migrate4To5_newColumnAcceptsMultiAuthorValue() {
+        helper.createDatabase(4).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-1', 'BOOK', 'Test Book', 2020, 9.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt, trackingMode) " +
+                    "VALUES ('media-1', '9780000000000', 'PHYSICAL', 300, 'TO_READ', NULL, 'PAGES')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(5, listOf(MIGRATION_4_5)).use { db ->
+            db.execSQL(
+                "UPDATE book_details SET authors = 'Ann Sample Author; B. Other Author' WHERE mediaId = 'media-1'",
+            )
+            db.prepare("SELECT authors FROM book_details WHERE mediaId = 'media-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals("Ann Sample Author; B. Other Author", stmt.getText(0))
+            }
+        }
+    }
+
+    /** A book with zero rows around it still gets no error, same shape as [migrate3To4_emptyDatabase_validatesCleanly]. */
+    @Test
+    fun migrate4To5_emptyDatabase_validatesCleanly() {
+        helper.createDatabase(4).use { }
+
+        helper.runMigrationsAndValidate(5, listOf(MIGRATION_4_5)).use { db ->
+            db.prepare("SELECT COUNT(*) FROM book_details").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0))
             }
         }
     }

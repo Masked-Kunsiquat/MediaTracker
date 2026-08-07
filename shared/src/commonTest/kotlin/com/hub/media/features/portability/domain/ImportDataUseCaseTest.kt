@@ -79,6 +79,7 @@ class ImportDataUseCaseTest {
         isbn: String? = "9780000000001",
         status: ReadingStatus = ReadingStatus.TO_READ,
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
+        authors: String? = null,
         repository: BookRepository = sourceBookRepository,
     ): String {
         val result = repository.addBook(
@@ -90,6 +91,7 @@ class ImportDataUseCaseTest {
             isbn = isbn,
             externalIdentifiers = externalIdentifiers,
             status = status,
+            authors = authors,
         )
         assertIs<Resource.Success<String>>(result)
         return result.data
@@ -159,6 +161,55 @@ class ImportDataUseCaseTest {
         val importedSessions = sessionRepository.observeAllSessions().first()
         val originalSessions = sourceSessionRepository.observeAllSessions().first()
         assertEquals(originalSessions, importedSessions)
+    }
+
+    // ---- authors (schema v5 / CSV v2, ROADMAP Task 9 Phase A) ----------------------------------
+
+    @Test
+    fun roundTrip_bookWithAuthors_reproducesAuthorsFieldExactly() = runTest {
+        addBook(title = "Multi-Author Anthology", authors = "Ann Sample Author; B. Other Author")
+        val (libraryCsv, _) = exportCurrentSourceDb()
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksImported)
+
+        val imported = bookRepository.observeAllBooksWithDetails().first().single()
+        assertEquals("Ann Sample Author; B. Other Author", imported.details?.authors)
+    }
+
+    /**
+     * The CSV-v1-compatibility deliverable (ROADMAP Task 9 Phase A): a `library_export.csv`
+     * written before this phase existed (no `authors` column at all -- [LibraryCsvExporter.HEADER_V1]'s
+     * shape, `csv_schema_version=1`) must still import cleanly at the current
+     * `CSV_SCHEMA_VERSION=2` build, with `authors` landing `null` (nothing to recover) rather than
+     * the whole file being refused as an unrecognized header.
+     */
+    @Test
+    fun execute_v1LibraryFile_importsCleanly_authorsLandsNull() = runTest {
+        val v1Csv = buildString {
+            append(CsvUtil.buildLine(LibraryCsvExporter.HEADER_V1))
+            append(
+                CsvUtil.buildLine(
+                    listOf(
+                        "1", "v1-media-id", "BOOK", "A Pre-Task-9 Book", "2015", "12.50",
+                        "2024-01-01T00:00:00Z", "", "9780000000002", "PAPERBACK", "250",
+                        "TO_READ", "", "PAGES", "",
+                    ),
+                ),
+            )
+        }
+
+        val result = useCase.execute(v1Csv, null, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.booksImported)
+        assertTrue(result.data.rejections.isEmpty())
+
+        val imported = bookRepository.observeAllBooksWithDetails().first().single()
+        assertEquals("A Pre-Task-9 Book", imported.mediaItem.title)
+        assertEquals(null, imported.details?.authors, "a v1 file never recorded an author -- null, not fabricated")
+        assertEquals("9780000000002", imported.details?.isbn)
+        assertEquals(250, imported.details?.totalPages)
     }
 
     @Test
