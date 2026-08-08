@@ -117,4 +117,59 @@ class CsvTableReaderTest {
         assertEquals(header, result.header)
         assertEquals(2, result.rows.size)
     }
+
+    // ---- legacyHeaders (ROADMAP Task 9 Phase A: a v1 library_export.csv must still import) -------
+
+    private val legacyHeader = listOf("csv_schema_version", "a")
+    private val padToCurrentShape: (List<String>) -> List<String> = { row -> row + "padded" }
+
+    @Test
+    fun read_fileMatchingLegacyHeader_isAcceptedAndRowsAreAdapted() {
+        val csv = CsvUtil.buildLine(legacyHeader) + CsvUtil.buildLine(listOf("1", "x1"))
+        val result = CsvTableReader.read(csv, header, legacyHeaders = mapOf(legacyHeader to padToCurrentShape))
+        assertIs<CsvTableResult.Success>(result)
+        // Downstream always sees the current header shape, never the legacy one, since every row
+        // was already normalized to match it.
+        assertEquals(header, result.header)
+        assertEquals(listOf(listOf("1", "x1", "padded")), result.rows)
+    }
+
+    @Test
+    fun read_fileMatchingLegacyHeader_olderSchemaVersionIsAccepted_unlikeANewerOne() {
+        // The legacy header's own data rows still carry whatever csv_schema_version they were
+        // originally written with -- older than CSV_SCHEMA_VERSION is expected and fine here,
+        // unlike a genuinely newer-than-supported value (read_schemaVersionNewerThanSupported_fails).
+        val csv = CsvUtil.buildLine(legacyHeader) + CsvUtil.buildLine(listOf((CSV_SCHEMA_VERSION - 1).toString(), "x1"))
+        val result = CsvTableReader.read(csv, header, legacyHeaders = mapOf(legacyHeader to padToCurrentShape))
+        assertIs<CsvTableResult.Success>(result)
+    }
+
+    @Test
+    fun read_fileMatchingNeitherCurrentNorLegacyHeader_stillFails() {
+        val csv = CsvUtil.buildLine(listOf("totally", "unrecognized"))
+        val result = CsvTableReader.read(csv, header, legacyHeaders = mapOf(legacyHeader to padToCurrentShape))
+        assertIs<CsvTableResult.Failure>(result)
+        assertTrue(result.message.contains("header", ignoreCase = true))
+    }
+
+    @Test
+    fun read_legacyHeaderRowWithWrongColumnCountAfterAdapting_stillFails() {
+        // The adapter itself is trusted to shape rows correctly; this proves the row-length check
+        // still runs *after* adaptation (against a `nonPadding` adapter that returns the row
+        // unchanged -- one column short of `header`'s size), not skipped for legacy files.
+        val identity: (List<String>) -> List<String> = { row -> row }
+        val csv = CsvUtil.buildLine(legacyHeader) + CsvUtil.buildLine(listOf("1", "x1"))
+        val result = CsvTableReader.read(csv, header, legacyHeaders = mapOf(legacyHeader to identity))
+        assertIs<CsvTableResult.Failure>(result)
+        assertTrue(result.message.contains("Row 2"))
+    }
+
+    @Test
+    fun read_noLegacyHeadersRegistered_behavesExactlyAsBefore() {
+        // Default parameter -- every pre-existing call site (ReadingLogCsvExporter's header, which
+        // never changed shape) is unaffected by this phase's addition.
+        val csv = CsvUtil.buildLine(listOf("wrong", "header"))
+        val result = CsvTableReader.read(csv, header)
+        assertIs<CsvTableResult.Failure>(result)
+    }
 }

@@ -122,7 +122,7 @@ public interface ImportUseCase {
  *
  * ### What each [DuplicatePolicy] does, field by field
  * - [DuplicatePolicy.SKIP]: the existing row is left completely untouched.
- * - [DuplicatePolicy.REPLACE]: every field this importer manages (title, releaseYear,
+ * - [DuplicatePolicy.REPLACE]: every field this importer manages (title, authors, releaseYear,
  *   purchasePrice, isbn, format, totalPages, status, finishedAt, trackingMode, external
  *   identifiers) is overwritten with the imported row's value. **`createdAt` and
  *   `coverImageHash` are deliberately never touched by REPLACE** on an existing book: `createdAt`
@@ -131,7 +131,7 @@ public interface ImportUseCase {
  *   below) -- a fresh INSERT (brand new to this device) does use the imported `createdAt`, since
  *   that *is* the correct restore semantics for a book this device has never seen before.
  * - [DuplicatePolicy.MERGE]: only backfills fields the existing row left null/blank
- *   (releaseYear, purchasePrice, isbn, totalPages) and adds any external identifier for a
+ *   (authors, releaseYear, purchasePrice, isbn, totalPages) and adds any external identifier for a
  *   provider the book didn't already have. Title, format, status, finishedAt, trackingMode,
  *   createdAt, and coverImageHash are never touched by merge -- they're either identity fields or
  *   user-owned facts about *this* device's copy that a re-import shouldn't silently overwrite.
@@ -208,7 +208,15 @@ public class ImportDataUseCase(
         }
 
         val libraryParseResults = if (libraryCsv != null) {
-            when (val table = CsvTableReader.read(libraryCsv, LibraryCsvExporter.HEADER)) {
+            when (
+                val table = CsvTableReader.read(
+                    libraryCsv,
+                    LibraryCsvExporter.HEADER,
+                    // ROADMAP Task 9 Phase A: a v1 export (no `authors` column) must still import
+                    // cleanly -- see LibraryCsvExporter.HEADER_V1's KDoc.
+                    legacyHeaders = mapOf(LibraryCsvExporter.HEADER_V1 to LibraryCsvImporter::padLegacyV1Row),
+                )
+            ) {
                 is CsvTableResult.Failure -> return Resource.Error("library_export.csv: ${table.message}")
                 is CsvTableResult.Success -> table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
             }
@@ -566,6 +574,7 @@ public class ImportDataUseCase(
             status = row.status,
             finishedAt = row.finishedAt,
             trackingMode = row.trackingMode,
+            authors = row.authors,
         )
         val identifiers = row.externalIdentifiers.map { (provider, id) ->
             ExternalIdentifierEntity(mediaId = row.mediaId, provider = provider, externalId = id)
@@ -589,6 +598,7 @@ public class ImportDataUseCase(
             status = row.status,
             finishedAt = row.finishedAt,
             trackingMode = row.trackingMode,
+            authors = row.authors,
         )
         val identifiers = row.externalIdentifiers.map { (provider, id) ->
             ExternalIdentifierEntity(mediaId = mediaId, provider = provider, externalId = id)
@@ -616,6 +626,7 @@ public class ImportDataUseCase(
             status = existingDetails?.status ?: row.status,
             finishedAt = existingDetails?.finishedAt ?: row.finishedAt,
             trackingMode = existingDetails?.trackingMode ?: row.trackingMode,
+            authors = existingDetails?.authors?.takeIf { it.isNotBlank() } ?: row.authors,
         )
         val existingProviders = existingIdentifiers.map { it.provider }.toSet()
         val newIdentifiers = row.externalIdentifiers

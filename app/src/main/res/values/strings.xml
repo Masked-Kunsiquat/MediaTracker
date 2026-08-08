@@ -120,6 +120,15 @@
     <!-- LibraryScreen status filter -->
     <string name="library_filter_all">All</string>
 
+    <!-- LibraryScreen local search (ROADMAP Task 9 Phase A) -->
+    <string name="library_search_placeholder">Search by title or author</string>
+    <string name="library_search_content_description">Search library</string>
+    <string name="library_search_clear_content_description">Clear search</string>
+    <string name="library_filtered_empty">No books match the current filters</string>
+
+    <!-- Author display (ROADMAP Task 9 Phase A) -->
+    <string name="detail_label_authors">Author</string>
+
     <!-- StatsScreen -->
     <string name="stats_title">Stats</string>
     <string name="stats_content_description">View stats</string>

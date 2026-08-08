@@ -37,6 +37,8 @@ class GoodreadsCsvImporterTest {
 
     private fun validRow(
         title: String = "The Wandering Cartographer",
+        author: String = "",
+        additionalAuthors: String = "",
         isbn13: String = "=\"9780593135204\"",
         isbn: String = "",
         numberOfPages: String = "312",
@@ -48,6 +50,8 @@ class GoodreadsCsvImporterTest {
         dateAdded: String = "2022/11/03",
     ): Pair<Map<String, Int>, List<String>> = rowOf(
         GoodreadsColumns.TITLE to title,
+        GoodreadsColumns.AUTHOR to author,
+        GoodreadsColumns.ADDITIONAL_AUTHORS to additionalAuthors,
         GoodreadsColumns.ISBN13 to isbn13,
         GoodreadsColumns.ISBN to isbn,
         GoodreadsColumns.NUMBER_OF_PAGES to numberOfPages,
@@ -104,6 +108,53 @@ class GoodreadsCsvImporterTest {
         val result = GoodreadsCsvImporter.parseRow(columnIndex, row)
         assertIs<LibraryRowParseResult.Rejected>(result)
         assertTrue(result.reason.contains("Title"))
+    }
+
+    // ---- Author + Additional Authors -> authors (schema v5, ROADMAP Task 9 Phase A) ------------
+
+    @Test
+    fun parseRow_primaryAuthorOnly_mapsToAuthors() {
+        val (columnIndex, row) = validRow(author = "Ann Sample Author")
+        val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
+        assertEquals("Ann Sample Author", result.row.authors)
+    }
+
+    @Test
+    fun parseRow_primaryAuthorPlusAdditionalAuthors_combinedInOrder_reJoinedWithAppSeparator() {
+        // Goodreads' own "Additional Authors" separator (",") must not leak into the stored form --
+        // it's re-joined with this app's "; " (BookDetailsEntity.AUTHOR_SEPARATOR) instead.
+        val (columnIndex, row) = validRow(
+            author = "Ann Sample Author",
+            additionalAuthors = "B. Other Author, C. Third Author",
+        )
+        val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
+        assertEquals("Ann Sample Author; B. Other Author; C. Third Author", result.row.authors)
+    }
+
+    @Test
+    fun parseRow_additionalAuthorsWithExtraWhitespace_eachNameTrimmed() {
+        val (columnIndex, row) = validRow(
+            author = "Ann Sample Author",
+            additionalAuthors = "  B. Other Author ,   C. Third Author  ",
+        )
+        val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
+        assertEquals("Ann Sample Author; B. Other Author; C. Third Author", result.row.authors)
+    }
+
+    @Test
+    fun parseRow_noAuthorColumnsPresentOrBlank_authorsIsNull() {
+        val (columnIndex, row) = validRow(author = "", additionalAuthors = "")
+        val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
+        assertNull(result.row.authors)
+    }
+
+    @Test
+    fun parseRow_onlyAdditionalAuthorsPresent_primaryBlank_stillCombines() {
+        // An unusual but not impossible input (blank primary author, only co-authors recorded) --
+        // must not produce a leading empty/blank entry.
+        val (columnIndex, row) = validRow(author = "", additionalAuthors = "B. Other Author")
+        val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
+        assertEquals("B. Other Author", result.row.authors)
     }
 
     // ---- ISBN Excel-armor stripping ------------------------------------------------------------

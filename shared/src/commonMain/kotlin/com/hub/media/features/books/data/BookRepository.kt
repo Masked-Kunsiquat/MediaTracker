@@ -132,6 +132,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
      *   [com.hub.media.features.books.domain.AddBookByIsbnUseCase] relies on this default rather
      *   than passing it explicitly: ISBN metadata's page count (or lack of one) is exactly the
      *   signal this default is defined in terms of.
+     * @param authors Author display names, already joined into [BookDetailsEntity.authors]' stored
+     *   form (schema v5, ROADMAP Task 9 Phase A) — pass the result of
+     *   [com.hub.media.core.database.entities.joinAuthors], never a raw provider list, so this
+     *   repository stays agnostic to *where* the list came from (ISBN metadata today, a CSV import
+     *   or manual entry potentially later). Defaults to `null` ("no author on record"), which is
+     *   what every non-ISBN caller (nothing yet, but see manual entry in ROADMAP Task 9) gets for
+     *   free.
      * @return [Resource.Success] with the new media ID, or [Resource.Error] on failure.
      */
     public suspend fun addBook(
@@ -145,6 +152,7 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
         status: ReadingStatus = ReadingStatus.TO_READ,
         trackingMode: TrackingMode = if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT,
+        authors: String? = null,
     ): Resource<String> = try {
         val mediaId = newId()
         val now = Clock.System.now()
@@ -166,6 +174,7 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
             totalPages = totalPages,
             status = status,
             trackingMode = trackingMode,
+            authors = authors,
         )
 
         val identifierEntities = externalIdentifiers.map { (provider, externalId) ->

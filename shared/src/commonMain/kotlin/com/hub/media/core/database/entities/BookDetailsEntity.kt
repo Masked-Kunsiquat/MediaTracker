@@ -80,4 +80,75 @@ data class BookDetailsEntity(
      * KDoc.
      */
     val trackingMode: TrackingMode = TrackingMode.PAGES,
-)
+    /**
+     * Author display names (schema v5, ROADMAP Task 9 Phase A), denormalized into a single
+     * delimited [String] rather than a separate authors table — a deliberate user decision, not an
+     * oversight, kept even though [com.hub.media.features.books.network.BookMetadata.authors]
+     * arrives as a `List<String>` and Goodreads carries three separate author columns.
+     *
+     * ### Why denormalized, not a table
+     * A normalized `authors` table's headline benefit is author-level dedup/identity ("show me
+     * every book by this author"), but that benefit isn't free: it requires *matching* author
+     * identity across sources that don't agree on how a name is written. Open Library and Google
+     * Books emit "J.R.R. Tolkien"; Goodreads' `Author l-f` column emits "Tolkien, J. R. R." for the
+     * same person; Goodreads also splits a book's authorship across three columns (`Author`,
+     * `Author l-f`, `Additional Authors`) with no stable id tying any of them to a canonical
+     * author row. A table would still have to fuzzy-match these strings to decide "is this the
+     * same author" — it would not eliminate the string-matching problem, only move it from display
+     * time to insert time, while adding join-table plumbing (schema + migration + DAO methods) that
+     * has no consumer yet (nothing in this app today does "tap an author -> see all their books").
+     *
+     * Starting denormalized is also the *reversible* choice: a future authors table can always be
+     * *derived* from the strings already stored here (parse, dedupe, backfill a join table) once
+     * "tap an author -> all their books" becomes a real feature (see ROADMAP Task 9's follow-up
+     * note) — but data that was never captured in the first place (the alternative, if this column
+     * didn't exist) is gone forever and cannot be un-lost by a later migration. AGENTS.md §1's "user
+     * data safety... override[s] development shortcuts" favors capturing the information now in the
+     * simplest correct form over waiting for the "proper" normalized shape.
+     *
+     * ### Encoding: multiple authors joined by [AUTHOR_SEPARATOR] (`"; "`), not `,`
+     * A comma is exactly the wrong choice here: Goodreads' own `Author l-f` column already writes a
+     * single author as `"Tolkien, J. R. R."` — a comma *inside one name* — so joining multiple
+     * authors with `,` would make `"Tolkien, J. R. R., Rowling, J. K."` structurally ambiguous
+     * (is that two authors, or one four-part name?) with no way to recover the original split. A
+     * semicolon essentially never appears inside a personal name in any of the sources this app
+     * reads from (Open Library, Google Books, Goodreads), and `"; "` (semicolon + space) is the
+     * conventional separator bibliographies already use for multi-author name lists, so the stored
+     * string is also directly human-readable without any parsing (e.g. in [LibraryScreen]/
+     * `BookDetailScreen`'s display, or a spreadsheet opening `library_export.csv`).
+     *
+     * `null` means "unknown" (no author on record), distinct from an empty string — the same
+     * null-vs-blank convention every other optional `String` column on this entity ([isbn]) already
+     * uses. Existing rows (added before this column existed) are backfilled to `null` by
+     * `MIGRATION_4_5` ([com.hub.media.core.database.MIGRATION_4_5]) — never fabricated, since no
+     * pre-v5 signal records who wrote a book. Freshly-ingested books
+     * ([com.hub.media.features.books.data.BookRepository.addBook] via
+     * [com.hub.media.features.books.domain.AddBookByIsbnUseCase]) populate this from
+     * [com.hub.media.features.books.network.BookMetadata.authors], which both supported providers
+     * already resolve (Open Library makes an extra `/authors/{key}` round-trip specifically to
+     * resolve display names) — this column is what finally keeps that data instead of discarding it.
+     */
+    val authors: String? = null,
+) {
+    public companion object {
+        /**
+         * Separator joining multiple [authors] into one stored/displayed string. See [authors]'
+         * KDoc for why `"; "` was chosen over a bare `,` (which collides with Goodreads'
+         * `"Last, First"` name format) or any character with a real chance of appearing inside a
+         * personal name.
+         */
+        public const val AUTHOR_SEPARATOR: String = "; "
+    }
+}
+
+/**
+ * Joins [authors] (in the order provided — callers pass their preferred author ordering, e.g. a
+ * provider's own listed order) into [BookDetailsEntity.authors]' stored form using
+ * [BookDetailsEntity.AUTHOR_SEPARATOR]. Blank entries are dropped (a provider or CSV column
+ * occasionally emits an empty name slot); the result is `null` — never an empty string — when no
+ * non-blank author remains, matching [BookDetailsEntity.authors]' null-means-unknown convention.
+ */
+public fun joinAuthors(authors: List<String>): String? =
+    authors.map { it.trim() }.filter { it.isNotEmpty() }
+        .joinToString(BookDetailsEntity.AUTHOR_SEPARATOR)
+        .ifEmpty { null }

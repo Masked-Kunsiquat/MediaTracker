@@ -12,6 +12,14 @@ import kotlin.time.Instant
 public data class ParsedLibraryRow(
     public val mediaId: String,
     public val title: String,
+    /**
+     * [com.hub.media.core.database.entities.BookDetailsEntity.authors]' stored form, passed
+     * through verbatim (schema v5 / CSV `v2`, ROADMAP Task 9 Phase A) -- already `"; "`-joined by
+     * whichever writer produced this row, never re-split/re-joined here. `null` for a blank cell,
+     * including every row read from a `v1` file via [LibraryCsvExporter.HEADER_V1]'s legacy adapter
+     * (see [padLegacyV1Row]).
+     */
+    public val authors: String?,
     public val releaseYear: Int?,
     public val purchasePrice: Double?,
     public val createdAt: Instant,
@@ -93,6 +101,8 @@ public object LibraryCsvImporter {
         val title = row[COL_TITLE]
         BookMetadataValidation.validateTitle(title)?.let { reject(it) }
 
+        val authors = row[COL_AUTHORS].ifBlank { null }
+
         val releaseYear = parseOptionalInt(row[COL_RELEASE_YEAR], "release_year")
         BookMetadataValidation.validateReleaseYear(releaseYear)?.let { reject(it) }
 
@@ -149,6 +159,7 @@ public object LibraryCsvImporter {
         return ParsedLibraryRow(
             mediaId = mediaId,
             title = title,
+            authors = authors,
             releaseYear = releaseYear,
             purchasePrice = purchasePrice,
             createdAt = createdAt,
@@ -167,15 +178,29 @@ public object LibraryCsvImporter {
     private const val COL_MEDIA_ID = 1
     private const val COL_TYPE = 2
     private const val COL_TITLE = 3
-    private const val COL_RELEASE_YEAR = 4
-    private const val COL_PURCHASE_PRICE = 5
-    private const val COL_CREATED_AT = 6
-    private const val COL_COVER_IMAGE_HASH = 7
-    private const val COL_ISBN = 8
-    private const val COL_FORMAT = 9
-    private const val COL_TOTAL_PAGES = 10
-    private const val COL_STATUS = 11
-    private const val COL_FINISHED_AT = 12
-    private const val COL_TRACKING_MODE = 13
-    private const val COL_EXTERNAL_IDENTIFIERS = 14
+    private const val COL_AUTHORS = 4
+    private const val COL_RELEASE_YEAR = 5
+    private const val COL_PURCHASE_PRICE = 6
+    private const val COL_CREATED_AT = 7
+    private const val COL_COVER_IMAGE_HASH = 8
+    private const val COL_ISBN = 9
+    private const val COL_FORMAT = 10
+    private const val COL_TOTAL_PAGES = 11
+    private const val COL_STATUS = 12
+    private const val COL_FINISHED_AT = 13
+    private const val COL_TRACKING_MODE = 14
+    private const val COL_EXTERNAL_IDENTIFIERS = 15
+
+    /**
+     * Adapts one `csv_schema_version=1` data row (shaped like [LibraryCsvExporter.HEADER_V1], i.e.
+     * missing the `authors` column) into the current [LibraryCsvExporter.HEADER] shape, by
+     * inserting a blank field at [COL_AUTHORS] -- registered with
+     * [com.hub.media.features.portability.csv.CsvTableReader.read]'s `legacyHeaders` parameter
+     * (ROADMAP Task 9 Phase A) so a pre-existing `v1` export still imports cleanly rather than being
+     * rejected outright by the header check. A blank `authors` cell parses to `null` exactly like a
+     * blank cell in a genuine `v2` file would (see [ParsedLibraryRow.authors]) -- there is no author
+     * to recover from a file that never recorded one.
+     */
+    public fun padLegacyV1Row(row: List<String>): List<String> =
+        row.toMutableList().apply { add(COL_AUTHORS, "") }
 }

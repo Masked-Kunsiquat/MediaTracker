@@ -13,7 +13,12 @@ single list below and reordering is a one-line edit there.
 ## Execution order
 
 1. **Task 14 — Bulk operations & cover backfill** ← next
-2. Task 9 — Search & discovery
+2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+   search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
+   manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
+   providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
+   rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
+   retroactively for books added before it.
 3. Task 10 — Re-read modeling (ratings land here)
 4. Task 11 — Analytics & stats revamp
 5. Task 12 — Genre tracking
@@ -351,20 +356,55 @@ ISBN-only entry is the book domain's remaining bottleneck — a book can only be
 physically in hand (or with its ISBN hunted down), so title/author search is what actually
 completes the add-books experience, and local library search matters as the library grows.
 Movies & TV is a much larger lift (new API + user-supplied key, two new tables, a schema
-migration, library UI generalization) and shouldn't gate that. No schema change is needed for
-this task (a title/author index would itself be a schema change + migration if ever added, but
-personal-scale libraries don't need one).
+migration, library UI generalization) and shouldn't gate that. The *local library search* half
+of this task needs no schema change (a title/author search index would itself be a schema
+change + migration if ever added, but personal-scale libraries don't need one) — but **Phase A
+below did require one anyway**, not for the search itself: both providers already resolved
+author names during ISBN ingestion and nothing was keeping them, and search-by-author is
+obviously pointless without an author to search stored anywhere first.
 
-- Title/author type-ahead search of external providers when adding a book: Open Library's
-  search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
+- **Phase A — author capture + local library search (done).** Closed the gap where both book
+  providers already resolved author names (Open Library makes an extra `/authors/{key}` round
+  -trip specifically for this) and every one of them was discarded, since no column existed to
+  hold one.
+  - **Room schema v5** (`book_details.authors`, tested `MIGRATION_4_5`): a single denormalized
+    `String` column, multiple names joined with `"; "` (`BookDetailsEntity.AUTHOR_SEPARATOR`) —
+    **deliberately not a normalized authors table.** A table's headline benefit (author-level
+    dedup, "tap an author → all their books") isn't free: providers disagree on name formatting
+    ("J.R.R. Tolkien" vs. Goodreads' `Author l-f` column's "Tolkien, J. R. R.") and Goodreads
+    splits one book's authorship across three separate columns, so a table would still need to
+    fuzzy-match strings to establish author identity — it would only move that problem from
+    display time to insert time, for a feature ("tap an author") nothing in the app does today.
+    Denormalized-first is also the reversible choice: a table can always be *derived* from the
+    strings stored here later, but data never captured in the first place is unrecoverable.
+    **Follow-up, not scheduled**: promoting `authors` to a normalized table (plus a join table)
+    is a contained, self-contained piece of future work if/when "tap an author → all their
+    books" becomes a real feature — see the backlog entry below.
+  - `AddBookByIsbnUseCase` now persists `BookMetadata.authors` (joined via
+    `joinAuthors`) instead of discarding it; existing pre-v5 books show no author until
+    re-fetched or hand-edited (honest, not fabricated by the migration).
+  - `library_export.csv` gained an `authors` column (`CSV_SCHEMA_VERSION` bumped 1 → 2); a
+    pre-existing `v1` file still imports cleanly via a registered legacy-header adapter in
+    `CsvTableReader` (pads the missing column, then parses normally). The Goodreads importer
+    now maps `Author` + `Additional Authors` (Goodreads' own comma-separated co-author list,
+    re-joined with this app's `"; "` separator) into the same column; `Author l-f` is skipped
+    as a redundant re-formatting of `Author`.
+  - Author displays on library list rows and the Book Detail screen's metadata block, omitted
+    (not placeholder text) when unknown.
+  - Local library search: a search field on the Library screen, filtering the already-loaded
+    reactive book list by title-or-author (case-insensitive substring, in-memory — no DB
+    query/index, personal-scale libraries don't need one). Composes with the pre-existing
+    reading-status `FilterChip` row as an **intersection (AND)**: both narrow the same list
+    together, e.g. "Reading" + a query shows only currently-reading books matching that query,
+    never the union of either filter alone.
+- Title/author type-ahead search of external providers when adding a book (not yet done): Open
+  Library's search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
   minimum before querying, cancel-previous-request-on-new-keystroke, and an in-memory LRU
   cache for repeated prefixes (typing then backspacing shouldn't re-hit the network). Google
   Books is consulted only on selection or as a fallback, not for every keystroke -- its
   keyless per-IP quota is limited and 429s have already been observed against it. Typed
   result styling (author vs. title vs. collection) driven by Open Library's typed `docs`
   results, so the dropdown can visually distinguish match kinds.
-- Local library search as part of the same task: filter/search the user's own already-added
-  books by title/author, independent of the external-provider search above.
 - Scan a book's barcode instead of typing its ISBN. Integration surface is small: the scanner
   is an app-module-only adapter producing an ISBN string that feeds the existing
   `AddBookByIsbnUseCase` (which already normalizes/validates ISBN-10/13), so no shared-module
@@ -376,6 +416,17 @@ personal-scale libraries don't need one).
   ethos, and rules out de-Googled devices/F-Droid). The alternative, bundled ML Kit + CameraX,
   avoids Play Services but requires the CAMERA permission, a camera preview implementation, and
   ~2.2MB of APK.
+  - **Play Feature Delivery / dynamic feature modules do not solve this** — worth recording, since
+    it looks like it should. Dynamic modules are downloaded *by the Play Store* from an app bundle,
+    so the mechanism presupposes Play is installed; isolating the scanner that way would make
+    F-Droid distribution harder, not easier.
+  - The established way to ship both is **Gradle product flavors** — a Play flavor and a FOSS
+    flavor behind one scanner interface — deferrable until F-Droid distribution actually matters,
+    since the interface is the only part that must exist up front.
+  - Note for the FOSS flavor: bundled ML Kit avoids Play Services *at runtime* but is itself a
+    proprietary binary, so F-Droid's main repo would reject it too. A genuinely F-Droid-acceptable
+    scanner means **ZXing / zxing-cpp** (Apache 2.0) with CameraX — more scanning UI to write and
+    somewhat lower decode accuracy than ML Kit, in exchange for being fully open.
 - Implementation notes: restrict the scanner to EAN-13 (book barcodes are Bookland EAN-13;
   restricting formats speeds detection and avoids capturing the EAN-5 price add-on barcode
   printed beside the ISBN on many covers), and use the 978/979 prefix to confirm a scan is a
@@ -577,6 +628,26 @@ numbered task rather than left to be rediscovered.
 - **No book rating field.** The schema has nothing to hold a per-book rating today, which is also
   why the Goodreads import (Task 8) has no home for the `My Rating` column. Worth considering on
   its own merits independent of that import, not only as an import-completeness gap.
+- **Normalized `people` table with role-qualified relations** — the eventual right shape, and a
+  better target than the "authors table" this note originally proposed. A `people` table plus a
+  `person ↔ media ↔ role` join generalizes past authors to narrators and cover artists, and then
+  to directors and actors when Task 13 adds movies/TV; an authors-only table would have to be
+  rebuilt at that point. Promotes `book_details.authors` off Task 9 Phase A's single denormalized
+  `String` column.
+  - Not urgent, and deliberately not done first: the column already captures every name this app
+    can source, and Phase A's priority was that author data was being *destroyed* on every
+    ingestion, so capturing something immediately beat capturing it perfectly. The choice is
+    reversible in the direction that matters — people rows can be *derived* from the stored
+    strings (split on `AUTHOR_SEPARATOR`, dedupe by normalized name, backfill the join table),
+    whereas names never stored are unrecoverable.
+  - Note the table does **not** solve name identity by itself: providers disagree on formatting
+    ("J.R.R. Tolkien" vs Goodreads' `Author l-f` "Tolkien, J. R. R."), so establishing that two
+    strings are one person is fuzzy-matching work that has to happen on the way in either way.
+    That work — not the schema — is the real cost, which is why it waits until a feature needs
+    per-person identity ("tap an author → every other book by them").
+  - Sequencing note: worth doing **before or with Task 13**, since movies/TV will otherwise
+    invent their own parallel credits model. See `BookDetailsEntity.authors`'s KDoc for the
+    per-column rationale.
 
 ## Unscheduled features
 
