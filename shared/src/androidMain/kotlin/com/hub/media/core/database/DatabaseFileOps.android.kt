@@ -52,6 +52,29 @@ internal actual suspend fun writeFileBytes(path: String, bytes: ByteArray): Bool
         }
     }
 
+internal actual suspend fun appendFileBytes(path: String, bytes: ByteArray): Boolean =
+    withContext(Dispatchers.IO) {
+        try {
+            val file = File(path)
+            file.parentFile?.mkdirs()
+            // FileOutputStream(file, append = true) rather than File.appendBytes(): identical
+            // semantics, but explicit about the O_APPEND intent this whole function exists for.
+            java.io.FileOutputStream(file, true).use { it.write(bytes) }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+internal actual suspend fun fileSizeBytes(path: String): Long = withContext(Dispatchers.IO) {
+    try {
+        val file = File(path)
+        if (file.exists()) file.length() else 0L
+    } catch (e: Exception) {
+        0L
+    }
+}
+
 internal actual suspend fun deleteFileIfExists(path: String): Boolean = withContext(Dispatchers.IO) {
     val file = File(path)
     if (file.exists()) file.delete() else false

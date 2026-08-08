@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.storage.LogFileStore
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
@@ -57,11 +58,22 @@ import com.hub.media.features.stats.data.StatsRepository
  *   KDoc for why this is surfaced exactly once per process launch rather than read reactively.
  *   `null` on every ordinary launch (the overwhelming majority of launches, including every one
  *   that never involves a restore at all).
+ * @param logFileStore The persistent log store (ROADMAP Task 15 Phase B), exposed for the (not
+ *   yet built) Phase B2 in-app viewer and export path. **Not constructed by this container** --
+ *   unlike [database]/[imageStorage], the caller must build this and hand it in already
+ *   initialized. See `MediaTrackerApplication`'s KDoc for why: the store has to exist before
+ *   [com.hub.media.core.util.AppLogger.configure] runs, which happens before this container is
+ *   even constructed (it is created lazily, on first access, well after
+ *   `MediaTrackerApplication.onCreate` returns) -- constructing a second, independent
+ *   [LogFileStore] here pointed at the same directory would give two in-memory sequence counters
+ *   and buffers racing over one pair of files, which [LogFileStore]'s single-writer design does
+ *   not support.
  */
 public class AppContainer(
     private val database: AppDatabase,
     imageStorage: LocalImageStorageManager,
     databaseFilePath: String,
+    public val logFileStore: LogFileStore,
     public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
     private val httpClient = createHttpClient()
@@ -187,12 +199,14 @@ public class AppContainer(
     )
 
     /**
-     * Releases resources owned by this container: closes the internally-created
-     * [io.ktor.client.HttpClient] and the [database] it was constructed with. Safe to call at
-     * most once (per the underlying HttpClient/RoomDatabase close semantics); intended for
-     * process-teardown paths where these connections should not be leaked.
+     * Releases resources owned by this container: cancels [logFileStore]'s background flush loop
+     * (see [LogFileStore.shutdown]), closes the internally-created [io.ktor.client.HttpClient], and
+     * closes the [database] it was constructed with. Safe to call at most once (per the underlying
+     * HttpClient/RoomDatabase close semantics); intended for process-teardown paths where these
+     * connections should not be leaked.
      */
     public fun close() {
+        logFileStore.shutdown()
         httpClient.close()
         database.close()
     }

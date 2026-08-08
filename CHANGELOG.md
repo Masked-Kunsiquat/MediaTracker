@@ -47,6 +47,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       the failing schema-version transition at `ERROR` and rethrows unchanged) — now all log before
       a failure reaches the user as a message with no recoverable detail.
 
+- **Persistent log store (ROADMAP Task 15 Phase B)** — logging is now always-on and survives the
+  process, so a failure is diagnosable without a debugger attached. Phase A's logs only ever
+  reached logcat, which a normal user on a release build cannot read; every accepted log call is
+  now *additionally* captured to a capped file in app-private storage. The verbosity threshold is
+  unchanged (a release build still only emits `WARN`/`ERROR`) — what changed is where those calls
+  go, not which ones are made.
+  - **A capped pair of files with single rollover** (`log.txt` + `log-previous.txt`, ~1 MB each),
+    deliberately **not** a Room table — a log table would bloat the very database that gets
+    `.sqlite`-backed-up and CSV-exported.
+  - **Buffered, appending writes.** Log calls land in a bounded in-memory buffer and are flushed
+    on a size threshold, periodically, and on demand, so a bulk backfill over hundreds of books
+    never hits disk per entry. Flushes are true appends, never read-modify-write, which keeps each
+    flush proportional to the batch rather than the file and bounds what a crash mid-write can
+    damage to the tail.
+  - **Sequence numbers derived from the store itself**, scanned from *both* retained files at
+    startup rather than persisted separately — a separately-persisted counter could drift from the
+    store after a crash and start assigning numbers below entries already on disk.
+  - The in-app viewer for these logs is Phase B2 and is not in this release.
+
+### Changed
+
+- **Android Auto Backup no longer sends your library to Google Drive.** `backup_rules.xml` and
+  `data_extraction_rules.xml` had shipped as the untouched Android Studio sample templates, with
+  every rule commented out — which, combined with `android:allowBackup="true"`, meant the entire
+  app-private directory (the reading database *and* every downloaded cover) was being swept to
+  Google Drive on eligible devices. That contradicted the app's local-first, no-cloud premise
+  (AGENTS.md §1) and was found while scoping the log file's own required carve-out.
+  - **Cloud backup now transfers nothing.** Every domain the app writes to is excluded, in both
+    the API 31+ and the legacy rules files. **Consequence: reinstalling the app no longer restores
+    anything automatically** — the app's own `.sqlite` backup/restore and CSV export (v0.7.0) are
+    the restore paths, as was always intended.
+  - **Device-to-device transfer carries the covers, deliberately not the database.** Content-
+    addressed covers are immutable and safe to byte-copy, and are the expensive half to rebuild
+    (re-acquiring them means re-crawling Open Library under its rate limit). The database is
+    excluded because device transfer is a raw file copy taken at a moment the app cannot
+    checkpoint — precisely the hazard the v0.7.0 backup avoids by using `VACUUM INTO`. Restoring
+    a `.sqlite` backup on the new device finds the covers already present.
+
 ## [0.8.0] - 2026-08-08
 
 Repairs an imported library. A Goodreads import previously produced books with neither covers

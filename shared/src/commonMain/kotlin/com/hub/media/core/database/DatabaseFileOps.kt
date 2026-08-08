@@ -40,6 +40,36 @@ internal expect suspend fun readFileBytes(path: String): ByteArray?
 internal expect suspend fun writeFileBytes(path: String, bytes: ByteArray): Boolean
 
 /**
+ * Appends [bytes] to the end of the file at [path], creating it (and any missing parent
+ * directories) if it does not yet exist. Unlike [writeFileBytes], this never reads or rewrites
+ * the file's existing contents.
+ *
+ * Added for the ROADMAP Task 15 Phase B log store, which is append-only by nature and where the
+ * read-modify-write alternative was actively harmful on both counts that matter:
+ * - **Cost.** Rewriting the whole file per flush makes each flush O(file size) rather than
+ *   O(batch size). With a ~1 MB cap that is a 1 MB read plus a 1 MB write for every batch of
+ *   buffered entries -- which would have defeated the very rationale the buffering exists for
+ *   (that task's "a bulk backfill over hundreds of books must not hit disk synchronously per log
+ *   entry"), trading many small writes for far more total bytes moved.
+ * - **Crash damage.** A whole-file rewrite puts every previously-written record at risk on every
+ *   flush: a process death mid-write can damage records written minutes ago. A real append
+ *   confines the worst case to the tail of the file, which is exactly the bounded failure mode the
+ *   log codec's malformed-line tolerance is designed around.
+ *
+ * @return `true` if the append succeeded.
+ */
+internal expect suspend fun appendFileBytes(path: String, bytes: ByteArray): Boolean
+
+/**
+ * Size of the file at [path] in bytes, or `0` if it does not exist or cannot be read.
+ *
+ * Exists so the Task 15 Phase B log store can make its rollover decision (is this file over the
+ * cap?) without reading the file's contents into memory purely to call `.size` on them -- the
+ * whole point of [appendFileBytes] above is that the flush path never needs the existing bytes.
+ */
+internal expect suspend fun fileSizeBytes(path: String): Long
+
+/**
  * Deletes the file at [path] if it exists.
  *
  * @return `true` if a file was actually present and removed; `false` if there was nothing to
