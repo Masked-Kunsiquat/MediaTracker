@@ -127,6 +127,12 @@ public class LogFileStore(
     // makes append()/drainSnapshot() safe to interleave.
     private val flushMutex = Mutex()
 
+    // Held for the lifetime of an in-flight threshold-triggered flush, so only one is ever queued
+    // at a time -- see append(). Deliberately separate from flushMutex: that one serializes the
+    // flush work itself (and is also taken by the periodic loop and by explicit readRecent/readAll
+    // callers), whereas this one only gates whether another *auto* flush is worth scheduling.
+    private val autoFlushGate = Mutex()
+
     // Owned by this instance, not injected (unlike e.g. ReadingTimer's caller-supplied scope):
     // the background flush loop is a pure implementation detail with a suspend flush() escape
     // hatch for deterministic tests, not something a caller needs to observe or drive directly.
@@ -152,8 +158,23 @@ public class LogFileStore(
     internal fun append(level: LogLevel, tag: String, message: String) {
         try {
             buffer.append(clock.now().toEpochMilliseconds(), level, tag, message)
-            if (buffer.size() >= flushThreshold) {
-                backgroundScope.launch { flush() }
+            // At most one threshold-triggered flush may be in flight at a time. Without this gate,
+            // the condition below stays true for every append between crossing the threshold and
+            // the flush actually draining the buffer, so a burst would spawn one coroutine per
+            // append -- hundreds of them during exactly the bulk backfill this buffering exists to
+            // keep off the disk, each one taking flushMutex only to find nothing left to write.
+            // Mutex.tryLock() is non-suspending and atomic, so this stays safe to call from
+            // append()'s synchronous, never-blocking contract; the gate is released in the
+            // coroutine's finally, so a failing flush re-arms it rather than wedging auto-flush
+            // off for the rest of the process.
+            if (buffer.size() >= flushThreshold && autoFlushGate.tryLock()) {
+                backgroundScope.launch {
+                    try {
+                        flush()
+                    } finally {
+                        autoFlushGate.unlock()
+                    }
+                }
             }
         } catch (_: Throwable) {
             // See this function's KDoc -- buffering a log entry must never crash the caller.
