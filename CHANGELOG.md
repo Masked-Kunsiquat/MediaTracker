@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-08
+
+Repairs an imported library. A Goodreads import previously produced books with neither covers
+nor authors; this release captures authors on ingestion, adds a bulk backfill that repairs
+covers *and* authors in one rate-limited pass (resumable if interrupted), and lets the library
+be searched by title or author. Also carries the session-dialog date/time fix that missed
+v0.7.0. Ships **Room schema v5** with a tested migration.
+
 Author capture and local library search (ROADMAP Task 9 Phase A). Both providers already resolved
 author names during ISBN ingestion — Open Library even makes an extra `/authors/{key}` round-trip
 for it — but nothing kept them; this closes that gap and lets the library be searched by title or
