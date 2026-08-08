@@ -701,6 +701,27 @@ makes logging always-on (not debug-build-gated) and gives the user a way to see 
 - **User-adjustable verbosity** in Settings, persisted via the existing `app_settings` store, with
   a sane (not chatty) default — a chatty default would blow through the size cap and capture more
   than intended.
+- **Companion: an in-app "What's new" changelog viewer.** Deliberately scheduled *with* this phase
+  rather than on its own, because it is the same shape — a read-only, genuinely selectable text
+  view reached from a Settings row — so solving that pattern once covers both, instead of building
+  it twice.
+  - **Build-time copy, not a second file.** A Gradle task in the app module copies the root
+    `CHANGELOG.md` into assets before asset merging; the copy is a gitignored build artifact, so
+    `CHANGELOG.md` stays the single source of truth and a stale duplicate can never be committed.
+    Read at runtime via `context.assets`. No new dependency.
+  - **Plain text first; a Markdown parser is optional polish, not a prerequisite.** Keep a
+    Changelog is readable as-is, so all that is strictly needed is section extraction (everything
+    between `## [x.y.z]` and the next `## [`) rendered monospaced and selectable. Literal `**` and
+    backticks are mildly noisy but carry zero parsing risk. A ~100-line `AnnotatedString` parser
+    for that tiny, predictable subset can be added later without disturbing anything around it —
+    a full Markdown dependency for one screen would not clear AGENTS.md §5.
+  - `versionName` is already single-sourced from `[versions] app`, so the app knows its own
+    version and can open on the matching section by default, with older releases behind a scroll.
+  - **Known tension, decide when building:** this changelog is written for developers — entries
+    name `MIGRATION_3_4`, `BookWriteDao`, `stateIn`/`WhileSubscribed`. As the only user that may
+    genuinely be useful, but if polished user-facing notes are ever wanted, showing only each
+    version's plain-language summary paragraph (already present above the `### Added` sections)
+    with the detail collapsible is the middle path that avoids a second source of truth.
 - **Encryption at rest considered and NOT planned** — recorded here so it isn't silently revisited:
   app-private storage is already sandboxed; the obvious library
   (`androidx.security:security-crypto`) is deprecated and Android-only (would break KMP purity);
