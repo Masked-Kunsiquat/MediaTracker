@@ -15,6 +15,8 @@ import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.selfHealDatabaseIfNeeded
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import java.io.File
@@ -631,5 +633,119 @@ class RestoreDatabaseUseCaseTest {
         assertFalse(File(backupPath).exists())
         assertFalse(File(backupWalPath).exists())
         assertFalse(File(backupShmPath).exists())
+    }
+
+    // ==========================================================================================
+    // ROADMAP Task 15: rejection/failure branches must log, and never log book/library content.
+    // ==========================================================================================
+
+    /**
+     * [DefaultRestoreDatabaseUseCase] takes a [com.hub.media.core.util.Logger] the same way
+     * [OpenLibraryIsbnCoverProbe][com.hub.media.features.books.network.OpenLibraryIsbnCoverProbe]
+     * does -- injected, defaulting to [com.hub.media.core.util.AppLogger] -- so tests inject a
+     * [RecordingLogger] directly rather than touching the process-wide [com.hub.media.core.util.AppLogger]
+     * singleton (unlike [com.hub.media.core.database.MigrationTest], which has no such injection
+     * seam for a top-level `Migration` object).
+     */
+    @Test
+    fun stage_notASqliteFile_logsWarningNamingWhyItWasRejected() = runTest {
+        val candidatePath = path("not-a-db.txt")
+        File(candidatePath).writeText("this is definitely not a sqlite database")
+        val recorder = RecordingLogger()
+
+        val result = DefaultRestoreDatabaseUseCase(path("live.db"), logger = recorder).stage(candidatePath)
+
+        assertIs<Resource.Error>(result)
+        val entry = recorder.entries.single()
+        assertEquals(LogLevel.WARN, entry.level)
+        assertEquals("RestoreDatabaseUseCase", entry.tag)
+        assertTrue(entry.message.contains("not a SQLite database"))
+    }
+
+    @Test
+    fun stage_schemaVersionNewerThanCurrent_logsWarningWithVersionNumbers() = runTest {
+        val candidatePath = path("future.db")
+        createFreshDatabaseFile(candidatePath)
+        BundledSQLiteDriver().open(candidatePath).use { connection ->
+            connection.execSQL("PRAGMA user_version = ${APP_DATABASE_VERSION + 1}")
+        }
+        val recorder = RecordingLogger()
+
+        DefaultRestoreDatabaseUseCase(path("live.db"), logger = recorder).stage(candidatePath)
+
+        val entry = recorder.entries.single()
+        assertEquals(LogLevel.WARN, entry.level)
+        assertTrue(entry.message.contains("${APP_DATABASE_VERSION + 1}"))
+    }
+
+    /**
+     * Covers [com.hub.media.core.database.validateStagedDatabaseIntegrity]'s own logging (a
+     * different file/tag from [DefaultRestoreDatabaseUseCase]'s), reached through
+     * [DefaultRestoreDatabaseUseCase.stage] exactly as production code reaches it -- the `logger`
+     * parameter [DefaultRestoreDatabaseUseCase.stage] passes through to it.
+     */
+    @Test
+    fun stage_notAMediaTrackerDatabase_logsWarningNamingMissingTables() = runTest {
+        val candidatePath = path("unrelated.db")
+        BundledSQLiteDriver().open(candidatePath).use { connection ->
+            connection.execSQL("CREATE TABLE some_other_apps_table (id INTEGER PRIMARY KEY, note TEXT)")
+        }
+        val recorder = RecordingLogger()
+
+        val result = DefaultRestoreDatabaseUseCase(path("live.db"), logger = recorder).stage(candidatePath)
+
+        assertIs<Resource.Error>(result)
+        val entry = recorder.entries.single()
+        assertEquals(LogLevel.WARN, entry.level)
+        assertEquals("StagedDatabaseValidation", entry.tag)
+        assertTrue(entry.message.contains("media_items"), "should name a missing required table")
+    }
+
+    /**
+     * Reuses [commit_walSidecarRenameFailure_abortsAndRestoresOriginal_neverReportingFalseSuccess]'s
+     * exact forced-failure setup (a directory sitting at the WAL rename's backup target), this time
+     * asserting on logging: the failure must be recorded at ERROR, the rollback outcome must be
+     * discoverable from the log (not just the returned message), and -- the identifier-rule half of
+     * this task's requirement -- the log message must never echo the sidecar files' actual byte
+     * content, only fixed diagnostic text and already-user-visible paths.
+     */
+    @Test
+    fun commit_walSidecarRenameFailure_logsErrorWithoutEchoingFileContent() = runTest {
+        val livePath = path("live.db")
+        val walPath = "$livePath-wal"
+        val shmPath = "$livePath-shm"
+        File(livePath).writeText("ORIGINAL-MAIN-CONTENT")
+        File(walPath).writeText("ORIGINAL-WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS")
+        File(shmPath).writeText("ORIGINAL-SHM-CONTENT")
+
+        val stagedPath = path("candidate.db")
+        File(stagedPath).writeText("STAGED-REPLACEMENT-CONTENT")
+        val staged = StagedRestoreInfo(
+            stagedFilePath = stagedPath,
+            schemaVersionFound = APP_DATABASE_VERSION,
+            isOlderSchemaVersion = false,
+        )
+
+        val backupWalPath = "$livePath.pre-restore-bak-wal"
+        File(backupWalPath).mkdirs()
+        val recorder = RecordingLogger()
+        val result = try {
+            DefaultRestoreDatabaseUseCase(livePath, logger = recorder).commit(staged)
+        } finally {
+            File(backupWalPath).delete()
+        }
+
+        assertIs<Resource.Error>(result)
+        val errorEntries = recorder.entries.filter { it.level == LogLevel.ERROR }
+        assertTrue(errorEntries.isNotEmpty(), "a swap failure must be logged at ERROR")
+        assertTrue(errorEntries.any { it.tag == "RestoreDatabaseUseCase" })
+        assertTrue(
+            errorEntries.none {
+                it.message.contains("ORIGINAL-WAL-CONTENT") ||
+                    it.message.contains("ORIGINAL-MAIN-CONTENT") ||
+                    it.message.contains("STAGED-REPLACEMENT-CONTENT")
+            },
+            "the log message must never echo file content -- only fixed diagnostic text and paths",
+        )
     }
 }

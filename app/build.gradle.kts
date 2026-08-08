@@ -42,6 +42,11 @@ android {
     }
     buildFeatures {
         compose = true
+        // ROADMAP Task 15: MediaTrackerApplication.onCreate reads BuildConfig.DEBUG to pick the
+        // logging verbosity threshold (shared/ cannot see BuildConfig itself -- see AppLogger's
+        // KDoc). AGP 8+ requires this explicit opt-in; it was not previously needed by anything else
+        // in this module.
+        buildConfig = true
     }
 }
 

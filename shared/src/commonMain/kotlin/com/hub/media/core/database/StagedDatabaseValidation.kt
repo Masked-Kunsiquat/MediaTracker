@@ -2,8 +2,14 @@ package com.hub.media.core.database
 
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** [Logger] tag for every log call [validateStagedDatabaseIntegrity] makes. */
+private const val TAG = "StagedDatabaseValidation"
 
 /**
  * Table names present in **every** schema version this app has ever shipped (v1 through
@@ -97,10 +103,18 @@ private fun requiredTableNamesFor(schemaVersion: Int): List<String> =
  *
  * @param schemaVersion The candidate's own `PRAGMA user_version`, as already parsed by
  *   [parseSqliteHeader] in [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.stage].
+ * @param logger Where a failed validation is recorded (ROADMAP Task 15), including the underlying
+ *   [Throwable] when the candidate couldn't even be opened/queried -- the caller's returned `String`
+ *   only ever carries `e.message`/the exception's class name, not the full exception this attaches.
+ *   Defaults to [AppLogger].
  * @return `null` if the file passed both checks; otherwise a user-facing description of which check
  *   failed and why, suitable for embedding directly in [com.hub.media.core.util.Resource.Error].
  */
-internal suspend fun validateStagedDatabaseIntegrity(path: String, schemaVersion: Int): String? =
+internal suspend fun validateStagedDatabaseIntegrity(
+    path: String,
+    schemaVersion: Int,
+    logger: Logger = AppLogger,
+): String? =
     withContext(Dispatchers.IO) {
         try {
             var failureReason: String? = null
@@ -125,8 +139,15 @@ internal suspend fun validateStagedDatabaseIntegrity(path: String, schemaVersion
                     }
                 }
             }
+            // Logged here (not just returned as a String) so the failure is diagnosable from the
+            // device's own logs even though the caller only ever surfaces this string in a
+            // Resource.Error -- see DefaultRestoreDatabaseUseCase's "Logging" KDoc section. The
+            // message is a fixed structural description (integrity-check verdict, missing table
+            // names) -- schema-level facts, never book/library content.
+            failureReason?.let { reason -> logger.warn(TAG) { "staged database failed validation: $reason" } }
             failureReason
         } catch (e: Exception) {
+            logger.warn(TAG, e) { "staged database validation threw while opening/querying the candidate" }
             "the file could not be opened as a SQLite database (${e.message ?: e::class.simpleName})"
         }
     }

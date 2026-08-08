@@ -10,6 +10,10 @@ import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
@@ -30,6 +34,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -132,8 +137,8 @@ class BackfillViewModelTest {
         )
     }
 
-    private fun newViewModel(provider: BookMetadataProvider) =
-        viewModels.track(BackfillViewModel(newUseCase(provider)))
+    private fun newViewModel(provider: BookMetadataProvider, logger: Logger = AppLogger) =
+        viewModels.track(BackfillViewModel(newUseCase(provider), logger = logger))
 
     /**
      * Repeatedly checks [condition], yielding real (non-virtual) time between attempts so work
@@ -194,6 +199,42 @@ class BackfillViewModelTest {
             BackfillUiState.Failed(progress = null),
             viewModel.uiState.value,
             "a DB failure must settle on Failed, not silently collapse into Idle/Stopped",
+        )
+    }
+
+    // ---- ROADMAP Task 15: the same mid-backfill failure above must now be logged ----
+
+    /**
+     * Same forced failure as [start_dbFailureMidBackfill_doesNotStrandUiStateAtRunning] (dropping
+     * `app_settings` out from under `BulkBackfillUseCase.execute`'s first read), but asserting on
+     * [RecordingLogger] instead of [BackfillUiState]: before ROADMAP Task 15, this exact exception
+     * was caught and discarded with a `catch (_: Exception)` -- nothing anywhere recorded that it had
+     * even happened. It must now be logged at ERROR under this ViewModel's own tag, and the logged
+     * message/cause must never contain the book's title -- the identifier rule
+     * ([com.hub.media.core.util.Logger]'s KDoc) this ViewModel has no reason to violate, since the
+     * catch site never has a title in scope at all.
+     */
+    @Test
+    fun start_dbFailureMidBackfill_logsErrorWithoutBookContent() = runTest {
+        val title = "A Title That Must Never Reach The Log"
+        insertBook(title = title)
+        val provider = GatedMetadataProvider(mapOf("9780547928227" to metadata(listOf("Author"))), gatedIsbns = emptySet())
+        val recorder = RecordingLogger()
+        val viewModel = newViewModel(provider, logger = recorder)
+
+        db.useWriterConnection { connection -> connection.execSQL("DROP TABLE app_settings") }
+
+        viewModel.start()
+        waitUntilOrTimeOut { viewModel.uiState.value !is BackfillUiState.Running }
+
+        assertIs<BackfillUiState.Failed>(viewModel.uiState.value)
+        val errorEntries = recorder.entries.filter { it.level == LogLevel.ERROR }
+        assertTrue(errorEntries.isNotEmpty(), "a mid-backfill DB failure must be logged at ERROR")
+        assertTrue(errorEntries.all { it.tag == "BackfillViewModel" })
+        assertTrue(errorEntries.all { it.throwable != null }, "the underlying exception must be attached, not just a bare message")
+        assertTrue(
+            errorEntries.none { it.message.contains(title) },
+            "the logged message must never contain book content (the identifier rule)",
         )
     }
 

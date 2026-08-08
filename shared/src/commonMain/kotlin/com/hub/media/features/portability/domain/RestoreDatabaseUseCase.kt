@@ -11,7 +11,14 @@ import com.hub.media.core.database.readFileHeaderBytes
 import com.hub.media.core.database.renameFile
 import com.hub.media.core.database.validateStagedDatabaseIntegrity
 import com.hub.media.core.database.writeRestoreMarker
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
+import com.hub.media.core.util.warn
+
+/** [Logger] tag for every log call [DefaultRestoreDatabaseUseCase] makes. */
+private const val TAG = "RestoreDatabaseUseCase"
 
 /**
  * Abstraction over "validate, then swap in, a whole-database restore" so
@@ -192,11 +199,25 @@ public data class StagedRestoreInfo(
  * skipping it would mean continuing to run against an already-closed [com.hub.media.ui.AppContainer]
  * (guaranteed broken, not just possibly stale).
  *
+ * ### Logging (ROADMAP Task 15)
+ * Every rejection/failure branch below now also logs (via [logger], defaulting to [AppLogger]) --
+ * this is the exact gap the ROADMAP called out: `Resource.Error` already carried an optional `cause`
+ * [Throwable] (see [Resource.Error.cause]), but nothing ever read it once it left this class --
+ * [com.hub.media.ui.RestoreViewModel] discards it outright (`RestoreUiState.Error(result.message)`),
+ * and [commit] is called directly from the app layer with no ViewModel step to inspect it either.
+ * The `cause` field itself is unchanged (still there for any future caller that wants it); logging
+ * makes the failure diagnosable today, from the device's own logs, regardless of whether any caller
+ * ever reads `cause`. Every logged message is either already shown to the user verbatim (the
+ * `Resource.Error.message` text) or a fixed diagnostic string plus a file path also already
+ * user-visible in that same message -- never book/library content (see [Logger]'s identifier rule).
+ *
  * @param liveDatabaseFilePath The live database's on-disk path (from
  *   [com.hub.media.core.database.DatabaseFactory.databaseFilePath]).
+ * @param logger Where every rejection/failure below is recorded. Defaults to [AppLogger].
  */
 public class DefaultRestoreDatabaseUseCase(
     private val liveDatabaseFilePath: String,
+    private val logger: Logger = AppLogger,
 ) : RestoreDatabaseUseCase {
 
     override suspend fun stage(incomingFilePath: String): Resource<StagedRestoreInfo> {
@@ -204,6 +225,7 @@ public class DefaultRestoreDatabaseUseCase(
         val info = header?.let(::parseSqliteHeader)
         if (info == null) {
             deleteFileIfExists(incomingFilePath)
+            logger.warn(TAG) { "restore candidate rejected: not a SQLite database" }
             return Resource.Error(
                 "This doesn't look like a MediaTracker backup file (not a SQLite database). " +
                     "Nothing was changed.",
@@ -211,13 +233,19 @@ public class DefaultRestoreDatabaseUseCase(
         }
         if (info.userVersion > APP_DATABASE_VERSION) {
             deleteFileIfExists(incomingFilePath)
+            logger.warn(TAG) {
+                "restore candidate rejected: schema version ${info.userVersion} is newer than " +
+                    "supported version $APP_DATABASE_VERSION"
+            }
             return Resource.Error(
                 "This backup was made with a newer version of MediaTracker (database version " +
                     "${info.userVersion}) than this app understands (version $APP_DATABASE_VERSION). " +
                     "Update the app before restoring it. Nothing was changed.",
             )
         }
-        val integrityFailure = validateStagedDatabaseIntegrity(incomingFilePath, info.userVersion)
+        // validateStagedDatabaseIntegrity already logs the failure reason itself (its own tag,
+        // "StagedDatabaseValidation") -- not duplicated here.
+        val integrityFailure = validateStagedDatabaseIntegrity(incomingFilePath, info.userVersion, logger)
         if (integrityFailure != null) {
             deleteFileIfExists(incomingFilePath)
             return Resource.Error(
@@ -258,6 +286,7 @@ public class DefaultRestoreDatabaseUseCase(
             // point (the previous, buggy ordering) made that same message a lie.
             val liveExisted = fileExists(liveDatabaseFilePath)
             if (liveExisted && !renameFile(liveDatabaseFilePath, backupPath)) {
+                logger.error(TAG) { "restore aborted: could not move the current database aside" }
                 return Resource.Error(
                     "Restore aborted: could not move the current database aside. Nothing was changed.",
                 )
@@ -288,6 +317,10 @@ public class DefaultRestoreDatabaseUseCase(
                 val shmRolledBack = !shmMoved || renameFile(backupShmPath, shmPath)
                 val mainRolledBack = !liveExisted || renameFile(backupPath, liveDatabaseFilePath)
                 val rolledBack = walRolledBack && shmRolledBack && mainRolledBack
+                logger.error(TAG) {
+                    "restore aborted while moving WAL/SHM sidecars aside; automatic rollback " +
+                        if (rolledBack) "succeeded" else "FAILED -- pre-restore backup left at $backupPath"
+                }
                 return Resource.Error(
                     if (rolledBack) {
                         "Restore aborted: could not move the current database's WAL/SHM files aside. " +
@@ -312,6 +345,10 @@ public class DefaultRestoreDatabaseUseCase(
                         (!fileExists(backupShmPath) || renameFile(backupShmPath, shmPath))
                 val mainRolledBack = !liveExisted || renameFile(backupPath, liveDatabaseFilePath)
                 val rolledBack = sidecarsRolledBack && mainRolledBack
+                logger.error(TAG) {
+                    "restore aborted while activating the staged candidate; automatic rollback " +
+                        if (rolledBack) "succeeded" else "FAILED -- pre-restore backup left at $backupPath"
+                }
                 return Resource.Error(
                     if (rolledBack) {
                         "Restore failed while activating the new database. Your original library was " +
@@ -326,6 +363,7 @@ public class DefaultRestoreDatabaseUseCase(
 
             Resource.Success(Unit)
         } catch (e: Exception) {
+            logger.error(TAG, e) { "restore failed with an unexpected exception during the swap" }
             Resource.Error("Restore failed: ${e.message ?: "Unknown error"}", e)
         }
     }

@@ -2,6 +2,9 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.error
 import com.hub.media.features.books.domain.BulkBackfillUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -9,6 +12,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/** [com.hub.media.core.util.Logger] tag for every log call this file makes. */
+private const val TAG = "BackfillViewModel"
 
 /**
  * Drives the Settings screen's bulk cover/author backfill action (ROADMAP Task 14 Phase A).
@@ -30,9 +36,12 @@ import kotlinx.coroutines.launch
  *
  * @param bulkBackfillUseCase Runs (or resumes) one backfill pass and reports progress via a
  *   callback.
+ * @param logger Where a mid-backfill failure is recorded (ROADMAP Task 15 -- see [start]'s
+ *   `catch (e: Exception)` branch). Defaults to [AppLogger].
  */
 public class BackfillViewModel(
     private val bulkBackfillUseCase: BulkBackfillUseCase,
+    private val logger: Logger = AppLogger,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<BackfillUiState>(BackfillUiState.Idle)
@@ -83,7 +92,7 @@ public class BackfillViewModel(
                 // above never runs once this coroutine is cancelled).
                 settleOutOfRunning()
                 throw e
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 // A DB failure mid-backfill (BulkBackfillUseCase.execute's getBulkBackfillState/
                 // seedState/bookRepository reads, or saveBulkBackfillState, none of which catch
                 // their own exceptions) must not crash this ViewModel's coroutine, and must not
@@ -95,11 +104,16 @@ public class BackfillViewModel(
                 // exactly the same Stopped state cancellation does -- making a genuine failure
                 // (data may not have been saved) visually indistinguishable from the user pressing
                 // cancel. settleAsFailed() below settles on BackfillUiState.Failed instead, so the
-                // Settings screen can tell the two apart. The exception itself is deliberately not
-                // captured or inspected (hence the `_` catch parameter): shared/ has no logging
-                // facility (see OpenLibraryIsbnCoverProbe's KDoc on the identical point), and
-                // surfacing raw exception text in the Settings UI risks leaking DB/provider
-                // internals to the user for no actionable benefit.
+                // Settings screen can tell the two apart.
+                //
+                // ROADMAP Task 15: the exception is now logged via [logger] at ERROR (tag/fixed
+                // message only -- no book title/author/mediaId is in scope at this catch site to
+                // even risk including) before settling to Failed. It is still deliberately NOT
+                // surfaced to the Settings UI as raw text (settleAsFailed() below carries no message)
+                // -- exposing exception text there risks leaking DB/provider internals to the user
+                // for no actionable benefit; the log is where a developer, not the end user, goes to
+                // diagnose it.
+                logger.error(TAG, e) { "bulk backfill failed" }
                 settleAsFailed()
             }
         }

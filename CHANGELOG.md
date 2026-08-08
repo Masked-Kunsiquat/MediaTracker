@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Logging facility (ROADMAP Task 15 Phase A)** — `shared/` previously had no logging at all (no
+  `Logger`, no `Napier`, not even a `println`), which had already forced three separate failure
+  paths to discard their cause with nothing recoverable. Added a minimal, hand-rolled KMP `Logger`
+  (`core/util/Logger.kt`) — no new dependency (AGENTS.md §5) — with four levels (`DEBUG`/`INFO`/
+  `WARN`/`ERROR`), a tag, an optional `Throwable`, and a lazy message lambda so a suppressed call
+  costs nothing to build. Platform routing follows the `DatabaseFactory`/`DatabaseFileOps`
+  `expect`/`actual` precedent: `android.util.Log` on Android, stdout/stderr on JVM
+  (`core/util/PlatformLogger.kt` + platform actuals).
+  - **Verbosity is gated centrally, not per platform.** `AppLogger` (the production default every
+    adoption site injects) wraps the platform sink with a minimum-level threshold, defaulting to
+    `WARN` until configured. `MediaTrackerApplication.onCreate` (the one place `BuildConfig.DEBUG`
+    is visible — `shared/` cannot see it) configures `DEBUG` for a debug build or reaffirms `WARN`
+    for a release build. **A release build therefore never emits `DEBUG`/`INFO` — only `WARN`/
+    `ERROR` ever reach logcat, and the message lambda for a filtered-out call is never even
+    evaluated.**
+  - **Privacy rule, enforced at every adoption site, not just documented**: log *what failed and
+    why*, never *what the user is reading*. A `mediaId` or an ISBN is fine to log (opaque/edition
+    identifiers, not personal content); a title, author, or session note never is. No
+    crash-reporting service is used or planned — every sink is purely local (logcat/stdout), matching
+    the app's local-first, no-cloud premise.
+  - **`RecordingLogger`** (`commonTest`) — an in-memory `Logger` so a test can assert *that* a
+    failure was logged, at what level, and that the message contains no library content — this is
+    what makes the adoption below verifiable rather than eyeballed.
+  - **Adopted at the three known gaps**, each proven by a `RecordingLogger` test asserting both that
+    the failure is logged and that no book content appears in the message:
+    - `OpenLibraryIsbnCoverProbe`'s swallowed network/TLS failure now logs at `WARN` (ISBN + cause)
+      before still folding to `NotFound` — the return value is unchanged, only diagnosability
+      improved. Its KDoc, which named itself as the first catch block that should adopt logging, is
+      updated to match.
+    - `BackfillViewModel`'s previously-discarded mid-backfill exception now logs at `ERROR` before
+      settling to `Failed` — its KDoc (which explained the omission was forced by the missing
+      facility) is updated.
+    - The restore/migration paths — `DefaultRestoreDatabaseUseCase` (every `stage`/`commit`
+      rejection and the swap's generic exception catch), `validateStagedDatabaseIntegrity`, and
+      every registered `Migration` (`Migrations.kt`, via a new `loggedMigration` wrapper that logs
+      the failing schema-version transition at `ERROR` and rethrows unchanged) — now all log before
+      a failure reaches the user as a message with no recoverable detail.
+
 ## [0.8.0] - 2026-08-08
 
 Repairs an imported library. A Goodreads import previously produced books with neither covers
