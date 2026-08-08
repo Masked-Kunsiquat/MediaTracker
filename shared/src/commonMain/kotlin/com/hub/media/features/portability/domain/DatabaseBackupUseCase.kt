@@ -75,6 +75,24 @@ public data class BackupResult(
  * DAO-generated code) plus `Transactor.usePrepared` to bind the destination path as a parameter
  * rather than string-concatenating it into the SQL text.
  *
+ * ### Why there is no "exclude log data" filter here (ROADMAP Task 15 Phase B)
+ * There is no log-related code in this class, deliberately -- not an oversight to fill in later.
+ * `VACUUM INTO` operates on [database] alone -- it reads and writes SQLite pages, nothing else on
+ * disk -- so the resulting snapshot can only ever contain tables that genuinely exist in
+ * [AppDatabase]'s Room schema. The persistent log store (Task 15 Phase B) is a flat file under
+ * `<filesDir>/logs/`, deliberately **not** a Room table -- "that would bloat the database that
+ * gets backed up and CSV-exported," per that task's own ROADMAP entry -- so it sits entirely
+ * outside anything `VACUUM INTO` can touch, snapshot mode or not. This is a structural guarantee,
+ * not a runtime check: a defensive "strip log rows" pass here would be dead code, since no table
+ * this class writes to a backup could ever hold log content in the first place. **What must stay
+ * true for this guarantee to hold:** the log store must never become a Room entity/table (any
+ * `@Entity` Room adds is automatically snapshotted by `VACUUM INTO` -- there is no per-table
+ * opt-out at this layer), and this class must never be changed to bundle arbitrary filesystem
+ * paths alongside the database snapshot. The regression guard in `DatabaseBackupUseCaseTest`
+ * queries the produced backup's own `sqlite_master` for any table name that looks log-related and
+ * confirms a decoy log file sitting beside the live database never ends up inside the backup
+ * bytes -- so a future change that *did* fold log data into either path would fail that test.
+ *
  * @param database The live [AppDatabase] to snapshot.
  * @param databaseFilePath The live database's on-disk path (from
  *   [com.hub.media.core.database.DatabaseFactory.databaseFilePath]), used only to derive a sibling

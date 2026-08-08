@@ -1,6 +1,8 @@
 package com.hub.media.features.portability.domain
 
 import androidx.room.Room
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.AppDatabaseConstructor
 import com.hub.media.core.database.buildAppDatabase
@@ -129,5 +131,117 @@ class DatabaseBackupUseCaseTest {
         assertTrue(result.data.suggestedFileName.endsWith(".db"))
         File(result.data.stagedFilePath).delete()
         liveDb.close()
+    }
+
+    /**
+     * Regression guard for ROADMAP Task 15 Phase B ("Must be excluded from backup and export --
+     * the non-obvious hazard"): proves the actual bytes of a produced `.sqlite` backup never
+     * contain content from a log file sitting right next to the live database, at the exact
+     * fixed-contract path (`<filesDir>/logs/`) the persistent log store (a sibling, in-progress
+     * workstream) is contracted to write to. Exercises the real
+     * [DefaultDatabaseBackupUseCase.execute] path end to end -- not vacuous, because it would fail
+     * the moment `VACUUM INTO`'s destination (or anything upstream of it) started pulling in
+     * arbitrary filesystem content instead of only ever reading/writing SQLite pages (see that
+     * class's "why there is no exclude filter" KDoc section for the structural reason it doesn't
+     * today).
+     */
+    @Test
+    fun execute_decoyLogFileBesideLiveDatabase_backupBytesContainNoLogMarker() = runTest {
+        val logMarker = "REGRESSION_GUARD_LOG_MARKER_do_not_leak_into_backup"
+        val logsDir = File(dbFile.parentFile, "logs").apply { mkdirs() }
+        val decoyLogFile = File(logsDir, "app.log").apply {
+            writeText("ERROR OpenLibraryIsbnCoverProbe: $logMarker\n")
+        }
+
+        val liveDb = openLiveDatabase()
+        val bookRepository = BookRepository(liveDb)
+        val addResult = bookRepository.addBook(
+            title = "Log Exclusion Check",
+            releaseYear = 2024,
+            purchasePrice = null,
+            format = BookFormat.EBOOK,
+            totalPages = null,
+            isbn = null,
+            externalIdentifiers = emptyList(),
+        )
+        assertIs<Resource.Success<String>>(addResult)
+
+        val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+        val result = useCase.execute()
+        assertIs<Resource.Success<BackupResult>>(result)
+        val stagedFile = File(result.data.stagedFilePath)
+
+        try {
+            val backupBytes = stagedFile.readBytes().toString(Charsets.ISO_8859_1)
+            assertTrue(
+                !backupBytes.contains(logMarker),
+                "backup bytes must never contain log content -- see DefaultDatabaseBackupUseCase's " +
+                    "\"why there is no exclude filter\" KDoc section",
+            )
+            // Sanity check that the decoy file itself really holds the marker, so a typo in the
+            // marker string above couldn't make this test pass for the wrong reason.
+            assertTrue(decoyLogFile.readText().contains(logMarker))
+        } finally {
+            stagedFile.delete()
+            liveDb.close()
+            decoyLogFile.delete()
+            logsDir.delete()
+        }
+    }
+
+    /**
+     * Regression guard, complementary to the byte-level check above: confirms the produced
+     * backup's own SQLite schema (queried directly via [BundledSQLiteDriver], the same mechanism
+     * [com.hub.media.core.database.validateStagedDatabaseIntegrity] uses for restore validation)
+     * contains only tables [AppDatabase] actually defines -- none of them log-related -- and
+     * genuinely finds real tables rather than an empty/broken connection (the
+     * `media_items`/`book_details` assertion below is what keeps this from being a vacuous "empty
+     * set contains no log tables" pass). This is what [DefaultDatabaseBackupUseCase]'s KDoc means
+     * by "the log store must never become a Room entity/table": if it ever did, `VACUUM INTO`
+     * would snapshot it exactly like every other table, and this test would immediately start
+     * failing.
+     */
+    @Test
+    fun execute_backupSchemaContainsNoLogRelatedTable() = runTest {
+        val liveDb = openLiveDatabase()
+        val bookRepository = BookRepository(liveDb)
+        val addResult = bookRepository.addBook(
+            title = "Schema Check",
+            releaseYear = 2024,
+            purchasePrice = null,
+            format = BookFormat.EBOOK,
+            totalPages = null,
+            isbn = null,
+            externalIdentifiers = emptyList(),
+        )
+        assertIs<Resource.Success<String>>(addResult)
+
+        val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+        val result = useCase.execute()
+        assertIs<Resource.Success<BackupResult>>(result)
+        val stagedFile = File(result.data.stagedFilePath)
+        liveDb.close()
+
+        try {
+            val tableNames = mutableSetOf<String>()
+            BundledSQLiteDriver().open(stagedFile.absolutePath, SQLITE_OPEN_READONLY).use { connection ->
+                connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").use { statement ->
+                    while (statement.step()) tableNames += statement.getText(0)
+                }
+            }
+
+            assertTrue(
+                tableNames.containsAll(setOf("media_items", "book_details")),
+                "expected to find this app's real tables in the backup -- if this fails, the rest " +
+                    "of this test proves nothing (it would vacuously pass on an empty/broken result)",
+            )
+            val logRelatedTables = tableNames.filter { it.contains("log", ignoreCase = true) }
+            assertTrue(
+                logRelatedTables.isEmpty(),
+                "backup schema must never contain a log-related table, found: $logRelatedTables",
+            )
+        } finally {
+            stagedFile.delete()
+        }
     }
 }

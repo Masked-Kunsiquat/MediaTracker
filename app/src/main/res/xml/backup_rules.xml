@@ -1,13 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   Real backup rules (ROADMAP Task 15 Phase B), replacing the Android Studio sample template that
+   shipped here untouched (every rule commented out) since the project's first commit.
+
+   Governs Android's legacy Auto Backup-to-Google-Drive mechanism on API 23-30, superseded on
+   API 31+ by data_extraction_rules.xml (see that file). minSdk is 28 (app/build.gradle.kts), so
+   this file still has real API 28-30 devices to apply to. At those API levels there is only ONE
+   backup channel: Auto Backup to Drive. There is no separate on-device "device transfer" concept
+   to weigh differently the way data_extraction_rules.xml can; that split only exists from API 31
+   onward, so every rule below applies uniformly, the same way cloud-backup does in that file.
+
+   AGENTS.md §1: "Offline-first, single local SQLite database, zero required external cloud sync or
+   accounts." Until this file was touched, android:allowBackup="true" plus these all-commented-out
+   sample rules meant Auto Backup was silently sweeping the ENTIRE app-private directory, Room's
+   database AND the content-addressed cover images, to Google Drive on every eligible device,
+   size-capped and not restorable on demand. That contradicts the local-first premise more
+   severely than the log file this task was originally scoped around: the app already ships its
+   own explicit, user-driven alternatives with none of that opacity, `.sqlite` backup/restore
+   and CSV export (ROADMAP Task 8), both opt-in, both local until the user themselves picks a
+   destination via SAF. Auto Backup adds nothing those don't already cover better, while routing
+   the user's reading library through a cloud account this app's premise says it should never
+   need. So the fix here isn't a narrow log carve-out; it's excluding everything this app
+   actually writes to app-private storage, full stop.
+
+   Result: every domain this app writes to is excluded below, so this channel ends up
+   transferring nothing. android:allowBackup stays "true" in AndroidManifest.xml rather than
+   flipping to "false" outright; see that file's own comment for why (short version:
+   data_extraction_rules.xml's API 31+ device-transfer channel, which this app deliberately
+   keeps enabled, is gated by the same manifest attribute, so disabling it here would take that
+   channel down too on every API level, not just this one).
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- The whole SQLite "databases" directory (Context.getDatabasePath's parent): media_tracker.db,
+         its -wal/-shm sidecars, the backup-staging *.tmp file DefaultDatabaseBackupUseCase writes
+         beside it, and the *.pre-restore-bak / *.restore-result marker files
+         DatabaseRestoreRecovery leaves beside it during a restore. One rule for the whole
+         directory (path="." recurses) rather than naming each file individually, so a future file
+         written next to the database is excluded by construction instead of by remembering to
+         update this list. -->
+    <exclude domain="database" path="." />
+
+    <!-- The whole app-private files directory (Context.filesDir): today this holds `covers/`
+         (content-addressed cover images, AGENTS.md §4) and will hold `logs/` (ROADMAP Task 15
+         Phase B's persistent log store, a capped file at `<filesDir>/logs/`) once that phase
+         lands. Excluding the whole domain, not just those two named subdirectories, is a
+         deliberate fail-closed choice: a new subdirectory added under filesDir later is excluded
+         automatically, rather than silently defaulting to "backed up" until someone remembers to
+         list it here too. Nothing else is currently written under filesDir, so this has no
+         narrower correct scope today anyway. -->
+    <exclude domain="file" path="." />
+
+    <!-- Not used by this app today (no SharedPreferences call site anywhere in the codebase;
+         settings live in Room's app_settings table instead, see ROADMAP Task 7). Excluded
+         defensively rather than left to the default "backed up" behavior: a future dependency
+         (an AndroidX library, a future feature) that starts writing preferences should default to
+         staying off Drive too, consistent with the fail-closed choice above for the files
+         directory, not require remembering to come back and add this line then. -->
+    <exclude domain="sharedpref" path="." />
 </full-backup-content>
