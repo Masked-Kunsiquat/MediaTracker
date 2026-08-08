@@ -3,6 +3,30 @@ package com.hub.media.core.database
 import androidx.room.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.error
+
+/**
+ * Wraps a [Migration.migrate] body with logging (ROADMAP Task 15): before this, a migration failure
+ * (e.g. `execSQL` throwing mid-`ALTER TABLE`/rebuild) propagated as a bare exception straight out of
+ * Room's database-open path with nothing recorded anywhere -- undiagnosable outside a debugger, and
+ * on a release build, effectively undiagnosable at all (the app simply fails to open its database).
+ * Deliberately rethrows [e] unchanged after logging -- a migration failure must still fail the
+ * database open (silently swallowing it and continuing would risk running against a half-migrated
+ * schema, exactly the kind of silent corruption AGENTS.md §1 rules out); this only makes the failure
+ * diagnosable. Logs the schema-version transition only (see [Logger][com.hub.media.core.util.Logger]'s
+ * identifier rule) -- never any row data a migration happened to be touching when it failed.
+ */
+private inline fun loggedMigration(fromVersion: Int, toVersion: Int, body: () -> Unit) {
+    try {
+        body()
+    } catch (e: Exception) {
+        AppLogger.error("Migration_${fromVersion}_$toVersion", e) {
+            "schema migration $fromVersion -> $toVersion failed"
+        }
+        throw e
+    }
+}
 
 /**
  * Schema v1 -> v2 (ROADMAP Task 5 pre-phase): makes [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds]
@@ -31,7 +55,7 @@ import androidx.sqlite.execSQL
  * rows still exist afterward with their values intact.
  */
 public val MIGRATION_1_2: Migration = object : Migration(1, 2) {
-    override fun migrate(connection: SQLiteConnection) {
+    override fun migrate(connection: SQLiteConnection) = loggedMigration(1, 2) {
         connection.execSQL(
             "CREATE TABLE IF NOT EXISTS `reading_sessions_new` (" +
                 "`id` TEXT NOT NULL, " +
@@ -113,7 +137,7 @@ public val MIGRATION_1_2: Migration = object : Migration(1, 2) {
  * column value intact.
  */
 public val MIGRATION_2_3: Migration = object : Migration(2, 3) {
-    override fun migrate(connection: SQLiteConnection) {
+    override fun migrate(connection: SQLiteConnection) = loggedMigration(2, 3) {
         connection.execSQL(
             "ALTER TABLE `book_details` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'TO_READ'",
         )
@@ -180,7 +204,7 @@ public val MIGRATION_2_3: Migration = object : Migration(2, 3) {
  * `app_settings` present and insertable.
  */
 public val MIGRATION_3_4: Migration = object : Migration(3, 4) {
-    override fun migrate(connection: SQLiteConnection) {
+    override fun migrate(connection: SQLiteConnection) = loggedMigration(3, 4) {
         connection.execSQL(
             "ALTER TABLE `book_details` ADD COLUMN `trackingMode` TEXT NOT NULL DEFAULT 'PAGES'",
         )
@@ -227,7 +251,7 @@ public val MIGRATION_3_4: Migration = object : Migration(3, 4) {
  * a real `authors` value going forward.
  */
 public val MIGRATION_4_5: Migration = object : Migration(4, 5) {
-    override fun migrate(connection: SQLiteConnection) {
+    override fun migrate(connection: SQLiteConnection) = loggedMigration(4, 5) {
         connection.execSQL(
             "ALTER TABLE `book_details` ADD COLUMN `authors` TEXT DEFAULT NULL",
         )

@@ -1,6 +1,8 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
@@ -10,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -91,6 +94,56 @@ class OpenLibraryIsbnCoverProbeTest {
         val result = probe.probeCoverUrl("9780547928227")
 
         assertEquals(CoverProbeResult.NotFound, result)
+    }
+
+    /**
+     * ROADMAP Task 15: the network-failure branch used to be entirely silent (no logging facility
+     * existed). It must now log the failure -- with the ISBN (fine per the identifier rule, see
+     * [com.hub.media.core.util.Logger]'s KDoc) and the underlying [Throwable] -- while the *returned*
+     * [CoverProbeResult] stays exactly [CoverProbeResult.NotFound], unchanged from before this task.
+     */
+    @Test
+    fun networkFailure_logsWarningWithIsbnAndCause_beforeReturningNotFound() = runTest {
+        val failure = RuntimeException("network down")
+        val engine = MockEngine { _ -> throw failure }
+        val recorder = RecordingLogger()
+        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(engine), logger = recorder)
+
+        val result = probe.probeCoverUrl("9780547928227")
+
+        assertEquals(CoverProbeResult.NotFound, result)
+        val entry = recorder.entries.single()
+        assertEquals(LogLevel.WARN, entry.level)
+        assertEquals("OpenLibraryIsbnCoverProbe", entry.tag)
+        // Ktor's HttpClient may wrap the engine's thrown exception (e.g. in a transport-layer
+        // exception type) rather than propagating the exact same instance -- assert a throwable was
+        // attached at all, and that the original failure is reachable somewhere in its message/cause
+        // chain, rather than requiring reference equality to `failure`.
+        assertTrue(entry.throwable != null, "the underlying exception must be attached")
+        val chainContainsOriginalMessage = generateSequence(entry.throwable) { it.cause }
+            .any { it.message?.contains("network down") == true }
+        assertTrue(chainContainsOriginalMessage, "the original failure's message must be reachable from the logged throwable")
+        assertTrue(entry.message.contains("9780547928227"), "message should name the ISBN it failed for")
+    }
+
+    /**
+     * The identifier rule's negative half: this probe never has access to a book's title/author (it
+     * only ever sees an ISBN), so there is nothing for it to leak here even on failure -- this test
+     * documents that guarantee explicitly rather than leaving it implicit.
+     */
+    @Test
+    fun networkFailure_logMessageContainsNoBookContent_onlyTheIsbnAndFailureContext() = runTest {
+        val engine = MockEngine { _ -> throw RuntimeException("network down") }
+        val recorder = RecordingLogger()
+        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(engine), logger = recorder)
+
+        probe.probeCoverUrl("9780547928227")
+
+        val entry = recorder.entries.single()
+        // This probe's whole input is an ISBN string -- there is no title/author in scope to leak,
+        // so the message can only ever be built from the ISBN and fixed diagnostic text.
+        assertFalse(entry.message.contains("Title", ignoreCase = true))
+        assertFalse(entry.message.contains("Author", ignoreCase = true))
     }
 
     /**

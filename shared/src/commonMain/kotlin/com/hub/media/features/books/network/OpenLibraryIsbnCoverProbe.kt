@@ -1,5 +1,8 @@
 package com.hub.media.features.books.network
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.request.head
 import io.ktor.client.statement.HttpResponse
@@ -14,6 +17,9 @@ import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 
 private const val OPEN_LIBRARY_COVERS_ISBN_URL = "https://covers.openlibrary.org/b/isbn"
+
+/** [com.hub.media.core.util.Logger] tag for every log call this file makes. */
+private const val TAG = "OpenLibraryIsbnCoverProbe"
 
 /** Fallback wait when a 429/5xx carries no (or an unparsable) `Retry-After` header. */
 private val DEFAULT_RETRY_AFTER: Duration = OPEN_LIBRARY_COVER_QUOTA_WINDOW
@@ -94,11 +100,15 @@ public sealed class CoverProbeResult {
  *   expected to share one instance) is responsible for constructing that limiter with the same
  *   [Clock] it passes here; this default-construction path only covers the case where no
  *   [rateLimiter] is supplied at all.
+ * @param logger Where a swallowed network/TLS failure is recorded (ROADMAP Task 15 -- see
+ *   [probeCoverUrl]'s "On the network-failure branch being silent" section). Defaults to
+ *   [AppLogger], matching [clock]'s real-default-overridable-by-tests convention.
  */
 public class OpenLibraryIsbnCoverProbe(
     private val client: HttpClient,
     rateLimiter: OpenLibraryCoverRateLimiter? = null,
     private val clock: Clock = Clock.System,
+    private val logger: Logger = AppLogger,
 ) {
     // Threading `clock` through here (rather than each defaulting to Clock.System independently)
     // is what keeps this probe and its rate limiter from disagreeing about "now" when a caller
@@ -122,22 +132,27 @@ public class OpenLibraryIsbnCoverProbe(
      *   or immediately if [rateLimiter] reports the shared quota is already exhausted. Never
      *   throws, with the deliberate exception of [CancellationException] (see below).
      *
-     * ### On the network-failure branch being silent
-     * A thrown exception (TLS failure, DNS failure, timeout, connection reset, etc.) is
-     * deliberately indistinguishable from a confirmed "no cover" 404 here -- both just return
-     * [CoverProbeResult.NotFound]. This is a real loss of information (a caller can't tell "this
-     * book genuinely has no cover" from "we couldn't check"), but recording the exception would
-     * need a logging facility, and `shared/` has none: there is no `Logger`/`Napier`/equivalent
-     * anywhere in `commonMain`, and AGENTS.md §5 explicitly rules out adding third-party
-     * dependencies without project sign-off. Swallowing to [CoverProbeResult.NotFound] also
-     * matches the existing sibling pattern in this package -- [OpenLibraryClient.fetchAuthorName]
-     * silently drops a per-author lookup failure to `null` the same way -- so this isn't a one-off
-     * oversight, it's this codebase's established (if imperfect) convention for a "best-effort,
-     * never-throws" lookup. Unlike a 429/5xx, a network-level failure carries no `Retry-After`
-     * signal and no confirmation that *this specific device* is the one being throttled, so folding
-     * it into [CoverProbeResult.RateLimited] instead would risk pausing a bulk backfill over what
-     * might be a one-off local network blip rather than a real quota problem — [NotFound] (skip and
-     * move on) is the safer of the two imperfect choices here, same as it was pre-Task-14.
+     * ### On the network-failure branch being silent (updated, ROADMAP Task 15)
+     * A thrown exception (TLS failure, DNS failure, timeout, connection reset, etc.) still *returns*
+     * [CoverProbeResult.NotFound], indistinguishable from a confirmed "no cover" 404 to the caller --
+     * that part is unchanged, and still the right call: unlike a 429/5xx, a network-level failure
+     * carries no `Retry-After` signal and no confirmation that *this specific device* is the one
+     * being throttled, so folding it into [CoverProbeResult.RateLimited] instead would risk pausing a
+     * bulk backfill over what might be a one-off local network blip rather than a real quota problem.
+     * [NotFound] (skip and move on) remains the safer of the two imperfect choices for the *return
+     * value*.
+     *
+     * What changed: this codebase originally had no logging facility at all, so the exception itself
+     * was discarded with nothing recorded anywhere -- "confirmed absent" and "the request never
+     * completed" left literally the same trace. This class's own KDoc named itself as the first catch
+     * block that should adopt one once it existed. It now does: [logger] records the failure at
+     * [com.hub.media.core.util.LogLevel.WARN], with the ISBN (an edition identifier, not personal
+     * content -- see [com.hub.media.core.util.Logger]'s KDoc for the identifier rule this follows)
+     * and the [Throwable] itself, *before* folding the outcome to [CoverProbeResult.NotFound] below.
+     * The return value a caller sees is unchanged; only diagnosability improved -- a real network/TLS
+     * failure is now distinguishable from a genuine "no cover" 404 in the device's own logs, even
+     * though the two still collapse to the same [CoverProbeResult] for callers that can't act on the
+     * difference anyway (see [CoverProbeResult]'s own KDoc).
      */
     public suspend fun probeCoverUrl(isbn: String): CoverProbeResult {
         when (val outcome = rateLimiter.tryAcquire()) {
@@ -174,7 +189,9 @@ public class OpenLibraryIsbnCoverProbe(
             // the probe had simply found no cover.
             throw e
         } catch (e: Exception) {
-            // See "On the network-failure branch being silent" above.
+            // See "On the network-failure branch being silent" above -- the return value stays
+            // NotFound, but the failure is now diagnosable via logger, unlike before ROADMAP Task 15.
+            logger.warn(TAG, e) { "cover probe request failed for isbn=$isbn" }
             CoverProbeResult.NotFound
         }
     }

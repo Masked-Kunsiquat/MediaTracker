@@ -12,11 +12,12 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 15 — Logging** ← next. Deliberately pulled ahead of further features: retrofitting
-   logging gets worse the more there is to retrofit, and three separate failure paths already
-   discard their cause because there is nowhere to put it.
-2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
-   backfill) shipped; Phase B (library multi-select + bulk delete) remains.
+1. **Task 14 — Bulk operations & cover backfill** ← next. *Partially done*. Phase A (bulk
+   cover/author backfill) shipped; Phase B (library multi-select + bulk delete) remains.
+2. Task 15 — Logging — *partially done*. Phase A (the logging facility itself, plus adoption at
+   the three known gaps) shipped; Phase B (a user-owned, persistent, in-app log store) remains —
+   see that task's section for why it's a separate phase rather than blocking Phase A's adoption
+   work.
 3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
@@ -587,41 +588,146 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
 
 **Scheduled deliberately early, before the app gets more featureful**, because retrofitting
 logging gets monotonically worse and "we can't tell you why it failed" has already become a
-recurring answer. `shared/` has no logging facility at all today — no `Logger`, no `Napier`, not
-even a `println` — and that gap has now forced three separate compromises:
+recurring answer. `shared/` had no logging facility at all before this task — no `Logger`, no
+`Napier`, not even a `println` — and that gap had forced three separate compromises:
 
-- `OpenLibraryIsbnCoverProbe` swallows a network/TLS failure to `null`, making it
-  **indistinguishable from a confirmed "this book has no cover"**. Its KDoc already names itself
+- `OpenLibraryIsbnCoverProbe` swallowed a network/TLS failure to `null`, making it
+  **indistinguishable from a confirmed "this book has no cover"**. Its KDoc already named itself
   as the first catch block that should adopt logging.
-- `BackfillViewModel`'s failure state deliberately **discards the exception**, so a failed
-  backfill can only say "something went wrong" — the cause is thrown away at the catch.
+- `BackfillViewModel`'s failure state deliberately **discarded the exception**, so a failed
+  backfill could only say "something went wrong" — the cause was thrown away at the catch.
 - The vacuous-test investigation on PR #16 needed temporary `println` instrumentation to discover
   that a closed Room database throws `CancellationException` rather than `SQLiteException`. That
   diagnosis should not have required editing production code to obtain.
 
-### Requirements
-- **KMP-clean.** The facility lives in `shared/` and must not drag Android APIs into common code —
-  an `expect`/`actual` logger, or a small interface with per-platform implementations
-  (`android.util.Log` on Android, stdout on JVM). Follow the `DatabaseFactory`/`DatabaseFileOps`
-  expect/actual precedent already in this codebase.
-- **Prefer no new dependency** (AGENTS.md §5). A minimal hand-rolled logger is a small amount of
-  code; Napier/Kermit would each be a new third-party dependency needing explicit approval, and
-  should only be proposed with a concrete reason the hand-rolled version can't cover.
-- **Privacy is a first-class constraint here, not an afterthought.** This app's whole premise is
-  local-first with no cloud, so: **no crash-reporting service** (that would ship the user's data
-  off-device, contradicting the premise), and log content must never include the user's library
-  as data — titles, authors, notes and session contents are personal. Log *what failed and why*,
-  not *what the user is reading*. Decide and document the rule for identifiers (an ISBN is
-  arguably fine; a `mediaId` is fine; a title is not).
-- **Release builds must not leak.** Decide how verbosity is controlled between debug and release,
-  and make sure nothing sensitive reaches logcat in a release build.
+### Phase A — Logging facility + adoption (done)
+- **KMP-clean facility** in `shared/core/util/` (alongside `Resource`/`newId` — a small
+  cross-cutting utility, not a domain concept warranting its own `core/logging/` package): a
+  `Logger` interface (four levels, a tag, an optional `Throwable`, a lazy message lambda so a
+  suppressed call costs nothing to build) plus `platformLogger()`, an `expect`/`actual` seam
+  following the `DatabaseFactory`/`DatabaseFileOps` precedent (`android.util.Log` on Android,
+  stdout/stderr on JVM). No new dependency (AGENTS.md §5) — hand-rolled, a few dozen lines.
+- **Verbosity gated centrally.** `AppLogger` (the production default every adoption site injects,
+  overridable exactly like `OpenLibraryIsbnCoverProbe`'s existing `clock` parameter) wraps the
+  platform sink with a minimum-level threshold, defaulting to `WARN` until configured.
+  `MediaTrackerApplication.onCreate` — the one place `BuildConfig.DEBUG` is visible (`shared/`
+  cannot see it; `app/build.gradle.kts` gained `buildFeatures.buildConfig = true` for this) —
+  configures `DEBUG` for a debug build or reaffirms `WARN` for a release build. **A release build
+  therefore never emits `DEBUG`/`INFO`, only `WARN`/`ERROR`, and a filtered-out call's message
+  lambda is never evaluated at all.**
+- **Identifier rule, enforced at every adoption site, not just documented**: a `mediaId` or an
+  ISBN is fine to log (opaque/edition identifiers, not personal content); a title, author, or
+  session note never is. Log *what failed and why*, never *what the user is reading*. No
+  crash-reporting service — every sink stays purely local (logcat/stdout), matching AGENTS.md §1's
+  no-cloud premise; this is a permanent choice, not a gap, and Phase B's "no encryption at rest"
+  decision below leans on this same rule rather than duplicating the guarantee.
+- **`RecordingLogger`** (`commonTest`) makes the "does not log user content" half of adoption
+  testable, not eyeballed: a test asserts both that a failure was logged (level, tag, cause) and
+  that the message contains no book content.
+- **Adopted at the three known gaps**, each proven with a `RecordingLogger` test:
+  `OpenLibraryIsbnCoverProbe` (logs at `WARN` before still folding to `NotFound` — the KDoc that
+  named it "first to adopt logging" is updated to match), `BackfillViewModel` (logs at `ERROR`
+  before settling to `Failed`), and the restore/migration paths (`DefaultRestoreDatabaseUseCase`'s
+  `stage`/`commit`/swap failures, `validateStagedDatabaseIntegrity`, and every registered
+  `Migration` via a `loggedMigration` wrapper that logs the failing schema-version transition and
+  rethrows unchanged).
+- Incidental fix needed to keep this green: `android.util.Log` throws "not mocked" on the
+  `testDebugUnitTest`/`testReleaseUnitTest` variant (host JVM against the android.jar stub, no
+  Robolectric — see `shared/build.gradle.kts`'s pre-existing Context-dependent exclusions for the
+  same underlying gap). `AndroidLogger` now catches `Throwable` around every `Log.*` call — a
+  logging call must never itself become a new source of failure for its caller, on that test
+  variant or on a real device.
 
-### Adoption, not just infrastructure
-Shipping the facility without using it would leave the three gaps above open. As part of this
-task, adopt it at least at those sites: the cover probe's swallowed exception, the backfill
-failure path, and the migration/restore paths (where a failure today is reported to the user as a
-message with no recoverable detail). Each adoption should make a previously-invisible failure
-diagnosable.
+### Phase B — Persistent, user-owned log store (not started)
+Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
+but logcat is unreachable for a normal user on a release build — a facility they cannot read does
+not serve a personal, local-first app whose whole support model is the user themselves. Phase B
+makes logging always-on (not debug-build-gated) and gives the user a way to see and share it.
+
+- **Persistent sink** behind Phase A's `Logger` interface: a capped file in app-private storage
+  with single rollover (current + previous — worst case 2× the cap, a few MB total). **Not a Room
+  table** — that would bloat the database that gets backed up and CSV-exported.
+- **Must be excluded from backup and export — the non-obvious hazard.** The app now has `.sqlite`
+  backup, CSV export, and `android:allowBackup="true"`, so without a deliberate carve-out a log
+  file would ride along inside a backup the user shares, and Android Auto Backup would sweep it to
+  Google Drive — directly contradicting the local-first premise. Needs `dataExtractionRules`/
+  `backup_rules` exclusions *plus* explicit exclusion in the export/backup code paths themselves,
+  and tests proving a backup and a CSV export both contain no log data.
+- **Buffered writes.** A bulk backfill over hundreds of books must not hit disk synchronously per
+  log entry — a bounded in-memory buffer, flushed periodically and on demand.
+- **In-app viewer** in Settings, with genuinely selectable text (`SelectionContainer`), not just a
+  copy-everything button. Compose constraint to design around: selection across a `LazyColumn`
+  breaks as items recycle, so this is a bounded recent-entries view in a scrollable `Column` inside
+  `SelectionContainer`, plus a separate "export full log" path for everything beyond that window.
+  - **Snapshot viewer, not a live tail.** The view shows entries as of when it was opened; logging
+    continues in the background but the view does not auto-update. A Refresh action pulls in
+    what's accumulated since, with a divider marking where the newly-arrived entries begin.
+    Rationale: a live-tailing view actively fights text selection (new entries reflow the list
+    mid-drag), so auto-update and genuinely selectable text are mutually exclusive — freezing the
+    view is what makes selection usable.
+  - **Boundary marking uses a monotonic per-entry sequence number, not timestamps** — two entries
+    can share a millisecond, and the wall clock can jump backwards (NTP sync, a user changing the
+    device time), either of which would scramble a timestamp-based boundary. The viewer keeps
+    `snapshot` plus a `boundary` seq: on open, `boundary = null` (nothing is new); on refresh,
+    `boundary = snapshot.maxOf { it.seq }` *before* reloading. The divider renders before the first
+    entry with `seq > boundary`. This survives repeated refreshes and rotation dropping old
+    entries, since it never depends on list position or count.
+  - **Sequence numbering across process restarts: an in-memory counter, initialized at startup from
+    the maximum sequence found across the retained log files (current *and* rolled-over) — no
+    separately persisted counter.** A counter persisted independently (e.g. in `app_settings`) can
+    drift from the store — write one, crash before the other, and the app starts assigning sequence
+    numbers *below* entries already on disk, silently corrupting every later boundary comparison.
+    Deriving from the store makes the store the single source of truth, so drift is impossible by
+    construction. Must scan **both** retained files: a rotation that just started a fresh, empty
+    current file would otherwise reset the counter while higher sequences still exist in the
+    previous one. The degenerate case (no retained entries at all) is safe — starting from zero is
+    correct, since there is nothing yet for a boundary to be compared against.
+  - **Ordering decided: oldest-first, newest at the bottom** — the terminal convention (`tail -f`,
+    log files), read top-to-bottom chronologically. This is what makes the snapshot divider read
+    correctly: in ascending order the divider sits *above* the fresh entries ("everything below
+    this line is new"), whereas newest-first would place the marker below the entries it marks.
+    Paired with **auto-scroll to the bottom on open**, as a terminal parks you at the tail.
+    **Deliberately not a user setting** — considered and rejected: the cost of changing ordering
+    later is social (user muscle memory), not technical, so a setting doesn't solve the real
+    problem, it just pushes the decision onto the user, and it would double the tested surface
+    since both the divider placement and the auto-scroll direction flip with it. Express the order
+    as a single named constant in the viewer instead, so it can be flipped in one place if this is
+    ever revisited.
+  - **No pending-count badge.** "3 new entries" requires live observation, which reintroduces
+    exactly what the snapshot model avoids. A plain Refresh that reveals what's new is simpler and
+    consistent.
+  - Consequence: the viewer needs **no reactive `Flow`** — a suspend "read current entries" call is
+    enough, less machinery than a live stream.
+- **User-adjustable verbosity** in Settings, persisted via the existing `app_settings` store, with
+  a sane (not chatty) default — a chatty default would blow through the size cap and capture more
+  than intended.
+- **Companion: an in-app "What's new" changelog viewer.** Deliberately scheduled *with* this phase
+  rather than on its own, because it is the same shape — a read-only, genuinely selectable text
+  view reached from a Settings row — so solving that pattern once covers both, instead of building
+  it twice.
+  - **Build-time copy, not a second file.** A Gradle task in the app module copies the root
+    `CHANGELOG.md` into assets before asset merging; the copy is a gitignored build artifact, so
+    `CHANGELOG.md` stays the single source of truth and a stale duplicate can never be committed.
+    Read at runtime via `context.assets`. No new dependency.
+  - **Plain text first; a Markdown parser is optional polish, not a prerequisite.** Keep a
+    Changelog is readable as-is, so all that is strictly needed is section extraction (everything
+    between `## [x.y.z]` and the next `## [`) rendered monospaced and selectable. Literal `**` and
+    backticks are mildly noisy but carry zero parsing risk. A ~100-line `AnnotatedString` parser
+    for that tiny, predictable subset can be added later without disturbing anything around it —
+    a full Markdown dependency for one screen would not clear AGENTS.md §5.
+  - `versionName` is already single-sourced from `[versions] app`, so the app knows its own
+    version and can open on the matching section by default, with older releases behind a scroll.
+  - **Known tension, decide when building:** this changelog is written for developers — entries
+    name `MIGRATION_3_4`, `BookWriteDao`, `stateIn`/`WhileSubscribed`. As the only user that may
+    genuinely be useful, but if polished user-facing notes are ever wanted, showing only each
+    version's plain-language summary paragraph (already present above the `### Added` sections)
+    with the detail collapsible is the middle path that avoids a second source of truth.
+- **Encryption at rest considered and NOT planned** — recorded here so it isn't silently revisited:
+  app-private storage is already sandboxed; the obvious library
+  (`androidx.security:security-crypto`) is deprecated and Android-only (would break KMP purity);
+  and since the user can read and send these logs themselves, at-rest encryption doesn't change who
+  ultimately sees them. Phase A's "never log the library as data" rule is the stronger guarantee —
+  you cannot leak what was never written. Revisit only if a concrete threat model demands it.
 
 ## Blocked on external changes
 

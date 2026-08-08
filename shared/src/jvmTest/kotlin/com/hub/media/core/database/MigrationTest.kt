@@ -1,8 +1,12 @@
 package com.hub.media.core.database
 
 import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.SQLiteException
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.deleteExisting
@@ -10,6 +14,7 @@ import kotlin.io.path.exists
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import org.junit.Rule
 
@@ -572,6 +577,53 @@ class MigrationTest {
                 assertTrue(stmt.step())
                 assertEquals(0, stmt.getInt(0))
             }
+        }
+    }
+
+    // ==========================================================================================
+    // ROADMAP Task 15: a migration failure must now be logged before it propagates.
+    // ==========================================================================================
+
+    /**
+     * Forces [MIGRATION_1_2] to genuinely fail: called directly (bypassing [helper]/`AppDatabase`
+     * entirely) against a bare, freshly-opened SQLite file with none of this app's tables in it.
+     * The migration's first statement (`CREATE TABLE reading_sessions_new ...`) succeeds regardless
+     * (SQLite does not check a `FOREIGN KEY` target exists at `CREATE TABLE` time), but its second
+     * statement -- `INSERT INTO reading_sessions_new ... SELECT ... FROM reading_sessions` -- fails
+     * with "no such table: reading_sessions", deterministically and without needing
+     * [MigrationTestHelper]/schema validation at all.
+     *
+     * Before ROADMAP Task 15, this exact exception propagated with nothing logged anywhere.
+     * `loggedMigration` (`Migrations.kt`) must now record it at ERROR under a
+     * `Migration_<from>_<to>`-shaped tag before rethrowing it unchanged -- proven here by swapping
+     * [AppLogger]'s delegate for a [RecordingLogger] for the duration of this one test, then
+     * restoring [AppLogger] to its default configuration afterward so no other test in this suite
+     * (or run after it in the same JVM process) observes a leaked delegate/threshold.
+     */
+    @Test
+    fun migrate1To2_missingSourceTable_logsErrorBeforeRethrowing() {
+        val recorder = RecordingLogger()
+        AppLogger.configure(minLevel = LogLevel.DEBUG, delegate = recorder)
+        try {
+            val bareDbPath = testDbDir.resolve("bare-for-migration-failure.db")
+            BundledSQLiteDriver().open(bareDbPath.toString()).use { connection ->
+                assertFailsWith<SQLiteException> { MIGRATION_1_2.migrate(connection) }
+            }
+
+            val errorEntries = recorder.entries.filter { it.level == LogLevel.ERROR }
+            assertTrue(errorEntries.isNotEmpty(), "a migration failure must be logged at ERROR")
+            assertTrue(errorEntries.any { it.tag == "Migration_1_2" })
+            assertTrue(errorEntries.all { it.throwable != null }, "the underlying exception must be attached")
+            // The identifier rule (Logger's KDoc): this message can only ever be the fixed
+            // "schema migration N -> M failed" text -- there is no row/book data in scope at this
+            // catch site for it to leak even if it wanted to.
+            assertEquals("schema migration 1 -> 2 failed", errorEntries.single().message)
+        } finally {
+            // Restore AppLogger's default configuration -- this test is the only one in the suite
+            // that reconfigures the process-wide singleton, and it must not leak into any test that
+            // runs after it (in this file or, since JVM tests in one module share a process, any
+            // other jvmTest suite run in the same invocation).
+            AppLogger.configure(minLevel = LogLevel.WARN)
         }
     }
 }
