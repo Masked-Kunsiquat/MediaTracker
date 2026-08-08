@@ -2,10 +2,56 @@ package com.hub.media.features.books.network
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.head
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.fromHttpToGmtDate
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 
 private const val OPEN_LIBRARY_COVERS_ISBN_URL = "https://covers.openlibrary.org/b/isbn"
+
+/** Fallback wait when a 429/5xx carries no (or an unparsable) `Retry-After` header. */
+private val DEFAULT_RETRY_AFTER: Duration = OPEN_LIBRARY_COVER_QUOTA_WINDOW
+
+/**
+ * Outcome of [OpenLibraryIsbnCoverProbe.probeCoverUrl] (ROADMAP Task 14 Phase A). Replaces the
+ * probe's original bare `String?` return: a plain nullable collapsed "no cover for this ISBN"
+ * (404) and "the provider is refusing right now" (429/5xx/local quota exhaustion) into the same
+ * `null`, which is actively wrong for a bulk caller that loops over many ISBNs — a temporary
+ * refusal would have permanently marked every remaining book coverless instead of being retried
+ * once the quota resets. Callers that only care about "did we get a cover" can still treat every
+ * non-[Found] case uniformly (as [FallbackBookMetadataProvider] does for the single-book
+ * interactive paths), but a caller that needs to tell the difference — namely
+ * [com.hub.media.features.books.domain.BulkBackfillUseCase] — now can.
+ */
+public sealed class CoverProbeResult {
+    /** A real cover exists; [url] is the probed, directly-fetchable image URL. */
+    public data class Found(public val url: String) : CoverProbeResult()
+
+    /**
+     * The provider affirmatively confirmed no cover exists for this ISBN (a real 404, thanks to
+     * `?default=false` suppressing Open Library's usual placeholder-image response), OR the
+     * request could not be completed at all (network/TLS failure) — see this class's KDoc on the
+     * network-failure branch for why those two cases remain indistinguishable here, same as before
+     * this type existed.
+     */
+    public data object NotFound : CoverProbeResult()
+
+    /**
+     * The provider is refusing right now, not confirming an absence: a 429 (Open Library's
+     * cover-quota rate limit), a 5xx (transient server trouble), or this device's own local quota
+     * tracking ([OpenLibraryCoverRateLimiter]) already being exhausted before any request was even
+     * sent. [retryAfter] estimates how long the refusal is expected to last. A caller MUST NOT
+     * treat this the same as [NotFound] when it can act on the difference (i.e. pause and retry
+     * later rather than writing off the book as coverless).
+     */
+    public data class RateLimited(public val retryAfter: Duration) : CoverProbeResult()
+}
 
 /**
  * Last-resort ISBN-keyed Open Library cover probe (ROADMAP Task 6 Phase E), used only when
@@ -22,15 +68,45 @@ private const val OPEN_LIBRARY_COVERS_ISBN_URL = "https://covers.openlibrary.org
  * This probe is ISBN-keyed, not cover-id-keyed, and Open Library rate-limits ISBN/OCLC/LCCN-keyed
  * cover lookups to 100 requests per IP per 5 minutes — unlike the ID-keyed
  * `covers.openlibrary.org/b/id/{id}-L.jpg` URLs [OpenLibraryClient] normally uses, which are not
- * rate-limited. Keeping this as a separate, explicitly-last-resort step (wired into
- * [FallbackBookMetadataProvider] only as the third fallback after both providers' normal lookups)
- * keeps that rate-limited request path opt-in and easy to keep out of any bulk/loop context — a
- * per-book "re-fetch cover" affordance (see
- * [com.hub.media.features.books.domain.RefetchCoverUseCase]) only ever issues one such request at
- * a time, but a bulk backfill across a whole library would need its own throttling before ever
- * calling this repeatedly (ROADMAP Task 6 Phase E explicitly defers bulk backfill for this reason).
+ * rate-limited.
+ *
+ * ### Rate limiting (ROADMAP Task 14 Phase A)
+ * Every call goes through [rateLimiter] first ([OpenLibraryCoverRateLimiter.tryAcquire]) — if the
+ * shared quota is already exhausted, this returns [CoverProbeResult.RateLimited] without ever
+ * issuing the HTTP request. The single [rateLimiter] instance is meant to be shared by every
+ * caller of this probe across the app (interactive re-fetch, add-by-ISBN, and the bulk backfill —
+ * see [OpenLibraryCoverRateLimiter]'s KDoc for why a bulk-only limiter would be wrong), which is
+ * why it is an injected dependency rather than private state on this class: two different
+ * [OpenLibraryIsbnCoverProbe] instances constructed with the *same* [rateLimiter] correctly share
+ * one budget, while two instances each with their own default limiter would not.
+ *
+ * @param rateLimiter Shared quota tracker. Defaults to `null`, in which case a fresh
+ *   [OpenLibraryCoverRateLimiter] is constructed using this same probe's [clock] -- see [clock]'s
+ *   KDoc for why the two must never be allowed to disagree about "now".
+ * @param clock Source of "now", used both to turn a `Retry-After` HTTP-date header into a
+ *   [Duration] (see [parseRetryAfter]) and, when [rateLimiter] is left at its default, to
+ *   construct that default [OpenLibraryCoverRateLimiter]. Defaults to [Clock.System], matching
+ *   [com.hub.media.features.books.data.BookRepository]'s injected-[Clock] convention. Production
+ *   callers never need to override this -- it exists so tests can pin the same fixed instant this
+ *   probe and its [rateLimiter] both compute "now" from, which is what makes the resulting
+ *   `retryAfter` deterministic and consistent between the two. A caller that supplies its *own*
+ *   [rateLimiter] (the normal production case -- see this class's KDoc on why every caller is
+ *   expected to share one instance) is responsible for constructing that limiter with the same
+ *   [Clock] it passes here; this default-construction path only covers the case where no
+ *   [rateLimiter] is supplied at all.
  */
-public class OpenLibraryIsbnCoverProbe(private val client: HttpClient) {
+public class OpenLibraryIsbnCoverProbe(
+    private val client: HttpClient,
+    rateLimiter: OpenLibraryCoverRateLimiter? = null,
+    private val clock: Clock = Clock.System,
+) {
+    // Threading `clock` through here (rather than each defaulting to Clock.System independently)
+    // is what keeps this probe and its rate limiter from disagreeing about "now" when a caller
+    // (namely a test) injects a non-system clock but leaves `rateLimiter` at its default -- see
+    // this constructor's KDoc. `rateLimiter` can't default to `OpenLibraryCoverRateLimiter(clock =
+    // clock)` directly (a parameter's default value can't reference a later-declared parameter),
+    // hence the nullable-parameter-plus-elvis indirection instead.
+    private val rateLimiter: OpenLibraryCoverRateLimiter = rateLimiter ?: OpenLibraryCoverRateLimiter(clock = clock)
 
     /**
      * Probes `covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false` for [isbn].
@@ -41,39 +117,96 @@ public class OpenLibraryIsbnCoverProbe(private val client: HttpClient) {
      * `covers.openlibrary.org` answers `HEAD` with the same status a `GET` would, for both the
      * cover-exists and the `?default=false` no-cover cases.
      *
-     * @return The probed URL if the response is a 2xx success (a real cover exists), or `null` on
-     *   a 404 (no cover), any other non-success status, or a network failure. Never throws, with
-     *   the deliberate exception of [CancellationException] (see below).
+     * @return [CoverProbeResult.Found] on a 2xx, [CoverProbeResult.NotFound] on a 404 (or a
+     *   network failure — see that case's KDoc), or [CoverProbeResult.RateLimited] on a 429, a 5xx,
+     *   or immediately if [rateLimiter] reports the shared quota is already exhausted. Never
+     *   throws, with the deliberate exception of [CancellationException] (see below).
      *
      * ### On the network-failure branch being silent
      * A thrown exception (TLS failure, DNS failure, timeout, connection reset, etc.) is
      * deliberately indistinguishable from a confirmed "no cover" 404 here -- both just return
-     * `null`. This is a real loss of information (a caller can't tell "this book genuinely has no
-     * cover" from "we couldn't check"), but recording the exception would need a logging facility,
-     * and `shared/` has none: there is no `Logger`/`Napier`/equivalent anywhere in
-     * `commonMain`, and AGENTS.md §5 explicitly rules out adding third-party dependencies without
-     * project sign-off. Swallowing to `null` also matches the existing sibling pattern in this
-     * package -- [OpenLibraryClient.fetchAuthorName] silently drops a per-author lookup failure to
-     * `null` the same way -- so this isn't a one-off oversight, it's this codebase's established
-     * (if imperfect) convention for a "best-effort, never-throws" lookup. If/when `shared/` grows a
-     * logging facility, this is the first catch block that should start using it.
+     * [CoverProbeResult.NotFound]. This is a real loss of information (a caller can't tell "this
+     * book genuinely has no cover" from "we couldn't check"), but recording the exception would
+     * need a logging facility, and `shared/` has none: there is no `Logger`/`Napier`/equivalent
+     * anywhere in `commonMain`, and AGENTS.md §5 explicitly rules out adding third-party
+     * dependencies without project sign-off. Swallowing to [CoverProbeResult.NotFound] also
+     * matches the existing sibling pattern in this package -- [OpenLibraryClient.fetchAuthorName]
+     * silently drops a per-author lookup failure to `null` the same way -- so this isn't a one-off
+     * oversight, it's this codebase's established (if imperfect) convention for a "best-effort,
+     * never-throws" lookup. Unlike a 429/5xx, a network-level failure carries no `Retry-After`
+     * signal and no confirmation that *this specific device* is the one being throttled, so folding
+     * it into [CoverProbeResult.RateLimited] instead would risk pausing a bulk backfill over what
+     * might be a one-off local network blip rather than a real quota problem — [NotFound] (skip and
+     * move on) is the safer of the two imperfect choices here, same as it was pre-Task-14.
      */
-    public suspend fun probeCoverUrl(isbn: String): String? {
+    public suspend fun probeCoverUrl(isbn: String): CoverProbeResult {
+        when (val outcome = rateLimiter.tryAcquire()) {
+            is RateLimitOutcome.Denied -> return CoverProbeResult.RateLimited(outcome.retryAfter)
+            RateLimitOutcome.Allowed -> Unit
+        }
+
         val url = "$OPEN_LIBRARY_COVERS_ISBN_URL/$isbn-L.jpg?default=false"
         return try {
             val response = client.head(url)
-            if (response.status.isSuccess()) url else null
+            when {
+                response.status.isSuccess() -> CoverProbeResult.Found(url)
+                response.status == HttpStatusCode.TooManyRequests -> {
+                    val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
+                    rateLimiter.recordServerRefusal(retryAfter)
+                    CoverProbeResult.RateLimited(retryAfter)
+                }
+                response.status.value >= 500 -> {
+                    // Same as the 429 branch above: a 5xx is the server telling us it's not
+                    // healthy right now, so the shared limiter must learn about it too -- without
+                    // this, the very next probe (for a different ISBN, possibly milliseconds
+                    // later) would sail straight through local rate limiting and hit a server we
+                    // already know is refusing.
+                    val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
+                    rateLimiter.recordServerRefusal(retryAfter)
+                    CoverProbeResult.RateLimited(retryAfter)
+                }
+                else -> CoverProbeResult.NotFound
+            }
         } catch (e: CancellationException) {
             // Must be caught before the broad `Exception` below and rethrown: coroutine
-            // cancellation propagates as an exception, so swallowing it to `null` would break
-            // structured concurrency -- a caller whose scope was cancelled mid-probe would carry
-            // on as though the probe had simply found no cover.
+            // cancellation propagates as an exception, so swallowing it would break structured
+            // concurrency -- a caller whose scope was cancelled mid-probe would carry on as though
+            // the probe had simply found no cover.
             throw e
         } catch (e: Exception) {
-            // See "On the network-failure branch being silent" above: no shared/ logging facility
-            // exists to record `e` against, so a network/TLS failure and a genuine "no cover" are
-            // indistinguishable to callers by design, not by accident.
-            null
+            // See "On the network-failure branch being silent" above.
+            CoverProbeResult.NotFound
         }
+    }
+}
+
+/**
+ * Parses a `Retry-After` header in either of RFC 7231 §7.1.3's two forms: the numeric-seconds
+ * `delay-seconds` form, or the HTTP-date form (e.g. `Wed, 21 Oct 2015 07:28:00 GMT`). Open
+ * Library's actual header format for this is unverified against the live service (no documented
+ * contract), so both are handled rather than assuming numeric-only.
+ *
+ * The HTTP-date form is resolved against [clock] -- the same clock instance [rateLimiter] uses
+ * for its own "now" -- so the [Duration] this returns and the moment [rateLimiter] later computes
+ * its `blockedUntil` from can't disagree about what "now" was. A date already in the past (clock
+ * skew, or a server sending a stale header) is floored to [Duration.ZERO] rather than going
+ * negative.
+ *
+ * An unparsable (neither form) or absent header returns `null`, and the call site falls back to
+ * [DEFAULT_RETRY_AFTER] rather than this function guessing.
+ */
+private fun parseRetryAfter(response: HttpResponse, clock: Clock): Duration? {
+    val header = response.headers[HttpHeaders.RetryAfter]?.trim() ?: return null
+
+    header.toLongOrNull()?.let { delaySeconds -> return delaySeconds.takeIf { it >= 0 }?.seconds }
+
+    return try {
+        val target = Instant.fromEpochMilliseconds(header.fromHttpToGmtDate().timestamp)
+        (target - clock.now()).coerceAtLeast(Duration.ZERO)
+    } catch (e: IllegalStateException) {
+        // fromHttpToGmtDate() throws IllegalStateException (via error(...)) when none of its
+        // known formats match -- that's this function's "not a date either" signal, same as
+        // toLongOrNull() returning null above.
+        null
     }
 }

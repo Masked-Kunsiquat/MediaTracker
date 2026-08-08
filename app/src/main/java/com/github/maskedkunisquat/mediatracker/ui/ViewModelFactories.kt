@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.BackfillViewModel
 import com.hub.media.ui.BackupViewModel
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.EditBookViewModel
@@ -207,6 +208,24 @@ class RestoreViewModelFactory(private val appContainer: AppContainer) : ViewMode
         return when {
             modelClass.isAssignableFrom(RestoreViewModel::class.java) -> {
                 RestoreViewModel(appContainer.restoreDatabaseUseCase) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [BackfillViewModel] with its
+ * [com.hub.media.features.books.domain.BulkBackfillUseCase] dependency from the [AppContainer]
+ * (ROADMAP Task 14 Phase A). Reused across navigations to the Settings screen the same way
+ * [ExportViewModelFactory] is.
+ */
+class BackfillViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(BackfillViewModel::class.java) -> {
+                BackfillViewModel(appContainer.bulkBackfillUseCase) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

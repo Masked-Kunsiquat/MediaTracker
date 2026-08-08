@@ -332,6 +332,23 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
     }
 
     /**
+     * One-shot (non-reactive) counterpart of [observeAllBooksWithDetails] (ROADMAP Task 14 Phase
+     * A), for [com.hub.media.features.books.domain.BulkBackfillUseCase] to scan the whole library
+     * exactly once when seeding a fresh backfill's candidate list -- a bulk pass has no use for an
+     * ongoing [Flow] subscription the way library-screen UI does. Same join semantics as
+     * [observeAllBooksWithDetails] (title order, `details` independently nullable per that method's
+     * KDoc), backed by [com.hub.media.core.database.dao.MediaItemDao.getAllByType]/
+     * [com.hub.media.core.database.dao.BookDetailsDao.getAll].
+     */
+    public suspend fun getAllBooksWithDetails(): List<BookWithDetails> {
+        val mediaItems = db.mediaItemDao().getAllByType(MediaType.BOOK)
+        val detailsByMediaId = db.bookDetailsDao().getAll().associateBy { it.mediaId }
+        return mediaItems.map { mediaItem ->
+            BookWithDetails(mediaItem = mediaItem, details = detailsByMediaId[mediaItem.id])
+        }
+    }
+
+    /**
      * Updates only [MediaItemEntity.coverImageHash] for [mediaId] (ROADMAP Task 6 Phase E's
      * re-fetch-cover affordance — see [com.hub.media.features.books.domain.RefetchCoverUseCase]).
      * Deliberately narrower than [updateBookMetadata]: every other [MediaItemEntity] field and all
@@ -366,6 +383,53 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
             message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
             cause = e,
         )
+    }
+
+    /**
+     * Atomically writes the cover and/or authors a single bulk-backfill pass resolved for
+     * [mediaId] (ROADMAP Task 14 Phase A —
+     * see [com.hub.media.features.books.domain.BulkBackfillUseCase]), via
+     * [com.hub.media.core.database.dao.BookWriteDao.applyBackfilledMetadata]'s one-transaction
+     * write. Deliberately a single entry point for *both* fields rather than two separate calls
+     * ([updateCoverImageHash] plus a hypothetical `updateAuthors]): the whole point of the bulk
+     * backfill is that one rate-limited provider lookup
+     * ([com.hub.media.features.books.network.BookMetadata]) carries both pieces of data, so writing
+     * them separately would reintroduce the "two crawls over the same rate-limited API" problem
+     * this phase exists to avoid, and would also reopen the same partial-write race
+     * [updateBookMetadataAtomically] already guards against for the edit-metadata flow.
+     *
+     * @param mediaId The book being backfilled.
+     * @param coverImageHash The newly resolved `<sha256>.jpg` cover filename, or `null` if this
+     *   pass didn't resolve a new cover (the book already had one, or none was found/downloadable).
+     * @param authors The newly resolved [com.hub.media.core.database.entities.joinAuthors]-encoded
+     *   author string, or `null` if this pass didn't resolve new authors.
+     * @return [Resource.Success] immediately, without touching the database, if both
+     *   [coverImageHash] and [authors] are `null` (nothing to write is not an error -- a caller
+     *   that resolved neither field for a book simply shouldn't have called this, but treating it
+     *   as a no-op success rather than an error keeps this method safe to call defensively).
+     *   Otherwise [Resource.Success] if at least one targeted column was written, or
+     *   [Resource.Error] if [mediaId] does not resolve to an existing book or the underlying DB
+     *   write throws.
+     */
+    public suspend fun applyBackfilledMetadata(
+        mediaId: String,
+        coverImageHash: String?,
+        authors: String?,
+    ): Resource<Unit> {
+        if (coverImageHash == null && authors == null) return Resource.Success(Unit)
+        return try {
+            val rowsAffected = db.bookWriteDao().applyBackfilledMetadata(mediaId, coverImageHash, authors)
+            if (rowsAffected == 0) {
+                Resource.Error("Book with id=$mediaId not found")
+            } else {
+                Resource.Success(Unit)
+            }
+        } catch (e: Exception) {
+            Resource.Error(
+                message = "Failed to apply backfilled metadata: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
     }
 
     /**

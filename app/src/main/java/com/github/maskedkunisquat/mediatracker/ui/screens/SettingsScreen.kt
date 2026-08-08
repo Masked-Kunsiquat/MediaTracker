@@ -30,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -61,6 +63,7 @@ import com.github.maskedkunisquat.mediatracker.export.copyUriToFile
 import com.github.maskedkunisquat.mediatracker.export.readCsvFromUri
 import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
 import com.github.maskedkunisquat.mediatracker.restartApp
+import com.github.maskedkunisquat.mediatracker.ui.BackfillViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.BackupViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
@@ -68,6 +71,7 @@ import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.RestoreMarker
+import com.hub.media.features.books.domain.BulkBackfillProgress
 import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.CsvExportBundle
 import com.hub.media.features.portability.domain.DuplicatePolicy
@@ -76,6 +80,8 @@ import com.hub.media.features.portability.domain.ImportSummary
 import com.hub.media.features.portability.domain.StagedRestoreInfo
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.BackfillUiState
+import com.hub.media.ui.BackfillViewModel
 import com.hub.media.ui.BackupUiState
 import com.hub.media.ui.BackupViewModel
 import com.hub.media.ui.ExportUiState
@@ -87,6 +93,8 @@ import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
 import java.io.File
+import kotlin.math.ceil
+import kotlin.time.DurationUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -119,11 +127,15 @@ fun SettingsScreenRoute(
     val restoreViewModel: RestoreViewModel = viewModel(
         factory = RestoreViewModelFactory(appContainer),
     )
+    val backfillViewModel: BackfillViewModel = viewModel(
+        factory = BackfillViewModelFactory(appContainer),
+    )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val exportUiState by exportViewModel.uiState.collectAsStateWithLifecycle()
     val importUiState by importViewModel.uiState.collectAsStateWithLifecycle()
     val backupUiState by backupViewModel.uiState.collectAsStateWithLifecycle()
     val restoreUiState by restoreViewModel.uiState.collectAsStateWithLifecycle()
+    val backfillUiState by backfillViewModel.uiState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -309,7 +321,14 @@ fun SettingsScreenRoute(
     }
 
     (importUiState as? ImportUiState.Success)?.let { state ->
-        ImportSummaryDialog(summary = state.summary, onDismiss = importViewModel::reset)
+        ImportSummaryDialog(
+            summary = state.summary,
+            onDismiss = importViewModel::reset,
+            onBackfillClick = {
+                importViewModel.reset()
+                backfillViewModel.start()
+            },
+        )
     }
 
     // ---- Backup (ROADMAP Task 8 Phase C) ------------------------------------------------------
@@ -491,6 +510,9 @@ fun SettingsScreenRoute(
         onBackupClick = backupViewModel::backupData,
         restoreInProgress = restoreUiState is RestoreUiState.Validating,
         onRestoreClick = { restoreFilePickerLauncher.launch(arrayOf("*/*")) },
+        backfillUiState = backfillUiState,
+        onStartBackfillClick = backfillViewModel::start,
+        onCancelBackfillClick = backfillViewModel::cancel,
         snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
     )
@@ -500,13 +522,31 @@ fun SettingsScreenRoute(
  * Full import-result summary (ROADMAP Task 8 Phase B): per-file counts for every duplicate-policy
  * outcome, plus every rejected row's reason (scrollable, since a large messy import could reject
  * many rows) -- see [ImportSummary]'s KDoc for why a bare "done" isn't acceptable here.
+ *
+ * @param onBackfillClick Starts the bulk cover/author backfill (ROADMAP Task 14 Phase A) and
+ *   dismisses this dialog, offered as a dismiss-button-adjacent action whenever [summary] actually
+ *   added books ([ImportSummary.booksImported] > 0) -- the moment a coverless/authorless import
+ *   just landed (a Goodreads import above all) is exactly when the need for a backfill is obvious,
+ *   per that phase's brief. Never shown for an import that added nothing (a pure duplicate-skip
+ *   pass has no new gaps to fill).
  */
 @Composable
-private fun ImportSummaryDialog(summary: ImportSummary, onDismiss: () -> Unit) {
+private fun ImportSummaryDialog(
+    summary: ImportSummary,
+    onDismiss: () -> Unit,
+    onBackfillClick: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Button(onClick = onDismiss) { Text(stringResource(R.string.ok_button)) }
+        },
+        dismissButton = {
+            if (summary.booksImported > 0) {
+                TextButton(onClick = onBackfillClick) {
+                    Text(stringResource(R.string.settings_backfill_start_button))
+                }
+            }
         },
         title = { Text(stringResource(R.string.import_summary_title)) },
         text = {
@@ -681,6 +721,14 @@ private fun RestoreConfirmationDialog(
  *   picker. Deliberately placed in its own visually-distinct section from every other action on
  *   this screen (this phase's brief: restore must not be "a single tap next to the export
  *   button").
+ * @param backfillUiState Current [BackfillUiState] for the bulk cover/author backfill action
+ *   (ROADMAP Task 14 Phase A) -- unlike [exportInProgress]/[importInProgress]'s bare booleans, this
+ *   is a full sealed state since the action reports live progress and can be resumed, not just
+ *   in-flight-or-not.
+ * @param onStartBackfillClick Called when the backfill start/resume button is tapped, wired to
+ *   [BackfillViewModel.start].
+ * @param onCancelBackfillClick Called when the backfill cancel button is tapped, wired to
+ *   [BackfillViewModel.cancel].
  * @param onNavigateBack Called when the back icon is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -701,6 +749,9 @@ fun SettingsScreen(
     onBackupClick: () -> Unit,
     restoreInProgress: Boolean,
     onRestoreClick: () -> Unit,
+    backfillUiState: BackfillUiState,
+    onStartBackfillClick: () -> Unit,
+    onCancelBackfillClick: () -> Unit,
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
 ) {
@@ -757,6 +808,20 @@ fun SettingsScreen(
                             duplicatePolicy = goodreadsDuplicatePolicy,
                             onDuplicatePolicyChange = onGoodreadsDuplicatePolicyChange,
                             onImportClick = onImportGoodreadsClick,
+                        )
+                    }
+                }
+                item {
+                    // Its own section, not another row in the "Data" card above -- this is a
+                    // long-running, resumable, cancellable action (ROADMAP Task 14 Phase A's
+                    // brief: "not a single tap"), unlike the export/import rows above it, and
+                    // reads better grouped with the repair-your-library concern it serves rather
+                    // than folded into the import/export card.
+                    SettingsSection(title = stringResource(R.string.settings_section_backfill)) {
+                        BackfillSetting(
+                            uiState = backfillUiState,
+                            onStartClick = onStartBackfillClick,
+                            onCancelClick = onCancelBackfillClick,
                         )
                     }
                 }
@@ -1127,6 +1192,179 @@ private fun RestoreDataSetting(
     }
 }
 
+/**
+ * The bulk cover/author backfill setting row (ROADMAP Task 14 Phase A). Unlike every other row on
+ * this screen, its body branches on a full sealed [BackfillUiState] rather than a bare in-progress
+ * boolean -- a plain "loading" flag can't express "312 of 480 done, paused until the quota resets"
+ * (this phase's explicit brief for honest partial progress), a resumable state left over from a
+ * previous session, or the distinction between "finished cleanly" and "paused by the rate limit."
+ */
+@Composable
+private fun BackfillSetting(
+    uiState: BackfillUiState,
+    onStartClick: () -> Unit,
+    onCancelClick: () -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_backfill_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        when (uiState) {
+            BackfillUiState.Idle -> {
+                Button(onClick = onStartClick) {
+                    Text(stringResource(R.string.settings_backfill_start_button))
+                }
+            }
+            is BackfillUiState.Running -> {
+                BackfillRunningContent(progress = uiState.progress)
+                OutlinedButton(onClick = onCancelClick, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(stringResource(R.string.settings_backfill_cancel_button))
+                }
+            }
+            is BackfillUiState.Stopped -> {
+                BackfillStoppedContent(progress = uiState.progress)
+                Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        stringResource(
+                            if (uiState.progress.remaining > 0) {
+                                R.string.settings_backfill_resume_button
+                            } else {
+                                R.string.settings_backfill_start_button
+                            },
+                        ),
+                    )
+                }
+            }
+            is BackfillUiState.Failed -> {
+                BackfillFailedContent(progress = uiState.progress)
+                Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        stringResource(
+                            if ((uiState.progress?.remaining ?: 0) > 0) {
+                                R.string.settings_backfill_resume_button
+                            } else {
+                                R.string.settings_backfill_start_button
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** [BackfillUiState.Running]'s body: a progress bar once the first book has been checkpointed. */
+@Composable
+private fun BackfillRunningContent(progress: BulkBackfillProgress?) {
+    if (progress != null && progress.totalCandidates > 0) {
+        LinearProgressIndicator(
+            progress = { progress.processed.toFloat() / progress.totalCandidates },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
+        )
+        Text(
+            text = stringResource(
+                R.string.settings_backfill_progress_format,
+                progress.processed,
+                progress.totalCandidates,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    } else {
+        // Nothing checkpointed yet (fresh start, still scanning the library for candidates), or
+        // there were zero candidates to begin with -- an indeterminate bar reads better than a
+        // 0/0 fraction either way.
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/**
+ * [BackfillUiState.Stopped]'s body: whether this is a paused-by-quota run, a finished run, or
+ * resumable leftover state from a previous session, plus the running totals so far.
+ */
+@Composable
+private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
+    when {
+        progress.isPaused -> {
+            val retryAfter = progress.retryAfter
+            val message = if (retryAfter != null) {
+                // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
+                // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
+                val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
+                pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
+            } else {
+                stringResource(R.string.settings_backfill_paused_message)
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        progress.isComplete -> Text(
+            text = stringResource(R.string.settings_backfill_complete_message),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (progress.totalCandidates > 0) {
+        Text(
+            text = stringResource(
+                R.string.settings_backfill_progress_format,
+                progress.processed,
+                progress.totalCandidates,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    if (progress.processed > 0) {
+        Text(
+            text = stringResource(
+                R.string.settings_backfill_summary_format,
+                progress.updated,
+                progress.noProviderData,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (progress.noIsbnSkipped > 0) {
+        Text(
+            text = stringResource(R.string.settings_backfill_no_isbn_format, progress.noIsbnSkipped),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * [BackfillUiState.Failed]'s body: an explicit failure signal, distinct from
+ * [BackfillStoppedContent]'s "paused"/"complete" messaging, so the user isn't left thinking a
+ * genuine mid-run failure was just a clean stop. [progress] is `null` when nothing was
+ * checkpointed before the failure, in which case there is no partial-progress line to show.
+ */
+@Composable
+private fun BackfillFailedContent(progress: BulkBackfillProgress?) {
+    Text(
+        text = stringResource(R.string.settings_backfill_failed_message),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
+    if (progress != null && progress.totalCandidates > 0) {
+        Text(
+            text = stringResource(
+                R.string.settings_backfill_progress_format,
+                progress.processed,
+                progress.totalCandidates,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
 /** Preview of the Settings screen with the default (Monday) week-start-day selected. */
 @Preview(showBackground = true)
 @Composable
@@ -1148,6 +1386,9 @@ private fun SettingsScreenMondayPreview() {
             onBackupClick = {},
             restoreInProgress = false,
             onRestoreClick = {},
+            backfillUiState = BackfillUiState.Idle,
+            onStartBackfillClick = {},
+            onCancelBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -1175,6 +1416,9 @@ private fun SettingsScreenSundayPreview() {
             onBackupClick = {},
             restoreInProgress = false,
             onRestoreClick = {},
+            backfillUiState = BackfillUiState.Idle,
+            onStartBackfillClick = {},
+            onCancelBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -1202,6 +1446,9 @@ private fun SettingsScreenExportingPreview() {
             onBackupClick = {},
             restoreInProgress = false,
             onRestoreClick = {},
+            backfillUiState = BackfillUiState.Idle,
+            onStartBackfillClick = {},
+            onCancelBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -1229,6 +1476,9 @@ private fun SettingsScreenBackingUpPreview() {
             onBackupClick = {},
             restoreInProgress = false,
             onRestoreClick = {},
+            backfillUiState = BackfillUiState.Idle,
+            onStartBackfillClick = {},
+            onCancelBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -1256,6 +1506,9 @@ private fun SettingsScreenValidatingRestorePreview() {
             onBackupClick = {},
             restoreInProgress = true,
             onRestoreClick = {},
+            backfillUiState = BackfillUiState.Idle,
+            onStartBackfillClick = {},
+            onCancelBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )

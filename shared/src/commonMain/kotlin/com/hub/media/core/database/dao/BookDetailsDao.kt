@@ -32,4 +32,12 @@ interface BookDetailsDao {
 
     @Query("SELECT * FROM book_details")
     fun observeAll(): Flow<List<BookDetailsEntity>>
+
+    /**
+     * One-shot (non-reactive) counterpart of [observeAll] (ROADMAP Task 14 Phase A) -- see
+     * [MediaItemDao.getAllByType]'s KDoc for why a library-wide scan needs a one-shot read rather
+     * than a [Flow] subscription.
+     */
+    @Query("SELECT * FROM book_details")
+    suspend fun getAll(): List<BookDetailsEntity>
 }

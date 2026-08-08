@@ -78,9 +78,18 @@ public class FallbackBookMetadataProvider(
             return Resource.Success(primaryResult.data.copy(coverImageUrl = secondaryCoverUrl))
         }
 
-        val probedCoverUrl = isbnCoverProbe?.probeCoverUrl(isbn)
-        if (probedCoverUrl != null) {
-            return Resource.Success(primaryResult.data.copy(coverImageUrl = probedCoverUrl))
+        // A RateLimited probe result is deliberately treated the same as NotFound here, not
+        // surfaced separately: this method's contract is "never downgrade a primary success," and
+        // for a single interactive lookup (add-by-ISBN, per-book re-fetch) there is no meaningful
+        // difference between "confirmed no cover" and "couldn't check right now" -- either way,
+        // this one call simply doesn't get a cover, and the user can retry later same as any other
+        // coverless result. A caller that DOES need to distinguish the two (the bulk backfill,
+        // which loops over many books and must pause rather than write off every remaining one as
+        // coverless) talks to [OpenLibraryIsbnCoverProbe] directly instead of through this merge --
+        // see [com.hub.media.features.books.domain.BulkBackfillUseCase]'s KDoc.
+        val probeResult = isbnCoverProbe?.probeCoverUrl(isbn)
+        if (probeResult is CoverProbeResult.Found) {
+            return Resource.Success(primaryResult.data.copy(coverImageUrl = probeResult.url))
         }
 
         return primaryResult
@@ -95,10 +104,19 @@ public class FallbackBookMetadataProvider(
  *
  * @param httpClient Shared Ktor client used for all three underlying requests (Open Library
  *   metadata, Google Books metadata, and the last-resort ISBN cover probe).
+ * @param coverRateLimiter Shared quota tracker for the ISBN-keyed cover probe (ROADMAP Task 14
+ *   Phase A) -- defaults to a fresh, private [OpenLibraryCoverRateLimiter] so every pre-existing
+ *   call site (and test) that doesn't pass one keeps working exactly as before, but production
+ *   wiring (`AppContainer`) passes the *same* instance here and to
+ *   [com.hub.media.features.books.domain.BulkBackfillUseCase] so both draw on one budget -- see
+ *   [OpenLibraryCoverRateLimiter]'s KDoc for why a per-call-site limiter would be wrong.
  */
-public fun createDefaultBookMetadataProvider(httpClient: HttpClient): BookMetadataProvider =
+public fun createDefaultBookMetadataProvider(
+    httpClient: HttpClient,
+    coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
+): BookMetadataProvider =
     FallbackBookMetadataProvider(
         primary = OpenLibraryClient(httpClient),
         secondary = GoogleBooksClient(httpClient),
-        isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient),
+        isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient, coverRateLimiter),
     )
