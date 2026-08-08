@@ -1,5 +1,7 @@
 package com.hub.media.ui
 
+import androidx.room.execSQL
+import androidx.room.useWriterConnection
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
@@ -162,23 +164,37 @@ class BackfillViewModelTest {
         val provider = GatedMetadataProvider(mapOf("9780547928227" to metadata(listOf("Author"))), gatedIsbns = emptySet())
         val viewModel = newViewModel(provider)
 
-        // Close the database out from under the ViewModel before starting -- every DB read
-        // BulkBackfillUseCase.execute performs (getBulkBackfillState, the bookRepository read
-        // inside processOneBook, saveBulkBackfillState) will now throw a raw exception, standing in
-        // for finding 1's "a DB failure mid-backfill propagates out as a raw exception" scenario. A
-        // closed-database read fails immediately with no genuine suspension, so (with the fix)
-        // start()'s try/catch runs to completion synchronously within this call -- unlike the other
-        // tests in this file, there is no intermediate Running moment to observe here.
-        db.close()
+        // Drop the table BulkBackfillUseCase.execute reads first (settingsRepository.getBulkBackfillState(),
+        // the very first line of execute()) out from under the ViewModel before starting, so every
+        // read against it fails with a genuine androidx.sqlite.SQLiteException -- standing in for
+        // finding 1's "a DB failure mid-backfill propagates out as a raw exception" scenario.
+        //
+        // Deliberately NOT db.close() (as this test used to do): verified empirically (PR review
+        // round 3) that closing the whole Room/bundled-SQLite connection pool out from under an
+        // in-flight coroutine surfaces as a kotlinx.coroutines CancellationException (the bundled
+        // driver's connection pool is itself coroutine-backed, and closing it cancels that internal
+        // Job) rather than a plain database exception. That CancellationException is legitimately
+        // caught by start()'s own `catch (e: CancellationException)` branch above the generic
+        // `catch (_: Exception)` -- so a db.close()-based test exercises settleOutOfRunning() (Idle),
+        // never settleAsFailed() (Failed), regardless of whether settleAsFailed() is even reachable.
+        // Dropping just this one table keeps the connection pool itself alive and healthy, so the
+        // failure surfaces as an ordinary SQLiteException through the normal catch(Exception) path.
+        db.useWriterConnection { connection -> connection.execSQL("DROP TABLE app_settings") }
 
         viewModel.start()
         waitUntilOrTimeOut { viewModel.uiState.value !is BackfillUiState.Running }
 
         // Nothing was ever checkpointed this run (the very first DB read failed), so there is no
-        // progress to show -- Idle is the correct settle point per settleOutOfRunning()'s KDoc.
-        // Without finding 1's fix this assertion fails: uiState stays Running(null) forever, because
-        // nothing catches the exception BulkBackfillUseCase.execute lets escape.
-        assertEquals(BackfillUiState.Idle, viewModel.uiState.value, "a DB failure must not leave uiState stuck at Running forever")
+        // progress to show -- Failed(null) is the correct settle point per settleAsFailed()'s KDoc:
+        // a genuine failure must stay distinguishable from Idle/a clean stop, not collapse into it.
+        // Without settleAsFailed() (PR review round 2's finding-3 fix) this assertion fails: the old
+        // behavior settled on the same Stopped/Idle state cancellation does, making a genuine DB
+        // failure indistinguishable from the user pressing cancel.
+        assertEquals(
+            BackfillUiState.Failed(progress = null),
+            viewModel.uiState.value,
+            "a DB failure must settle on Failed, not silently collapse into Idle/Stopped",
+        )
     }
 
     // ---- Finding 3: init's late peekProgress() must not clobber a start() already in flight ----
