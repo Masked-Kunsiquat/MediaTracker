@@ -709,19 +709,44 @@ makes logging always-on (not debug-build-gated) and gives the user a way to see 
     `CHANGELOG.md` into assets before asset merging; the copy is a gitignored build artifact, so
     `CHANGELOG.md` stays the single source of truth and a stale duplicate can never be committed.
     Read at runtime via `context.assets`. No new dependency.
-  - **Plain text first; a Markdown parser is optional polish, not a prerequisite.** Keep a
-    Changelog is readable as-is, so all that is strictly needed is section extraction (everything
-    between `## [x.y.z]` and the next `## [`) rendered monospaced and selectable. Literal `**` and
-    backticks are mildly noisy but carry zero parsing risk. A ~100-line `AnnotatedString` parser
-    for that tiny, predictable subset can be added later without disturbing anything around it —
-    a full Markdown dependency for one screen would not clear AGENTS.md §5.
+  - **The `AnnotatedString` parser is scheduled into B2, not deferred past it.** Originally listed
+    as optional polish on top of a plain-text dump. Moved into B2's scope because the structural
+    decision below will need it anyway: the `**bold**` lead the parser extracts *is* the
+    collapsible header text, so the two compose rather than compete, and the marginal cost over
+    plain text is a fold state map plus an expander row. Still the same tiny, predictable subset
+    (bold + inline code) — a full Markdown dependency for one screen would still not clear
+    AGENTS.md §5.
   - `versionName` is already single-sourced from `[versions] app`, so the app knows its own
     version and can open on the matching section by default, with older releases behind a scroll.
-  - **Known tension, decide when building:** this changelog is written for developers — entries
-    name `MIGRATION_3_4`, `BookWriteDao`, `stateIn`/`WhileSubscribed`. As the only user that may
-    genuinely be useful, but if polished user-facing notes are ever wanted, showing only each
-    version's plain-language summary paragraph (already present above the `### Added` sections)
-    with the detail collapsible is the middle path that avoids a second source of truth.
+  - **Known tension — RESOLVED: three-level collapsible, keeping the developer-facing text as
+    written.** Neither original option survived measuring the actual file. Raw dump loses because
+    the sections are wildly uneven — `[0.7.0]` is 335 lines / 4,138 words against `[0.1.0]`'s 38 /
+    313, a 13× spread, and the single longest bullet is 109 lines, nearly 3× the whole `[0.1.0]`
+    section. That is dozens of phone screens with no way to skim. Summary-paragraph-only loses
+    because it discards the detail that makes this changelog useful to the only user who reads it,
+    and because the assumption it rested on is not actually uniform: `[Unreleased]` — the section
+    most often being looked at during development — has *no* preamble at all, and `[0.8.0]` has
+    *two* paragraphs, so "the summary paragraph" is not reliably singular. The robust rule is
+    "everything before the first `###`".
+  - **Why extraction is safe here:** the structure measured consistent enough to fold on. Nesting
+    is effectively two levels (70 bullets at depth 0, 100 at depth 2, only 3 deeper), and 58 of 70
+    top-level bullets lead with `- **Bold title**`. Critically, the 12 that don't are all short
+    one-liners, so the entries that *need* folding are exactly the ones carrying a clean header,
+    and the ones without a header are already short enough to render flat. Degradation needs no
+    fallback logic beyond "no bold lead → render inline", so a format drift in a future entry
+    yields a slightly-less-tidy screen, never a broken or empty one.
+  - **Shape to build in B2:** version (collapsed except the running `versionName`'s) → preamble
+    always visible once a version is expanded → each `**bold**` top-level bullet its own
+    collapsible row. **Nothing in this bullet is built yet** — B1 shipped only the log store and
+    the backup carve-out; the decision above is recorded here so B2 starts from a settled design
+    rather than re-deriving it, not because any of it exists.
+  - **Consequence for the pairing rationale, recorded honestly:** with collapsibles the two
+    viewers are no longer quite "the same shape" — the log viewer stays a flat `SelectionContainer`
+    `Column` while this one gains structure. The shared part (read-only genuinely-selectable text
+    behind a Settings row) still holds, so pairing them is still right, just a thinner win than
+    written above. Note also that expand/collapse reflows text mid-drag exactly the way live
+    tailing would; what makes it acceptable here and not there is that it is user-initiated rather
+    than arriving on its own, so it never fights a selection unpredictably.
 - **Encryption at rest considered and NOT planned** — recorded here so it isn't silently revisited:
   app-private storage is already sandboxed; the obvious library
   (`androidx.security:security-crypto`) is deprecated and Android-only (would break KMP purity);

@@ -1,19 +1,85 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+   Real data extraction rules (ROADMAP Task 15 Phase B), replacing the Android Studio sample
+   template that shipped here untouched (every rule commented out) since the project's first
+   commit. Governs both of API 31+'s backup channels, cloud-backup and device-transfer, each
+   configured DELIBERATELY DIFFERENTLY below, not identically. See backup_rules.xml for the pre-31
+   equivalent, which has no such split to make (that file's own comment explains why).
+
+   AGENTS.md §1: "Offline-first, single local SQLite database, zero required external cloud sync or
+   accounts." The app's private storage today holds Room's database and the content-addressed
+   cover images (`<filesDir>/covers`, AGENTS.md §4); ROADMAP Task 15 Phase B adds a persistent log
+   file (`<filesDir>/logs`).
+
+   ### cloud-backup: Google Drive Auto Backup, excluded deliberately, in full
+   This is genuinely cloud: bytes leave the device and land on Google's servers, which is exactly
+   what AGENTS.md §1's "zero required external cloud sync" rules out. The app already ships its
+   own explicit, user-driven alternatives with none of that opacity: `.sqlite` backup/restore and
+   CSV export (ROADMAP Task 8), both opt-in, both local until the user themselves picks a
+   destination via SAF. Silent, size-capped, not-restorable-on-demand Auto Backup adds nothing
+   those don't already cover better, while routing the user's reading library through a cloud
+   account this app's premise says it should never need. Every domain the app writes to is
+   excluded below, so this channel ends up transferring nothing, matching backup_rules.xml's
+   answer for the same question on older API levels.
+
+   ### device-transfer: the covers travel, the database deliberately does not
+   Device-transfer (the "Copy your data" cable/Wi-Fi Direct flow during new-device setup) never
+   touches Google's servers: Android moves the bytes directly between the two physical devices
+   the user is holding. That is a materially different privacy posture from cloud-backup, so
+   AGENTS.md §1's "zero required external cloud sync" is not implicated here the way it is above,
+   and this section gets its own answer rather than inheriting the blanket exclusion.
+
+   That answer is: cover images yes, database NO. The database's absence is deliberate and is the
+   whole point of this section, not an oversight. Device transfer is a raw file copy performed by
+   the OS at an instant this app does not choose and cannot checkpoint before. DatabaseBackupUseCase
+   already considered and rejected exactly that mechanism for exactly that reason: a WAL-mode
+   SQLite database's most recently committed writes can live only in the -wal sidecar until
+   SQLite next checkpoints them, so a byte-copy can silently capture a torn or stale snapshot.
+   That is precisely why the app's own backup runs VACUUM INTO through the normal pager instead
+   (see that class's KDoc at length). Letting Android byte-copy the same database here would
+   quietly reintroduce the hazard Task 8 spent that whole design avoiding, with no validation
+   step and no user awareness that it happened.
+
+   So the database migrates the way this app already says databases migrate: the user's own
+   explicit .sqlite backup/restore (ROADMAP Task 8), which validates a candidate file before
+   replacing anything. What device-transfer contributes is the part that genuinely hurts to
+   rebuild and is safe to copy: the content-addressed covers. A user who transfers to a new phone
+   and then restores their .sqlite backup finds the cover hashes already resolving locally,
+   skipping the slow rate-limited re-crawl entirely.
+
+   This section uses "include" only, which (per Android's documented behavior for this schema)
+   makes it an ALLOWLIST: the database domain, the log directory, and sharedpref are all excluded
+   by omission, with no exclude line needed for any of them. That is the same fail-closed posture
+   backup_rules.xml reaches by excluding whole domains outright, expressed here as "list only what
+   should survive" because this section needs an allowlist shape anyway.
+
+   The log file is excluded under EVERY path in this project regardless of the cloud-backup vs.
+   device-transfer distinction above: it is diagnostic output, not user data a migration is
+   meant to preserve, and ROADMAP Task 15 Phase B calls this out explicitly ("Must be excluded
+   from backup and export, the non-obvious hazard").
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <!-- Same two domains, same reasoning as backup_rules.xml's pre-31 rules; see that
+             file's per-rule comments for the detail (database directory contents, filesDir
+             contents including the future logs/ directory, and the defensive sharedpref
+             exclusion even though nothing writes there today). -->
+        <!-- "root" is a separate domain from the three below, covering files written directly into
+             the data directory rather than into one of its known subdirectories; without it the
+             exclusion would have a gap. See backup_rules.xml for the full per-domain reasoning. -->
+        <exclude domain="root" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="sharedpref" path="." />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <!-- Content-addressed cover images (AGENTS.md §4), and deliberately nothing else.
+             Covers are immutable, content-addressed files: their name IS the SHA-256 of their
+             bytes, so a raw file copy is either byte-identical or detectably wrong, and there is
+             no consistency window to reason about. They are also the expensive half to rebuild.
+             Re-acquiring them means re-crawling Open Library through OpenLibraryCoverRateLimiter's
+             quota (100 requests per IP per 5 minutes, see that class), which for a large library
+             is a long, rate-limited grind; the database itself, by contrast, restores in seconds
+             from a file the user already has. -->
+        <include domain="file" path="covers/" />
     </device-transfer>
-    -->
 </data-extraction-rules>

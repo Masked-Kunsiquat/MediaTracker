@@ -1,6 +1,8 @@
 package com.hub.media.features.portability.domain
 
 import androidx.room.Room
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.AppDatabaseConstructor
 import com.hub.media.core.database.buildAppDatabase
@@ -129,5 +131,143 @@ class DatabaseBackupUseCaseTest {
         assertTrue(result.data.suggestedFileName.endsWith(".db"))
         File(result.data.stagedFilePath).delete()
         liveDb.close()
+    }
+
+    /**
+     * Regression guard for ROADMAP Task 15 Phase B ("Must be excluded from backup and export --
+     * the non-obvious hazard"): proves the actual bytes of a produced `.sqlite` backup never
+     * contain content from a log file sitting right next to the live database, at the exact
+     * fixed-contract path (`<filesDir>/logs/`) the persistent log store (a sibling, in-progress
+     * workstream) is contracted to write to. Exercises the real
+     * [DefaultDatabaseBackupUseCase.execute] path end to end -- not vacuous, because it would fail
+     * the moment `VACUUM INTO`'s destination (or anything upstream of it) started pulling in
+     * arbitrary filesystem content instead of only ever reading/writing SQLite pages (see that
+     * class's "why there is no exclude filter" KDoc section for the structural reason it doesn't
+     * today).
+     */
+    @Test
+    fun execute_decoyLogFileBesideLiveDatabase_backupBytesContainNoLogMarker() = runTest {
+        val logMarker = "REGRESSION_GUARD_LOG_MARKER_do_not_leak_into_backup"
+        val logsDir = File(dbFile.parentFile, "logs").apply { mkdirs() }
+        val decoyLogFile = File(logsDir, "app.log").apply {
+            writeText("ERROR OpenLibraryIsbnCoverProbe: $logMarker\n")
+        }
+
+        // try starts immediately after decoyLogFile exists, so a failure anywhere in setup below
+        // (opening the live DB, adding the book, running the use case) still reaches the finally
+        // block and cleans up logsDir/decoyLogFile rather than leaking them past this test.
+        var liveDb: AppDatabase? = null
+        var stagedFile: File? = null
+        try {
+            liveDb = openLiveDatabase()
+            val bookRepository = BookRepository(liveDb)
+            val addResult = bookRepository.addBook(
+                title = "Log Exclusion Check",
+                releaseYear = 2024,
+                purchasePrice = null,
+                format = BookFormat.EBOOK,
+                totalPages = null,
+                isbn = null,
+                externalIdentifiers = emptyList(),
+            )
+            assertIs<Resource.Success<String>>(addResult)
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            // Only assigned once execute() has actually succeeded -- the finally block guards its
+            // deletion with a null check, since a failed/never-reached execute() means there is no
+            // staged file to delete.
+            stagedFile = File(result.data.stagedFilePath)
+
+            val backupBytes = stagedFile.readBytes().toString(Charsets.ISO_8859_1)
+            assertTrue(
+                !backupBytes.contains(logMarker),
+                "backup bytes must never contain log content -- see DefaultDatabaseBackupUseCase's " +
+                    "\"why there is no exclude filter\" KDoc section",
+            )
+            // Sanity check that the decoy file itself really holds the marker, so a typo in the
+            // marker string above couldn't make this test pass for the wrong reason.
+            assertTrue(decoyLogFile.readText().contains(logMarker))
+        } finally {
+            stagedFile?.delete()
+            liveDb?.close()
+            decoyLogFile.delete()
+            logsDir.delete()
+        }
+    }
+
+    /**
+     * Regression guard, complementary to the byte-level check above: confirms the produced
+     * backup's own SQLite schema (queried directly via [BundledSQLiteDriver], the same mechanism
+     * [com.hub.media.core.database.validateStagedDatabaseIntegrity] uses for restore validation)
+     * contains only tables [AppDatabase] actually defines -- none of them log-related -- and
+     * genuinely finds real tables rather than an empty/broken connection (the
+     * `media_items`/`book_details` assertion below is what keeps this from being a vacuous "empty
+     * set contains no log tables" pass). This is what [DefaultDatabaseBackupUseCase]'s KDoc means
+     * by "the log store must never become a Room entity/table": if it ever did, `VACUUM INTO`
+     * would snapshot it exactly like every other table, and this test would immediately start
+     * failing.
+     */
+    @Test
+    fun execute_backupSchemaContainsNoLogRelatedTable() = runTest {
+        val liveDb = openLiveDatabase()
+        val bookRepository = BookRepository(liveDb)
+        val addResult = bookRepository.addBook(
+            title = "Schema Check",
+            releaseYear = 2024,
+            purchasePrice = null,
+            format = BookFormat.EBOOK,
+            totalPages = null,
+            isbn = null,
+            externalIdentifiers = emptyList(),
+        )
+        assertIs<Resource.Success<String>>(addResult)
+
+        val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+        val result = useCase.execute()
+        assertIs<Resource.Success<BackupResult>>(result)
+        val stagedFile = File(result.data.stagedFilePath)
+        liveDb.close()
+
+        try {
+            val tableNames = mutableSetOf<String>()
+            BundledSQLiteDriver().open(stagedFile.absolutePath, SQLITE_OPEN_READONLY).use { connection ->
+                connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").use { statement ->
+                    while (statement.step()) tableNames += statement.getText(0)
+                }
+            }
+
+            assertTrue(
+                tableNames.containsAll(setOf("media_items", "book_details")),
+                "expected to find this app's real tables in the backup -- if this fails, the rest " +
+                    "of this test proves nothing (it would vacuously pass on an empty/broken result)",
+            )
+            // A blanket `contains("log", ignoreCase = true)` is too broad and forward-looking-
+            // buggy: AGENTS.md §3.4 explicitly plans a WatchLogs table (Movies/TV activity
+            // history, ROADMAP Task 13) -- following this codebase's existing tableName
+            // convention (snake_case: "media_items", "book_details", "reading_sessions"), that
+            // would be named "watch_logs" and would trip a bare "log" substring check the moment
+            // it's added, even though it has nothing to do with this regression guard. The same
+            // could happen to a future "reading_logs"-style rename. What this test actually cares
+            // about (see this test's KDoc) is specifically whether the Task 15 LogEntry store got
+            // turned into a Room table -- which, by that same naming convention, would be named
+            // "log_entry" or "log_entries" -- but guessing the exact spelling would make this
+            // guard miss "app_logs", "logs", or whatever else a future change actually picked.
+            // So: still match "log" broadly, and subtract the domain tables that legitimately
+            // carry the word. Anything new containing "log" then has to be added here
+            // deliberately, which is precisely the moment someone should be asking whether it
+            // belongs in a backed-up database at all.
+            val legitimateActivityTables = setOf("watch_logs", "reading_logs")
+            val logRelatedTables = tableNames.filter {
+                it.contains("log", ignoreCase = true) && it.lowercase() !in legitimateActivityTables
+            }
+            assertTrue(
+                logRelatedTables.isEmpty(),
+                "backup schema must never contain a log-related table, found: $logRelatedTables",
+            )
+        } finally {
+            stagedFile.delete()
+        }
     }
 }

@@ -6,6 +6,7 @@ import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
 import com.hub.media.core.database.selfHealDatabaseIfNeeded
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.storage.LogFileStore
 import com.hub.media.core.storage.coverStorageDirectory
 import kotlinx.coroutines.runBlocking
 
@@ -27,8 +28,14 @@ import kotlinx.coroutines.runBlocking
  * property, `MainActivity.onCreate`) to be suspending, for what is normally sub-millisecond work
  * that must complete *before* [DatabaseFactory.create]/[buildAppDatabase] touches the database
  * file, not after.
+ *
+ * @param logFileStore The already-constructed persistent log store (ROADMAP Task 15 Phase B),
+ *   forwarded straight into [AppContainer] -- see that constructor parameter's KDoc for why this
+ *   function does not build its own [LogFileStore] the way it builds [imageStorage]/[database]:
+ *   `MediaTrackerApplication.onCreate` must already have one (and have wired it into
+ *   [com.hub.media.core.util.AppLogger]) before this function's lazy call site is ever reached.
  */
-public fun createAppContainer(context: Context): AppContainer {
+public fun createAppContainer(context: Context, logFileStore: LogFileStore): AppContainer {
     val databaseFactory = DatabaseFactory(context)
     val databaseFilePath = databaseFactory.databaseFilePath()
     val pendingRestoreMarker = runBlocking {
@@ -41,6 +48,7 @@ public fun createAppContainer(context: Context): AppContainer {
         database = database,
         imageStorage = imageStorage,
         databaseFilePath = databaseFilePath,
+        logFileStore = logFileStore,
         pendingRestoreMarker = pendingRestoreMarker,
     )
 }
