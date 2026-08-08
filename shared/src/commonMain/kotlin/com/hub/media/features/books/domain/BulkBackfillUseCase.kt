@@ -278,7 +278,11 @@ public class BulkBackfillUseCase(
                 // The shared quota already refused once this run; a fresh probe call for this book
                 // would just be denied again by the same window (tryAcquire is process-local and
                 // stateful, not per-ISBN). Skip straight to deferring, but still write authors below
-                // if they were resolved -- that never touched the rate-limited probe.
+                // if they were resolved -- that never touched the rate-limited probe. The Resource
+                // this returns is deliberately not inspected: this book is already deferred either
+                // way (a failed authors write just means needsAuthors is still true when this mediaId
+                // is re-read on the next run, so it naturally retries), and neither wroteAnything nor
+                // updated is ever computed from this branch.
                 applyWrite(mediaId, coverHash = null, authors = authorsToWrite)
                 return StepOutcome.DeferredRateLimited(knownRetryAfter ?: OPEN_LIBRARY_COVER_QUOTA_WINDOW)
             }
@@ -286,6 +290,8 @@ public class BulkBackfillUseCase(
                 is CoverProbeResult.Found -> coverUrl = probeResult.url
                 CoverProbeResult.NotFound -> Unit // confirmed absent; cover dimension resolved as "none"
                 is CoverProbeResult.RateLimited -> {
+                    // Same reasoning as the quotaExhausted branch above -- already deferred
+                    // regardless of whether this write succeeds.
                     applyWrite(mediaId, coverHash = null, authors = authorsToWrite)
                     return StepOutcome.DeferredRateLimited(probeResult.retryAfter)
                 }
@@ -304,17 +310,34 @@ public class BulkBackfillUseCase(
             }
         }
 
-        applyWrite(mediaId, coverHash = coverHashToWrite, authors = authorsToWrite)
+        val writeResult = applyWrite(mediaId, coverHash = coverHashToWrite, authors = authorsToWrite)
 
-        if (coverDeferred) return StepOutcome.DeferredTransient
+        // A failed write (Resource.Error -- mediaId vanished between the read above and this write,
+        // or the underlying DB write itself threw, see BookRepository.applyBackfilledMetadata's
+        // KDoc) must be treated exactly like a failed download: transient, retried on a future run.
+        // Reporting it as Done here would be the actual bug this branch exists to prevent -- neither
+        // coverHashToWrite nor authorsToWrite actually landed in the database, so counting this book
+        // as "updated" and dropping it from the pending queue would silently lose it forever.
+        if (coverDeferred || writeResult is Resource.Error) return StepOutcome.DeferredTransient
 
         val wroteAnything = coverHashToWrite != null || authorsToWrite != null
         return StepOutcome.Done(wroteAnything)
     }
 
-    private suspend fun applyWrite(mediaId: String, coverHash: String?, authors: String?) {
-        if (coverHash == null && authors == null) return
-        bookRepository.applyBackfilledMetadata(mediaId, coverHash, authors)
+    /**
+     * Writes whatever of [coverHash]/[authors] this pass resolved for [mediaId], or a no-op
+     * [Resource.Success] if both are `null` (nothing to write is not an error -- see
+     * [BookRepository.applyBackfilledMetadata]'s KDoc).
+     *
+     * @return The [Resource] [BookRepository.applyBackfilledMetadata] reported, so every call site
+     *   can tell a genuine write failure from success rather than discarding it (a discarded write
+     *   failure would let this book get reported as [StepOutcome.Done] despite nothing having
+     *   actually landed in the database) -- see [processOneBook]'s handling of this return value
+     *   below.
+     */
+    private suspend fun applyWrite(mediaId: String, coverHash: String?, authors: String?): Resource<Unit> {
+        if (coverHash == null && authors == null) return Resource.Success(Unit)
+        return bookRepository.applyBackfilledMetadata(mediaId, coverHash, authors)
     }
 
     /** Outcome of resolving a single pending book, driving [execute]'s bookkeeping for that book. */
@@ -325,7 +348,8 @@ public class BulkBackfillUseCase(
         /** Fully resolved this run -- removed from the pending list permanently. */
         data class Done(val wroteAnything: Boolean) : StepOutcome()
 
-        /** A transient failure (lookup, download, or save) -- retried on a future run. */
+        /** A transient failure (lookup, download, image save, or database write) -- retried on a
+         * future run. */
         data object DeferredTransient : StepOutcome()
 
         /** The shared cover-probe quota is exhausted -- retried on a future run. */

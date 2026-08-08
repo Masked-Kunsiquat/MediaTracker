@@ -12,9 +12,11 @@ import com.hub.media.features.books.domain.BulkBackfillProgress
 public sealed class BackfillUiState {
 
     /**
-     * Nothing to resume and no run is in flight -- either a backfill has never been started, or
+     * Nothing to resume and no run is in flight -- either a backfill has never been started,
      * [BackfillViewModel]'s init check found no persisted resume state (nothing left to do from a
-     * prior run, or one never ran).
+     * prior run, or one never ran), or a run that just started was cancelled or hit an unexpected
+     * failure before it checkpointed even a single book (so there's no [BulkBackfillProgress] snapshot
+     * worth surfacing as [Stopped]).
      */
     public data object Idle : BackfillUiState()
 

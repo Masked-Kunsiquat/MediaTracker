@@ -43,7 +43,15 @@ public class BackfillViewModel(
     init {
         viewModelScope.launch {
             bulkBackfillUseCase.peekProgress()?.let { progress ->
-                _uiState.value = BackfillUiState.Stopped(progress)
+                // Only apply this late-arriving snapshot while nothing has happened yet this
+                // session. peekProgress() is a suspend DB read, so it's possible for the caller to
+                // already have called start() (moving uiState to Running, or even past it to
+                // Stopped(finalProgress) for a very short run) before this coroutine resumes --
+                // without this guard, that stale pre-start snapshot would clobber whatever start()
+                // has since done, including a run that's actively in flight.
+                if (_uiState.value is BackfillUiState.Idle) {
+                    _uiState.value = BackfillUiState.Stopped(progress)
+                }
             }
         }
     }
@@ -66,19 +74,40 @@ public class BackfillViewModel(
                 }
                 _uiState.value = BackfillUiState.Stopped(finalProgress)
             } catch (e: CancellationException) {
-                // cancel() below cancels this exact job. The last progress snapshot this run
-                // reported is still the correct "where things stand" state -- BulkBackfillUseCase
-                // checkpoints resume state after every book, so whatever was last reported here is
-                // also what a future start() call will resume from. Without this catch, uiState
-                // would be stuck at Running forever (the Stopped assignment above never runs once
-                // this coroutine is cancelled), which would leave the UI showing a progress
-                // indicator for a run that has, in fact, stopped.
-                (_uiState.value as? BackfillUiState.Running)?.progress?.let { lastProgress ->
-                    _uiState.value = BackfillUiState.Stopped(lastProgress)
-                }
+                // cancel() below cancels this exact job. Must be caught -- and rethrown -- before
+                // the broad Exception catch below: CancellationException is itself a subtype of
+                // Exception on Kotlin/JVM, so catching Exception first would swallow the caller's
+                // coroutine cancellation instead of propagating it (the same ordering discipline
+                // OpenLibraryIsbnCoverProbe's catch already established). settleOutOfRunning()
+                // ensures uiState doesn't stay stuck at Running forever (the Stopped assignment
+                // above never runs once this coroutine is cancelled).
+                settleOutOfRunning()
                 throw e
+            } catch (e: Exception) {
+                // A DB failure mid-backfill (BulkBackfillUseCase.execute's getBulkBackfillState/
+                // seedState/bookRepository reads, or saveBulkBackfillState, none of which catch
+                // their own exceptions) must not crash this ViewModel's coroutine, and must not
+                // leave uiState stuck at Running forever -- settleOutOfRunning() handles that the
+                // same way the CancellationException branch above does. Deliberately not rethrown:
+                // unlike cancellation, there's no caller-side structured-concurrency contract to
+                // honor here, only a UI state that must recover.
+                settleOutOfRunning()
             }
         }
+    }
+
+    /**
+     * Moves [uiState] out of [BackfillUiState.Running] when [start]'s coroutine stops for any
+     * reason other than reaching its normal `Stopped(finalProgress)` assignment -- cancellation
+     * ([cancel]) or an unexpected non-cancellation failure. Prefers the last progress this run
+     * actually reported, so the UI keeps showing "312 of 480 done" instead of losing that
+     * information; falls back to [BackfillUiState.Idle] when nothing was reported yet this run
+     * (`Running.progress` is still `null`, meaning no book was checkpointed before this run
+     * stopped) rather than attempting a fresh DB read from inside a failure/cancellation path.
+     */
+    private fun settleOutOfRunning() {
+        val running = _uiState.value as? BackfillUiState.Running
+        _uiState.value = running?.progress?.let { BackfillUiState.Stopped(it) } ?: BackfillUiState.Idle
     }
 
     /**

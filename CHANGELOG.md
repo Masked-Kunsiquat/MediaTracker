@@ -62,6 +62,13 @@ author.
     backfill (N remaining)" the moment it detects leftover state.
   - Books with no ISBN are reported as skipped (with a note that manual cover entry, still in the
     backlog, is their only route) rather than retried on every run.
+  - **Failure-path hardening (PR review).** A book whose cover/authors write fails (e.g. it was
+    deleted mid-run) is now correctly left pending for retry instead of being silently counted as
+    "updated" and dropped from the queue forever. A database failure mid-backfill (or the backfill
+    being cancelled before any book has been checkpointed) now settles the Settings screen's
+    progress UI on an accurate stopped state instead of leaving it stuck showing "running" forever;
+    a stale progress snapshot read on screen re-open can no longer clobber a backfill that's already
+    running.
 
 ### Changed
 

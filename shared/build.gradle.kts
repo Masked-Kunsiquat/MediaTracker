@@ -95,6 +95,9 @@ dependencies {
 // lives under com.hub.media.core.database and is already covered by that package's exclusion.
 // StatsViewModelTest and EditBookViewModelTest (ROADMAP Task 6 Phase A) are excluded by exact
 // class name for the same reason as LibraryViewModelTest/BookDetailViewModelTest above.
+// BackfillViewModelTest (ROADMAP Task 14 Phase A PR review) is likewise Room-backed (a real
+// AppDatabase, to exercise BackfillViewModel/BulkBackfillUseCase races against genuine async DB
+// reads rather than a fake) and excluded by exact class name for the same reason.
 // SettingsRepositoryTest (ROADMAP Task 7 Phase A) is likewise Room-backed and excluded by package
 // (com.hub.media.features.settings.*, mirroring com.hub.media.features.stats.*/
 // com.hub.media.features.books.data.* above).
@@ -117,6 +120,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.features.portability.domain.*")
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.BackfillViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.SettingsViewModelTest*")
