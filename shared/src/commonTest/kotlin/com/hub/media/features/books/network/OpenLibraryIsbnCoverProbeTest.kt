@@ -133,6 +133,42 @@ class OpenLibraryIsbnCoverProbeTest {
         assertIs<CoverProbeResult.RateLimited>(result)
     }
 
+    /**
+     * ROADMAP Task 14 PR-review fix: a 5xx must inform [rateLimiter] the same way a 429 already
+     * does (see [a429_recordsServerRefusalOnTheSharedLimiter_soASubsequentCallIsDeniedWithoutANetworkRequest]
+     * just above). Before this fix, [probeCoverUrl] returned [CoverProbeResult.RateLimited] for a
+     * 5xx but never called [OpenLibraryCoverRateLimiter.recordServerRefusal] first -- the limiter
+     * never learned the server was refusing, so the very next probe would sail straight through
+     * local rate limiting and hit a server already known to be unhappy. Asserting only the return
+     * value wouldn't catch that regression; this test needs the second network round-trip to be
+     * absent.
+     */
+    @Test
+    fun serverError5xx_recordsServerRefusalOnTheSharedLimiter_soASubsequentCallIsDeniedWithoutANetworkRequest() =
+        runTest {
+            var callCount = 0
+            val engine = MockEngine { _ ->
+                callCount++
+                respondError(HttpStatusCode.ServiceUnavailable, headers = headersOf(HttpHeaders.RetryAfter, "300"))
+            }
+            val fixedNow = Instant.fromEpochMilliseconds(0)
+            val clock = object : Clock {
+                override fun now(): Instant = fixedNow
+            }
+            val limiter = OpenLibraryCoverRateLimiter(clock = clock)
+            val probe = OpenLibraryIsbnCoverProbe(createHttpClient(engine), limiter)
+
+            val first = probe.probeCoverUrl("9780547928227")
+            assertIs<CoverProbeResult.RateLimited>(first)
+            assertEquals(1, callCount, "the first call must reach the network to learn about the 5xx")
+
+            // A second probe, for a different ISBN, right after: the shared limiter's recorded
+            // server refusal must deny it locally -- no second HTTP request should ever be issued.
+            val second = probe.probeCoverUrl("9780140449136")
+            assertIs<CoverProbeResult.RateLimited>(second)
+            assertEquals(1, callCount, "a subsequent call while server-refused must not reach the network at all")
+        }
+
     @Test
     fun a429_recordsServerRefusalOnTheSharedLimiter_soASubsequentCallIsDeniedWithoutANetworkRequest() = runTest {
         var callCount = 0
@@ -214,5 +250,54 @@ class OpenLibraryIsbnCoverProbeTest {
         val fromBulkCaller = bulkCallerProbe.probeCoverUrl("9780140449136")
         assertIs<CoverProbeResult.RateLimited>(fromBulkCaller)
         assertEquals(1, callCount, "the second instance must be denied by the shared budget, not get its own")
+    }
+
+    /**
+     * ROADMAP Task 14 PR-review fix: `Retry-After` may legitimately arrive as an RFC 7231 HTTP-date
+     * (`Wed, 21 Oct 2015 07:28:00 GMT` -- the spec's own example, reused here) rather than
+     * numeric-seconds, and the pre-fix [parseRetryAfter] only understood the numeric form, silently
+     * discarding a date-form header and falling back to [DEFAULT_RETRY_AFTER] regardless of what
+     * the server actually asked for. Deliberately uses a fixed [Clock] rather than the real wall
+     * clock: a test asserting against `Clock.System` would only ever be exercised correctly for
+     * dates still in the future relative to whenever it happens to run, which is exactly the kind
+     * of flake this fix must not introduce.
+     */
+    @Test
+    fun retryAfter_httpDateForm_parsedRelativeToTheInjectedClock() = runTest {
+        val engine = MockEngine { _ ->
+            respondError(
+                HttpStatusCode.TooManyRequests,
+                headers = headersOf(HttpHeaders.RetryAfter, "Wed, 21 Oct 2015 07:28:00 GMT"),
+            )
+        }
+        // Fixed "now" is 28 minutes before the header's date, so the expected retryAfter is exact
+        // and never depends on when this test actually runs.
+        val fixedNow = Instant.parse("2015-10-21T07:00:00Z")
+        val clock = object : Clock {
+            override fun now(): Instant = fixedNow
+        }
+        val limiter = OpenLibraryCoverRateLimiter(clock = clock)
+        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(engine), limiter, clock)
+
+        val result = probe.probeCoverUrl("9780547928227")
+
+        assertIs<CoverProbeResult.RateLimited>(result)
+        assertEquals(28.minutes, result.retryAfter)
+    }
+
+    @Test
+    fun retryAfter_malformedHeader_fallsBackToDefaultWindow() = runTest {
+        val engine = MockEngine { _ ->
+            respondError(
+                HttpStatusCode.TooManyRequests,
+                headers = headersOf(HttpHeaders.RetryAfter, "not-a-number-or-a-date"),
+            )
+        }
+        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(engine))
+
+        val result = probe.probeCoverUrl("9780547928227")
+
+        assertIs<CoverProbeResult.RateLimited>(result)
+        assertEquals(OPEN_LIBRARY_COVER_QUOTA_WINDOW, result.retryAfter)
     }
 }

@@ -5,9 +5,12 @@ import io.ktor.client.request.head
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.fromHttpToGmtDate
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 
 private const val OPEN_LIBRARY_COVERS_ISBN_URL = "https://covers.openlibrary.org/b/isbn"
@@ -76,10 +79,18 @@ public sealed class CoverProbeResult {
  * why it is an injected dependency rather than private state on this class: two different
  * [OpenLibraryIsbnCoverProbe] instances constructed with the *same* [rateLimiter] correctly share
  * one budget, while two instances each with their own default limiter would not.
+ *
+ * @param clock Source of "now", used only to turn a `Retry-After` HTTP-date header into a
+ *   [Duration] (see [parseRetryAfter]). Defaults to [Clock.System], matching
+ *   [com.hub.media.features.books.data.BookRepository]'s injected-[Clock] convention. Production
+ *   callers never need to override this -- it exists so tests can pin the same fixed instant this
+ *   probe and its [rateLimiter] both compute "now" from, which is what makes the resulting
+ *   `retryAfter` deterministic and consistent between the two.
  */
 public class OpenLibraryIsbnCoverProbe(
     private val client: HttpClient,
     private val rateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
+    private val clock: Clock = Clock.System,
 ) {
 
     /**
@@ -125,12 +136,18 @@ public class OpenLibraryIsbnCoverProbe(
             when {
                 response.status.isSuccess() -> CoverProbeResult.Found(url)
                 response.status == HttpStatusCode.TooManyRequests -> {
-                    val retryAfter = parseRetryAfter(response) ?: DEFAULT_RETRY_AFTER
+                    val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
                     rateLimiter.recordServerRefusal(retryAfter)
                     CoverProbeResult.RateLimited(retryAfter)
                 }
                 response.status.value >= 500 -> {
-                    val retryAfter = parseRetryAfter(response) ?: DEFAULT_RETRY_AFTER
+                    // Same as the 429 branch above: a 5xx is the server telling us it's not
+                    // healthy right now, so the shared limiter must learn about it too -- without
+                    // this, the very next probe (for a different ISBN, possibly milliseconds
+                    // later) would sail straight through local rate limiting and hit a server we
+                    // already know is refusing.
+                    val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
+                    rateLimiter.recordServerRefusal(retryAfter)
                     CoverProbeResult.RateLimited(retryAfter)
                 }
                 else -> CoverProbeResult.NotFound
@@ -149,10 +166,32 @@ public class OpenLibraryIsbnCoverProbe(
 }
 
 /**
- * Parses a numeric-seconds `Retry-After` header (RFC 7231 §7.1.3's `delay-seconds` form). Open
+ * Parses a `Retry-After` header in either of RFC 7231 §7.1.3's two forms: the numeric-seconds
+ * `delay-seconds` form, or the HTTP-date form (e.g. `Wed, 21 Oct 2015 07:28:00 GMT`). Open
  * Library's actual header format for this is unverified against the live service (no documented
- * contract), so the HTTP-date form is deliberately not handled -- an unparsable/absent header
- * falls back to [DEFAULT_RETRY_AFTER] at the call site rather than this function guessing.
+ * contract), so both are handled rather than assuming numeric-only.
+ *
+ * The HTTP-date form is resolved against [clock] -- the same clock instance [rateLimiter] uses
+ * for its own "now" -- so the [Duration] this returns and the moment [rateLimiter] later computes
+ * its `blockedUntil` from can't disagree about what "now" was. A date already in the past (clock
+ * skew, or a server sending a stale header) is floored to [Duration.ZERO] rather than going
+ * negative.
+ *
+ * An unparsable (neither form) or absent header returns `null`, and the call site falls back to
+ * [DEFAULT_RETRY_AFTER] rather than this function guessing.
  */
-private fun parseRetryAfter(response: HttpResponse): Duration? =
-    response.headers[HttpHeaders.RetryAfter]?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.seconds
+private fun parseRetryAfter(response: HttpResponse, clock: Clock): Duration? {
+    val header = response.headers[HttpHeaders.RetryAfter]?.trim() ?: return null
+
+    header.toLongOrNull()?.let { delaySeconds -> return delaySeconds.takeIf { it >= 0 }?.seconds }
+
+    return try {
+        val target = Instant.fromEpochMilliseconds(header.fromHttpToGmtDate().timestamp)
+        (target - clock.now()).coerceAtLeast(Duration.ZERO)
+    } catch (e: IllegalStateException) {
+        // fromHttpToGmtDate() throws IllegalStateException (via error(...)) when none of its
+        // known formats match -- that's this function's "not a date either" signal, same as
+        // toLongOrNull() returning null above.
+        null
+    }
+}

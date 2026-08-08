@@ -69,6 +69,12 @@ author.
     progress UI on an accurate stopped state instead of leaving it stuck showing "running" forever;
     a stale progress snapshot read on screen re-open can no longer clobber a backfill that's already
     running.
+  - **Rate-limit hardening (PR review).** A 5xx response now records a server refusal on the shared
+    rate limiter too (previously only a 429 did), so the very next probe -- even for a different
+    ISBN -- is denied locally instead of hitting a server already known to be refusing. `Retry-After`
+    also now understands RFC 7231's HTTP-date form (`Wed, 21 Oct 2015 07:28:00 GMT`), not just
+    numeric-seconds, computed against the same clock the rate limiter itself uses so the two can
+    never disagree about how long "now" plus the wait actually is.
 
 ### Changed
 
