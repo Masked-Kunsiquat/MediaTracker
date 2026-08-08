@@ -1272,11 +1272,20 @@ private fun BackfillRunningContent(progress: BulkBackfillProgress?) {
 @Composable
 private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
     when {
-        progress.isPaused -> Text(
-            text = stringResource(R.string.settings_backfill_paused_message),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
+        progress.isPaused -> {
+            val retryAfter = progress.retryAfter
+            val message = if (retryAfter != null) {
+                val minutes = retryAfter.inWholeMinutes
+                stringResource(R.string.settings_backfill_paused_with_wait_format, minutes)
+            } else {
+                stringResource(R.string.settings_backfill_paused_message)
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         progress.isComplete -> Text(
             text = stringResource(R.string.settings_backfill_complete_message),
             style = MaterialTheme.typography.bodySmall,

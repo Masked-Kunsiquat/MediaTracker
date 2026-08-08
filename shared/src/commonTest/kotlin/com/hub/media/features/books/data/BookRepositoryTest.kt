@@ -827,4 +827,42 @@ class BookRepositoryTest {
         assertTrue(ids.contains(second.data))
         assertTrue(all.all { it.details != null })
     }
+
+    @Test
+    fun getAllBooksWithDetails_returnsResultsOrderedByTitle() = runTest {
+        // Insert books in non-alphabetical order to ensure ordering is actually enforced
+        val third = repo.addBook(title = "Zebra", format = BookFormat.PHYSICAL, isbn = "9780000000003")
+        val first = repo.addBook(title = "Alpha", format = BookFormat.EBOOK, isbn = "9780000000001")
+        val second = repo.addBook(title = "Beta", format = BookFormat.PHYSICAL, isbn = "9780000000002")
+        assertIs<Resource.Success<String>>(first)
+        assertIs<Resource.Success<String>>(second)
+        assertIs<Resource.Success<String>>(third)
+
+        val all = repo.getAllBooksWithDetails()
+
+        assertEquals(3, all.size)
+        val titles = all.map { it.mediaItem.title }
+        assertEquals(listOf("Alpha", "Beta", "Zebra"), titles)
+    }
+
+    @Test
+    fun getAllBooksWithDetails_includesBookWithNullDetailsWhenNoBookDetailsRow() = runTest {
+        val mediaId = newId()
+        // Insert a BOOK media item directly, bypassing repo.addBook so no book_details row is created
+        db.mediaItemDao().insert(
+            sampleMediaItem(
+                id = mediaId,
+                title = "Book Without Details",
+                type = MediaType.BOOK,
+            )
+        )
+
+        val all = repo.getAllBooksWithDetails()
+
+        assertEquals(1, all.size)
+        val bookWithDetails = all.single()
+        assertEquals(mediaId, bookWithDetails.mediaItem.id)
+        assertEquals("Book Without Details", bookWithDetails.mediaItem.title)
+        assertEquals(null, bookWithDetails.details)
+    }
 }

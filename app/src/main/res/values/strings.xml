@@ -196,6 +196,7 @@
     <string name="settings_backfill_cancel_button">Cancel</string>
     <string name="settings_backfill_progress_format">%1$d of %2$d done</string>
     <string name="settings_backfill_paused_message">Paused — Open Library\'s cover lookup limit was reached. Resume in a few minutes.</string>
+    <string name="settings_backfill_paused_with_wait_format">Paused — about %1$d min until quota resets</string>
     <string name="settings_backfill_complete_message">Backfill complete.</string>
     <string name="settings_backfill_summary_format">%1$d updated, %2$d had nothing to fill in</string>
     <string name="settings_backfill_no_isbn_format">%1$d book(s) skipped — no ISBN on record, so they can\'t be looked up automatically. Enter a cover manually instead (coming soon).</string>
