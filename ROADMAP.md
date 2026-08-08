@@ -12,18 +12,21 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 14 — Bulk operations & cover backfill** — *partially done*. Phase A (bulk cover/author
-   backfill) shipped; Phase B (library multi-select + bulk delete) remains. ← next
-2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+1. **Task 15 — Logging** ← next. Deliberately pulled ahead of further features: retrofitting
+   logging gets worse the more there is to retrofit, and three separate failure paths already
+   discard their cause because there is nowhere to put it.
+2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
+   backfill) shipped; Phase B (library multi-select + bulk delete) remains.
+3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
    providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
    rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
    retroactively for books added before it.
-3. Task 10 — Re-read modeling (ratings land here)
-4. Task 11 — Analytics & stats revamp
-5. Task 12 — Genre tracking
-6. Task 13 — Movies & TV
+4. Task 10 — Re-read modeling (ratings land here)
+5. Task 11 — Analytics & stats revamp
+6. Task 12 — Genre tracking
+7. Task 13 — Movies & TV
 
 ## Done
 
@@ -579,6 +582,46 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
     a shared cover file that must **survive** deletion of one of its referencing books, and an
     unreferenced file that must actually **be removed**. A cleanup that only tests the second
     passes while silently breaking surviving books' covers.
+
+## Task 15 — Logging
+
+**Scheduled deliberately early, before the app gets more featureful**, because retrofitting
+logging gets monotonically worse and "we can't tell you why it failed" has already become a
+recurring answer. `shared/` has no logging facility at all today — no `Logger`, no `Napier`, not
+even a `println` — and that gap has now forced three separate compromises:
+
+- `OpenLibraryIsbnCoverProbe` swallows a network/TLS failure to `null`, making it
+  **indistinguishable from a confirmed "this book has no cover"**. Its KDoc already names itself
+  as the first catch block that should adopt logging.
+- `BackfillViewModel`'s failure state deliberately **discards the exception**, so a failed
+  backfill can only say "something went wrong" — the cause is thrown away at the catch.
+- The vacuous-test investigation on PR #16 needed temporary `println` instrumentation to discover
+  that a closed Room database throws `CancellationException` rather than `SQLiteException`. That
+  diagnosis should not have required editing production code to obtain.
+
+### Requirements
+- **KMP-clean.** The facility lives in `shared/` and must not drag Android APIs into common code —
+  an `expect`/`actual` logger, or a small interface with per-platform implementations
+  (`android.util.Log` on Android, stdout on JVM). Follow the `DatabaseFactory`/`DatabaseFileOps`
+  expect/actual precedent already in this codebase.
+- **Prefer no new dependency** (AGENTS.md §5). A minimal hand-rolled logger is a small amount of
+  code; Napier/Kermit would each be a new third-party dependency needing explicit approval, and
+  should only be proposed with a concrete reason the hand-rolled version can't cover.
+- **Privacy is a first-class constraint here, not an afterthought.** This app's whole premise is
+  local-first with no cloud, so: **no crash-reporting service** (that would ship the user's data
+  off-device, contradicting the premise), and log content must never include the user's library
+  as data — titles, authors, notes and session contents are personal. Log *what failed and why*,
+  not *what the user is reading*. Decide and document the rule for identifiers (an ISBN is
+  arguably fine; a `mediaId` is fine; a title is not).
+- **Release builds must not leak.** Decide how verbosity is controlled between debug and release,
+  and make sure nothing sensitive reaches logcat in a release build.
+
+### Adoption, not just infrastructure
+Shipping the facility without using it would leave the three gaps above open. As part of this
+task, adopt it at least at those sites: the cover probe's swallowed exception, the backfill
+failure path, and the migration/restore paths (where a failure today is reported to the user as a
+message with no recoverable detail). Each adoption should make a previously-invisible failure
+diagnosable.
 
 ## Blocked on external changes
 
