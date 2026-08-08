@@ -18,7 +18,7 @@
     <string name="notes_optional_label">Notes (optional)</string>
     <string name="save_button">Save</string>
     <string name="discard_button">Discard</string>
-    <string name="date_label">Date: %1$s</string>
+    <string name="date_field_label">Date</string>
     <string name="duration_minutes_label">Duration (optional)</string>
     <string name="duration_minutes_suffix">min</string>
     <string name="duration_minutes_invalid">Enter a valid duration, up to %1$d minutes</string>
@@ -38,7 +38,7 @@
     <string name="delete_book_content_description">Delete book</string>
     <string name="delete_book_title">Delete book?</string>
     <string name="delete_book_body">Are you sure you want to delete \'%1$s\'?</string>
-    <string name="time_label">Time: %1$s</string>
+    <string name="time_field_label">Time</string>
     <string name="select_time_title">Select time</string>
     <string name="edit_book_content_description">Edit book</string>
     <string name="edit_session_content_description">Edit session</string>
