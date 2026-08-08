@@ -9,6 +9,7 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.network.BookMetadata
 import com.hub.media.features.books.network.BookMetadataProvider
 import com.hub.media.features.books.network.CoverImageDownloader
+import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.createDefaultBookMetadataProvider
 import io.ktor.client.HttpClient
 
@@ -159,13 +160,17 @@ internal fun isValidIsbn(normalizedIsbn: String): Boolean =
  *   for both metadata providers and the cover downloader.
  * @param imageStorage Content-addressed local disk store for cover images.
  * @param bookRepository Persists the ingested book.
+ * @param coverRateLimiter Shared ISBN-cover-probe quota tracker (ROADMAP Task 14 Phase A) --
+ *   forwarded to [createDefaultBookMetadataProvider]; see that function's KDoc for why production
+ *   callers pass the same instance used elsewhere in the app rather than the default.
  */
 public fun createDefaultAddBookByIsbnUseCase(
     httpClient: HttpClient,
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
+    coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
 ): AddBookByIsbnUseCase = AddBookByIsbnUseCase(
-    metadataProvider = createDefaultBookMetadataProvider(httpClient),
+    metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
     coverDownloader = CoverImageDownloader(httpClient),
     imageStorage = imageStorage,
     bookRepository = bookRepository,

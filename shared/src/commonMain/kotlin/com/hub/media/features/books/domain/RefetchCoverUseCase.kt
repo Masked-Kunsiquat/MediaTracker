@@ -5,6 +5,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.network.BookMetadataProvider
 import com.hub.media.features.books.network.CoverImageDownloader
+import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.createDefaultBookMetadataProvider
 import io.ktor.client.HttpClient
 
@@ -115,13 +116,20 @@ public class RefetchCoverUseCase(
  *   for both metadata providers, the ISBN cover probe, and the cover downloader.
  * @param imageStorage Content-addressed local disk store for cover images.
  * @param bookRepository Source of the book's ISBN and target of the cover update.
+ * @param coverRateLimiter Shared ISBN-cover-probe quota tracker (ROADMAP Task 14 Phase A) --
+ *   forwarded to [createDefaultBookMetadataProvider]. Production wiring (`AppContainer`) passes
+ *   the same instance handed to [com.hub.media.features.books.domain.BulkBackfillUseCase] and
+ *   [createDefaultAddBookByIsbnUseCase], so a bulk backfill and this per-book re-fetch draw on one
+ *   shared budget instead of each silently pushing the combined total over Open Library's limit --
+ *   see [com.hub.media.features.books.network.OpenLibraryCoverRateLimiter]'s KDoc.
  */
 public fun createDefaultRefetchCoverUseCase(
     httpClient: HttpClient,
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
+    coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
 ): RefetchCoverUseCase = RefetchCoverUseCase(
-    metadataProvider = createDefaultBookMetadataProvider(httpClient),
+    metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
     coverDownloader = CoverImageDownloader(httpClient),
     imageStorage = imageStorage,
     bookRepository = bookRepository,

@@ -12,7 +12,8 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 14 — Bulk operations & cover backfill** ← next
+1. **Task 14 — Bulk operations & cover backfill** — *partially done*. Phase A (bulk cover/author
+   backfill) shipped; Phase B (library multi-select + bulk delete) remains. ← next
 2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
@@ -518,37 +519,47 @@ Prompted by real use: importing a Goodreads library produced dozens of books wit
 leaving the per-book re-fetch (Task 6 Phase E) as the only remedy — one tap at a time. Neither
 item here is a bugfix; both are missing capabilities, so this is a **minor** release, not a patch.
 
-- **Bulk cover backfill.** Promoted from the backlog, where it was deferred out of Task 6 Phase E.
-  Serves three cases that all produce coverless books: a Goodreads import (`GoodreadsCsvImporter`
-  sets `coverImageHash = null` by design — Goodreads exports carry no cover data), a CSV import
-  onto a **new device** (the CSV carries cover *hashes* but no image bytes, so every hash points at
-  a file that isn't there), and books added before the field-level cover fallback existed.
-  - **Throttling is the hard part, and the reason this was deferred.** The last-resort
-    `?default=false` ISBN probe (`OpenLibraryIsbnCoverProbe`) is ISBN-keyed and therefore subject
-    to Open Library's 100-requests-per-IP-per-5-minutes cover limit, unlike the ID-keyed fetches
-    `OpenLibraryClient` normally uses. A naive loop over `RefetchCoverUseCase` would trip it partway
-    and look like a broken feature.
-  - **One limiter, shared by every ISBN-keyed probe — not a bulk-only one.** The quota is per IP,
-    so a backfill and the interactive per-book re-fetch draw on the *same* budget: giving the bulk
-    path its own limiter while the interactive path stays unthrottled means a user tapping
-    "re-fetch cover" during a backfill can silently push the total over the limit, and the backfill
-    takes the blame. The limiter belongs at the `OpenLibraryIsbnCoverProbe` layer that both call
-    paths already funnel through, tracking consumed quota across both. Requirements:
-    - **Shared quota tracking** across bulk and interactive callers.
-    - **Honour 429s with backoff** rather than treating a rate-limit response as "this book has no
-      cover" — the current probe maps every non-2xx to "no cover", which would permanently mark
-      books coverless for what is really a temporary refusal. This is the one place the existing
-      probe's behaviour is actively wrong for bulk use and must change, not just be wrapped.
-    - **Persisted resume state**, so a backfill interrupted by the quota, by cancellation, or by
-      process death continues from where it stopped instead of restarting or being abandoned.
-      Partial progress must be reported honestly ("312 of 480 done, paused until the quota
-      resets"), never surfaced as an all-or-nothing failure.
-  - Needs progress and cancellation UI — this is a long-running network operation over a whole
-    library, not a single tap. Consider offering it directly after an import completes, since that
-    is the moment the need is obvious, as well as from Settings for a one-off pass.
-  - Books with no ISBN can never be backfilled from a provider; report them rather than retrying
-    forever, and note that manual cover entry (still in the backlog) is their only route.
-- **Library multi-select and bulk actions.** Long-press a library card to enter selection mode,
+- **Bulk cover & author backfill (Phase A — done).** Promoted from the backlog, where it was
+  deferred out of Task 6 Phase E. Serves three cases that all produce coverless books: a Goodreads
+  import (`GoodreadsCsvImporter` sets `coverImageHash = null` by design — Goodreads exports carry no
+  cover data), a CSV import onto a **new device** (the CSV carries cover *hashes* but no image
+  bytes, so every hash points at a file that isn't there), and books added before the field-level
+  cover fallback existed. Scope was widened from "cover backfill" to **cover-and-author** backfill
+  before implementation started (see this task's entry in "Execution order" above): a provider
+  lookup already returns both, so one rate-limited crawl over the library fixes covers *and* the
+  authors Task 9 Phase A can't fill in retroactively — a cover-only pass would have meant crawling
+  the same rate-limited API twice.
+  - **One limiter, shared by every ISBN-keyed probe.** `OpenLibraryCoverRateLimiter`
+    (`shared/.../features/books/network/`) is a sliding-window (100 req/5 min) limiter with a
+    server-refusal backoff layer on top, living *inside* `OpenLibraryIsbnCoverProbe` as an injected
+    dependency. `AppContainer` constructs exactly one instance and hands it to the bulk backfill,
+    `RefetchCoverUseCase` (interactive re-fetch), and `AddBookByIsbnUseCase` alike, so all three draw
+    on one combined per-device budget.
+  - **429/5xx no longer collapse into "no cover."** `OpenLibraryIsbnCoverProbe.probeCoverUrl` now
+    returns `CoverProbeResult` (`Found` / `NotFound` / `RateLimited`) instead of a bare `String?`.
+    The bulk backfill acts on the distinction (pauses and defers on `RateLimited` rather than
+    writing the book off); `FallbackBookMetadataProvider` — used by the single-book interactive
+    paths — still folds `RateLimited` into "no cover for this call," which is an intentional,
+    documented choice: a one-off lookup has no retry loop to pause, so the two cases have the same
+    practical outcome there.
+  - **Resume state lives in `app_settings`** (`BulkBackfillState` in
+    `features/settings/data/BulkBackfillState.kt`) — no schema change: a comma-joined pending-media-id
+    list plus a few `Int` counters, checkpointed after *every* book, not just at the end. Survives
+    interruption by quota, cancellation, or process death; a resumed run reuses the original
+    candidate scan rather than rescanning the library (so newly-added books aren't silently folded
+    into an in-flight resume chain — they're picked up by the next fresh run instead).
+  - **Only touches books missing data**, never refreshes a book that already has a cover/authors —
+    this is a repair pass for gaps, not a re-sync, and won't fight a future manual-cover-entry edit.
+  - **`RefetchCoverUseCase` was left as-is (sibling use case, not generalized/wrapped).** It only
+    ever touches the cover column and returns a single-book UX `Resource`; neither shape fits a
+    many-book, resumable, cover-*and*-author operation, so `BulkBackfillUseCase` is new and
+    independent, sharing dependency shape and the rate limiter but not code/inheritance.
+  - Offered from a new "Cover & author backfill" section on the Settings screen (live progress,
+    cancel, and an honest "N of M done, paused until the quota resets" state), and as a one-tap
+    "Start backfill" action on the import summary dialog once an import actually adds books.
+  - Books with no ISBN are computed once at scan time, reported as skipped, and never enter the
+    retry queue — manual cover entry (still in the backlog) remains their only route.
+- **Library multi-select and bulk actions (Phase B — not started).** Long-press a library card to enter selection mode,
   with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
   bulk reading-status change is the obvious companion and probably cheap once selection exists.
   Deletion of several books at once deserves the same confirmation care the single-book delete
@@ -581,6 +592,16 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
+
+- **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
+  taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
+  and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive
+  per-book path goes through, still folds `RateLimited` back into "no cover for this call". The
+  reasoning is sound as far as it goes (a one-off lookup has no retry loop to pause) and nothing
+  incorrect is *persisted* — the book simply keeps no cover — but the user is told the book has no
+  cover when the provider merely refused, which is misleading right after a backfill has consumed
+  the quota. Small fix: surface the rate-limited case to the interactive caller so it can say
+  "try again shortly" instead.
 
 - On-device smoke test of the full add-book flow (only exercised via JVM tests so far); the
   first on-device migration checks (v1 → v2, then v2 → v3) ride along with the next installs.

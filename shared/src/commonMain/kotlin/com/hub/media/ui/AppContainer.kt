@@ -7,10 +7,13 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
+import com.hub.media.features.books.domain.BulkBackfillUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
+import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
@@ -92,22 +95,50 @@ public class AppContainer(
     public val logReadingSessionUseCase: LogReadingSessionUseCase =
         LogReadingSessionUseCase(readingSessionRepository)
 
+    /**
+     * Shared quota tracker for every ISBN-keyed Open Library cover probe in the app (ROADMAP Task
+     * 14 Phase A) -- passed to [addBookByIsbnUseCase], [refetchCoverUseCase], and
+     * [bulkBackfillUseCase] alike, since Open Library's 100-requests-per-IP-per-5-minutes cover
+     * quota is per *device*, not per call site. A bulk-only limiter would let a user tapping
+     * "re-fetch cover" mid-backfill silently push the combined total over the limit while the
+     * backfill took the blame -- see [OpenLibraryCoverRateLimiter]'s KDoc.
+     */
+    private val coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter()
+
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */
     public val addBookByIsbnUseCase: AddBookByIsbnUseCase = createDefaultAddBookByIsbnUseCase(
         httpClient = httpClient,
         imageStorage = imageStorage,
         bookRepository = bookRepository,
+        coverRateLimiter = coverRateLimiter,
     )
 
     /**
      * Per-book "re-fetch cover" affordance (ROADMAP Task 6 Phase E), consumed by
      * [BookDetailViewModel]. Shares the same Open Library -> Google Books -> ISBN-probe cover
-     * chain as [addBookByIsbnUseCase] (see [createDefaultRefetchCoverUseCase]).
+     * chain as [addBookByIsbnUseCase] (see [createDefaultRefetchCoverUseCase]), and the same
+     * [coverRateLimiter].
      */
     public val refetchCoverUseCase: RefetchCoverUseCase = createDefaultRefetchCoverUseCase(
         httpClient = httpClient,
         imageStorage = imageStorage,
         bookRepository = bookRepository,
+        coverRateLimiter = coverRateLimiter,
+    )
+
+    /**
+     * Bulk cover-and-author backfill across the whole library (ROADMAP Task 14 Phase A), consumed
+     * by `BackfillViewModel` from the Settings screen. Shares [coverRateLimiter] with
+     * [addBookByIsbnUseCase]/[refetchCoverUseCase] -- see [coverRateLimiter]'s KDoc -- and
+     * [settingsRepository] for its persisted resume state (see
+     * [com.hub.media.features.settings.data.BulkBackfillState]).
+     */
+    public val bulkBackfillUseCase: BulkBackfillUseCase = createDefaultBulkBackfillUseCase(
+        httpClient = httpClient,
+        imageStorage = imageStorage,
+        bookRepository = bookRepository,
+        settingsRepository = settingsRepository,
+        coverRateLimiter = coverRateLimiter,
     )
 
     /**

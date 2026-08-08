@@ -35,11 +35,43 @@ author.
   narrow the same list together, never either-or.
 - Author now displays on library list rows (when known) and on the Book Detail screen's metadata
   block, omitted entirely for a book with no author on record rather than showing a placeholder.
+- **Bulk cover & author backfill** (ROADMAP Task 14 Phase A) — a new "Cover & author backfill"
+  section on the Settings screen repairs the whole library in one pass: any book with an ISBN that
+  is missing a cover and/or an author is looked up again, and both fields are written from the
+  single resulting lookup rather than two separate crawls. Motivated by a Goodreads import, which
+  carries neither covers nor (for pre-Task-9 books) authors, leaving the old one-book-at-a-time
+  "re-fetch cover" as the only remedy. Offered from Settings, and as a "Start backfill" action
+  directly on the import summary dialog once an import has actually added books.
+  - **One shared rate limiter for every ISBN-keyed cover probe.** Open Library's cover lookup quota
+    (100 requests/IP/5 minutes) is per device, not per feature, so a new `OpenLibraryCoverRateLimiter`
+    now sits inside `OpenLibraryIsbnCoverProbe` itself and is shared — via a single `AppContainer`
+    instance — by the bulk backfill, the per-book "re-fetch cover" action, and "add book by ISBN"
+    alike. A user tapping "re-fetch cover" mid-backfill draws on the same budget instead of silently
+    pushing the combined total over the limit.
+  - **A 429/5xx no longer means "no cover."** `OpenLibraryIsbnCoverProbe.probeCoverUrl` now returns
+    a `CoverProbeResult` (`Found` / `NotFound` / `RateLimited`) instead of a bare nullable URL, so a
+    rate-limit or server-error response is distinguishable from Open Library's real "no cover" 404.
+    The bulk backfill pauses and defers a book on `RateLimited` rather than marking it coverless;
+    the single-book paths still collapse `RateLimited` into "no cover for this lookup" (identical to
+    their pre-existing behavior), since a one-off interactive call has no backfill-style retry loop
+    to pause.
+  - **Resumable.** Progress (which books are still pending, and running totals) is checkpointed to
+    the `app_settings` key-value store after every book — no schema change. A backfill interrupted by
+    the quota, cancellation, or the app being killed picks up exactly where it left off on the next
+    run rather than restarting or being silently abandoned, and the Settings screen offers "Resume
+    backfill (N remaining)" the moment it detects leftover state.
+  - Books with no ISBN are reported as skipped (with a note that manual cover entry, still in the
+    backlog, is their only route) rather than retried on every run.
 
 ### Changed
 
 - `library_export.csv`'s format version (`csv_schema_version`) is now `2`. Files this app itself
   produced before this release (`csv_schema_version=1`) remain importable.
+- `OpenLibraryIsbnCoverProbe.probeCoverUrl` returns `CoverProbeResult` instead of `String?` (see
+  above); `FallbackBookMetadataProvider`/`createDefaultBookMetadataProvider`,
+  `createDefaultRefetchCoverUseCase`, and `createDefaultAddBookByIsbnUseCase` all gained an optional
+  `coverRateLimiter`/`OpenLibraryCoverRateLimiter` parameter (defaulted, so existing call sites are
+  source-compatible) to support the shared-quota wiring above.
 
 ## [0.7.0] - 2026-08-03
 

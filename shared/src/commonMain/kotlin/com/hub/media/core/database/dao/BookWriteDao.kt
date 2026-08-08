@@ -138,6 +138,71 @@ interface BookWriteDao {
     }
 
     /**
+     * Targeted single-column update of [MediaItemEntity.coverImageHash] only, for use *inside*
+     * [applyBackfilledMetadata]'s transaction (ROADMAP Task 14 Phase A). A near-twin of
+     * [com.hub.media.core.database.dao.MediaItemDao.updateCoverImageHash] -- duplicated here rather
+     * than reused across DAOs because Room's `@Transaction` default-body pattern (see
+     * [updateBookMetadataAtomically] for the established precedent) requires every query the
+     * transaction body calls to be defined on the same `@Dao` interface.
+     *
+     * @return The number of rows affected: `1` if [mediaId] exists, `0` otherwise.
+     */
+    @Query("UPDATE media_items SET coverImageHash = :coverImageHash WHERE id = :mediaId")
+    suspend fun updateCoverImageHashOnly(mediaId: String, coverImageHash: String): Int
+
+    /**
+     * Targeted single-column update of [BookDetailsEntity.authors] only, for use *inside*
+     * [applyBackfilledMetadata]'s transaction (ROADMAP Task 14 Phase A). Leaves every other
+     * [BookDetailsEntity] column (isbn, format, totalPages, status, finishedAt, trackingMode)
+     * completely untouched.
+     *
+     * @return The number of rows affected: `1` if a [BookDetailsEntity] row exists for [mediaId],
+     *   `0` otherwise. Unlike [updateBookMetadataAtomically], a `0` here is never self-healed --
+     *   see [applyBackfilledMetadata]'s KDoc.
+     */
+    @Query("UPDATE book_details SET authors = :authors WHERE mediaId = :mediaId")
+    suspend fun updateAuthorsOnly(mediaId: String, authors: String): Int
+
+    /**
+     * Atomically writes the cover and/or authors a bulk backfill pass resolved for [mediaId] in a
+     * single transaction ([com.hub.media.features.books.data.BookRepository.applyBackfilledMetadata],
+     * ROADMAP Task 14 Phase A) -- one shared rate-limited provider lookup
+     * ([com.hub.media.features.books.network.BookMetadata] carries both a cover URL and author
+     * names) writes both pieces of data it resolved in one transaction rather than two independent
+     * awaits, so a failure/process-death partway through can never leave a book with a newly
+     * written cover but a stale-untouched author write half-applied (or vice versa) when both were
+     * actually resolved this pass.
+     *
+     * [coverImageHash] and/or [authors] being `null` means "this pass didn't resolve that field"
+     * (the book already had it, or the provider genuinely had nothing new) -- that column is simply
+     * not touched, exactly like [updateCoverImageHashOnly]/[updateAuthorsOnly] individually. Both
+     * `null` is a caller error the repository layer guards against before ever calling this (see
+     * [com.hub.media.features.books.data.BookRepository.applyBackfilledMetadata]'s KDoc) rather than
+     * something this method needs to special-case.
+     *
+     * No self-heal on a missing [BookDetailsEntity] row (unlike [updateBookMetadataAtomically]):
+     * there is no format/totalPages/status to construct a replacement row from here, and the
+     * data-integrity edge case this covers ([com.hub.media.features.books.data.BookRepository.observeBookDetail]'s
+     * KDoc) is not expected for any row a bulk backfill scan would have found in the first place.
+     *
+     * @return The total number of rows affected across both targeted updates (0, 1, or 2 depending
+     *   on which of [coverImageHash]/[authors] were non-null and whether [mediaId] resolved) -- the
+     *   repository layer's "not found" signal is `0` when at least one of the two updates was
+     *   attempted.
+     */
+    @Transaction
+    suspend fun applyBackfilledMetadata(mediaId: String, coverImageHash: String?, authors: String?): Int {
+        var rowsAffected = 0
+        if (coverImageHash != null) {
+            rowsAffected += updateCoverImageHashOnly(mediaId, coverImageHash)
+        }
+        if (authors != null) {
+            rowsAffected += updateAuthorsOnly(mediaId, authors)
+        }
+        return rowsAffected
+    }
+
+    /**
      * Atomically inserts a media item, its book details, and any external identifiers in a
      * single database transaction. Room wraps this default-bodied method in a transaction
      * because of [Transaction]; if any insert throws (e.g. a duplicate (mediaId, provider)

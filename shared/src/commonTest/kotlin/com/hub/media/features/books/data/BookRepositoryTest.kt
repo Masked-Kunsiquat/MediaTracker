@@ -749,4 +749,82 @@ class BookRepositoryTest {
         assertEquals(400, details?.totalPages, "totalPages must be untouched by a trackingMode-only intent")
         assertEquals(TrackingMode.PERCENT, details?.trackingMode)
     }
+
+    // ---- applyBackfilledMetadata / getAllBooksWithDetails (ROADMAP Task 14 Phase A) -----------
+
+    @Test
+    fun applyBackfilledMetadata_writesCoverAndAuthorsAtomically() = runTest {
+        val addResult = repo.addBook(title = "Backfill Target", format = BookFormat.PHYSICAL, isbn = "9780000000001")
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repo.applyBackfilledMetadata(mediaId, coverImageHash = "abc123.jpg", authors = "Ada Lovelace")
+        assertIs<Resource.Success<Unit>>(result)
+
+        assertEquals("abc123.jpg", db.mediaItemDao().getById(mediaId)?.coverImageHash)
+        assertEquals("Ada Lovelace", db.bookDetailsDao().getByMediaId(mediaId)?.authors)
+    }
+
+    @Test
+    fun applyBackfilledMetadata_coverOnly_leavesAuthorsUntouched() = runTest {
+        val addResult = repo.addBook(title = "Cover Only Book", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+        // Pre-existing author on record must survive a cover-only backfill write.
+        db.bookDetailsDao().update(db.bookDetailsDao().getByMediaId(mediaId)!!.copy(authors = "Existing Author"))
+
+        val result = repo.applyBackfilledMetadata(mediaId, coverImageHash = "newcover.jpg", authors = null)
+        assertIs<Resource.Success<Unit>>(result)
+
+        assertEquals("newcover.jpg", db.mediaItemDao().getById(mediaId)?.coverImageHash)
+        assertEquals("Existing Author", db.bookDetailsDao().getByMediaId(mediaId)?.authors)
+    }
+
+    @Test
+    fun applyBackfilledMetadata_authorsOnly_leavesCoverUntouched() = runTest {
+        val addResult = repo.addBook(
+            title = "Authors Only Book",
+            format = BookFormat.PHYSICAL,
+            coverImageHash = "existing-cover.jpg",
+        )
+        assertIs<Resource.Success<String>>(addResult)
+        val mediaId = addResult.data
+
+        val result = repo.applyBackfilledMetadata(mediaId, coverImageHash = null, authors = "New Author")
+        assertIs<Resource.Success<Unit>>(result)
+
+        assertEquals("existing-cover.jpg", db.mediaItemDao().getById(mediaId)?.coverImageHash)
+        assertEquals("New Author", db.bookDetailsDao().getByMediaId(mediaId)?.authors)
+    }
+
+    @Test
+    fun applyBackfilledMetadata_bothNull_isNoOpSuccess() = runTest {
+        val addResult = repo.addBook(title = "Nothing To Write", format = BookFormat.PHYSICAL)
+        assertIs<Resource.Success<String>>(addResult)
+
+        val result = repo.applyBackfilledMetadata(addResult.data, coverImageHash = null, authors = null)
+        assertIs<Resource.Success<Unit>>(result)
+    }
+
+    @Test
+    fun applyBackfilledMetadata_unknownMediaId_returnsError() = runTest {
+        val result = repo.applyBackfilledMetadata(newId(), coverImageHash = "x.jpg", authors = null)
+        assertIs<Resource.Error>(result)
+    }
+
+    @Test
+    fun getAllBooksWithDetails_returnsEveryBookJoinedWithDetails() = runTest {
+        val first = repo.addBook(title = "Book One", format = BookFormat.PHYSICAL, isbn = "9780000000001")
+        val second = repo.addBook(title = "Book Two", format = BookFormat.EBOOK, isbn = "9780000000002")
+        assertIs<Resource.Success<String>>(first)
+        assertIs<Resource.Success<String>>(second)
+
+        val all = repo.getAllBooksWithDetails()
+
+        assertEquals(2, all.size)
+        val ids = all.map { it.mediaItem.id }.toSet()
+        assertTrue(ids.contains(first.data))
+        assertTrue(ids.contains(second.data))
+        assertTrue(all.all { it.details != null })
+    }
 }

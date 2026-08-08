@@ -49,4 +49,14 @@ interface MediaItemDao {
 
     @Query("SELECT * FROM media_items WHERE type = :type ORDER BY title ASC")
     fun observeByType(type: MediaType): Flow<List<MediaItemEntity>>
+
+    /**
+     * One-shot (non-reactive) counterpart of [observeByType] (ROADMAP Task 14 Phase A), for
+     * [com.hub.media.features.books.data.BookRepository.getAllBooksWithDetails] -- a single
+     * library-wide scan for candidates
+     * ([com.hub.media.features.books.domain.BulkBackfillUseCase] seeding its resume state) has no
+     * use for an ongoing [Flow] subscription, unlike every reactive UI-facing read in this DAO.
+     */
+    @Query("SELECT * FROM media_items WHERE type = :type ORDER BY title ASC")
+    suspend fun getAllByType(type: MediaType): List<MediaItemEntity>
 }
