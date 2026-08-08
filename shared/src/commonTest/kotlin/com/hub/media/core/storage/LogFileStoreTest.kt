@@ -1,0 +1,281 @@
+package com.hub.media.core.storage
+
+import com.hub.media.core.database.fileSizeBytes
+import com.hub.media.core.database.writeFileBytes
+import com.hub.media.core.util.LogLevel
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.coroutines.test.runTest
+
+/**
+ * Tests for [LogFileStore] and [createLogFileStore] (ROADMAP Task 15 Phase B).
+ *
+ * Every store built here passes `flushIntervalMillis = 0` to disable the periodic background
+ * flush loop -- see [LogFileStore]'s own KDoc on why: a real loop on [kotlinx.coroutines.Dispatchers.Default]
+ * would not respect `kotlinx-coroutines-test`'s virtual time and would leak a running coroutine
+ * past the end of a test. [flush] is always driven explicitly instead.
+ */
+class LogFileStoreTest {
+
+    private lateinit var tempDir: String
+
+    /** Deterministic, manually-advanced [Clock] for entries whose timestamp is asserted on. */
+    private class MutableClock(startMillis: Long = 1_700_000_000_000L) : Clock {
+        var millis: Long = startMillis
+        override fun now(): Instant = Instant.fromEpochMilliseconds(millis)
+    }
+
+    @BeforeTest
+    fun setUp() = runTest {
+        tempDir = createTestTempDir()
+    }
+
+    @AfterTest
+    fun tearDown() = runTest {
+        cleanupTestTempDir(tempDir)
+    }
+
+    // --- Flush-before-read (requirement 6) ----------------------------------------------------
+
+    @Test
+    fun readAll_calledRightAfterAppendWithNoExplicitFlush_stillReturnsTheBufferedEntry() = runTest {
+        val store = LogFileStore(directoryPath = tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+
+        store.append(LogLevel.WARN, "T", "buffered, never explicitly flushed")
+        val all = store.readAll()
+
+        assertEquals(listOf("buffered, never explicitly flushed"), all.map { it.message })
+        store.shutdown()
+    }
+
+    @Test
+    fun readRecent_calledRightAfterAppendWithNoExplicitFlush_stillReturnsTheBufferedEntry() = runTest {
+        val store = LogFileStore(directoryPath = tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+
+        store.append(LogLevel.WARN, "T", "buffered, never explicitly flushed")
+        val recent = store.readRecent()
+
+        assertEquals(listOf("buffered, never explicitly flushed"), recent.map { it.message })
+        store.shutdown()
+    }
+
+    // --- readRecent(limit) ordering (requirement 7) -------------------------------------------
+
+    @Test
+    fun readRecent_withLimitSmallerThanTotal_returnsTheMostRecentEntriesStillOldestFirst() = runTest {
+        val store = LogFileStore(directoryPath = tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        repeat(5) { i -> store.append(LogLevel.INFO, "T", "entry-$i") }
+        store.flush()
+
+        val recent = store.readRecent(limit = 2)
+
+        // Must be the two NEWEST ("entry-3", "entry-4"), not the two oldest -- and still in
+        // ascending (oldest-first) order within that window.
+        assertEquals(listOf("entry-3", "entry-4"), recent.map { it.message })
+        store.shutdown()
+    }
+
+    // --- Append semantics: a real append, not a rewrite (requirement 8) -----------------------
+
+    @Test
+    fun flush_calledTwiceWithNewEntriesBetween_appendsWithoutDuplicatingOrDroppingEarlierEntries() = runTest {
+        val store = LogFileStore(directoryPath = tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        val currentFilePath = "$tempDir/log.txt"
+
+        store.append(LogLevel.INFO, "T", "first")
+        store.flush()
+        val sizeAfterFirstFlush = fileSizeBytes(currentFilePath)
+
+        store.append(LogLevel.INFO, "T", "second")
+        store.flush()
+        val sizeAfterSecondFlush = fileSizeBytes(currentFilePath)
+
+        assertTrue(
+            sizeAfterSecondFlush > sizeAfterFirstFlush,
+            "the file must grow via append -- a read-modify-write bug could leave the size unchanged " +
+                "or even shrink it",
+        )
+        val all = store.readAll()
+        assertEquals(
+            listOf("first", "second"),
+            all.map { it.message },
+            "no duplication and no drop of the entry written by the first flush",
+        )
+        store.shutdown()
+    }
+
+    // --- Buffer overflow policy (requirement 5) -----------------------------------------------
+
+    @Test
+    fun append_moreEntriesThanBufferCapacityBeforeAnyFlush_dropsOldestAndRecordsAnOverflowMarker() = runTest {
+        val store = LogFileStore(
+            directoryPath = tempDir,
+            clock = MutableClock(),
+            bufferCapacity = 3,
+            // Keep append() from ever triggering its own async auto-flush mid-test -- this test
+            // wants to control precisely when flush() happens.
+            flushThreshold = 1000,
+            flushIntervalMillis = 0,
+        )
+
+        store.append(LogLevel.INFO, "T", "1")
+        store.append(LogLevel.INFO, "T", "2")
+        store.append(LogLevel.INFO, "T", "3") // buffer full: [1, 2, 3]
+        store.append(LogLevel.INFO, "T", "4") // evicts "1" -> [2, 3, 4]
+        store.append(LogLevel.INFO, "T", "5") // evicts "2" -> [3, 4, 5]
+        store.flush()
+
+        val all = store.readAll()
+        val regular = all.filter { it.tag != OVERFLOW_TAG }
+        assertEquals(
+            listOf("3", "4", "5"),
+            regular.map { it.message },
+            "drop-oldest policy: only the 3 newest of the 5 appended entries should survive",
+        )
+
+        val marker = all.single { it.tag == OVERFLOW_TAG }
+        assertEquals(LogLevel.WARN, marker.level)
+        assertTrue(
+            marker.message.contains("dropped 2 entries"),
+            "the marker must record exactly how many entries were evicted -- got: ${marker.message}",
+        )
+        store.shutdown()
+    }
+
+    // --- Rollover at the cap (requirement 3) --------------------------------------------------
+
+    @Test
+    fun flush_secondBatchExceedsCap_rotatesCurrentToPreviousAndBothFilesReadAscendingBySeq() = runTest {
+        val store = LogFileStore(
+            directoryPath = tempDir,
+            clock = MutableClock(),
+            // Tiny cap: any real encoded entry already exceeds it, so every flush AFTER the first
+            // rotates -- LogFileStore's rollover check only looks at the file's *existing* size,
+            // which starts at 0, so the very first flush never rotates regardless of batch size.
+            maxFileSizeBytes = 10L,
+            flushIntervalMillis = 0,
+        )
+
+        store.append(LogLevel.INFO, "T", "first batch")
+        store.flush() // no previous file exists yet -> writes straight to current, no rotation.
+
+        store.append(LogLevel.INFO, "T", "second batch")
+        store.flush() // current (first batch) + new bytes now exceeds the cap -> rotates:
+        // current becomes previous, a fresh current receives the second batch.
+
+        val all = store.readAll()
+        assertEquals(
+            listOf("first batch", "second batch"),
+            all.map { it.message },
+            "both the rotated-out previous file and the fresh current file must contribute",
+        )
+        assertTrue(
+            all.zipWithNext().all { (a, b) -> a.seq < b.seq },
+            "readAll() must return entries from both files in ascending seq order",
+        )
+        store.shutdown()
+    }
+
+    @Test
+    fun flush_thirdBatchTriggersASecondRotation_replacesThePreviousFilesPriorContent() = runTest {
+        val store = LogFileStore(
+            directoryPath = tempDir,
+            clock = MutableClock(),
+            maxFileSizeBytes = 10L,
+            flushIntervalMillis = 0,
+        )
+
+        store.append(LogLevel.INFO, "T", "first batch")
+        store.flush() // current = first batch
+
+        store.append(LogLevel.INFO, "T", "second batch")
+        store.flush() // rotation #1: previous = first batch, current = second batch
+
+        store.append(LogLevel.INFO, "T", "third batch")
+        store.flush() // rotation #2: previous = second batch (REPLACING first batch), current = third batch
+
+        val all = store.readAll()
+        // "first batch" must be gone: rotation #2 overwrote the one previous-file slot that used
+        // to hold it, and there is no third retained file anywhere in this design to keep it in.
+        assertEquals(
+            listOf("second batch", "third batch"),
+            all.map { it.message },
+            "the previous file's prior content (first batch) must have been replaced, not merged",
+        )
+        store.shutdown()
+    }
+
+    // --- Sequence continuity across a simulated process restart (requirement 4) ---------------
+
+    @Test
+    fun createLogFileStore_emptyDirectory_firstEntryEverGetsSeqOne() = runTest {
+        // The degenerate case the KDoc calls out explicitly: nothing retained anywhere, so
+        // initialSeq is 0 and the very first entry assigned by this store gets seq 1.
+        val store = createLogFileStore(tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+
+        store.append(LogLevel.INFO, "T", "first entry ever")
+        store.flush()
+
+        val all = store.readAll()
+        assertEquals(1L, all.single().seq)
+        store.shutdown()
+    }
+
+    @Test
+    fun createLogFileStore_reopenedOverExistingFiles_continuesSequenceAboveTheHighestOnDisk() = runTest {
+        val store1 = createLogFileStore(tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        store1.append(LogLevel.INFO, "T", "a")
+        store1.append(LogLevel.INFO, "T", "b")
+        store1.append(LogLevel.INFO, "T", "c")
+        store1.flush()
+        store1.shutdown()
+
+        // A brand new store instance over the SAME directory -- simulates a process restart
+        // (new LogFileStore, same on-disk files) rather than reusing the first instance's
+        // in-memory counter.
+        val store2 = createLogFileStore(tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        store2.append(LogLevel.INFO, "T", "d")
+        store2.flush()
+
+        val all = store2.readAll()
+        assertEquals(listOf("a", "b", "c", "d"), all.map { it.message })
+        assertEquals(listOf(1L, 2L, 3L, 4L), all.map { it.seq })
+        store2.shutdown()
+    }
+
+    @Test
+    fun createLogFileStore_freshEmptyCurrentFileButHigherSeqInPreviousFile_counterDoesNotReset() = runTest {
+        // The ROADMAP's highest-risk correctness item, constructed deliberately rather than
+        // waited for: the exact window a process death mid-rotation could leave behind is a
+        // fresh, EMPTY current file (log.txt) while the higher sequence numbers from before the
+        // rotation still live entirely in the previous file (log-previous.txt). Scanning only
+        // log.txt on the next launch would see nothing and restart numbering at 1, silently
+        // colliding with sequence numbers already on disk.
+        val highSeqEntries = listOf(
+            LogEntry(seq = 40L, timestampMillis = 1_000L, level = LogLevel.INFO, tag = "T", message = "old-1"),
+            LogEntry(seq = 41L, timestampMillis = 1_001L, level = LogLevel.INFO, tag = "T", message = "old-2"),
+        )
+        writeFileBytes("$tempDir/log-previous.txt", encodeLogEntries(highSeqEntries))
+        writeFileBytes("$tempDir/log.txt", ByteArray(0)) // fresh, empty current file
+
+        val store = createLogFileStore(tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        store.append(LogLevel.INFO, "T", "new entry after restart")
+        store.flush()
+
+        val all = store.readAll()
+        val newest = all.maxBy { it.seq }
+        assertEquals("new entry after restart", newest.message)
+        assertEquals(
+            42L,
+            newest.seq,
+            "must continue above 41 (the previous file's highest), not reset to 1 just because " +
+                "the current file was empty",
+        )
+        store.shutdown()
+    }
+}
