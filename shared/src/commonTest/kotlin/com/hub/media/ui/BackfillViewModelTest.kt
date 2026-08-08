@@ -205,11 +205,19 @@ class BackfillViewModelTest {
         viewModel.start()
         assertIs<BackfillUiState.Running>(viewModel.uiState.value)
 
-        // Give init's peekProgress() coroutine real time to actually resolve and (pre-fix) clobber
-        // uiState. execute()'s own loop is frozen on the gate the whole time, so Running is the only
-        // state start()'s coroutine could still be producing -- any Stopped seen here can only have
-        // come from init's late snapshot.
-        repeat(40) { withContext(Dispatchers.Default) { delay(5) } }
+        // Deterministic completion signal for init's peekProgress() Room read, instead of a fixed
+        // ~200ms real-time delay (PR review round 2 finding 4: a fixed delay can assert *before*
+        // Room's async snapshot read resolves, so this test could pass whether or not the guard it's
+        // meant to cover is even present -- worse than no test, because it looks like coverage). A
+        // second, independent BackfillViewModel constructed fresh over this exact same pre-seeded,
+        // still-untouched DB state (the first viewModel's run is frozen on provider's gate and has
+        // written nothing yet) runs the identical peekProgress() read that the first viewModel's
+        // init already issued. Waiting for *that* witness's uiState to resolve to Stopped proves a
+        // peekProgress() read of this shape has gone all the way through Room's async executor and
+        // back onto Main by this point -- exactly the condition that needed to hold for the
+        // original (pre-fix) init to have had its chance to clobber uiState.
+        val witness = viewModels.track(BackfillViewModel(newUseCase(provider)))
+        waitUntilOrTimeOut { witness.uiState.value is BackfillUiState.Stopped }
 
         // Without finding 3's fix this assertion fails: init's peekProgress() (once its Room read
         // resolves) unconditionally overwrites uiState with Stopped(preSeededProgress), clobbering

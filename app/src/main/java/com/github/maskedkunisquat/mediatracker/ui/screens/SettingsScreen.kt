@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -92,6 +93,8 @@ import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
 import java.io.File
+import kotlin.math.ceil
+import kotlin.time.DurationUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -1235,6 +1238,20 @@ private fun BackfillSetting(
                     )
                 }
             }
+            is BackfillUiState.Failed -> {
+                BackfillFailedContent(progress = uiState.progress)
+                Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        stringResource(
+                            if ((uiState.progress?.remaining ?: 0) > 0) {
+                                R.string.settings_backfill_resume_button
+                            } else {
+                                R.string.settings_backfill_start_button
+                            },
+                        ),
+                    )
+                }
+            }
         }
     }
 }
@@ -1275,8 +1292,10 @@ private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
         progress.isPaused -> {
             val retryAfter = progress.retryAfter
             val message = if (retryAfter != null) {
-                val minutes = retryAfter.inWholeMinutes
-                stringResource(R.string.settings_backfill_paused_with_wait_format, minutes)
+                // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
+                // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
+                val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
+                pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
             } else {
                 stringResource(R.string.settings_backfill_paused_message)
             }
@@ -1317,6 +1336,31 @@ private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
             text = stringResource(R.string.settings_backfill_no_isbn_format, progress.noIsbnSkipped),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * [BackfillUiState.Failed]'s body: an explicit failure signal, distinct from
+ * [BackfillStoppedContent]'s "paused"/"complete" messaging, so the user isn't left thinking a
+ * genuine mid-run failure was just a clean stop. [progress] is `null` when nothing was
+ * checkpointed before the failure, in which case there is no partial-progress line to show.
+ */
+@Composable
+private fun BackfillFailedContent(progress: BulkBackfillProgress?) {
+    Text(
+        text = stringResource(R.string.settings_backfill_failed_message),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
+    if (progress != null && progress.totalCandidates > 0) {
+        Text(
+            text = stringResource(
+                R.string.settings_backfill_progress_format,
+                progress.processed,
+                progress.totalCandidates,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }

@@ -80,18 +80,33 @@ public sealed class CoverProbeResult {
  * [OpenLibraryIsbnCoverProbe] instances constructed with the *same* [rateLimiter] correctly share
  * one budget, while two instances each with their own default limiter would not.
  *
- * @param clock Source of "now", used only to turn a `Retry-After` HTTP-date header into a
- *   [Duration] (see [parseRetryAfter]). Defaults to [Clock.System], matching
+ * @param rateLimiter Shared quota tracker. Defaults to `null`, in which case a fresh
+ *   [OpenLibraryCoverRateLimiter] is constructed using this same probe's [clock] -- see [clock]'s
+ *   KDoc for why the two must never be allowed to disagree about "now".
+ * @param clock Source of "now", used both to turn a `Retry-After` HTTP-date header into a
+ *   [Duration] (see [parseRetryAfter]) and, when [rateLimiter] is left at its default, to
+ *   construct that default [OpenLibraryCoverRateLimiter]. Defaults to [Clock.System], matching
  *   [com.hub.media.features.books.data.BookRepository]'s injected-[Clock] convention. Production
  *   callers never need to override this -- it exists so tests can pin the same fixed instant this
  *   probe and its [rateLimiter] both compute "now" from, which is what makes the resulting
- *   `retryAfter` deterministic and consistent between the two.
+ *   `retryAfter` deterministic and consistent between the two. A caller that supplies its *own*
+ *   [rateLimiter] (the normal production case -- see this class's KDoc on why every caller is
+ *   expected to share one instance) is responsible for constructing that limiter with the same
+ *   [Clock] it passes here; this default-construction path only covers the case where no
+ *   [rateLimiter] is supplied at all.
  */
 public class OpenLibraryIsbnCoverProbe(
     private val client: HttpClient,
-    private val rateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
+    rateLimiter: OpenLibraryCoverRateLimiter? = null,
     private val clock: Clock = Clock.System,
 ) {
+    // Threading `clock` through here (rather than each defaulting to Clock.System independently)
+    // is what keeps this probe and its rate limiter from disagreeing about "now" when a caller
+    // (namely a test) injects a non-system clock but leaves `rateLimiter` at its default -- see
+    // this constructor's KDoc. `rateLimiter` can't default to `OpenLibraryCoverRateLimiter(clock =
+    // clock)` directly (a parameter's default value can't reference a later-declared parameter),
+    // hence the nullable-parameter-plus-elvis indirection instead.
+    private val rateLimiter: OpenLibraryCoverRateLimiter = rateLimiter ?: OpenLibraryCoverRateLimiter(clock = clock)
 
     /**
      * Probes `covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false` for [isbn].

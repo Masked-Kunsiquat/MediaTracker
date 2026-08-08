@@ -36,4 +36,16 @@ public sealed class BackfillUiState {
      * is non-zero.
      */
     public data class Stopped(val progress: BulkBackfillProgress) : BackfillUiState()
+
+    /**
+     * [BackfillViewModel.start]'s coroutine stopped because of an unexpected, non-cancellation
+     * failure (e.g. a DB error mid-run) rather than the user cancelling or the run finishing/pausing
+     * normally (PR review round 2: a failure settling on [Stopped] made it indistinguishable from a
+     * clean stop, silently telling the user nothing went wrong when their progress may not have been
+     * saved). Deliberately a distinct case from [Stopped], not folded into it, so the Settings screen
+     * can render a visibly different signal for the two. [progress] carries the last snapshot this
+     * run actually reported -- same convention as [Stopped.progress] -- or `null` if nothing was
+     * checkpointed before the failure.
+     */
+    public data class Failed(val progress: BulkBackfillProgress?) : BackfillUiState()
 }

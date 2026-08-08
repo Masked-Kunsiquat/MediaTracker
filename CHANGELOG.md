@@ -69,6 +69,12 @@ author.
     progress UI on an accurate stopped state instead of leaving it stuck showing "running" forever;
     a stale progress snapshot read on screen re-open can no longer clobber a backfill that's already
     running.
+  - **Failure-path hardening, round 2 (PR review).** A genuine mid-run failure (e.g. a database
+    error) now settles the Settings screen on an explicit "something went wrong" message instead of
+    the same "stopped" state a clean cancel produces -- previously the two were visually identical,
+    so a real failure looked like nothing had gone wrong. The "paused, quota resets in..." message no
+    longer rounds a sub-minute wait down to a misleading "about 0 min"; it now rounds up (floored at
+    one minute) and pluralizes correctly ("about 1 minute" vs. "about 2 minutes").
   - **Rate-limit hardening (PR review).** A 5xx response now records a server refusal on the shared
     rate limiter too (previously only a 429 did), so the very next probe -- even for a different
     ISBN -- is denied locally instead of hitting a server already known to be refusing. `Retry-After`

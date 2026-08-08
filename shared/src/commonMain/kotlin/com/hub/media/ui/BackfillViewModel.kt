@@ -83,15 +83,24 @@ public class BackfillViewModel(
                 // above never runs once this coroutine is cancelled).
                 settleOutOfRunning()
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // A DB failure mid-backfill (BulkBackfillUseCase.execute's getBulkBackfillState/
                 // seedState/bookRepository reads, or saveBulkBackfillState, none of which catch
                 // their own exceptions) must not crash this ViewModel's coroutine, and must not
-                // leave uiState stuck at Running forever -- settleOutOfRunning() handles that the
-                // same way the CancellationException branch above does. Deliberately not rethrown:
-                // unlike cancellation, there's no caller-side structured-concurrency contract to
-                // honor here, only a UI state that must recover.
-                settleOutOfRunning()
+                // leave uiState stuck at Running forever. Deliberately not rethrown: unlike
+                // cancellation, there's no caller-side structured-concurrency contract to honor
+                // here, only a UI state that must recover.
+                //
+                // PR review round 2: this used to also call settleOutOfRunning(), which settles on
+                // exactly the same Stopped state cancellation does -- making a genuine failure
+                // (data may not have been saved) visually indistinguishable from the user pressing
+                // cancel. settleAsFailed() below settles on BackfillUiState.Failed instead, so the
+                // Settings screen can tell the two apart. The exception itself is deliberately not
+                // captured or inspected (hence the `_` catch parameter): shared/ has no logging
+                // facility (see OpenLibraryIsbnCoverProbe's KDoc on the identical point), and
+                // surfacing raw exception text in the Settings UI risks leaking DB/provider
+                // internals to the user for no actionable benefit.
+                settleAsFailed()
             }
         }
     }
@@ -108,6 +117,18 @@ public class BackfillViewModel(
     private fun settleOutOfRunning() {
         val running = _uiState.value as? BackfillUiState.Running
         _uiState.value = running?.progress?.let { BackfillUiState.Stopped(it) } ?: BackfillUiState.Idle
+    }
+
+    /**
+     * Moves [uiState] to [BackfillUiState.Failed] when [start]'s coroutine stops due to an
+     * unexpected, non-cancellation exception. Sibling to [settleOutOfRunning], and prefers the last
+     * progress this run actually reported for the same reason that one does -- see its KDoc -- but
+     * settles on [BackfillUiState.Failed] instead of [BackfillUiState.Stopped]/[BackfillUiState.Idle]
+     * so a genuine failure stays distinguishable from a clean stop.
+     */
+    private fun settleAsFailed() {
+        val running = _uiState.value as? BackfillUiState.Running
+        _uiState.value = BackfillUiState.Failed(running?.progress)
     }
 
     /**
