@@ -1381,6 +1381,39 @@ private fun SessionFormSection(
 }
 
 /**
+ * A tappable field that opens a picker: a small [label] above an [OutlinedButton] showing only the
+ * current [value].
+ *
+ * The label is deliberately OUTSIDE the button. These fields sit two-to-a-row, so each button gets
+ * roughly half the dialog's width; when the label lived inside as a `"Date: %s"` prefix it consumed
+ * enough of that to ellipsize the value it was labelling ("Date: Aug ...", "Time: 12:5 ..."), which
+ * is the one thing the control exists to show. Hoisting the label hands the whole button width to
+ * the value, and matches how every other field on these dialogs is labelled.
+ *
+ * [value] still gets single-line ellipsis as a backstop for an unusually long locale-specific date
+ * format on a narrow screen — but it should no longer be reachable in practice.
+ */
+@Composable
+private fun PickerField(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Text(text = value, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/**
  * Persistent, non-scrolling two-button action row (ROADMAP Task 7 Phase E), pinned to the bottom of
  * [SessionDialogFrame] on an elevated [Surface] (Material 3's default `BottomAppBar` tonal
  * elevation, 3dp) -- the same shape as `EditBookScreen`'s `EditBookBottomBar`. [secondaryLabel]/
@@ -1978,38 +2011,28 @@ private fun ManualSessionDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(
+                // The "Date"/"Time" labels sit ABOVE their buttons rather than inside them: each
+                // button only gets half the dialog width, and an in-pill "Date: " prefix ate
+                // enough of that to ellipsize the value itself ("Date: Aug ...", "Time: 12:5 ...").
+                // Outside, the full button width belongs to the value.
+                PickerField(
+                    label = stringResource(R.string.date_field_label),
+                    value = formatUtcMidnightMillis(datePickerState.selectedDateMillis),
                     onClick = {
                         dateBeforePickerOpen = datePickerState.selectedDateMillis
                         showDatePicker = true
                     },
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.date_label,
-                            formatUtcMidnightMillis(datePickerState.selectedDateMillis),
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                OutlinedButton(
+                )
+                PickerField(
+                    label = stringResource(R.string.time_field_label),
+                    value = formatTimeOfDay(context, timePickerState.hour, timePickerState.minute),
                     onClick = {
                         timeBeforePickerOpen = timePickerState.hour to timePickerState.minute
                         showTimePicker = true
                     },
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.time_label,
-                            formatTimeOfDay(context, timePickerState.hour, timePickerState.minute),
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                )
             }
         }
 
