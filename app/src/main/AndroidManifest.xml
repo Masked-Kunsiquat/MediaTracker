@@ -9,7 +9,8 @@
 
     <!-- android:allowBackup below reads misleadingly on its own, so: it does NOT mean "back this
          app up to Google Drive." Cloud backup is fully excluded in both rules files referenced
-         here - every domain this app writes to is excluded, so that channel transfers nothing
+         here - every domain, the data directory root included, is excluded, so that channel
+         transfers nothing
          (ROADMAP Task 15 Phase B; AGENTS.md section 1's local-first, no-cloud premise). The
          attribute stays "true" only because it is the same switch that gates API 31+'s on-device
          device-transfer channel, which IS deliberately kept enabled, for the content-addressed

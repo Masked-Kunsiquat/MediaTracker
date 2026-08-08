@@ -117,7 +117,45 @@ class LogEntryCodecTest {
         )
     }
 
+    // --- Multi-entry round-trip via encodeLogEntries/decodeLogEntries (plural) ---------------
+
+    @Test
+    fun encodeLogEntries_multipleEntriesRoundTrip_decodesUnchangedAndInOrder() {
+        // The single-entry tests above only exercise encodeLogEntry/decodeLogEntry. The plural
+        // encodeLogEntries/decodeLogEntries pair is what LogFileStore actually calls on every
+        // flush/read -- this proves it preserves both content and order across several entries,
+        // not just a single one.
+        val entries = listOf(
+            LogEntry(1L, 1_000L, LogLevel.INFO, "T1", "first"),
+            LogEntry(2L, 2_000L, LogLevel.WARN, "T2", "second"),
+            LogEntry(3L, 3_000L, LogLevel.ERROR, "T3", "third, with a\nnewline\\and a backslash"),
+        )
+
+        val decoded = decodeLogEntries(encodeLogEntries(entries))
+
+        assertEquals(entries, decoded)
+    }
+
     // --- Malformed-line tolerance (requirement 2) --------------------------------------------
+
+    @Test
+    fun decodeLogEntries_blankLinesBetweenRecords_bothRecordsStillDecode() {
+        // decodeLogEntries deliberately treats an empty line as "skip", not "malformed" (see this
+        // file's KDoc) -- nothing else in this suite exercises that branch of the mapNotNull.
+        val first = LogEntry(1L, 1_000L, LogLevel.INFO, "T", "first, well-formed")
+        val second = LogEntry(2L, 2_000L, LogLevel.WARN, "T", "second, well-formed")
+        val bytes = (
+            "\n" +
+                encodeLogEntry(first) + "\n" +
+                "\n" +
+                encodeLogEntry(second) + "\n" +
+                "\n"
+            ).encodeToByteArray()
+
+        val decoded = decodeLogEntries(bytes)
+
+        assertEquals(listOf(first, second), decoded)
+    }
 
     @Test
     fun decodeLogEntries_garbageLineInMiddle_doesNotHideEntriesBeforeOrAfterIt() {

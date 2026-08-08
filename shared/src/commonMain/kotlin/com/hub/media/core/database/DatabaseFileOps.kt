@@ -70,6 +70,24 @@ internal expect suspend fun appendFileBytes(path: String, bytes: ByteArray): Boo
 internal expect suspend fun fileSizeBytes(path: String): Long
 
 /**
+ * Reads at most the *last* [byteCount] bytes of the file at [path] -- the tail counterpart to
+ * [readFileHeaderBytes], added so the Task 15 Phase B log store can find the highest sequence
+ * number it retained without loading a ~1 MB file to look at its final line. That scan runs
+ * synchronously on process startup, so reading only the tail is the difference between a fixed
+ * few kilobytes and the whole retained log on every launch.
+ *
+ * **The first line in the returned window is very likely truncated**, both because the window
+ * starts at an arbitrary byte offset and because that offset can land inside a multi-byte UTF-8
+ * sequence. Callers must therefore treat the leading partial line as unusable rather than assuming
+ * the window begins on a record boundary -- the log store's tail scan works backwards from the end
+ * and skips anything that fails to decode, which handles this for free.
+ *
+ * @return The bytes read (the whole file if it is shorter than [byteCount]), or `null` if the file
+ *   doesn't exist or can't be read.
+ */
+internal expect suspend fun readFileTailBytes(path: String, byteCount: Int): ByteArray?
+
+/**
  * Deletes the file at [path] if it exists.
  *
  * @return `true` if a file was actually present and removed; `false` if there was nothing to

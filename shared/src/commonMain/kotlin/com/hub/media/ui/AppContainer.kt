@@ -206,7 +206,17 @@ public class AppContainer(
      * connections should not be leaked.
      */
     public fun close() {
-        logFileStore.shutdown()
+        // Isolated deliberately: the log store is the least critical resource here, but it is
+        // closed first (so the flush loop stops before the things it might log about go away).
+        // Letting a failure from it propagate would skip the HTTP client and the database --
+        // leaking a real connection and a real file handle over a diagnostics-only failure, which
+        // inverts the priority. Consistent with the rule that logging must never become a new
+        // source of failure for its caller (ROADMAP Task 15 Phase A).
+        try {
+            logFileStore.shutdown()
+        } catch (_: Throwable) {
+            // Best-effort -- see above.
+        }
         httpClient.close()
         database.close()
     }

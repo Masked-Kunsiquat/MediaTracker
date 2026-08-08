@@ -1,6 +1,7 @@
 package com.hub.media.core.storage
 
 import com.hub.media.core.database.fileSizeBytes
+import com.hub.media.core.database.readFileBytes
 import com.hub.media.core.database.writeFileBytes
 import com.hub.media.core.util.LogLevel
 import kotlin.test.AfterTest
@@ -10,7 +11,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 
 /**
  * Tests for [LogFileStore] and [createLogFileStore] (ROADMAP Task 15 Phase B).
@@ -38,6 +42,23 @@ class LogFileStoreTest {
     @AfterTest
     fun tearDown() = runTest {
         cleanupTestTempDir(tempDir)
+    }
+
+    /**
+     * Polls real (non-virtual) wall-clock time until [condition] is true or [maxAttempts] is
+     * exhausted. Needed for anything that depends on [LogFileStore]'s `backgroundScope`, which
+     * runs on the real [Dispatchers.Default] -- entirely outside this suite's `runTest` virtual
+     * scheduler -- so there is no `advanceUntilIdle()`/`runCurrent()` that would wait for it.
+     * Mirrors `BookDetailViewModelTest.runCurrentUntilOrTimeOut`'s real-time-yielding idiom.
+     */
+    private suspend fun pollUntilOrTimeOut(maxAttempts: Int = 200, condition: suspend () -> Boolean): Boolean {
+        var attempts = 0
+        while (attempts < maxAttempts) {
+            if (condition()) return true
+            withContext(Dispatchers.Default) { delay(5) }
+            attempts++
+        }
+        return condition()
     }
 
     // --- Flush-before-read (requirement 6) ----------------------------------------------------
@@ -144,6 +165,66 @@ class LogFileStoreTest {
             marker.message.contains("dropped 2 entries"),
             "the marker must record exactly how many entries were evicted -- got: ${marker.message}",
         )
+        store.shutdown()
+    }
+
+    // --- Threshold-triggered auto-flush (autoFlushGate) ----------------------------------------
+
+    @Test
+    fun append_crossingFlushThresholdTwice_autoFlushesBothBatchesWithoutDuplicationOrLoss() = runTest {
+        // Small threshold so a handful of appends crosses it twice, exercising both the initial
+        // trigger AND autoFlushGate re-arming after the first auto-flush's `finally` releases it
+        // (see LogFileStore.append's KDoc) -- if the gate ever stayed locked for good, the second
+        // batch would never get auto-flushed.
+        val threshold = 5
+        val store = LogFileStore(
+            directoryPath = tempDir,
+            clock = MutableClock(),
+            flushThreshold = threshold,
+            flushIntervalMillis = 0,
+        )
+        val currentFilePath = "$tempDir/log.txt"
+        val firstBatch = (0 until threshold).map { "batch1-$it" }
+        val secondBatch = (0 until threshold).map { "batch2-$it" }
+
+        suspend fun entriesOnDiskNow(): List<LogEntry> =
+            decodeLogEntries(readFileBytes(currentFilePath) ?: ByteArray(0))
+
+        // Cross the threshold WITHOUT ever calling flush() explicitly -- append() itself must be
+        // the thing that schedules the auto-flush.
+        firstBatch.forEach { store.append(LogLevel.INFO, "T", it) }
+
+        // Read the raw file directly, NOT via store.readAll()/readRecent() -- both of those call
+        // flush() themselves and would make this pass even if the threshold-triggered auto-flush
+        // never fired at all.
+        val firstBatchLanded = pollUntilOrTimeOut { entriesOnDiskNow().size >= threshold }
+        assertTrue(firstBatchLanded, "the first threshold-triggered auto-flush never wrote anything to disk")
+
+        // Cross the threshold a second time. If autoFlushGate failed to re-arm after the first
+        // flush completed, this batch would silently never get auto-flushed -- invisible to a
+        // trailing readAll() (which flushes regardless) but caught here by reading the file
+        // directly before any explicit flush() is ever called.
+        secondBatch.forEach { store.append(LogLevel.INFO, "T", it) }
+
+        val secondBatchLanded = pollUntilOrTimeOut { entriesOnDiskNow().size >= threshold * 2 }
+        assertTrue(
+            secondBatchLanded,
+            "the second threshold-triggered auto-flush never wrote anything to disk -- " +
+                "autoFlushGate may not have re-armed after the first flush completed",
+        )
+
+        val onDiskBeforeAnyExplicitFlush = entriesOnDiskNow()
+        assertEquals(
+            firstBatch + secondBatch,
+            onDiskBeforeAnyExplicitFlush.map { it.message },
+            "both auto-flushed batches must be present exactly once, in order, entirely via " +
+                "auto-flush -- before readAll()/flush() is ever called explicitly",
+        )
+
+        // readAll() calls flush() internally; this proves that trailing flush is a true no-op
+        // (nothing left buffered) rather than a second chance to silently double-write.
+        val all = store.readAll()
+        assertEquals(firstBatch + secondBatch, all.map { it.message })
         store.shutdown()
     }
 
@@ -275,6 +356,96 @@ class LogFileStoreTest {
             newest.seq,
             "must continue above 41 (the previous file's highest), not reset to 1 just because " +
                 "the current file was empty",
+        )
+        store.shutdown()
+    }
+
+    // --- highestRetainedSeq's tail-window scan (new: SEQ_SCAN_TAIL_WINDOW_BYTES) --------------
+    //
+    // highestRetainedSeq's window is private to LogFileStore.kt (8 KiB per its KDoc), so these
+    // tests can't reference the constant directly -- both hardcode 8 * 1024 and, as their own
+    // positive control, assert their setup actually clears it. Without that check either test
+    // could silently degrade into exercising the ordinary full-file path instead of the new
+    // windowed one.
+
+    @Test
+    fun createLogFileStore_currentFileLargerThanTailWindow_stillContinuesFromTheTrueHighestSeq() = runTest {
+        // Enough entries, each padded to a known-ish size, that the file comfortably exceeds the
+        // 8 KiB tail window -- so the window is a genuine subset of the file, not the whole thing.
+        val entryCount = 400
+        val store1 = LogFileStore(directoryPath = tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        repeat(entryCount) { i ->
+            store1.append(LogLevel.INFO, "T", "padded log message body for entry number $i ".repeat(2))
+        }
+        store1.flush()
+        val fileSize = fileSizeBytes("$tempDir/log.txt")
+        assertTrue(
+            fileSize > 8 * 1024,
+            "test setup must itself exceed the 8 KiB tail window for this to prove anything -- " +
+                "actual size: $fileSize bytes",
+        )
+        store1.shutdown()
+
+        // A fresh store instance, simulating a process restart: createLogFileStore's scan must
+        // find the file's TRUE highest seq (entryCount) via the tail window, not an under-count --
+        // the window deliberately discards its own first (likely truncated) line, so an off-by-one
+        // there would silently lose the newest entries in that dropped line.
+        val store2 = createLogFileStore(tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        store2.append(LogLevel.INFO, "T", "after restart")
+        store2.flush()
+
+        val newest = store2.readAll().maxBy { it.seq }
+        assertEquals("after restart", newest.message)
+        assertEquals(
+            entryCount + 1L,
+            newest.seq,
+            "must continue from the true highest seq ($entryCount) recovered by the tail-window " +
+                "scan, not an under-count",
+        )
+        store2.shutdown()
+    }
+
+    @Test
+    fun createLogFileStore_entireTailWindowIsGarbageButValidRecordsPrecedeIt_fallsBackToFullFileScan() = runTest {
+        // Valid, well-formed records sitting well before the tail window...
+        val validEntries = listOf(
+            LogEntry(seq = 5L, timestampMillis = 1_000L, level = LogLevel.INFO, tag = "T", message = "valid-a"),
+            LogEntry(seq = 6L, timestampMillis = 1_001L, level = LogLevel.INFO, tag = "T", message = "valid-b"),
+            LogEntry(seq = 7L, timestampMillis = 1_002L, level = LogLevel.INFO, tag = "T", message = "valid-c"),
+        )
+        val validBytes = encodeLogEntries(validEntries)
+        // ...followed by a block of unparseable bytes (no FIELD_DELIMITER anywhere, so every
+        // "line" fails decodeLogEntry's 5-field check) comfortably larger than the 8 KiB window,
+        // so the window -- read from the file's tail -- lands entirely inside the garbage and
+        // finds nothing decodable anywhere in it.
+        val garbageBytes = "GARBAGE_LINE_NOT_LOG_DATA_AT_ALL\n".repeat(400).encodeToByteArray()
+        assertTrue(
+            garbageBytes.size > 8 * 1024,
+            "test setup's trailing garbage must itself exceed the 8 KiB tail window, or the window " +
+                "could still reach a valid record and this wouldn't exercise the fallback at all -- " +
+                "actual size: ${garbageBytes.size} bytes",
+        )
+        writeFileBytes("$tempDir/log.txt", validBytes + garbageBytes)
+
+        val store = createLogFileStore(tempDir, clock = MutableClock(), flushIntervalMillis = 0)
+        store.append(LogLevel.INFO, "T", "after fallback recovery")
+        store.flush()
+
+        val all = store.readAll()
+        val newest = all.maxBy { it.seq }
+        assertEquals("after fallback recovery", newest.message)
+        assertEquals(
+            8L,
+            newest.seq,
+            "the tail window yielded nothing decodable (pure garbage), so highestRetainedSeq must " +
+                "fall back to a full-file scan and recover 7 (validEntries' true highest seq) -- " +
+                "not silently drop to 0 and restart numbering from 1",
+        )
+        // Positive control: the pre-existing valid records must have actually round-tripped
+        // through readAll(), not just been assumed present because the seq math above worked out.
+        assertEquals(
+            validEntries.map { it.message },
+            all.filter { it.seq in 5L..7L }.sortedBy { it.seq }.map { it.message },
         )
         store.shutdown()
     }

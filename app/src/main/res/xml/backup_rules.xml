@@ -37,6 +37,13 @@
          directory (path="." recurses) rather than naming each file individually, so a future file
          written next to the database is excluded by construction instead of by remembering to
          update this list. -->
+    <!-- The app's data directory root itself. Excluding "file", "database" and "sharedpref" below
+         does NOT cover this: "root" is a separate domain covering files written directly into the
+         data directory rather than into one of its known subdirectories. Without this line, a file
+         that ends up there (by this app, or by a library it depends on) would still be swept to
+         Drive, leaving a gap in what is otherwise a deliberately complete exclusion. -->
+    <exclude domain="root" path="." />
+
     <exclude domain="database" path="." />
 
     <!-- The whole app-private files directory (Context.filesDir): today this holds `covers/`

@@ -87,6 +87,26 @@ class FileLogSinkTest {
         store.shutdown()
     }
 
+    /**
+     * Throws exactly once -- the call [LogFileStore.append] makes -- then behaves like a normal
+     * clock. A clock that threw on *every* call would make a later `flush()`/`readAll()` in this
+     * test swallow its own throw too (`LogFileStore.flush`'s best-effort catch), so "nothing on
+     * disk" would hold regardless of whether `append()` actually buffered the entry -- vacuous.
+     * Throwing only once lets the later flush genuinely succeed and reveal whether anything was
+     * buffered.
+     */
+    private class ThrowsOnceThenWorksClock : Clock {
+        private var hasThrown = false
+
+        override fun now(): Instant {
+            if (!hasThrown) {
+                hasThrown = true
+                throw RuntimeException("clock exploded")
+            }
+            return Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        }
+    }
+
     @Test
     fun log_neverThrows_evenWhenTheUnderlyingStoresClockThrows() = runTest {
         // "Never a new source of failure": FileLogSink must swallow any failure from the store it
@@ -94,14 +114,20 @@ class FileLogSinkTest {
         // about something else entirely. A throwing clock genuinely exercises LogFileStore.append's
         // own try/catch (it calls clock.now() before touching the buffer at all) rather than
         // asserting a no-op path that was never at risk of throwing in the first place.
-        val throwingClock = object : Clock {
-            override fun now(): Instant = throw RuntimeException("clock exploded")
-        }
+        val throwingClock = ThrowsOnceThenWorksClock()
         val store = LogFileStore(directoryPath = tempDir, clock = throwingClock, flushIntervalMillis = 0)
         val sink = FileLogSink(store)
 
         // Must not throw.
         sink.log(LogLevel.ERROR, "T", null) { "this must never crash the caller" }
+
+        // Stronger than "didn't throw": prove append() actually failed to buffer the entry,
+        // rather than silently succeeding by some other route. The clock only threw on that one
+        // call above -- it works normally from here on -- so this flush (via readAll()) would
+        // genuinely persist the entry to disk if append() had buffered it despite the throw.
+        val persisted = store.readAll()
+        assertTrue(persisted.isEmpty(), "append() must not have buffered anything when the clock threw -- found: $persisted")
+
         store.shutdown()
     }
 }

@@ -74,8 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app-private directory (the reading database *and* every downloaded cover) was being swept to
   Google Drive on eligible devices. That contradicted the app's local-first, no-cloud premise
   (AGENTS.md §1) and was found while scoping the log file's own required carve-out.
-  - **Cloud backup now transfers nothing.** Every domain the app writes to is excluded, in both
-    the API 31+ and the legacy rules files. **Consequence: reinstalling the app no longer restores
+  - **Cloud backup now transfers nothing.** Every domain is excluded in both the API 31+ and the
+    legacy rules files - the data directory root included, not just the `files`/`databases`/
+    `shared_prefs` subdirectories, so nothing written directly into the data directory slips
+    through. **Consequence: reinstalling the app no longer restores
     anything automatically** — the app's own `.sqlite` backup/restore and CSV export (v0.7.0) are
     the restore paths, as was always intended.
   - **Device-to-device transfer carries the covers, deliberately not the database.** Content-

@@ -63,6 +63,10 @@
              file's per-rule comments for the detail (database directory contents, filesDir
              contents including the future logs/ directory, and the defensive sharedpref
              exclusion even though nothing writes there today). -->
+        <!-- "root" is a separate domain from the three below, covering files written directly into
+             the data directory rather than into one of its known subdirectories; without it the
+             exclusion would have a gap. See backup_rules.xml for the full per-domain reasoning. -->
+        <exclude domain="root" path="." />
         <exclude domain="database" path="." />
         <exclude domain="file" path="." />
         <exclude domain="sharedpref" path="." />

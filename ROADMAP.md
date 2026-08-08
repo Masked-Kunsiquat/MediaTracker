@@ -709,12 +709,13 @@ makes logging always-on (not debug-build-gated) and gives the user a way to see 
     `CHANGELOG.md` into assets before asset merging; the copy is a gitignored build artifact, so
     `CHANGELOG.md` stays the single source of truth and a stale duplicate can never be committed.
     Read at runtime via `context.assets`. No new dependency.
-  - **The `AnnotatedString` parser is in, not deferred.** Originally scheduled as optional polish
-    on top of a plain-text dump. Promoted to part of the build because the structural decision
-    below needs it anyway: the `**bold**` lead this parser extracts *is* the collapsible header
-    text, so the two compose rather than compete and the marginal cost over plain text is a fold
-    state map plus an expander row. Still the same tiny, predictable subset (bold + inline code) —
-    a full Markdown dependency for one screen would still not clear AGENTS.md §5.
+  - **The `AnnotatedString` parser is scheduled into B2, not deferred past it.** Originally listed
+    as optional polish on top of a plain-text dump. Moved into B2's scope because the structural
+    decision below will need it anyway: the `**bold**` lead the parser extracts *is* the
+    collapsible header text, so the two compose rather than compete, and the marginal cost over
+    plain text is a fold state map plus an expander row. Still the same tiny, predictable subset
+    (bold + inline code) — a full Markdown dependency for one screen would still not clear
+    AGENTS.md §5.
   - `versionName` is already single-sourced from `[versions] app`, so the app knows its own
     version and can open on the matching section by default, with older releases behind a scroll.
   - **Known tension — RESOLVED: three-level collapsible, keeping the developer-facing text as
@@ -734,8 +735,11 @@ makes logging always-on (not debug-build-gated) and gives the user a way to see 
     and the ones without a header are already short enough to render flat. Degradation needs no
     fallback logic beyond "no bold lead → render inline", so a format drift in a future entry
     yields a slightly-less-tidy screen, never a broken or empty one.
-  - **Shape:** version (collapsed except the running `versionName`'s) → preamble always visible
-    once a version is expanded → each `**bold**` top-level bullet its own collapsible row.
+  - **Shape to build in B2:** version (collapsed except the running `versionName`'s) → preamble
+    always visible once a version is expanded → each `**bold**` top-level bullet its own
+    collapsible row. **Nothing in this bullet is built yet** — B1 shipped only the log store and
+    the backup carve-out; the decision above is recorded here so B2 starts from a settled design
+    rather than re-deriving it, not because any of it exists.
   - **Consequence for the pairing rationale, recorded honestly:** with collapsibles the two
     viewers are no longer quite "the same shape" — the log viewer stays a flat `SelectionContainer`
     `Column` while this one gains structure. The shared part (read-only genuinely-selectable text

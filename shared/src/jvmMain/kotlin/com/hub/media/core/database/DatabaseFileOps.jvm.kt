@@ -1,6 +1,7 @@
 package com.hub.media.core.database
 
 import java.io.File
+import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -59,10 +60,28 @@ internal actual suspend fun appendFileBytes(path: String, bytes: ByteArray): Boo
             file.parentFile?.mkdirs()
             // FileOutputStream(file, append = true) rather than File.appendBytes(): identical
             // semantics, but explicit about the O_APPEND intent this whole function exists for.
-            java.io.FileOutputStream(file, true).use { it.write(bytes) }
+            FileOutputStream(file, true).use { it.write(bytes) }
             true
         } catch (e: Exception) {
             false
+        }
+    }
+
+internal actual suspend fun readFileTailBytes(path: String, byteCount: Int): ByteArray? =
+    withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (!file.exists()) return@withContext null
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                val length = raf.length()
+                val size = minOf(byteCount.toLong(), length).toInt()
+                raf.seek(length - size)
+                val buffer = ByteArray(size)
+                raf.readFully(buffer)
+                buffer
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 

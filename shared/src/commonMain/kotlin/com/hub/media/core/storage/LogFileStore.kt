@@ -3,12 +3,13 @@ package com.hub.media.core.storage
 import com.hub.media.core.database.appendFileBytes
 import com.hub.media.core.database.fileSizeBytes
 import com.hub.media.core.database.readFileBytes
+import com.hub.media.core.database.readFileTailBytes
 import com.hub.media.core.database.renameFile
 import com.hub.media.core.util.LogLevel
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -33,6 +34,14 @@ internal const val DEFAULT_FLUSH_INTERVAL_MILLIS: Long = 10_000L
 
 /** Default cap for [LogFileStore.readRecent] when the caller doesn't specify one. */
 internal const val DEFAULT_RECENT_ENTRY_LIMIT: Int = 500
+
+/**
+ * Tail window read when deriving the sequence counter at startup (see [highestRetainedSeq]).
+ * Comfortably larger than any single record -- even one carrying a deep stack trace -- so the
+ * window reliably contains several complete lines, while staying small enough that the scan costs
+ * a fixed few KB rather than the whole retained file.
+ */
+private const val SEQ_SCAN_TAIL_WINDOW_BYTES: Int = 8 * 1024
 
 private const val CURRENT_FILE_NAME = "log.txt"
 private const val PREVIOUS_FILE_NAME = "log-previous.txt"
@@ -137,11 +146,13 @@ public class LogFileStore(
     // the background flush loop is a pure implementation detail with a suspend flush() escape
     // hatch for deterministic tests, not something a caller needs to observe or drive directly.
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var periodicFlushJob: Job? = null
 
     init {
         if (flushIntervalMillis > 0) {
-            periodicFlushJob = backgroundScope.launch {
+            // Not retained in a property: shutdown() cancels backgroundScope, which cancels this
+            // coroutine along with any in-flight auto-flush, so a separate Job handle would only
+            // ever be written and never read.
+            backgroundScope.launch {
                 while (isActive) {
                     delay(flushIntervalMillis)
                     flush()
@@ -195,6 +206,12 @@ public class LogFileStore(
                 val entries = buffer.drainSnapshot(clock.now().toEpochMilliseconds())
                 if (entries.isEmpty()) return@withLock
                 appendEntriesToDisk(entries)
+            } catch (e: CancellationException) {
+                // Never swallowed: this is coroutine cancellation, not a persistence failure.
+                // readRecent()/readAll() call this from a caller's own scope (the Phase B2 viewer
+                // navigating away, say), and absorbing it here would break structured concurrency
+                // by letting a cancelled coroutine continue as though nothing happened.
+                throw e
             } catch (_: Throwable) {
                 // Best-effort persistence -- see this function's KDoc.
             }
@@ -208,16 +225,18 @@ public class LogFileStore(
             // Atomic rename+replace (see renameFile's KDoc): the old current file becomes the new
             // previous file in one step, after which appending below starts a fresh current file.
             //
-            // The return value is deliberately checked, not ignored. renameFile is documented to
-            // return false rather than throw (an atomic move the platform provider rejects, a
-            // transient handle on the file, a full disk). If a failed rotation were treated as if
-            // it had succeeded, the append below would land on the *still-present* current file
-            // anyway -- which is harmless -- but any logic that instead assumed a fresh empty file
-            // would silently discard everything already in it. Skipping the rotation on failure
-            // keeps the only cost bounded and self-correcting: the current file temporarily
-            // exceeds maxFileSizeBytes, and the next flush simply retries the rotation. This
-            // mirrors selfHealDatabaseIfNeeded, which gates its own main-file rename on both
-            // sidecar renames having genuinely succeeded for the same class of reason.
+            // The return value is deliberately NOT branched on, and that is safe only because the
+            // write below is an append. renameFile returns false rather than throwing (an atomic
+            // move the platform provider rejects, a transient handle on the file, a full disk).
+            // On success the current file is gone and the append starts a fresh one; on failure it
+            // is still there and the append simply adds to it. Both outcomes are correct, so there
+            // is nothing to decide: a failed rotation self-corrects, leaving the file temporarily
+            // over maxFileSizeBytes until the next flush retries.
+            //
+            // This is the one thing that must not be changed casually. If this were ever switched
+            // back to writeFileBytes, an unchecked failed rename would silently destroy the whole
+            // current file -- which is exactly why selfHealDatabaseIfNeeded, whose renames are
+            // followed by destructive steps, does gate on its rename results.
             renameFile(currentPath, previousPath)
         }
         // A real append, never a read-modify-write: see appendFileBytes' KDoc for why this matters
@@ -291,15 +310,31 @@ public class LogFileStore(
  * the full-scan cost, and that file is by definition tiny or garbage.
  */
 private suspend fun highestRetainedSeq(path: String): Long {
-    val bytes = readFileBytes(path) ?: return 0L
-    val lines = bytes.decodeToString().split("\n")
-    for (i in lines.indices.reversed()) {
-        val line = lines[i]
-        if (line.isEmpty()) continue
-        val entry = decodeLogEntry(line) ?: continue
-        return entry.seq
+    // Try a fixed tail window first -- normally one read of a few KB instead of the whole ~1 MB
+    // file, since the answer is on the last well-formed line. The window's own leading line is
+    // discarded rather than decoded: it is almost certainly truncated (the window starts at an
+    // arbitrary byte offset, possibly mid-UTF-8-sequence), and trusting it could yield a garbage
+    // seq. Dropping it is free here, because a window sized in kilobytes holds many records and
+    // the scan below works backwards from the newest.
+    readFileTailBytes(path, SEQ_SCAN_TAIL_WINDOW_BYTES)?.let { tail ->
+        val lines = tail.decodeToString().split("\n")
+        val usable = if (lines.size > 1) lines.drop(1) else emptyList()
+        seqFromLastWellFormedLine(usable)?.let { return it }
     }
-    return 0L
+    // Fall back to the whole file only when the window yielded nothing decodable -- a file whose
+    // entire tail is damaged, or one small enough that dropping its first line left nothing. Both
+    // are rare and, in the second case, cheap by definition.
+    val bytes = readFileBytes(path) ?: return 0L
+    return seqFromLastWellFormedLine(bytes.decodeToString().split("\n")) ?: 0L
+}
+
+/** Highest [LogEntry.seq] among [lines], scanning backwards; `null` if none decode. */
+private fun seqFromLastWellFormedLine(lines: List<String>): Long? {
+    for (i in lines.indices.reversed()) {
+        if (lines[i].isEmpty()) continue
+        decodeLogEntry(lines[i])?.let { return it.seq }
+    }
+    return null
 }
 
 /**

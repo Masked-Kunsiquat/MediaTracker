@@ -10,9 +10,14 @@ import com.hub.media.core.util.LogLevel
  * are likewise byte-for-byte duplicates.
  */
 internal actual class LogBuffer actual constructor(
-    private val capacity: Int,
+    capacity: Int,
     initialSeq: Long,
 ) {
+    // Coerced, not trusted: at capacity 0 the eviction check below (size >= capacity) is true on
+    // an empty deque, so append would call removeFirst() on nothing and throw. LogFileStore.append
+    // swallows that, so the symptom would be every log entry silently vanishing rather than an
+    // obvious crash. One slot is the smallest meaningful buffer, so clamp rather than reject.
+    private val capacity: Int = capacity.coerceAtLeast(1)
     private val lock = Any()
     private val deque = ArrayDeque<LogEntry>()
     private var seqCounter = initialSeq

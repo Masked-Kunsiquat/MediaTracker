@@ -153,25 +153,33 @@ class DatabaseBackupUseCaseTest {
             writeText("ERROR OpenLibraryIsbnCoverProbe: $logMarker\n")
         }
 
-        val liveDb = openLiveDatabase()
-        val bookRepository = BookRepository(liveDb)
-        val addResult = bookRepository.addBook(
-            title = "Log Exclusion Check",
-            releaseYear = 2024,
-            purchasePrice = null,
-            format = BookFormat.EBOOK,
-            totalPages = null,
-            isbn = null,
-            externalIdentifiers = emptyList(),
-        )
-        assertIs<Resource.Success<String>>(addResult)
-
-        val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
-        val result = useCase.execute()
-        assertIs<Resource.Success<BackupResult>>(result)
-        val stagedFile = File(result.data.stagedFilePath)
-
+        // try starts immediately after decoyLogFile exists, so a failure anywhere in setup below
+        // (opening the live DB, adding the book, running the use case) still reaches the finally
+        // block and cleans up logsDir/decoyLogFile rather than leaking them past this test.
+        var liveDb: AppDatabase? = null
+        var stagedFile: File? = null
         try {
+            liveDb = openLiveDatabase()
+            val bookRepository = BookRepository(liveDb)
+            val addResult = bookRepository.addBook(
+                title = "Log Exclusion Check",
+                releaseYear = 2024,
+                purchasePrice = null,
+                format = BookFormat.EBOOK,
+                totalPages = null,
+                isbn = null,
+                externalIdentifiers = emptyList(),
+            )
+            assertIs<Resource.Success<String>>(addResult)
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            // Only assigned once execute() has actually succeeded -- the finally block guards its
+            // deletion with a null check, since a failed/never-reached execute() means there is no
+            // staged file to delete.
+            stagedFile = File(result.data.stagedFilePath)
+
             val backupBytes = stagedFile.readBytes().toString(Charsets.ISO_8859_1)
             assertTrue(
                 !backupBytes.contains(logMarker),
@@ -182,8 +190,8 @@ class DatabaseBackupUseCaseTest {
             // marker string above couldn't make this test pass for the wrong reason.
             assertTrue(decoyLogFile.readText().contains(logMarker))
         } finally {
-            stagedFile.delete()
-            liveDb.close()
+            stagedFile?.delete()
+            liveDb?.close()
             decoyLogFile.delete()
             logsDir.delete()
         }
@@ -235,7 +243,25 @@ class DatabaseBackupUseCaseTest {
                 "expected to find this app's real tables in the backup -- if this fails, the rest " +
                     "of this test proves nothing (it would vacuously pass on an empty/broken result)",
             )
-            val logRelatedTables = tableNames.filter { it.contains("log", ignoreCase = true) }
+            // A blanket `contains("log", ignoreCase = true)` is too broad and forward-looking-
+            // buggy: AGENTS.md §3.4 explicitly plans a WatchLogs table (Movies/TV activity
+            // history, ROADMAP Task 13) -- following this codebase's existing tableName
+            // convention (snake_case: "media_items", "book_details", "reading_sessions"), that
+            // would be named "watch_logs" and would trip a bare "log" substring check the moment
+            // it's added, even though it has nothing to do with this regression guard. The same
+            // could happen to a future "reading_logs"-style rename. What this test actually cares
+            // about (see this test's KDoc) is specifically whether the Task 15 LogEntry store got
+            // turned into a Room table -- which, by that same naming convention, would be named
+            // "log_entry" or "log_entries" -- but guessing the exact spelling would make this
+            // guard miss "app_logs", "logs", or whatever else a future change actually picked.
+            // So: still match "log" broadly, and subtract the domain tables that legitimately
+            // carry the word. Anything new containing "log" then has to be added here
+            // deliberately, which is precisely the moment someone should be asking whether it
+            // belongs in a backed-up database at all.
+            val legitimateActivityTables = setOf("watch_logs", "reading_logs")
+            val logRelatedTables = tableNames.filter {
+                it.contains("log", ignoreCase = true) && it.lowercase() !in legitimateActivityTables
+            }
             assertTrue(
                 logRelatedTables.isEmpty(),
                 "backup schema must never contain a log-related table, found: $logRelatedTables",
