@@ -12,12 +12,13 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 14 — Bulk operations & cover backfill** ← next. *Partially done*. Phase A (bulk
-   cover/author backfill) shipped; Phase B (library multi-select + bulk delete) remains.
-2. Task 15 — Logging — *partially done*. Phase A (the logging facility itself, plus adoption at
-   the three known gaps) shipped; Phase B (a user-owned, persistent, in-app log store) remains —
-   see that task's section for why it's a separate phase rather than blocking Phase A's adoption
-   work.
+1. **Task 15 — Logging** ← in progress. *Mostly done*. Phase A (the logging facility, plus
+   adoption at the three known gaps) and Phase B1 (the persistent store, plus the Android Auto
+   Backup carve-out that scoping B1 uncovered) shipped. **Phase B2 remains**: the in-app log
+   viewer, the user-adjustable verbosity setting, and the companion changelog viewer — see that
+   task's section.
+2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
+   backfill) shipped; Phase B (library multi-select + bulk delete) remains.
 3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
@@ -638,7 +639,23 @@ recurring answer. `shared/` had no logging facility at all before this task — 
   logging call must never itself become a new source of failure for its caller, on that test
   variant or on a real device.
 
-### Phase B — Persistent, user-owned log store (not started)
+### Phase B — Persistent, user-owned log store
+
+**B1 (done):** the persistent sink itself — a capped pair of files with single rollover, buffered
+appending writes, and sequence numbers derived from both retained files at startup. Plus the
+backup/export carve-out, which grew well past its original scope: `backup_rules.xml` and
+`data_extraction_rules.xml` turned out to still be the untouched Android Studio sample templates
+with every rule commented out, so `allowBackup="true"` had been sweeping the whole app-private
+directory — database and covers included — to Google Drive since the first commit. Cloud backup
+now transfers nothing; device transfer carries the content-addressed covers and deliberately not
+the database, since a raw file copy taken at an instant the app cannot checkpoint is exactly the
+hazard `DatabaseBackupUseCase` avoids with `VACUUM INTO`. Reinstall therefore no longer
+auto-restores anything, which is intended: the app's own `.sqlite` backup/restore is the path.
+
+**B2 (remaining):** everything user-facing — the in-app viewer, the verbosity setting, and the
+changelog viewer. The bullets below describe the whole of Phase B; those marked as B1 concerns
+(the sink, rollover, sequence numbering, backup exclusion) are now built, and the viewer/settings
+bullets are what B2 implements.
 Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
 but logcat is unreachable for a normal user on a release build — a facility they cannot read does
 not serve a personal, local-first app whose whole support model is the user themselves. Phase B
