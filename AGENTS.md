@@ -2,6 +2,10 @@
 
 This file serves as the strict architectural and coding guideline for AI agents collaborating on this project. All code suggestions, refactoring, and feature additions MUST adhere to the standards outlined below.
 
+**Keeping this file true.** `CHANGELOG.md` and `ROADMAP.md` each have an update ritual (§8's changelog discipline; a ROADMAP edit per scheduling decision), and both have stayed accurate because of it. This file had none, and drifted for eight releases — it pointed at an `androidApp/` module that does not exist, mandated a verification command that skips the entire data layer, and recorded one frozen schema version out of five. Documentation that instructs an agent is more dangerous when stale than documentation that merely describes, because the agent obeys it.
+
+So: **update this file in the same commit as the change that invalidates it.** Concretely, that means a new top-level package or module (§6), a change to how tests are located or run (§7), a schema version bump (§8's ledger), a new external API or storage protocol (§4), or an approved new dependency (§5). If you find something here that contradicts the repo, fix it in that commit rather than working around it — a wrong line here misleads every future agent, not just you.
+
 ---
 
 ## 1. Project Overview & Philosophy
@@ -62,21 +66,33 @@ This file serves as the strict architectural and coding guideline for AI agents 
 
 ## 6. Directory Structure Blueprint
 
+Gradle modules are `:shared` and `:app` (see `settings.gradle.kts`). Directories marked *planned*
+do not exist yet — do not create them speculatively; they are listed so the intended home for that
+work is unambiguous when it is scheduled.
+
 ```text
 shared/
  ├── src/commonMain/kotlin/com/hub/media/
  │    ├── core/
- │    │    ├── database/      <-- Room Database, DAOs, Entities
+ │    │    ├── database/      <-- Room Database, DAOs, Entities, Migrations, restore recovery
  │    │    ├── network/       <-- Ktor Client & API definitions
- │    │    ├── storage/       <-- SHA-256 File Manager & Disk I/O
- │    │    └── util/          <-- Dispatchers, Extensions, Result wrappers
+ │    │    ├── storage/       <-- SHA-256 cover storage, disk I/O, persistent log store
+ │    │    └── util/          <-- Result wrapper, id generation, Logger facility
  │    ├── features/
  │    │    ├── books/         <-- Timer, Reading Logs, ISBN Fetcher
- │    │    ├── movies/        <-- Movie Logs, TMDB Client
- │    │    ├── tv/            <-- Season/Episode Progression
- │    │    └── stats/         <-- Analytics Queries & Aggregate Flow
- │    └── ui/                <-- Shared ViewModels & UI Contracts
-androidApp/                   <-- Android Jetpack Compose Screens & Entry Point
+ │    │    ├── portability/   <-- CSV export/import, .sqlite backup/restore, Goodreads import
+ │    │    ├── settings/      <-- Typed access to the app_settings key-value store
+ │    │    ├── stats/         <-- Analytics Queries & Aggregate Flow
+ │    │    ├── movies/        <-- (planned, Task 13) Movie Logs, TMDB Client
+ │    │    └── tv/            <-- (planned, Task 13) Season/Episode Progression
+ │    └── ui/                 <-- Shared ViewModels & UI Contracts, AppContainer (manual DI)
+ ├── src/androidMain/, src/jvmMain/   <-- expect/actual platform implementations
+ └── src/commonTest/, src/jvmTest/, src/androidUnitTest/   <-- see §7 for which goes where
+app/                          <-- Android Jetpack Compose Screens & Entry Point
+ └── src/main/java/com/github/maskedkunisquat/mediatracker/
+      ├── ui/screens/         <-- Compose screens
+      ├── ui/navigation/      <-- NavHost + Route definitions
+      └── ui/ViewModelFactories.kt   <-- bridges AppContainer to androidx ViewModel factories
 ```
 
 ---
@@ -86,8 +102,22 @@ androidApp/                   <-- Android Jetpack Compose Screens & Entry Point
 * **Coverage Requirements:**
   - Every Repository, UseCase, and Utility function MUST have accompanying unit tests.
   - Test edge cases: 0-page books, 0-second timers, missing API metadata fields, corrupt image byte arrays.
-* **Test Location:** Place unit tests in `shared/src/commonTest/kotlin/`.
-* **Verification Command:** AI agents MUST run `./gradlew test` to ensure all tests pass before completing any task.
+* **Test Location:** Default to `shared/src/commonTest/kotlin/` — tests there run on *every* target. Use `shared/src/jvmTest/kotlin/` only when a test genuinely needs a JVM-only dependency (e.g. Room's `MigrationTestHelper`, or real file I/O against a live database file).
+* **Verification Command:** AI agents MUST run:
+
+  ```
+  ./gradlew :shared:jvmTest :shared:testDebugUnitTest
+  ```
+
+  **Do NOT use `./gradlew test` as the verification command.** It resolves to `:app:testDebugUnitTest` + `:shared:testDebugUnitTest` and does **not** include `:shared:jvmTest` — which is the authoritative run for the entire data layer. `shared/build.gradle.kts` excludes every Room-touching test (all DAO tests, repository tests, `MigrationTest`, backup/restore) from the `testDebugUnitTest`/`testReleaseUnitTest` variants, because those run on the host JVM against Android's stub `android.jar` with no Robolectric, where Room cannot obtain a real `Context`. Running only `./gradlew test` therefore passes while silently skipping the data layer entirely. Read that file's comment block before adding or moving a test.
+* **Also build the app module when touching anything outside Kotlin source** — manifest entries, `res/xml/` rules, resources, Gradle config:
+
+  ```
+  ./gradlew :app:assembleDebug
+  ```
+
+  Unit tests never parse these. A malformed backup-rules XML or a broken manifest merge fails only here.
+* **A test that cannot fail is worse than no test.** Assert a positive control alongside the negative one — that the thing you expect to be present *is* present, not merely that the forbidden thing is absent. A test asserting "no log data in the export" passes trivially if the export was empty or never ran. This has bitten this project before (PR #16).
 ---
 
 ## 8. Versioning & Release Standards
@@ -96,4 +126,15 @@ androidApp/                   <-- Android Jetpack Compose Screens & Entry Point
 * **Single Source of Truth:** The app version lives ONLY in `[versions] app` in `gradle/libs.versions.toml`. `app/build.gradle.kts` reads `versionName` from it and derives `versionCode` as `major*10000 + minor*100 + patch`. NEVER hand-edit `versionCode` or duplicate the version string elsewhere.
 * **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase.
 * **Release Ritual:** (1) move `[Unreleased]` content into a dated `## [x.y.z] - YYYY-MM-DD` section, (2) bump `[versions] app`, (3) commit as `Release vX.Y.Z`, (4) `git tag vX.Y.Z`.
-* **Room Schema Freeze Rule:** Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration (`Migration` object + migration test). In-place edits of the current schema version are permitted ONLY for schema versions that have never been part of a tagged release. Schema v1 froze at `v0.1.0`.
+* **Room Schema Freeze Rule:** Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration (`Migration` object + migration test). In-place edits of the current schema version are permitted ONLY for schema versions that have never been part of a tagged release.
+* **Frozen schema ledger.** Every version below shipped in a tag and is therefore immutable. **Append a row here in the same commit that bumps `APP_DATABASE_VERSION`** — this table is the rule's only record, and a version missing from it is a version nobody can tell is frozen.
+
+  | Schema | Froze at | Migration into it |
+  | :--- | :--- | :--- |
+  | v1 | `v0.1.0` | — (initial) |
+  | v2 | `v0.4.0` | `MIGRATION_1_2` — nullable `ReadingSessionEntity.durationSeconds` |
+  | v3 | `v0.5.0` | `MIGRATION_2_3` |
+  | v4 | `v0.6.0` | `MIGRATION_3_4` — adds the `app_settings` key-value table |
+  | v5 | `v0.8.0` | `MIGRATION_4_5` — nullable author column on `BookDetailsEntity` |
+
+  Current: `APP_DATABASE_VERSION = 5` (`shared/.../core/database/AppDatabase.kt`). Migrations live in `Migrations.kt`; each is registered through the `loggedMigration` wrapper and covered by `MigrationTest` (`jvmTest`). `v0.2.0`, `v0.3.0` and `v0.7.0` shipped no schema change.
