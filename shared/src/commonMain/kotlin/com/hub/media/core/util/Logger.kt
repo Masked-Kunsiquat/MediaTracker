@@ -31,6 +31,13 @@ package com.hub.media.core.util
  * that *does* see `BuildConfig.DEBUG`) and defaulting to [LogLevel.WARN] until that happens --
  * see [AppLogger]'s KDoc for what that means for a release build specifically.
  *
+ * ROADMAP Task 15 Phase B2 adds a second, user-adjustable source for this same threshold -- the
+ * persisted log-verbosity setting (see
+ * [com.hub.media.features.settings.data.observeLogVerbosity]) -- applied via [AppLogger.setMinLevel]
+ * rather than a separate filter, since a level [AppLogger] already dropped never reaches any sink
+ * for that filter to see. [AppLogger.setMinLevel]'s KDoc spells out exactly which of the two
+ * (build-type default vs. persisted setting) wins and why.
+ *
  * ### Privacy rule -- enforced by convention at every call site, not by this file
  * This app is local-first with no cloud (AGENTS.md §1): nothing in this facility ever leaves the
  * device (no crash-reporting/analytics SDK sits behind [Logger] or ever will -- see [AppLogger]'s
@@ -133,6 +140,47 @@ public object AppLogger : Logger {
     public fun configure(minLevel: LogLevel, delegate: Logger = platformLogger()) {
         this.minLevel = minLevel
         this.delegate = delegate
+    }
+
+    /**
+     * Updates only the effective verbosity threshold, leaving [delegate] untouched -- unlike
+     * [configure], which always installs a fresh delegate alongside the new level. This is the
+     * seam ROADMAP Task 15 Phase B2's user-adjustable verbosity setting is built on.
+     *
+     * ### The two-stage bootstrap this exists to support
+     * `MediaTrackerApplication.onCreate` still makes exactly one [configure] call, synchronously,
+     * with the `BuildConfig.DEBUG`-derived level this object's class KDoc describes -- that has to
+     * stay a synchronous call, because a [LogLevel] is needed immediately (logging can happen
+     * before any suspend function ever runs), while the persisted setting can only be read
+     * asynchronously (it lives in Room, behind [com.hub.media.features.settings.data.SettingsRepository]).
+     * Once [com.hub.media.features.settings.data.observeLogVerbosity]'s `Flow` delivers its first
+     * value -- which happens as soon as collection starts, whether that value is a choice the user
+     * actually made or the wrapper's own [LogLevel.WARN] fallback for "never set" -- the app module
+     * is expected to call this function on every emission from a process-scoped coroutine, for the
+     * lifetime of the process.
+     *
+     * ### Which wins: an explicit user choice, but only an explicit one
+     * The app module wires `persisted ?: buildTypeDefault` -- see
+     * [com.hub.media.features.settings.data.observeLogVerbosityOrNull], which deliberately keeps
+     * "never chosen" (`null`) distinguishable from "chose [LogLevel.WARN]".
+     *
+     * An explicit choice always wins, and that is the entire point of Phase B2: picking
+     * [LogLevel.DEBUG] on a *release* build to diagnose a problem is something a filter applied at
+     * the sink could never deliver, because a release build's bootstrap [LogLevel.WARN] would
+     * already have dropped that call here, lambda unevaluated (see [log]), before any sink existed
+     * to filter it.
+     *
+     * No choice, though, must leave the bootstrap alone rather than replace it with the setting's
+     * own default. Collapsing the two would mean **every debug build fell silent moments after
+     * startup** -- the persisted default ([LogLevel.WARN]) overwriting the debug bootstrap's
+     * [LogLevel.DEBUG] and discarding exactly the `DEBUG`/`INFO` output a debug build exists to
+     * produce, for the sole reason that nobody had opened a Settings screen. The build-type
+     * default would then be dead code in the one build type it was written for.
+     *
+     * @param minLevel The new effective threshold -- see [configure]'s `minLevel` parameter.
+     */
+    public fun setMinLevel(minLevel: LogLevel) {
+        this.minLevel = minLevel
     }
 
     override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {

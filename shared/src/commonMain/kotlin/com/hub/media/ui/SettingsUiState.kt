@@ -1,5 +1,7 @@
 package com.hub.media.ui
 
+import com.hub.media.core.util.LogLevel
+import com.hub.media.features.settings.data.DEFAULT_LOG_VERBOSITY
 import com.hub.media.features.settings.data.WeekStartDay
 
 /**
@@ -20,7 +22,14 @@ import com.hub.media.features.settings.data.WeekStartDay
  *   [WeekStartDay.MONDAY] both here and in that accessor, so the very first composition (before the
  *   underlying [kotlinx.coroutines.flow.Flow] has emitted) already shows the correct default rather
  *   than a placeholder.
+ * @property logVerbosity The current log-verbosity preference (ROADMAP Task 15 Phase B2),
+ *   defaulting to [DEFAULT_LOG_VERBOSITY] so the very first composition already shows the right
+ *   value rather than a placeholder -- the same guarantee [weekStartDay] gives. Note this is the
+ *   level shown in Settings; the level the *process* is currently running at can differ until the
+ *   preference is applied, and differs deliberately when it has never been set (see
+ *   [com.hub.media.features.settings.data.observeLogVerbosityOrNull]).
  */
 public data class SettingsUiState(
     val weekStartDay: WeekStartDay = WeekStartDay.MONDAY,
+    val logVerbosity: LogLevel = DEFAULT_LOG_VERBOSITY,
 )
