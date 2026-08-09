@@ -64,7 +64,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Sequence numbers derived from the store itself**, scanned from *both* retained files at
     startup rather than persisted separately — a separately-persisted counter could drift from the
     store after a crash and start assigning numbers below entries already on disk.
-  - The in-app viewer for these logs is Phase B2 and is not in this release.
+  - The in-app viewer for these logs is Phase B2, below.
+
+- **In-app log viewer and adjustable detail (ROADMAP Task 15 Phase B2)** — a Diagnostics section in
+  Settings. The log is now readable on the device itself, which is the whole point of persisting it:
+  a release build's logcat is unreachable to a normal user, so a facility they cannot read does not
+  serve an app whose support model is the user themselves.
+  - **A snapshot, not a live tail.** The viewer shows entries as of when it was opened; logging
+    continues in the background but the view holds still. Refresh pulls in what accumulated since
+    and draws a divider marking where it starts. This is deliberate rather than a limitation: a
+    live-updating list reflows text mid-drag, so auto-update and genuinely selectable text are
+    mutually exclusive, and selectable text is what makes a log worth showing.
+  - **Export full log** writes everything retained, including entries older than the on-screen
+    window, to a file you pick.
+  - **Log detail is now yours to set** (Debug / Info / Warnings / Errors only), defaulting to
+    Warnings so the capped log is not filled with routine chatter. Setting it to Debug on a release
+    build works — the detail level is a real control, not a debug-build-only affordance. Leaving it
+    untouched keeps each build type's own default, so debug builds stay verbose.
+  - The privacy rule is unchanged and stated on the screen itself: logs never contain your titles,
+    authors, or notes.
 
 ### Changed
 

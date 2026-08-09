@@ -2,7 +2,10 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.util.LogLevel
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.observeLogVerbosity
+import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.observeWeekStartDay
 import com.hub.media.features.settings.data.setWeekStartDay
@@ -10,7 +13,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -40,8 +43,12 @@ public class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
-    public val uiState: StateFlow<SettingsUiState> = settingsRepository.observeWeekStartDay()
-        .map { weekStartDay -> SettingsUiState(weekStartDay = weekStartDay) }
+    public val uiState: StateFlow<SettingsUiState> = combine(
+        settingsRepository.observeWeekStartDay(),
+        settingsRepository.observeLogVerbosity(),
+    ) { weekStartDay, logVerbosity ->
+        SettingsUiState(weekStartDay = weekStartDay, logVerbosity = logVerbosity)
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5.seconds),
@@ -57,6 +64,22 @@ public class SettingsViewModel(
     public fun setWeekStartDay(value: WeekStartDay) {
         viewModelScope.launch {
             settingsRepository.setWeekStartDay(value)
+        }
+    }
+
+    /**
+     * Persists [value] as the new log-verbosity preference (ROADMAP Task 15 Phase B2).
+     * Fire-and-forget, exactly like [setWeekStartDay] -- [uiState] reflects it reactively.
+     *
+     * Writing it here is deliberately *all* this does. Applying it to [AppLogger][
+     * com.hub.media.core.util.AppLogger] is the app module's process-scoped concern, not this
+     * screen's: the threshold must stay applied for the whole process, including long after this
+     * ViewModel has been cleared, so a ViewModel that outlives no more than its screen is the wrong
+     * owner for it. See `observeLogVerbosityOrNull`'s KDoc for that wiring.
+     */
+    public fun setLogVerbosity(value: LogLevel) {
+        viewModelScope.launch {
+            settingsRepository.setLogVerbosity(value)
         }
     }
 }

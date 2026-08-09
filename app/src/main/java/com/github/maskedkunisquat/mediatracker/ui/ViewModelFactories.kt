@@ -11,6 +11,7 @@ import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
+import com.hub.media.ui.LogViewerViewModel
 import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
@@ -226,6 +227,23 @@ class BackfillViewModelFactory(private val appContainer: AppContainer) : ViewMod
         return when {
             modelClass.isAssignableFrom(BackfillViewModel::class.java) -> {
                 BackfillViewModel(appContainer.bulkBackfillUseCase) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for creating [LogViewerViewModel] with the [com.hub.media.core.storage.LogFileStore]
+ * dependency from the [AppContainer] (ROADMAP Task 15 Phase B2). Reused across navigations to the
+ * log viewer the same way [SettingsViewModelFactory] is.
+ */
+class LogViewerViewModelFactory(private val appContainer: AppContainer) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(LogViewerViewModel::class.java) -> {
+                LogViewerViewModel(appContainer.logFileStore) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

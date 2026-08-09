@@ -12,12 +12,13 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 14 — Bulk operations & cover backfill** ← next. *Partially done*. Phase A (bulk
-   cover/author backfill) shipped; Phase B (library multi-select + bulk delete) remains.
-2. Task 15 — Logging — *partially done*. Phase A (the logging facility itself, plus adoption at
-   the three known gaps) shipped; Phase B (a user-owned, persistent, in-app log store) remains —
-   see that task's section for why it's a separate phase rather than blocking Phase A's adoption
-   work.
+1. **Task 15 — Logging** ← in progress. *Mostly done*. Shipped: Phase A (the logging facility plus
+   adoption at the three known gaps), Phase B1 (the persistent store, plus the Android Auto Backup
+   carve-out that scoping B1 uncovered), and Phase B2a (the in-app log viewer and the
+   user-adjustable verbosity setting). **Phase B2b remains**: the companion changelog viewer — see
+   that task's section.
+2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
+   backfill) shipped; Phase B (library multi-select + bulk delete) remains.
 3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
@@ -638,7 +639,26 @@ recurring answer. `shared/` had no logging facility at all before this task — 
   logging call must never itself become a new source of failure for its caller, on that test
   variant or on a real device.
 
-### Phase B — Persistent, user-owned log store (not started)
+### Phase B — Persistent, user-owned log store
+
+**B1 (done):** the persistent sink itself — a capped pair of files with single rollover, buffered
+appending writes, and sequence numbers derived from both retained files at startup. Plus the
+backup/export carve-out, which grew well past its original scope: `backup_rules.xml` and
+`data_extraction_rules.xml` turned out to still be the untouched Android Studio sample templates
+with every rule commented out, so `allowBackup="true"` had been sweeping the whole app-private
+directory — database and covers included — to Google Drive since the first commit. Cloud backup
+now transfers nothing; device transfer carries the content-addressed covers and deliberately not
+the database, since a raw file copy taken at an instant the app cannot checkpoint is exactly the
+hazard `DatabaseBackupUseCase` avoids with `VACUUM INTO`. Reinstall therefore no longer
+auto-restores anything, which is intended: the app's own `.sqlite` backup/restore is the path.
+
+**B2a (done):** the in-app log viewer — a snapshot with a refresh divider, genuinely selectable
+text, oldest-first with auto-scroll to the tail, and "export full log" for everything beyond the
+on-screen window — plus the user-adjustable verbosity setting, both reached from a new Diagnostics
+section in Settings.
+
+**B2b (remaining):** the companion changelog viewer only. Design already settled below, including
+the measurements behind it; nothing about it is built yet.
 Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
 but logcat is unreachable for a normal user on a release build — a facility they cannot read does
 not serve a personal, local-first app whose whole support model is the user themselves. Phase B
@@ -766,6 +786,28 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
+
+- **No Compose UI tests, and nothing else can catch a broken screen.** The project has no UI test
+  harness at all, so `:app` is verified only by `assembleDebug` — i.e. by whether it *compiles*.
+  Every screen's wiring (does this button reach a ViewModel? does this effect fire when it should?)
+  is currently unverified by anything except reading the code. Two concrete bugs from Task 15 Phase
+  B2a are the evidence this is a real gap rather than a theoretical one, and both were caught by eye
+  during review, with every check in the repo passing green:
+  - A bulk edit added the new `SettingsScreen` parameters to all six call sites at once, stubbing
+    the *real* route with `{}` no-op lambdas alongside the five previews where stubs are correct.
+    The verbosity picker and the "View log" button would both have rendered normally and done
+    nothing whatsoever.
+  - The log viewer's auto-scroll effect was keyed only on entry count. `ScrollState.maxValue` is `0`
+    until the content is measured, so on first composition it animated to `0` and the screen opened
+    at the *oldest* entry — the exact opposite of the terminal-like behaviour its own KDoc claimed.
+  Neither is exotic; both are the ordinary failure mode of Compose wiring, and neither is reachable
+  by a unit test of the ViewModel, because in both cases the ViewModel was correct. Worth adding
+  `androidx.compose.ui.test.junit4` (already a `androidTestImplementation` dependency in
+  `app/build.gradle.kts`, currently unused beyond the template's `ExampleInstrumentedTest`) and a
+  small set of behavioural tests over the highest-traffic screens rather than aiming for coverage.
+  Note these are instrumented tests: they need a device or emulator, so they cannot join the
+  `./gradlew :shared:jvmTest :shared:testDebugUnitTest` gate AGENTS.md §7 mandates, and would be a
+  separate, manually-run (or CI-only) step — which is part of why this has not happened by accident.
 
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
