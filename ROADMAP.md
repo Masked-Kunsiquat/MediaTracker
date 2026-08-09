@@ -28,6 +28,8 @@ single list below and reordering is a one-line edit there.
 5. Task 11 — Analytics & stats revamp
 6. Task 12 — Genre tracking
 7. Task 13 — Movies & TV
+8. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
+   the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
 ## Done
 
@@ -790,6 +792,71 @@ makes logging always-on (not debug-build-gated) and gives the user a way to see 
   and since the user can read and send these logs themselves, at-rest encryption doesn't change who
   ultimately sees them. Phase A's "never log the library as data" rule is the stronger guarantee —
   you cannot leak what was never written. Revisit only if a concrete threat model demands it.
+
+## Task 16 — Signing & distribution
+
+Not scheduled out of ambition — this exists because the app is sideloaded, has no update path, and
+one of the decisions involved is genuinely irreversible. Recording it before it is needed is the
+whole point.
+
+### The part that cannot be undone: the signing key
+`app/build.gradle.kts`'s `release` block sets `isMinifyEnabled` and `proguardFiles` but **no
+`signingConfig`**, so `assembleRelease` currently produces an unsigned APK. Fixing that means
+generating a keystore, and two consequences follow that are worth stating plainly *before* anyone
+generates one:
+
+- **An APK signed with a different key cannot update an installed app.** Android requires
+  uninstall-then-reinstall, which wipes app-private storage — the database and every downloaded
+  cover. Development has been sideloading *debug*-signed builds (`installDebug`), so the first
+  release-signed install is exactly this case. Do it at a moment when a fresh `.sqlite` backup has
+  just been taken and verified; the backup/restore built in Task 8 is precisely the mechanism, but
+  it only helps if someone remembers to use it first.
+- **Losing the keystore is permanent.** No update can ever be shipped to an installed copy again,
+  by anyone, ever. Back it up somewhere separate from this repository, and never commit it.
+
+### Build and publish (CI)
+GitHub Actions on tag push: build the release APK, sign it with a keystore held in repository
+secrets, attach it to the GitHub Release for that tag. `versionCode` already derives from
+`[versions] app` (AGENTS.md §8), so it increases monotonically with no extra step — which is what
+Android requires of an update.
+
+Note the same workflow should run `./gradlew :shared:jvmTest :shared:testDebugUnitTest`, since
+nothing currently runs the test suite anywhere but a developer's machine. The instrumented tests
+(AGENTS.md §7) need a device and would require a hosted emulator, so they stay a manual step unless
+that is separately worth setting up.
+
+### In-app update check — decided: talk to GitHub directly, not through a proxy
+`https://api.github.com/repos/OWNER/REPO/releases/latest` already returns the tag and the APK's
+download URL. The app compares that tag against `BuildConfig.VERSION_NAME` and offers the download.
+Unauthenticated GitHub API allows 60 requests per hour per IP, which is irrelevant at this app's
+scale. **No third-party service is required for any of this**, which matters: an update check is
+the only network call this app would make that is not a user-initiated metadata lookup, and routing
+it through infrastructure the developer operates would be the first piece of always-on phone-home
+in a codebase whose whole premise (AGENTS.md §1) argues against exactly that.
+
+**A Cloudflare Worker (or equivalent) was considered and is NOT planned, with two specific
+conditions that would change the answer** — recorded so this is re-decided on evidence rather than
+re-argued from scratch:
+1. **The repository becomes private.** A Worker holding a token could then serve a minimal
+   `{"version","url"}` publicly without exposing the repo.
+2. **The update URL needs to outlive its host.** The app would hard-code the GitHub API path;
+   renaming the repo or moving hosts silently breaks update checks for every installed copy, with
+   no way to notify them. One indirection the developer controls fixes that permanently.
+
+Neither is true today, and adding a moving part for a hypothetical is how a local-first app
+acquires a backend by accident. Trimming a ~10 KB API response to ~80 bytes and edge-caching it are
+real but do not justify the dependency on their own.
+
+**Explicitly not planned:** remote config, feature flags, and kill switches. For an app whose user
+is also its developer, "ship a new build" is as fast as "change a config value", so these would add
+a network dependency and a standing phone-home to solve a problem that does not exist here. This is
+the same reasoning that rules out crash reporting (see `AppLogger`'s KDoc) and is expected to hold
+for the same reasons.
+
+### Sequencing note
+The signing half can be pulled forward independently of the CI and update-check work, and there is
+a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
+cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
 
 ## Blocked on external changes
 
