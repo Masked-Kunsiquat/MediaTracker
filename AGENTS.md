@@ -105,21 +105,21 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 * **Test Location:** Default to `shared/src/commonTest/kotlin/` — tests there run on *every* target. Use `shared/src/jvmTest/kotlin/` only when a test genuinely needs a JVM-only dependency (e.g. Room's `MigrationTestHelper`, or real file I/O against a live database file).
 * **Verification Command:** AI agents MUST run:
 
-  ```
+  ```bash
   ./gradlew :shared:jvmTest :shared:testDebugUnitTest
   ```
 
   **Do NOT use `./gradlew test` as the verification command.** It resolves to `:app:testDebugUnitTest` + `:shared:testDebugUnitTest` and does **not** include `:shared:jvmTest` — which is the authoritative run for the entire data layer. `shared/build.gradle.kts` excludes every Room-touching test (all DAO tests, repository tests, `MigrationTest`, backup/restore) from the `testDebugUnitTest`/`testReleaseUnitTest` variants, because those run on the host JVM against Android's stub `android.jar` with no Robolectric, where Room cannot obtain a real `Context`. Running only `./gradlew test` therefore passes while silently skipping the data layer entirely. Read that file's comment block before adding or moving a test.
 * **Also build the app module when touching anything outside Kotlin source** — manifest entries, `res/xml/` rules, resources, Gradle config:
 
-  ```
+  ```bash
   ./gradlew :app:assembleDebug
   ```
 
   Unit tests never parse these. A malformed backup-rules XML or a broken manifest merge fails only here.
 * **Compose screens are covered by instrumented tests**, in `app/src/androidTest/`:
 
-  ```
+  ```bash
   ./gradlew :app:connectedDebugAndroidTest
   ```
 

@@ -144,6 +144,9 @@ class LogViewerScreenTest {
     fun noBoundary_drawsNoDivider() {
         setContent(uiState = LogViewerUiState(entries = listOf(entry(1, "only"))))
 
+        // Positive control: prove the screen actually rendered the entry before trusting the
+        // divider's absence -- otherwise a blank screen would pass this test too.
+        composeRule.onNodeWithText("only", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("New since refresh", useUnmergedTree = true).assertDoesNotExist()
     }
 }
