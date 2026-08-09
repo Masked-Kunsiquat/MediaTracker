@@ -8,3 +8,9 @@
 .cxx
 local.properties
 /.idea/
+
+# ROADMAP Task 15 Phase B2b: CHANGELOG.md is copied into the app's assets at build time so the
+# in-app "What's new" viewer can read it. The copy is a build artifact -- the root CHANGELOG.md
+# stays the single source of truth, and ignoring the copy is what makes it impossible to commit a
+# stale duplicate of it.
+/app/src/main/assets/CHANGELOG.md

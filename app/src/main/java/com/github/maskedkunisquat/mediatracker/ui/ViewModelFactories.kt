@@ -7,6 +7,7 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackfillViewModel
 import com.hub.media.ui.BackupViewModel
 import com.hub.media.ui.BookDetailViewModel
+import com.hub.media.ui.ChangelogViewModel
 import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
@@ -244,6 +245,27 @@ class LogViewerViewModelFactory(private val appContainer: AppContainer) : ViewMo
         return when {
             modelClass.isAssignableFrom(LogViewerViewModel::class.java) -> {
                 LogViewerViewModel(appContainer.logFileStore) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+    }
+}
+
+/**
+ * Factory for [ChangelogViewModel] (ROADMAP Task 15 Phase B2b). Unlike every other factory here it
+ * takes no [AppContainer]: the changelog viewer reads an asset and the app's own `versionName`, and
+ * touches no repository, database or network at all -- so wiring it through the container would
+ * imply a dependency it does not have.
+ */
+class ChangelogViewModelFactory(
+    private val currentVersion: String,
+    private val readChangelog: suspend () -> String?,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(ChangelogViewModel::class.java) -> {
+                ChangelogViewModel(currentVersion, readChangelog) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }
