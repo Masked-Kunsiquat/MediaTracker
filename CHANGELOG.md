@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Compose UI test harness** — the Android app module was previously verified only by whether it
+  compiled, so a screen could render perfectly and do nothing. 18 instrumented tests now cover the
+  log and changelog viewers, including an end-to-end navigation test that catches a control wired
+  to a dead callback. No user-visible change; recorded because it changes what "the build passes"
+  means.
+
 ## [0.9.0] - 2026-08-09
 
 Makes the app able to explain itself. Until now a failure could only say "something went wrong" —

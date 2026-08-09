@@ -117,6 +117,16 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   ```
 
   Unit tests never parse these. A malformed backup-rules XML or a broken manifest merge fails only here.
+* **Compose screens are covered by instrumented tests**, in `app/src/androidTest/`:
+
+  ```
+  ./gradlew :app:connectedDebugAndroidTest
+  ```
+
+  These need a connected device or emulator, so they **cannot** join the two-command gate above and must be run deliberately. Do not treat their absence from that gate as permission to skip them when changing a screen. They exist because `:app` was otherwise verified only by whether it *compiled*: two bugs shipped past that (a control wired to a no-op lambda; an effect scrolling to an unmeasured extent), and neither is reachable by a ViewModel unit test, because in both cases the ViewModel was correct.
+  - Screen-level tests drive a **stateless** composable with fake callbacks — they prove a screen honours the contract it is handed.
+  - `SettingsNavigationTest` starts at the real `MainActivity` and taps through, because only that can prove a **route** hands the screen a real callback rather than a stub. That is the failure that actually shipped.
+  - Put behaviour that does not need a device in a ViewModel and unit-test it there instead. `ChangelogViewModel` takes its content as a lambda rather than reading `context.assets` specifically so its logic stays in `commonTest`.
 * **A test that cannot fail is worse than no test.** Assert a positive control alongside the negative one — that the thing you expect to be present *is* present, not merely that the forbidden thing is absent. A test asserting "no log data in the export" passes trivially if the export was empty or never ran. This has bitten this project before (PR #16).
 ---
 
