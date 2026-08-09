@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-09
+
+Makes the app able to explain itself. Until now a failure could only say "something went wrong" —
+there was no logging anywhere in the shared layer, so the cause was discarded at the catch and lost.
+This release adds logging end to end: it records what failed and why, keeps that history on the
+device, and lets you read it in the app rather than needing a computer and a debugger attached.
+It also adds an in-app "What's new" screen, which is where you are probably reading this.
+
+While scoping the log file's exclusion from backups, a larger problem surfaced: the Android backup
+rules had never been filled in, so **your entire library — database and downloaded covers — had
+been going to Google Drive** on every eligible device since the first commit. That is fixed here,
+and it is the one change in this release with a visible consequence: reinstalling no longer restores
+anything automatically. The app's own backup and export remain the way to move your data. No schema
+change: still v5.
+
 ### Added
 
 - **Logging facility (ROADMAP Task 15 Phase A)** — `shared/` previously had no logging at all (no
