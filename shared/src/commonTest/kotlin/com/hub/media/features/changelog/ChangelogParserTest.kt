@@ -146,6 +146,56 @@ class ChangelogParserTest {
         assertTrue(released.preamble.isNotEmpty(), "a released version must still have a preamble")
         assertTrue(released.date != null, "a released version must still carry its date")
     }
+
+    @Test
+    fun reflow_hardWrappedParagraph_joinsSoftBreaksIntoOneLine() {
+        // CHANGELOG.md is hard-wrapped at ~100 columns for diff reviewability. Rendering those
+        // breaks verbatim on a phone produced ragged, zigzagging text at a width unrelated to the
+        // screen -- found by running the app on a device, not by any test.
+        val out = reflow("a line that was\nwrapped in source\nacross three lines")
+
+        assertEquals("a line that was wrapped in source across three lines", out)
+    }
+
+    @Test
+    fun reflow_blankLine_startsANewParagraph() {
+        val out = reflow("first para\nstill first\n\nsecond para")
+
+        assertEquals("first para still first\n\nsecond para", out)
+    }
+
+    @Test
+    fun reflow_subBullets_keepTheirOwnLinesRatherThanJoiningTheProse() {
+        // Naive joining turned a sub-bullet into a stray hyphen mid-sentence.
+        val out = reflow("intro\n- first bullet\n  wrapped on\n- second bullet")
+
+        assertEquals(
+            "intro\n\n\u2022 first bullet wrapped on\n\u2022 second bullet",
+            out,
+        )
+    }
+
+    @Test
+    fun parseChangelog_entryBody_dropsTheSeparatorLeftBehindByRemovingTheHeading() {
+        // Entries read "" so stripping the bold title leaves its dash dangling.
+        val doc = parseChangelog("## [1.0.0]\n\n### Added\n\n- **Title** \u2014 the detail.")
+        val entry = doc.versions[0].sections[0].entries[0]
+
+        assertEquals("Title", entry.heading)
+        assertEquals("the detail.", entry.body)
+    }
+
+    @Test
+    fun parseChangelog_preamble_isReflowedNotJustTrimmed() {
+        // The preamble is hard-wrapped in source exactly like entry bodies are. It was left
+        // unreflowed at first and the tests above did not catch it, because they only asserted
+        // 'contains' -- the ragged rendering was visible on a device instead.
+        val doc = parseChangelog(
+            "## [1.0.0]\n\na preamble that was\nwrapped in source.\n\n### Added\n\n- x",
+        )
+
+        assertEquals("a preamble that was wrapped in source.", doc.versions[0].preamble)
+    }
 }
 
 /**

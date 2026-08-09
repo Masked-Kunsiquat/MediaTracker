@@ -34,6 +34,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -273,10 +274,13 @@ private fun ExpanderRow(
 @Composable
 private fun annotated(text: String): AnnotatedString = buildAnnotatedString {
     parseInlineMarkup(text).forEach { span ->
-        when {
-            span.code -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(span.text) }
-            span.bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(span.text) }
-            else -> append(span.text)
-        }
+        // Built as one SpanStyle rather than nested branches so the flags genuinely compose --
+        // *`code` inside emphasis* occurs in this changelog and would otherwise lose one of them.
+        val style = SpanStyle(
+            fontFamily = if (span.code) FontFamily.Monospace else null,
+            fontWeight = if (span.bold) FontWeight.Bold else null,
+            fontStyle = if (span.italic) FontStyle.Italic else null,
+        )
+        withStyle(style) { append(span.text) }
     }
 }

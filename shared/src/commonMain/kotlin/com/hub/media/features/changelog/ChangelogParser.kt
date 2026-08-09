@@ -67,6 +67,62 @@ public data class ChangelogEntry(
     val body: String,
 )
 
+/**
+ * Reflows one block of changelog source into display text.
+ *
+ * `CHANGELOG.md` is hard-wrapped at ~100 columns for reviewability in a diff, and its continuation
+ * lines are indented. Rendering those line breaks verbatim on a phone produces ragged, zigzagging
+ * text -- every source break becomes a display break at a width that has nothing to do with the
+ * screen. Markdown's own rule is the right one: a single newline inside a paragraph is a *soft*
+ * wrap and should join with a space, and only a blank line starts a new paragraph.
+ *
+ * Sub-bullets are kept as their own lines and marked with a bullet character, because collapsing
+ * them into the running text (which is what naive joining does) loses the structure that made them
+ * sub-bullets -- they read as a stray hyphen mid-sentence.
+ */
+internal fun reflow(raw: String): String {
+    val blocks = mutableListOf<Pair<Boolean, String>>()
+    val current = StringBuilder()
+    var isBullet = false
+
+    fun flush() {
+        if (current.isNotEmpty()) {
+            blocks += isBullet to current.toString().trim()
+            current.clear()
+        }
+    }
+
+    for (line in raw.lines()) {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) {
+            flush()
+            isBullet = false
+            continue
+        }
+        if (trimmed.startsWith("- ")) {
+            flush()
+            isBullet = true
+            current.append(trimmed.removePrefix("- "))
+            continue
+        }
+        if (current.isNotEmpty()) current.append(' ')
+        current.append(trimmed)
+    }
+    flush()
+
+    return buildString {
+        blocks.forEachIndexed { index, (bullet, text) ->
+            if (index > 0) {
+                // Bullets in a run stay tight; anything else gets a blank line so paragraphs read
+                // as paragraphs rather than one wall of text.
+                append(if (bullet && blocks[index - 1].first) "\n" else "\n\n")
+            }
+            if (bullet) append("• ")
+            append(text)
+        }
+    }
+}
+
 private val VERSION_HEADING = Regex("""^##\s+\[([^\]]+)\]\s*(?:-\s*(.+))?\s*$""")
 private val SECTION_HEADING = Regex("""^###\s+(.+?)\s*$""")
 private val BOLD_LEAD = Regex("""^\*\*(.+?)\*\*""", RegexOption.DOT_MATCHES_ALL)
@@ -136,10 +192,16 @@ private class VersionBuilder(private val version: String, private val date: Stri
         entries += if (lead != null) {
             ChangelogEntry(
                 heading = lead.groupValues[1].replace("\n", " ").trim(),
-                body = text.removeRange(lead.range).trim(),
+                // Entries are written "**Title** - detail", so removing the title leaves the
+                // separator dangling at the start of the body. Stripped here rather than in the UI
+                // so every renderer gets the same clean text. Covers hyphen, en dash and em dash --
+                // this changelog uses the last of those, but the others cost nothing to accept.
+                body = reflow(
+                    text.removeRange(lead.range).trim().trimStart('-', '–', '—', ' '),
+                ),
             )
         } else {
-            ChangelogEntry(heading = null, body = text)
+            ChangelogEntry(heading = null, body = reflow(text))
         }
     }
 
@@ -156,7 +218,7 @@ private class VersionBuilder(private val version: String, private val date: Stri
         return ChangelogVersion(
             version = version,
             date = date,
-            preamble = preamble.joinToString("\n").trim(),
+            preamble = reflow(preamble.joinToString("\n")),
             sections = sections,
         )
     }

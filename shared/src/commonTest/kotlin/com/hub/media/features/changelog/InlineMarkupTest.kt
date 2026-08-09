@@ -88,4 +88,31 @@ class InlineMarkupTest {
     fun parseInlineMarkup_emptyInput_yieldsNoSpans() {
         assertEquals(emptyList(), parseInlineMarkup(""))
     }
+
+    @Test
+    fun parseInlineMarkup_singleAsteriskRun_isItalicRatherThanLiteral() {
+        val spans = parseInlineMarkup("repairs covers *and* authors")
+
+        assertEquals(listOf("repairs covers ", "and", " authors"), spans.map { it.text })
+        assertEquals(listOf(false, true, false), spans.map { it.italic })
+    }
+
+    @Test
+    fun parseInlineMarkup_unmatchedDoubleAsterisk_isNotConsumedAsAnEmptyItalicRun() {
+        // Regression: adding italic support made the two asterisks of an unclosed `**` open and
+        // immediately close an italic run, silently eating both characters.
+        val spans = parseInlineMarkup("a ** dangling")
+
+        assertEquals("a ** dangling", render(spans))
+        assertTrue(spans.none { it.italic || it.bold })
+    }
+
+    @Test
+    fun parseInlineMarkup_boldStillWinsOverItalicForDoubleMarkers() {
+        val spans = parseInlineMarkup("**strong** not *light*")
+
+        assertEquals(listOf("strong", " not ", "light"), spans.map { it.text })
+        assertEquals(listOf(true, false, false), spans.map { it.bold })
+        assertEquals(listOf(false, false, true), spans.map { it.italic })
+    }
 }

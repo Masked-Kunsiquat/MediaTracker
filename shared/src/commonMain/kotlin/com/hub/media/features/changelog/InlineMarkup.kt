@@ -23,11 +23,12 @@ package com.hub.media.features.changelog
  * a worse failure than showing one extra marker.
  */
 
-/** A run of text with uniform styling. [bold] and [code] are independent and may both be set. */
+/** A run of text with uniform styling. The three flags are independent and may combine. */
 public data class InlineSpan(
     val text: String,
     val bold: Boolean = false,
     val code: Boolean = false,
+    val italic: Boolean = false,
 )
 
 /**
@@ -41,11 +42,12 @@ public fun parseInlineMarkup(text: String): List<InlineSpan> {
     val buffer = StringBuilder()
     var bold = false
     var code = false
+    var italic = false
     var i = 0
 
     fun flush() {
         if (buffer.isNotEmpty()) {
-            spans += InlineSpan(buffer.toString(), bold, code)
+            spans += InlineSpan(buffer.toString(), bold, code, italic)
             buffer.clear()
         }
     }
@@ -58,6 +60,20 @@ public fun parseInlineMarkup(text: String): List<InlineSpan> {
             flush()
             bold = !bold
             i += 2
+            continue
+        }
+        // Single `*` is italic. The changelog genuinely uses *emphasis*, and without this it
+        // rendered as literal asterisks mid-sentence.
+        //
+        // The `!boldMarker` guard is load-bearing, not defensive: reaching here with `**` means the
+        // branch above declined it for want of a closer. Without the guard, the first `*` would
+        // open an italic run and the second would immediately close it -- consuming both as an
+        // empty run and silently eating two characters, which is exactly the loss this file's KDoc
+        // promises never happens. A unit test covers it.
+        if (text[i] == '*' && !boldMarker && !code && (italic || hasCloser(text, i + 1, "*"))) {
+            flush()
+            italic = !italic
+            i += 1
             continue
         }
         if (text[i] == '`' && (code || hasCloser(text, i + 1, "`"))) {
