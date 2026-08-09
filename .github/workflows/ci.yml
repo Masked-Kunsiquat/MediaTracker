@@ -1,0 +1,66 @@
+name: CI
+
+# Runs on every pull request and on pushes to main. Nothing else in this repository runs the test
+# suite -- before this workflow existed it ran only when a developer remembered to, which is how a
+# build reported as green while a resource failure had actually failed it (the check was a grep
+# that matched Kotlin errors only). A workflow does not grep; it exits non-zero.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Supersede in-flight runs for the same branch: a force-push or a quick follow-up commit makes the
+# earlier run's result meaningless, and leaving it queued only slows the one that matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit tests and debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # JDK 21: shared/ and app/ both set jvmToolchain(21). The Kotlin jvmTarget is 11, which is a
+      # separate setting -- the toolchain is what Gradle needs to *run* the compiler.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # compileSdk is 36 with minorApiLevel 1, which is newer than the runner image is guaranteed
+      # to ship. Installing it explicitly is cheaper than debugging an "SDK not found" failure that
+      # only appears when GitHub next rotates the image.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The authoritative gate, exactly as AGENTS.md §7 specifies it. :shared:jvmTest is not
+      # optional here: every Room-touching test is excluded from the androidUnitTest variants (see
+      # shared/build.gradle.kts), so testDebugUnitTest alone would pass while skipping the whole
+      # data layer.
+      - name: Run unit tests
+        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest
+
+      # Catches what unit tests never can: a malformed res/xml rule, a broken manifest merge, a
+      # missing string resource. Every one of those has happened in this repository.
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug
+
+      # Only on failure -- a green run's reports are noise, but a red one is very hard to diagnose
+      # from log output alone.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            shared/build/reports/tests/
+            shared/build/test-results/
+          retention-days: 7
