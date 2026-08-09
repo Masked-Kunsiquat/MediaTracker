@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.storage.LogEntry
 import com.hub.media.core.storage.LogFileStore
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,12 @@ public class LogViewerViewModel(
     private val _uiState = MutableStateFlow(LogViewerUiState(isLoading = true))
     public val uiState: StateFlow<LogViewerUiState> = _uiState.asStateFlow()
 
+    // One read at a time, cancel-and-replace. [load] fires from init and [refresh] from a button,
+    // so a user tapping Refresh before the initial load settles would otherwise leave two
+    // coroutines racing to overwrite _uiState -- and the loser could publish last, restoring a
+    // stale snapshot together with a boundary computed against a list that is no longer shown.
+    private var readJob: Job? = null
+
     init {
         load()
     }
@@ -49,7 +56,8 @@ public class LogViewerViewModel(
      * nothing is new, so there is nothing to divide.
      */
     public fun load() {
-        viewModelScope.launch {
+        readJob?.cancel()
+        readJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val entries = readWindow()
             _uiState.value = LogViewerUiState(
@@ -80,7 +88,8 @@ public class LogViewerViewModel(
      * line to draw.
      */
     public fun refresh() {
-        viewModelScope.launch {
+        readJob?.cancel()
+        readJob = viewModelScope.launch {
             val previous = _uiState.value.entries
             val boundary = previous.maxOfOrNull { it.seq }
             _uiState.update { it.copy(isLoading = true) }

@@ -44,7 +44,9 @@ import com.hub.media.core.storage.LogEntry
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.LogViewerUiState
 import com.hub.media.ui.LogViewerViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Route wrapper for the in-app log viewer (ROADMAP Task 15 Phase B2), owning the
@@ -77,8 +79,13 @@ fun LogViewerScreenRoute(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val content = viewModel.readFullLogForExport()
-            val ok = writeCsvToUri(context, uri, content)
+            // Off the main thread: reading every retained entry and writing a whole document via
+            // SAF are both blocking I/O. Mirrors the CSV export path in SettingsScreen, which wraps
+            // its own writeCsvToUri call for exactly this reason. The Snackbar stays on the
+            // original (main) context.
+            val ok = withContext(Dispatchers.IO) {
+                writeCsvToUri(context, uri, viewModel.readFullLogForExport())
+            }
             snackbarHostState.showSnackbar(if (ok) exportSuccess else exportFailed)
         }
     }
@@ -123,7 +130,12 @@ fun LogViewerScreen(
     // Jump to the newest entry whenever the snapshot changes -- on open, and again after each
     // refresh brings new entries in. Keyed on the entry count rather than the list itself so a
     // refresh that returned nothing new does not yank a user's scroll position out from under them.
-    LaunchedEffect(uiState.entries.size) {
+    //
+    // maxValue is part of the key because it is 0 until the content has been measured: on first
+    // composition this effect would otherwise animate to 0, i.e. not scroll at all, and the screen
+    // would open at the *oldest* entry -- the opposite of the intended terminal-like behaviour.
+    // Re-running when the measured extent arrives is what actually lands it at the bottom.
+    LaunchedEffect(uiState.entries.size, scrollState.maxValue) {
         if (uiState.entries.isNotEmpty()) scrollState.animateScrollTo(scrollState.maxValue)
     }
 
@@ -182,8 +194,11 @@ fun LogViewerScreen(
                                 .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            // Read once: firstNewEntryIndex scans the list to find the boundary, so
+                            // touching it per entry would make rendering quadratic in the window size.
+                            val dividerIndex = uiState.firstNewEntryIndex
                             uiState.entries.forEachIndexed { index, entry ->
-                                if (index == uiState.firstNewEntryIndex) {
+                                if (index == dividerIndex) {
                                     NewEntriesDivider()
                                 }
                                 LogEntryRow(entry)
@@ -225,3 +240,10 @@ private fun LogEntryRow(entry: LogEntry) {
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+/** Local `HH:mm:ss.SSS` for a log entry's epoch-millis timestamp -- see [LogEntryRow]. */
+private fun formatLogTime(epochMillis: Long): String =
+    java.time.Instant.ofEpochMilli(epochMillis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toLocalTime()
+        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))

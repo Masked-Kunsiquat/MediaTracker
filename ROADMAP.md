@@ -12,11 +12,11 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 15 — Logging** ← in progress. *Mostly done*. Phase A (the logging facility, plus
-   adoption at the three known gaps) and Phase B1 (the persistent store, plus the Android Auto
-   Backup carve-out that scoping B1 uncovered) shipped. **Phase B2 remains**: the in-app log
-   viewer, the user-adjustable verbosity setting, and the companion changelog viewer — see that
-   task's section.
+1. **Task 15 — Logging** ← in progress. *Mostly done*. Shipped: Phase A (the logging facility plus
+   adoption at the three known gaps), Phase B1 (the persistent store, plus the Android Auto Backup
+   carve-out that scoping B1 uncovered), and Phase B2a (the in-app log viewer and the
+   user-adjustable verbosity setting). **Phase B2b remains**: the companion changelog viewer — see
+   that task's section.
 2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
    backfill) shipped; Phase B (library multi-select + bulk delete) remains.
 3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
@@ -652,10 +652,13 @@ the database, since a raw file copy taken at an instant the app cannot checkpoin
 hazard `DatabaseBackupUseCase` avoids with `VACUUM INTO`. Reinstall therefore no longer
 auto-restores anything, which is intended: the app's own `.sqlite` backup/restore is the path.
 
-**B2 (remaining):** everything user-facing — the in-app viewer, the verbosity setting, and the
-changelog viewer. The bullets below describe the whole of Phase B; those marked as B1 concerns
-(the sink, rollover, sequence numbering, backup exclusion) are now built, and the viewer/settings
-bullets are what B2 implements.
+**B2a (done):** the in-app log viewer — a snapshot with a refresh divider, genuinely selectable
+text, oldest-first with auto-scroll to the tail, and "export full log" for everything beyond the
+on-screen window — plus the user-adjustable verbosity setting, both reached from a new Diagnostics
+section in Settings.
+
+**B2b (remaining):** the companion changelog viewer only. Design already settled below, including
+the measurements behind it; nothing about it is built yet.
 Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
 but logcat is unreachable for a normal user on a release build — a facility they cannot read does
 not serve a personal, local-first app whose whole support model is the user themselves. Phase B

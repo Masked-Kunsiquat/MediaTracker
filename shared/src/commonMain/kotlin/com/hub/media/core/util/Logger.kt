@@ -1,5 +1,7 @@
 package com.hub.media.core.util
 
+import kotlin.concurrent.Volatile
+
 /**
  * Minimal KMP logging facility (ROADMAP Task 15). Lives under `core/util` (AGENTS.md §6 blueprint:
  * "Dispatchers, Extensions, Result wrappers") alongside [Resource] and [newId] rather than a new
@@ -123,7 +125,18 @@ public fun Logger.error(tag: String, throwable: Throwable? = null, message: () -
  * since it would ship exception context -- and via it, tag/message content -- off the user's device.
  */
 public object AppLogger : Logger {
+    // @Volatile on both: these are written from one thread and read from every other. [setMinLevel]
+    // is driven by a Flow collector on a background dispatcher (see MediaTrackerApplication), while
+    // [log] is called from arbitrary business-logic threads, so without a visibility guarantee a
+    // caller could keep observing a stale threshold indefinitely -- the user changes "Log detail"
+    // in Settings and nothing appears to happen. Volatile is sufficient here and a lock is not:
+    // both fields are single reference assignments, never a read-modify-write, so there is no
+    // compound operation to make atomic. `kotlin.concurrent.Volatile` rather than the JVM
+    // annotation, since this is commonMain.
+    @Volatile
     private var minLevel: LogLevel = LogLevel.WARN
+
+    @Volatile
     private var delegate: Logger = platformLogger()
 
     /**

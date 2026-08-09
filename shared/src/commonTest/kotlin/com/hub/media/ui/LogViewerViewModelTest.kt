@@ -8,6 +8,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,10 @@ class LogViewerViewModelTest {
     private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
 
+    // Shut down from tearDown rather than at the end of each test body: a failing assertion returns
+    // early, which would otherwise leak the store's background scope for the rest of the run.
+    private val stores = mutableListOf<LogFileStore>()
+
     @BeforeTest
     fun setUp() = runTest {
         viewModels.installMain()
@@ -41,11 +46,14 @@ class LogViewerViewModelTest {
     @AfterTest
     fun tearDown() = runTest {
         viewModels.clearAll()
+        stores.forEach { it.shutdown() }
         cleanupTestTempDir(tempDir)
         Dispatchers.resetMain()
     }
 
-    private fun newStore() = LogFileStore(directoryPath = tempDir, flushIntervalMillis = 0)
+    private fun newStore() = track(LogFileStore(directoryPath = tempDir, flushIntervalMillis = 0))
+
+    private fun track(store: LogFileStore): LogFileStore = store.also { stores += it }
 
     private fun viewModel(store: LogFileStore) = viewModels.track(LogViewerViewModel(store))
 
@@ -79,7 +87,6 @@ class LogViewerViewModelTest {
         assertEquals(listOf("a", "b"), vm.uiState.value.entries.map { it.message })
         assertNull(vm.uiState.value.newEntryBoundary, "first open has nothing to mark as new")
         assertNull(vm.uiState.value.firstNewEntryIndex)
-        store.shutdown()
     }
 
     @Test
@@ -98,7 +105,6 @@ class LogViewerViewModelTest {
         // index assertion below could pass on a snapshot that never changed.
         assertEquals(listOf("old-1", "old-2", "new-1", "new-2"), state.entries.map { it.message })
         assertEquals(2, state.firstNewEntryIndex, "divider must sit immediately above new-1")
-        store.shutdown()
     }
 
     @Test
@@ -123,7 +129,6 @@ class LogViewerViewModelTest {
         val state = vm.uiState.value
         assertEquals(listOf("old", "batch1", "batch2"), state.entries.map { it.message })
         assertEquals(2, state.firstNewEntryIndex, "divider must follow batch2, not stay at batch1")
-        store.shutdown()
     }
 
     @Test
@@ -142,7 +147,6 @@ class LogViewerViewModelTest {
             state.firstNewEntryIndex,
             "a boundary equal to the highest seq present must match no entry, so no divider renders",
         )
-        store.shutdown()
     }
 
     @Test
@@ -150,10 +154,12 @@ class LogViewerViewModelTest {
         // The case a position- or count-based boundary gets wrong: the window the second read
         // returns starts later than the first, so every index shifts. Comparing seq is immune.
         // A tiny cap forces a real rotation between the two reads.
-        val store = LogFileStore(
-            directoryPath = tempDir,
-            maxFileSizeBytes = 200L,
-            flushIntervalMillis = 0,
+        val store = track(
+            LogFileStore(
+                directoryPath = tempDir,
+                maxFileSizeBytes = 200L,
+                flushIntervalMillis = 0,
+            ),
         )
         store.log("old-1", "old-2")
         val vm = viewModel(store)
@@ -165,8 +171,10 @@ class LogViewerViewModelTest {
         vm.awaitLoaded()
 
         val state = vm.uiState.value
-        val firstNew = state.firstNewEntryIndex
-        assertTrue(firstNew != null, "entries were added, so a divider must be placed")
+        val firstNew = assertNotNull(
+            state.firstNewEntryIndex,
+            "entries were added, so a divider must be placed",
+        )
         assertTrue(
             state.entries[firstNew].seq > boundarySeq,
             "the marked entry must be genuinely newer than the pre-refresh snapshot",
@@ -175,7 +183,6 @@ class LogViewerViewModelTest {
             firstNew == 0 || state.entries[firstNew - 1].seq <= boundarySeq,
             "the entry before the divider must not itself be new",
         )
-        store.shutdown()
     }
 
     @Test
@@ -187,6 +194,5 @@ class LogViewerViewModelTest {
 
         assertTrue(exported.contains("first") && exported.contains("second"))
         assertEquals(2, exported.lines().size, "one line per entry")
-        store.shutdown()
     }
 }

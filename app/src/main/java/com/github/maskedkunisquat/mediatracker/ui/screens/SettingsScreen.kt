@@ -58,6 +58,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -554,9 +556,10 @@ private fun LogVerbositySetting(
     onSelectedChange: (LogLevel) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.settings_log_verbosity_label)
     Column {
         Text(
-            text = stringResource(R.string.settings_log_verbosity_label),
+            text = label,
             style = MaterialTheme.typography.bodyLarge,
         )
         Text(
@@ -575,9 +578,15 @@ private fun LogVerbositySetting(
                 readOnly = true,
                 label = null,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                // The label is drawn as a separate Text above (matching WeekStartDaySetting's
+                // layout), so this field has no Material label of its own and TalkBack would
+                // otherwise announce only the bare value -- "Warnings", with no indication of which
+                // setting it belongs to. Restating it here as a contentDescription gives screen
+                // readers that context without changing the visual layout.
                 modifier = Modifier
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .semantics { contentDescription = label },
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 LogLevel.entries.forEach { level ->

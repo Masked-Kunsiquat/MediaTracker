@@ -26,6 +26,7 @@ class LogVerbosityTest {
         val repo = SettingsRepository(db.appSettingsDao())
 
         assertEquals(DEFAULT_LOG_VERBOSITY, repo.getLogVerbosity())
+        assertEquals(DEFAULT_LOG_VERBOSITY, repo.observeLogVerbosity().first())
         assertEquals(LogLevel.WARN, DEFAULT_LOG_VERBOSITY, "a chatty default would blow the size cap")
         db.close()
     }
@@ -70,6 +71,9 @@ class LogVerbosityTest {
         repo.setString("log_verbosity", "TRACE")
 
         assertEquals(DEFAULT_LOG_VERBOSITY, repo.getLogVerbosity())
+        // Both accessors must agree that malformed means unset: the nullable one reports it as
+        // such, the non-null one substitutes the default rather than propagating garbage.
+        assertEquals(DEFAULT_LOG_VERBOSITY, repo.observeLogVerbosity().first())
         assertNull(repo.observeLogVerbosityOrNull().first(), "malformed is unset, not a level")
         // Positive control: the malformed value really is in the store, so the assertions above
         // are about parsing it rather than about nothing having been written.
