@@ -15,6 +15,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege. Without this the workflow inherits whatever the repository default is, which can
+# be read/write -- more than a build that only ever reads the tree needs, and more than should be
+# handed to the arbitrary third-party code a Gradle build resolves and executes.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Unit tests and debug build
@@ -23,6 +29,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Do not leave the token in .git/config for the rest of the job. A Gradle build runs
+          # plugin and dependency code this repository does not own, and nothing here needs to push
+          # or call the API, so the credential should not be sitting on disk while that runs.
+          persist-credentials: false
 
       # JDK 21: shared/ and app/ both set jvmToolchain(21). The Kotlin jvmTarget is 11, which is a
       # separate setting -- the toolchain is what Gradle needs to *run* the compiler.
@@ -32,11 +43,14 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # compileSdk is 36 with minorApiLevel 1, which is newer than the runner image is guaranteed
-      # to ship. Installing it explicitly is cheaper than debugging an "SDK not found" failure that
-      # only appears when GitHub next rotates the image.
+      # compileSdk is 36 (minorApiLevel 1), which is newer than the runner image is guaranteed to
+      # keep shipping. Named explicitly rather than relying on the image happening to include it:
+      # the first version of this step only passed because it currently does, which is precisely
+      # what breaks silently when GitHub rotates images.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

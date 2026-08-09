@@ -18,21 +18,25 @@ for that file.
 
 ## Testing
 
+<!-- Tick what actually ran, not what should have. Leave a box unticked rather than tidying it. -->
+
+- [ ] `./gradlew :shared:jvmTest :shared:testDebugUnitTest` — *CI runs this*
+- [ ] `./gradlew :app:assembleDebug` — *CI runs this*
+- [ ] `./gradlew :app:connectedDebugAndroidTest` — **needs a device; CI does NOT run this**
+- [ ] Ran the affected screens on a real device
+
+Compose screens tested (or n/a):
+
 <!--
-Which of these actually ran, with real results -- not which ones should have.
-
-- [ ] `./gradlew :shared:jvmTest :shared:testDebugUnitTest`  (CI runs this)
-- [ ] `./gradlew :app:assembleDebug`  (CI runs this)
-- [ ] `./gradlew :app:connectedDebugAndroidTest`  (needs a device; CI does NOT run this)
-- [ ] Ran on a real device
-
-If this touches a Compose screen, the last two matter most: the build passing says nothing about
-whether the screen works. See AGENTS.md §7.
+Name them. If this touches a screen and the last two boxes are unticked, say so under Known gaps --
+the build passing says nothing about whether a screen works. Two bugs shipped that way before the
+instrumented tests existed. See AGENTS.md §7.
 -->
 
 ## Known gaps
 
 <!--
-Anything deliberately left undone, unverified, or accepted as a risk. Saying so here is much
-cheaper than someone finding it later and having to guess whether it was intentional.
+Anything deliberately left undone, unverified, or accepted as a risk -- including any screen
+changed here but not actually run. Saying so is much cheaper than someone finding it later and
+having to guess whether it was intentional.
 -->
