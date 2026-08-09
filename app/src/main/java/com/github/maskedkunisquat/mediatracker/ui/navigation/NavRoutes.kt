@@ -85,4 +85,11 @@ sealed interface Route {
     data object LogViewer : Route {
         override val route: String = "log_viewer"
     }
+
+    /**
+     * In-app "What's new" changelog viewer, reached from Settings (ROADMAP Task 15 Phase B2b).
+     */
+    data object Changelog : Route {
+        override val route: String = "changelog"
+    }
 }

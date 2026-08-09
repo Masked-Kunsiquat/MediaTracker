@@ -249,4 +249,13 @@
     <string name="log_viewer_new_entries_divider">New since refresh</string>
     <string name="log_viewer_export_success">Log exported</string>
     <string name="log_viewer_export_failed">Could not export the log</string>
+
+    <!-- ROADMAP Task 15 Phase B2b: in-app changelog viewer -->
+    <string name="settings_changelog_label">What\'s new</string>
+    <string name="settings_changelog_description">Release notes for this and previous versions.</string>
+    <string name="settings_changelog_button">View changelog</string>
+    <string name="changelog_title">What\'s new</string>
+    <string name="changelog_unavailable">Release notes are unavailable in this build.</string>
+    <string name="changelog_expand">Expand</string>
+    <string name="changelog_collapse">Collapse</string>
 </resources>

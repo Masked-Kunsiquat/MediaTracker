@@ -84,6 +84,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The privacy rule is unchanged and stated on the screen itself: logs never contain your titles,
     authors, or notes.
 
+- **In-app "What's new" (ROADMAP Task 15 Phase B2b)** — release notes are now readable inside the
+  app, from the Diagnostics section in Settings. Opens on the version you are actually running,
+  with older releases below it.
+  - **Collapsible, because the notes are long and uneven.** `[0.7.0]` runs 335 lines against
+    `[0.1.0]`'s 38, and one single entry is 109 lines — flat, that is dozens of screens with no way
+    to skim. Each version folds, each version's summary stays visible once opened, and each
+    individual entry expands on demand.
+  - **`CHANGELOG.md` remains the single source of truth.** The file is copied into the app at build
+    time from the repo root; the copy is a gitignored build artifact, so a stale duplicate cannot be
+    committed even by accident.
+  - Bold and `code` formatting render properly rather than showing their raw markers.
+
 ### Changed
 
 - **Android Auto Backup no longer sends your library to Google Drive.** `backup_rules.xml` and

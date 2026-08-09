@@ -50,6 +50,28 @@ android {
     }
 }
 
+/**
+ * ROADMAP Task 15 Phase B2b: copies the root CHANGELOG.md into the app's assets so the in-app
+ * "What's new" viewer can read it via `context.assets`.
+ *
+ * A build-time copy rather than a second checked-in file: the root CHANGELOG.md stays the single
+ * source of truth (AGENTS.md section 8's changelog discipline governs exactly one file), and
+ * because the destination is gitignored, a stale duplicate cannot be committed even by accident.
+ * No new dependency -- this is a plain Copy task.
+ *
+ * Wired into preBuild rather than a specific variant's asset-merge task so it runs before any
+ * merge, for every variant, without naming variant-specific task names that change between AGP
+ * versions.
+ */
+val copyChangelogToAssets by tasks.registering(Copy::class) {
+    from(rootProject.file("CHANGELOG.md"))
+    into(layout.projectDirectory.dir("src/main/assets"))
+}
+
+tasks.named("preBuild") {
+    dependsOn(copyChangelogToAssets)
+}
+
 kotlin {
     jvmToolchain(21)
     compilerOptions {

@@ -12,11 +12,13 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 15 — Logging** ← in progress. *Mostly done*. Shipped: Phase A (the logging facility plus
-   adoption at the three known gaps), Phase B1 (the persistent store, plus the Android Auto Backup
-   carve-out that scoping B1 uncovered), and Phase B2a (the in-app log viewer and the
-   user-adjustable verbosity setting). **Phase B2b remains**: the companion changelog viewer — see
-   that task's section.
+1. **Compose UI test harness** ← next. Promoted out of the backlog rather than left there,
+   because the task after it is Task 14 Phase B — multi-select and **bulk delete**. That is a
+   destructive, selection-driven UI feature, and the two bugs recorded in the backlog entry were
+   both "the control renders correctly and does the wrong thing", which is precisely the failure
+   mode that costs a user their library here. The harness is a prerequisite for building bulk
+   delete safely, not general hygiene. See the backlog entry for the evidence and the constraint
+   (instrumented tests need a device, so they cannot join AGENTS.md §7's gate).
 2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
    backfill) shipped; Phase B (library multi-select + bulk delete) remains.
 3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
@@ -31,6 +33,14 @@ single list below and reordering is a one-line edit there.
 7. Task 13 — Movies & TV
 
 ## Done
+
+- **Task 15 — Logging** (`v0.8.0`+): a hand-rolled KMP `Logger` with centrally-gated verbosity and
+  adoption at the three failure paths that had been discarding their cause (Phase A); a capped,
+  buffered, appending file store with rollover and disk-derived sequence numbering, plus the
+  Android Auto Backup carve-out that scoping it uncovered — cloud backup had been sweeping the
+  whole app-private directory to Google Drive since the first commit (Phase B1); an in-app log
+  viewer on a snapshot/refresh model with a sequence-anchored divider, and a user-adjustable
+  verbosity setting (Phase B2a); and an in-app changelog viewer with a three-level fold (Phase B2b).
 
 - **Task 1 — Data foundation** (`v0.1.0`): KMP `shared` module, Room KMP schema v1
   (MediaItems + BookDetails + ExternalIdentifiers + ReadingSessions), content-addressed
@@ -657,8 +667,9 @@ text, oldest-first with auto-scroll to the tail, and "export full log" for every
 on-screen window — plus the user-adjustable verbosity setting, both reached from a new Diagnostics
 section in Settings.
 
-**B2b (remaining):** the companion changelog viewer only. Design already settled below, including
-the measurements behind it; nothing about it is built yet.
+**B2b (done):** the companion changelog viewer — a build-time copy of `CHANGELOG.md` into assets,
+a hand-rolled parser for the Keep a Changelog subset this file actually uses, and the three-level
+fold decided below. Task 15 is complete.
 Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
 but logcat is unreachable for a normal user on a release build — a facility they cannot read does
 not serve a personal, local-first app whose whole support model is the user themselves. Phase B

@@ -120,6 +120,7 @@ fun SettingsScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
     onNavigateToLogViewer: () -> Unit,
+    onNavigateToChangelog: () -> Unit,
 ) {
     val viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModelFactory(appContainer),
@@ -508,6 +509,7 @@ fun SettingsScreenRoute(
         onWeekStartDayChange = viewModel::setWeekStartDay,
         onLogVerbosityChange = viewModel::setLogVerbosity,
         onNavigateToLogViewer = onNavigateToLogViewer,
+        onNavigateToChangelog = onNavigateToChangelog,
         exportInProgress = exportUiState is ExportUiState.Loading,
         onExportClick = exportViewModel::exportData,
         importInProgress = importUiState is ImportUiState.Loading,
@@ -613,6 +615,30 @@ private fun LogVerbositySetting(
  * their titles, authors, or notes -- the identifier rule from Phase A is only reassuring if it is
  * visible where the decision is made.
  */
+/**
+ * The "What's new" row (ROADMAP Task 15 Phase B2b). Sits in Diagnostics beside the log viewer
+ * rather than in its own section: both are read-only reference screens reached from here, and a
+ * one-row section for each would be more chrome than content.
+ */
+@Composable
+private fun ChangelogSetting(onViewChangelogClick: () -> Unit) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_changelog_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_changelog_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Button(onClick = onViewChangelogClick) {
+            Text(stringResource(R.string.settings_changelog_button))
+        }
+    }
+}
+
 @Composable
 private fun LogViewerSetting(onViewLogClick: () -> Unit) {
     Column {
@@ -840,6 +866,7 @@ fun SettingsScreen(
     onWeekStartDayChange: (WeekStartDay) -> Unit,
     onLogVerbosityChange: (LogLevel) -> Unit,
     onNavigateToLogViewer: () -> Unit,
+    onNavigateToChangelog: () -> Unit,
     exportInProgress: Boolean,
     onExportClick: () -> Unit,
     importInProgress: Boolean,
@@ -901,6 +928,8 @@ fun SettingsScreen(
                         )
                         HorizontalDivider()
                         LogViewerSetting(onViewLogClick = onNavigateToLogViewer)
+                        HorizontalDivider()
+                        ChangelogSetting(onViewChangelogClick = onNavigateToChangelog)
                     }
                 }
                 item {
@@ -1489,6 +1518,7 @@ private fun SettingsScreenMondayPreview() {
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
             onNavigateToLogViewer = {},
+            onNavigateToChangelog = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -1521,6 +1551,7 @@ private fun SettingsScreenSundayPreview() {
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
             onNavigateToLogViewer = {},
+            onNavigateToChangelog = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -1553,6 +1584,7 @@ private fun SettingsScreenExportingPreview() {
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
             onNavigateToLogViewer = {},
+            onNavigateToChangelog = {},
             exportInProgress = true,
             onExportClick = {},
             importInProgress = false,
@@ -1585,6 +1617,7 @@ private fun SettingsScreenBackingUpPreview() {
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
             onNavigateToLogViewer = {},
+            onNavigateToChangelog = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -1617,6 +1650,7 @@ private fun SettingsScreenValidatingRestorePreview() {
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
             onNavigateToLogViewer = {},
+            onNavigateToChangelog = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
