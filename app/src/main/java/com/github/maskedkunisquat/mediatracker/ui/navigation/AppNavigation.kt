@@ -10,6 +10,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.hub.media.ui.AppContainer
@@ -125,6 +126,18 @@ fun AppNavigation(
 
         composable(Route.Settings.route) {
             SettingsScreenRoute(
+                appContainer = appContainer,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+                onNavigateToLogViewer = {
+                    navController.navigate(Route.LogViewer.route)
+                },
+            )
+        }
+
+        composable(Route.LogViewer.route) {
+            LogViewerScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = {
                     navController.navigateUp()

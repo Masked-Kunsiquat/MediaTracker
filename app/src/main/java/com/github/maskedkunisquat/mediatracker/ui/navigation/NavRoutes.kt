@@ -77,4 +77,12 @@ sealed interface Route {
     data object Settings : Route {
         override val route: String = "settings"
     }
+
+    /**
+     * In-app log viewer, reached from the Settings screen's Diagnostics section
+     * (ROADMAP Task 15 Phase B2).
+     */
+    data object LogViewer : Route {
+        override val route: String = "log_viewer"
+    }
 }

@@ -8,6 +8,12 @@ import com.hub.media.core.storage.logStorageDirectory
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.withPlatformLogger
+import com.hub.media.features.settings.data.observeLogVerbosityOrNull
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.createAppContainer
 import kotlinx.coroutines.runBlocking
@@ -87,11 +93,52 @@ class MediaTrackerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         logFileStore = runBlocking { createLogFileStore(logStorageDirectory(applicationContext)) }
+        val buildTypeDefault = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN
         AppLogger.configure(
-            minLevel = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN,
+            minLevel = buildTypeDefault,
             delegate = FileLogSink(logFileStore).withPlatformLogger(),
         )
+        applyPersistedLogVerbosity(buildTypeDefault)
     }
+
+    /**
+     * Keeps [AppLogger]'s threshold in sync with the user's persisted verbosity preference for the
+     * lifetime of the process (ROADMAP Task 15 Phase B2).
+     *
+     * ### Why `persisted ?: buildTypeDefault`, and not just `persisted`
+     * A never-set preference must leave [buildTypeDefault] in place rather than replace it with the
+     * setting's own default. Overwriting it would make every debug build fall silent moments after
+     * startup -- dropping the `DEBUG`/`INFO` output a debug build exists to produce, purely because
+     * nobody had opened Settings -- and would render the `BuildConfig.DEBUG` branch above dead code
+     * in the one build type it was written for. An explicit choice still always wins; see
+     * [AppLogger.setMinLevel]'s KDoc.
+     *
+     * ### Why here, and not in `SettingsViewModel`
+     * The threshold has to hold process-wide, including long after the settings screen is gone, so
+     * a ViewModel scoped to that screen is the wrong owner. This scope is deliberately never
+     * cancelled: it is tied to the `Application` itself, which lives exactly as long as the process
+     * whose logging it governs.
+     *
+     * Reading the preference touches Room, so it cannot happen during the synchronous
+     * [AppLogger.configure] call above -- hence the two-stage bootstrap, with [buildTypeDefault]
+     * governing the brief window before the first emission lands. `appContainer` is accessed lazily
+     * inside the coroutine rather than at call time so this does not force database construction
+     * onto the `onCreate` critical path.
+     */
+    private fun applyPersistedLogVerbosity(buildTypeDefault: LogLevel) {
+        loggingScope.launch {
+            appContainer.settingsRepository.observeLogVerbosityOrNull().collectLatest { persisted ->
+                AppLogger.setMinLevel(persisted ?: buildTypeDefault)
+            }
+        }
+    }
+
+    /**
+     * Process-lifetime scope for [applyPersistedLogVerbosity]'s collection. A [SupervisorJob] so a
+     * failure there could never take anything else down with it, on [Dispatchers.Default] since the
+     * work is a Room-backed `Flow`, never UI.
+     */
+    private val loggingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
      * Lazily-created AppContainer, initialized on first access.

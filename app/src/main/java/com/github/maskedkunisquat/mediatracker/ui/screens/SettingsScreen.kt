@@ -28,6 +28,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -78,6 +83,7 @@ import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportRejection
 import com.hub.media.features.portability.domain.ImportSummary
 import com.hub.media.features.portability.domain.StagedRestoreInfo
+import com.hub.media.core.util.LogLevel
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackfillUiState
@@ -111,6 +117,7 @@ import kotlinx.coroutines.withContext
 fun SettingsScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
+    onNavigateToLogViewer: () -> Unit,
 ) {
     val viewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModelFactory(appContainer),
@@ -497,6 +504,8 @@ fun SettingsScreenRoute(
     SettingsScreen(
         uiState = uiState,
         onWeekStartDayChange = viewModel::setWeekStartDay,
+        onLogVerbosityChange = viewModel::setLogVerbosity,
+        onNavigateToLogViewer = onNavigateToLogViewer,
         exportInProgress = exportUiState is ExportUiState.Loading,
         onExportClick = exportViewModel::exportData,
         importInProgress = importUiState is ImportUiState.Loading,
@@ -530,6 +539,90 @@ fun SettingsScreenRoute(
  *   per that phase's brief. Never shown for an import that added nothing (a pure duplicate-skip
  *   pass has no new gaps to fill).
  */
+/**
+ * The log-verbosity setting row (ROADMAP Task 15 Phase B2).
+ *
+ * A dropdown rather than [WeekStartDaySetting]'s segmented buttons: Material 3 reserves segmented
+ * buttons for a small set meant to be compared side by side, and four options whose labels are
+ * words rather than single tokens would crowd a phone-width row. The order matches [LogLevel]'s
+ * own declaration order, most verbose first, so "more detail" reads left-to-right as down-the-list.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LogVerbositySetting(
+    selected: LogLevel,
+    onSelectedChange: (LogLevel) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(
+            text = stringResource(R.string.settings_log_verbosity_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_log_verbosity_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+        ) {
+            OutlinedTextField(
+                value = selected.displayLabel(),
+                onValueChange = {},
+                readOnly = true,
+                label = null,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                LogLevel.entries.forEach { level ->
+                    DropdownMenuItem(
+                        text = { Text(level.displayLabel()) },
+                        onClick = {
+                            onSelectedChange(level)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The log-viewer row (ROADMAP Task 15 Phase B2): navigates to the read-only viewer rather than
+ * showing entries inline, since that screen needs its own scroll and selection behaviour that a
+ * card inside this screen's `LazyColumn` could not provide.
+ *
+ * The description states the privacy guarantee explicitly. That is deliberate: a user about to
+ * share a log with someone should be able to see, at the point of doing it, that it never contained
+ * their titles, authors, or notes -- the identifier rule from Phase A is only reassuring if it is
+ * visible where the decision is made.
+ */
+@Composable
+private fun LogViewerSetting(onViewLogClick: () -> Unit) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_log_viewer_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_log_viewer_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Button(onClick = onViewLogClick) {
+            Text(stringResource(R.string.settings_log_viewer_button))
+        }
+    }
+}
+
 @Composable
 private fun ImportSummaryDialog(
     summary: ImportSummary,
@@ -736,6 +829,8 @@ private fun RestoreConfirmationDialog(
 fun SettingsScreen(
     uiState: SettingsUiState,
     onWeekStartDayChange: (WeekStartDay) -> Unit,
+    onLogVerbosityChange: (LogLevel) -> Unit,
+    onNavigateToLogViewer: () -> Unit,
     exportInProgress: Boolean,
     onExportClick: () -> Unit,
     importInProgress: Boolean,
@@ -787,6 +882,16 @@ fun SettingsScreen(
                             selected = uiState.weekStartDay,
                             onSelectedChange = onWeekStartDayChange,
                         )
+                    }
+                }
+                item {
+                    SettingsSection(title = stringResource(R.string.settings_section_diagnostics)) {
+                        LogVerbositySetting(
+                            selected = uiState.logVerbosity,
+                            onSelectedChange = onLogVerbosityChange,
+                        )
+                        HorizontalDivider()
+                        LogViewerSetting(onViewLogClick = onNavigateToLogViewer)
                     }
                 }
                 item {
@@ -1373,6 +1478,8 @@ private fun SettingsScreenMondayPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onLogVerbosityChange = {},
+            onNavigateToLogViewer = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -1403,6 +1510,8 @@ private fun SettingsScreenSundayPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.SUNDAY),
             onWeekStartDayChange = {},
+            onLogVerbosityChange = {},
+            onNavigateToLogViewer = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -1433,6 +1542,8 @@ private fun SettingsScreenExportingPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onLogVerbosityChange = {},
+            onNavigateToLogViewer = {},
             exportInProgress = true,
             onExportClick = {},
             importInProgress = false,
@@ -1463,6 +1574,8 @@ private fun SettingsScreenBackingUpPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onLogVerbosityChange = {},
+            onNavigateToLogViewer = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -1493,6 +1606,8 @@ private fun SettingsScreenValidatingRestorePreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onLogVerbosityChange = {},
+            onNavigateToLogViewer = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,

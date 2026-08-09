@@ -230,4 +230,23 @@
     <string name="restore_in_progress_message">Restoring… the app will restart automatically</string>
     <string name="restore_previous_success_message">Restore completed successfully</string>
     <string name="restore_previous_failure_message">The last restore attempt failed: %1$s</string>
+
+    <!-- ROADMAP Task 15 Phase B2: in-app log viewer + verbosity setting -->
+    <string name="settings_section_diagnostics">Diagnostics</string>
+    <string name="settings_log_viewer_label">Application log</string>
+    <string name="settings_log_viewer_description">Recent diagnostic messages recorded on this device. Never includes your titles, authors, or notes.</string>
+    <string name="settings_log_viewer_button">View log</string>
+    <string name="settings_log_verbosity_label">Log detail</string>
+    <string name="settings_log_verbosity_description">How much detail to record. More detail fills the capped log faster.</string>
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_warn">Warnings</string>
+    <string name="log_level_error">Errors only</string>
+    <string name="log_viewer_title">Application log</string>
+    <string name="log_viewer_refresh">Refresh</string>
+    <string name="log_viewer_export">Export full log</string>
+    <string name="log_viewer_empty">No log entries recorded yet.</string>
+    <string name="log_viewer_new_entries_divider">New since refresh</string>
+    <string name="log_viewer_export_success">Log exported</string>
+    <string name="log_viewer_export_failed">Could not export the log</string>
 </resources>
