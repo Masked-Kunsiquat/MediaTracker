@@ -787,6 +787,28 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
 
+- **No Compose UI tests, and nothing else can catch a broken screen.** The project has no UI test
+  harness at all, so `:app` is verified only by `assembleDebug` — i.e. by whether it *compiles*.
+  Every screen's wiring (does this button reach a ViewModel? does this effect fire when it should?)
+  is currently unverified by anything except reading the code. Two concrete bugs from Task 15 Phase
+  B2a are the evidence this is a real gap rather than a theoretical one, and both were caught by eye
+  during review, with every check in the repo passing green:
+  - A bulk edit added the new `SettingsScreen` parameters to all six call sites at once, stubbing
+    the *real* route with `{}` no-op lambdas alongside the five previews where stubs are correct.
+    The verbosity picker and the "View log" button would both have rendered normally and done
+    nothing whatsoever.
+  - The log viewer's auto-scroll effect was keyed only on entry count. `ScrollState.maxValue` is `0`
+    until the content is measured, so on first composition it animated to `0` and the screen opened
+    at the *oldest* entry — the exact opposite of the terminal-like behaviour its own KDoc claimed.
+  Neither is exotic; both are the ordinary failure mode of Compose wiring, and neither is reachable
+  by a unit test of the ViewModel, because in both cases the ViewModel was correct. Worth adding
+  `androidx.compose.ui.test.junit4` (already a `androidTestImplementation` dependency in
+  `app/build.gradle.kts`, currently unused beyond the template's `ExampleInstrumentedTest`) and a
+  small set of behavioural tests over the highest-traffic screens rather than aiming for coverage.
+  Note these are instrumented tests: they need a device or emulator, so they cannot join the
+  `./gradlew :shared:jvmTest :shared:testDebugUnitTest` gate AGENTS.md §7 mandates, and would be a
+  separate, manually-run (or CI-only) step — which is part of why this has not happened by accident.
+
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
   and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive
