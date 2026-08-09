@@ -38,6 +38,12 @@ metadata providers this app uses (Open Library, Google Books) require none.
 ./gradlew :shared:jvmTest :shared:testDebugUnitTest
 ```
 
+Compose screens have instrumented tests, which need a connected device:
+
+```bash
+./gradlew :app:connectedDebugAndroidTest
+```
+
 **Not `./gradlew test`** — that omits `:shared:jvmTest`, which is the authoritative run for the
 data layer. Every Room-touching test is excluded from the Android unit-test variants, so
 `./gradlew test` passes while skipping them entirely. See AGENTS.md §7 and the comment block in

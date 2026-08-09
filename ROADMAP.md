@@ -12,15 +12,12 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Compose UI test harness** ← next. Promoted out of the backlog rather than left there,
-   because the task after it is Task 14 Phase B — multi-select and **bulk delete**. That is a
-   destructive, selection-driven UI feature, and the two bugs recorded in the backlog entry were
-   both "the control renders correctly and does the wrong thing", which is precisely the failure
-   mode that costs a user their library here. The harness is a prerequisite for building bulk
-   delete safely, not general hygiene. See the backlog entry for the evidence and the constraint
-   (instrumented tests need a device, so they cannot join AGENTS.md §7's gate).
-2. Task 14 — Bulk operations & cover backfill — *partially done*. Phase A (bulk cover/author
-   backfill) shipped; Phase B (library multi-select + bulk delete) remains.
+1. **Task 14 — Bulk operations & cover backfill** ← next. *Partially done*. Phase A (bulk
+   cover/author backfill) shipped; Phase B (library multi-select + bulk delete) remains. The
+   Compose UI test harness was built first, deliberately, because bulk delete is destructive and
+   selection-driven — exactly the shape where a mis-wired callback deletes the wrong books without
+   crashing or failing anything. Phase B should add screen-level tests for the selection state and
+   a navigation test for the delete confirmation as it goes, not afterwards.
 3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
@@ -33,6 +30,15 @@ single list below and reordering is a one-line edit there.
 7. Task 13 — Movies & TV
 
 ## Done
+
+- **Compose UI test harness** (`v0.9.0`+): 18 instrumented tests in `app/src/androidTest/`,
+  covering the log viewer and changelog screens at the screen level (stateless composables driven
+  with fake callbacks) plus `SettingsNavigationTest`, which starts at the real `MainActivity` and
+  taps through — the only kind that can prove a *route* passes a real callback rather than a stub.
+  Verified by mutation against the bug that motivated it: re-stubbing the Settings route's
+  changelog callback fails exactly one test, the navigation one. Instrumented, so they need a
+  device and cannot join AGENTS.md §7's gate; that constraint, and the reasoning, is recorded in
+  §7 itself rather than only here.
 
 - **Task 15 — Logging** (`v0.8.0`+): a hand-rolled KMP `Logger` with centrally-gated verbosity and
   adoption at the three failure paths that had been discarding their cause (Phase A); a capped,
@@ -797,28 +803,6 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
-
-- **No Compose UI tests, and nothing else can catch a broken screen.** The project has no UI test
-  harness at all, so `:app` is verified only by `assembleDebug` — i.e. by whether it *compiles*.
-  Every screen's wiring (does this button reach a ViewModel? does this effect fire when it should?)
-  is currently unverified by anything except reading the code. Two concrete bugs from Task 15 Phase
-  B2a are the evidence this is a real gap rather than a theoretical one, and both were caught by eye
-  during review, with every check in the repo passing green:
-  - A bulk edit added the new `SettingsScreen` parameters to all six call sites at once, stubbing
-    the *real* route with `{}` no-op lambdas alongside the five previews where stubs are correct.
-    The verbosity picker and the "View log" button would both have rendered normally and done
-    nothing whatsoever.
-  - The log viewer's auto-scroll effect was keyed only on entry count. `ScrollState.maxValue` is `0`
-    until the content is measured, so on first composition it animated to `0` and the screen opened
-    at the *oldest* entry — the exact opposite of the terminal-like behaviour its own KDoc claimed.
-  Neither is exotic; both are the ordinary failure mode of Compose wiring, and neither is reachable
-  by a unit test of the ViewModel, because in both cases the ViewModel was correct. Worth adding
-  `androidx.compose.ui.test.junit4` (already a `androidTestImplementation` dependency in
-  `app/build.gradle.kts`, currently unused beyond the template's `ExampleInstrumentedTest`) and a
-  small set of behavioural tests over the highest-traffic screens rather than aiming for coverage.
-  Note these are instrumented tests: they need a device or emulator, so they cannot join the
-  `./gradlew :shared:jvmTest :shared:testDebugUnitTest` gate AGENTS.md §7 mandates, and would be a
-  separate, manually-run (or CI-only) step — which is part of why this has not happened by accident.
 
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
