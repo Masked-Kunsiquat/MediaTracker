@@ -1,8 +1,30 @@
 # Sample data
 
-`library_sample.csv` is a development fixture for the debug build, which starts with an empty
-library (debug installs under its own `applicationId` — see ROADMAP Task 16). Import it from
-**Settings → Data → Import from CSV**.
+`library_sample.csv` and `reading_logs_sample.csv` are development fixtures for the debug build,
+which starts with an empty library (debug installs under its own `applicationId` — see ROADMAP
+Task 16).
+
+## Getting them onto a device
+
+**The fast way — no file picker:**
+
+```bash
+./gradlew :app:installDebug :app:installDebugAndroidTest
+adb shell am instrument -w -e class com.github.maskedkunisquat.mediatracker.SampleDataSeedTest   com.github.maskedkunisquat.mediatracker.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+`ImportDataUseCase` takes CSV *strings*, so `SampleDataSeedTest` reads these fixtures from the test
+APK's assets and imports them directly. Re-running is safe — the import uses `SKIP`, so it tops the
+data up rather than duplicating it.
+
+**Do not use `./gradlew :app:connectedDebugAndroidTest` for this.** It runs the same test but
+**uninstalls the app afterwards**, taking the imported data with it. Verified directly: the package
+is present before the run and gone after. Driving the test with `am instrument` against
+already-installed APKs is what skips that teardown.
+
+**The manual way**, if you want to exercise the real user path: `adb push` the CSVs to
+`/sdcard/Download/` (with `MSYS_NO_PATHCONV=1` on Git Bash, or the path gets rewritten) and import
+from **Settings → Data → Import from CSV**.
 
 It exists so UI work can be looked at against realistic content rather than an empty screen, and so
 manual checks of the library — filtering, searching, multi-select, bulk delete — have something to
