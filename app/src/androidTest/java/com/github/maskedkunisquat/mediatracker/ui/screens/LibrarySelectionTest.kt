@@ -186,9 +186,9 @@ class LibrarySelectionTest {
     }
 
     @Test
-    fun contextualBarCount_reflectsOnlyVisibleSelection() {
-        // A book selected but filtered out of view is not actionable, so promising to delete it in
-        // the count would overstate what the confirm button does.
+    fun contextualBarCount_reflectsTheWholeSelectionNotJustWhatTheFilterShows() {
+        // The behaviour this replaced scoped the count to the visible subset, so it moved as the
+        // filter moved and read as the selection being silently lost.
         val filtered = LibraryUiState(
             books = books,
             selectedIds = setOf("id-a", "id-b"),
@@ -196,7 +196,32 @@ class LibrarySelectionTest {
         )
         setContent(filtered)
 
-        // Neither fake book has details, so neither matches a non-null status filter.
-        composeRule.onNodeWithText("0 selected").assertIsDisplayed()
+        // Neither fake book has details, so neither matches a non-null status filter -- yet both
+        // remain selected.
+        composeRule.onNodeWithText("2 selected").assertIsDisplayed()
+    }
+
+    @Test
+    fun confirmationDialog_namesEveryBookItWillDelete() {
+        // Listing the titles is what makes deleting the whole selection safe rather than alarming:
+        // a filter can hide a selected book, and this puts it back in front of the user at the
+        // moment it matters.
+        setContent(LibraryUiState(books = books, selectedIds = setOf("id-a", "id-b")))
+
+        composeRule.onNodeWithContentDescription("Delete selected").performClick()
+
+        // Match the bulleted form: the library list still renders behind the dialog, so a bare
+        // title matches two nodes and the assertion fails on ambiguity rather than absence.
+        composeRule.onNodeWithText("• Alpha Title", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("• Bravo Title", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun confirmationDialog_forOneBook_readsAsSingular() {
+        setContent(LibraryUiState(books = books, selectedIds = setOf("id-a")))
+
+        composeRule.onNodeWithContentDescription("Delete selected").performClick()
+
+        composeRule.onNodeWithText("Delete 1 book?").assertIsDisplayed()
     }
 }

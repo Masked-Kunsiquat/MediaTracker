@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bulk delete now removes everything you selected**, not just the books the current filter happens
+  to be showing. Selecting three books and then switching filters used to make the counter drop, as
+  though the selection were being lost, and deleting would then remove only part of it and leave the
+  rest selected but invisible.
+- **The delete confirmation now lists the books by name**, so you can see exactly what is about to
+  go — including any hidden behind the current filter.
+
 ## [0.10.0] - 2026-08-10
 
 Tidying up a library, and the plumbing to trust that it worked. Deleting books one at a time was

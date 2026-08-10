@@ -100,8 +100,8 @@ public class LibraryViewModel(
     }
 
     /**
-     * Deletes every currently selected book that is also visible under the active filter/search
-     * (see [LibraryUiState.visibleSelectedIds]), then leaves selection mode.
+     * Deletes every currently selected book, whether or not the active filter or search happens to
+     * be showing it, then leaves selection mode.
      *
      * Selection is cleared **after** the delete completes, not before: clearing first would leave a
      * failure with nothing selected and no way to retry without re-picking every book. [uiState]
@@ -109,7 +109,7 @@ public class LibraryViewModel(
      * [deleteBook]'s existing shape.
      */
     public fun deleteSelected() {
-        val ids = uiState.value.visibleSelectedIds.toList()
+        val ids = uiState.value.selectedIds.toList()
         if (ids.isEmpty()) {
             clearSelection()
             return

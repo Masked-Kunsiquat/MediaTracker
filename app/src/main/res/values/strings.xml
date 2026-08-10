@@ -267,7 +267,8 @@
         <item quantity="one">Delete %1$d book?</item>
         <item quantity="other">Delete %1$d books?</item>
     </plurals>
-    <string name="library_bulk_delete_message">This permanently deletes the selected books and their reading history. This cannot be undone.</string>
+    <string name="library_bulk_delete_message">This permanently deletes these books and their reading history, including any hidden by the current filter. This cannot be undone.</string>
+    <string name="library_bulk_delete_more">…and %1$d more</string>
     <string name="library_bulk_delete_confirm">Delete</string>
     <string name="library_bulk_delete_cancel">Cancel</string>
 </resources>

@@ -34,6 +34,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -173,7 +175,7 @@ fun LibraryScreen(
             // part-way through choosing books should not be one mis-tap from doing.
             if (uiState.isSelectionMode) {
                 SelectionTopBar(
-                    selectedCount = uiState.visibleSelectedIds.size,
+                    selectedCount = uiState.selectedIds.size,
                     onClose = onClearSelection,
                     onDelete = { showBulkDeleteConfirmation = true },
                 )
@@ -205,7 +207,7 @@ fun LibraryScreen(
     ) { innerPadding ->
         if (showBulkDeleteConfirmation) {
             BulkDeleteConfirmationDialog(
-                selectedCount = uiState.visibleSelectedIds.size,
+                titles = uiState.selectedBooks.map { it.mediaItem.title },
                 onConfirm = {
                     showBulkDeleteConfirmation = false
                     onDeleteSelected()
@@ -308,37 +310,59 @@ fun LibraryScreen(
 /**
  * The contextual app bar shown while a selection is active (ROADMAP Task 14 Phase B).
  *
- * The count reflects *visible* selected books, matching what a delete would actually act on -- see
- * [com.hub.media.ui.LibraryUiState.visibleSelectedIds]. Showing the raw selection size instead
- * would promise to delete more than the action delivers, which is a bad thing to be wrong about on
- * a destructive control.
+ * The count is the whole selection, not just the part the current filter happens to show. Scoping
+ * it to the visible subset made the number change as filters changed, which read as the selection
+ * being silently lost -- see [com.hub.media.ui.LibraryUiState.selectedBooks].
  */
 /**
- * Confirmation for a bulk delete (ROADMAP Task 14 Phase B), which asks for the same care the
- * single-book delete already does -- more, arguably, since the count is the only thing telling the
- * user how much is about to go.
+ * Confirmation for a bulk delete (ROADMAP Task 14 Phase B), naming the books it will remove.
  *
- * The count comes from the same visible-selection figure the bar shows and the delete acts on, so
- * the number in the question is the number of books that will actually disappear.
+ * Listing them is what makes deleting the *whole* selection safe rather than alarming. A filter can
+ * hide a selected book, so a count alone would ask the user to confirm removing things they cannot
+ * currently see; the titles put them back in front of you at the moment it matters. That is also
+ * why the list is not capped at some small number without saying so -- a silent truncation would
+ * recreate exactly the problem it exists to solve.
+ *
+ * Long selections stay usable by scrolling rather than by hiding: [MAX_LISTED_TITLES] are named and
+ * any remainder is stated explicitly as a count.
  */
 @Composable
 private fun BulkDeleteConfirmationDialog(
-    selectedCount: Int,
+    titles: List<String>,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                pluralStringResource(
-                    R.plurals.library_bulk_delete_title,
-                    selectedCount,
-                    selectedCount,
-                ),
-            )
+            Text(pluralStringResource(R.plurals.library_bulk_delete_title, titles.size, titles.size))
         },
-        text = { Text(stringResource(R.string.library_bulk_delete_message)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(stringResource(R.string.library_bulk_delete_message))
+                titles.take(MAX_LISTED_TITLES).forEach { title ->
+                    Text(
+                        text = "• $title",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (titles.size > MAX_LISTED_TITLES) {
+                    Text(
+                        text = stringResource(
+                            R.string.library_bulk_delete_more,
+                            titles.size - MAX_LISTED_TITLES,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(
@@ -354,6 +378,9 @@ private fun BulkDeleteConfirmationDialog(
         },
     )
 }
+
+/** How many titles the confirmation names before falling back to "and N more". */
+private const val MAX_LISTED_TITLES = 8
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -612,10 +612,20 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
       backfill re-fetches them. Recoverable, not data loss, and the same situation a CSV import onto
       a new device already produces — for which the Task 14 Phase A backfill is the documented
       remedy.
-    - **Selection survives filter and search changes, but a bulk action only touches what is
-      visible.** Clearing selection whenever a filter changed would discard work the moment someone
-      refined a search to reach the next book; acting on something the user cannot currently see
-      would delete it with no way for them to notice. Both directions are tested.
+    - **Selection survives filter and search changes, and a bulk action touches all of it.**
+      Reversed in `v0.10.1` after using the app. The original scoped actions to the *visible*
+      selection, reasoned as "never act on something the user cannot see" -- and in practice the
+      count moved as filters moved, which reads as the selection being silently lost, and the
+      delete then half-finished leaving the rest selected and invisible with nothing to explain it.
+      Selection is a property of the books, not of the current view.
+      - What replaces the safety argument is the **confirmation naming each book it will remove**,
+        so "something you cannot see" no longer applies -- it is listed in the dialog. Long
+        selections name the first eight and state the remainder as a count rather than truncating
+        silently, since a silent truncation would recreate the problem the listing exists to solve.
+      - Worth recording how this was found: nine instrumented tests covered the selection mechanics
+        and all passed, because they tested that the code did what it was written to do. The
+        problem was that what it was written to do was wrong, which only surfaced when a person
+        used it.
     - **Bulk reading-status change was not built.** It was floated here as the obvious companion and
       remains cheap now that selection exists, but bulk delete was the motivating case and shipping
       the destructive action with full test coverage was worth more than widening scope. Left in the

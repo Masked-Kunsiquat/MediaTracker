@@ -224,34 +224,48 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun deleteSelected_withAFilterHidingSomeSelection_deletesOnlyWhatIsVisible() = runTest {
-        // The dangerous case. Selection deliberately survives a filter change, so a user can refine
-        // a search to reach the next book they want -- but a bulk delete must never remove
-        // something they cannot currently see, because they have no way to notice it went.
+    fun deleteSelected_withAFilterHidingSomeSelection_stillDeletesTheWholeSelection() = runTest {
+        // Reversed from the original behaviour, which scoped the delete to the visible subset. That
+        // was reasoned as a safety measure and was worse in practice: the count moved as filters
+        // moved, reading as the selection being lost, and the delete then half-finished leaving the
+        // rest selected and invisible. Selection belongs to the books, not the current view; the
+        // confirmation naming each title is what keeps it honest.
         val visible = insertBook("Visible", status = ReadingStatus.READING)
         val hidden = insertBook("Hidden", status = ReadingStatus.FINISHED)
         viewModel.uiState.first { it.books.size == 2 }
         viewModel.toggleSelection(visible)
         viewModel.toggleSelection(hidden)
         viewModel.setStatusFilter(ReadingStatus.READING)
-        // Three state changes have to propagate before this holds (two toggles and the filter), so
-        // reading .value here was the race that failed CI.
-        val filtered = viewModel.uiState.first {
-            it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2
-        }
-        assertEquals(
-            setOf(visible),
-            filtered.visibleSelectedIds,
-            "the hidden book is still selected, just not actionable",
-        )
+        viewModel.uiState.first { it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2 }
 
         viewModel.deleteSelected()
 
-        val after = viewModel.uiState.first { it.books.size == 1 }
+        val after = viewModel.uiState.first { it.books.isEmpty() && !it.isSelectionMode }
         assertEquals(
-            listOf("Hidden"),
+            emptyList(),
             after.books.map { it.mediaItem.title },
-            "the book filtered out of view must survive",
+            "a book hidden by the filter is still selected, so it goes too",
+        )
+    }
+
+    @Test
+    fun selectedBooks_areUnaffectedByTheActiveFilter() = runTest {
+        // What the contextual bar counts and the confirmation lists. Scoping this to the filter is
+        // what produced the disappearing-count confusion.
+        val visible = insertBook("Visible", status = ReadingStatus.READING)
+        val hidden = insertBook("Hidden", status = ReadingStatus.FINISHED)
+        viewModel.uiState.first { it.books.size == 2 }
+        viewModel.toggleSelection(visible)
+        viewModel.toggleSelection(hidden)
+
+        viewModel.setStatusFilter(ReadingStatus.READING)
+
+        val state = viewModel.uiState.first { it.statusFilter == ReadingStatus.READING }
+        assertEquals(1, state.filteredBooks.size, "the filter still narrows what is *shown*")
+        assertEquals(
+            listOf("Hidden", "Visible"),
+            state.selectedBooks.map { it.mediaItem.title }.sorted(),
+            "but the selection itself is not narrowed by it",
         )
     }
 
