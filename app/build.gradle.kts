@@ -103,7 +103,7 @@ tasks.named("preBuild") {
  * the fixture is verified by `SampleLibraryCsvTest` against the real parser in one place rather
  * than drifting between two.
  */
-val copySampleDataToTestAssets by tasks.registering(Copy::class) {
+val copySampleDataToTestAssets by tasks.registering(Sync::class) {
     from(rootProject.file("docs/sample-data")) {
         include("*.csv")
     }

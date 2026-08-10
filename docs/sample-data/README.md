@@ -33,7 +33,7 @@ otherwise only run when something has gone wrong.
 
 ## Why these particular rows
 
-The eight books are chosen to cover the cases that break layouts and filters, not to be realistic:
+The twelve books are chosen to cover the cases that break layouts and filters, not to be realistic:
 
 - **Every reading status** (`TO_READ`, `READING`, `FINISHED`, `DNF`) so the status chips all have
   something to match, and so filtering can be seen to actually narrow.

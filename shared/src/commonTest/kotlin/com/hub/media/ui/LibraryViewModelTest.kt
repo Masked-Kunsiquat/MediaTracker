@@ -21,6 +21,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -296,7 +298,7 @@ class LibraryViewModelTest {
         viewModel.deleteSelected()
 
         val state = viewModel.uiState.first { it.deleteError != null }
-        assertEquals("Database unavailable", state.deleteError)
+        assertEquals("Database unavailable", state.deleteError?.message)
         assertEquals(setOf(id), state.selectedIds, "selection must survive so a retry is possible")
         assertEquals(1, state.books.size, "a failed delete must not remove anything")
     }
@@ -310,11 +312,51 @@ class LibraryViewModelTest {
         viewModel.deleteSelected()
         viewModel.uiState.first { it.deleteError != null }
 
-        viewModel.consumeDeleteError()
+        val shown = viewModel.uiState.value.deleteError!!
+        viewModel.consumeDeleteError(shown.id)
 
         assertNull(
             viewModel.uiState.first { it.deleteError == null }.deleteError,
             "an error already shown is not a state",
+        )
+    }
+
+    @Test
+    fun deleteSelected_failingTwiceWithTheSameMessage_producesTwoDistinctEvents() = runTest {
+        // The case the id exists for. A repeated retry against the same broken state yields an
+        // identical message, and keyed on text alone the UI would see no change and swallow the
+        // second failure -- leaving a delete that appears to have quietly succeeded.
+        val id = insertBook("Doomed")
+        useFailingDelete("Database unavailable")
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+
+        viewModel.deleteSelected()
+        val first = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+        viewModel.consumeDeleteError(first.id)
+        viewModel.uiState.first { it.deleteError == null }
+
+        viewModel.deleteSelected()
+        val second = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+
+        assertEquals(first.message, second.message, "the same failure produces the same text")
+        assertNotEquals(first.id, second.id, "but it must still be a distinct, showable event")
+    }
+
+    @Test
+    fun consumeDeleteError_withAStaleId_leavesANewerFailureIntact() = runTest {
+        val id = insertBook("Doomed")
+        useFailingDelete()
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+        viewModel.deleteSelected()
+        val current = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+
+        viewModel.consumeDeleteError(current.id - 1)
+
+        assertNotNull(
+            viewModel.uiState.value.deleteError,
+            "acknowledging an older event must not discard the one on screen",
         )
     }
 

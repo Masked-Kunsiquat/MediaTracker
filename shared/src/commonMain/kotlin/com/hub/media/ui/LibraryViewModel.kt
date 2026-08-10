@@ -42,7 +42,8 @@ public class LibraryViewModel(
     private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
     private val searchQuery = MutableStateFlow("")
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
-    private val deleteError = MutableStateFlow<String?>(null)
+    private val deleteError = MutableStateFlow<DeleteErrorEvent?>(null)
+    private var deleteErrorSeq = 0L
 
     public val uiState: StateFlow<LibraryUiState> = combine(
         bookRepository.observeAllBooksWithDetails(),
@@ -87,8 +88,10 @@ public class LibraryViewModel(
      * re-shown on the next recomposition. Reported as a one-shot event rather than durable state:
      * an error the user has already read is not a condition the library is still in.
      */
-    public fun consumeDeleteError() {
-        deleteError.value = null
+    public fun consumeDeleteError(id: Long) {
+        // Only clears the event actually shown. Without the id check, a failure arriving while the
+        // previous snackbar was still on screen would be discarded unseen.
+        if (deleteError.value?.id == id) deleteError.value = null
     }
 
     /** Leaves selection mode, discarding the selection. Backs the contextual bar's close action. */
@@ -117,7 +120,8 @@ public class LibraryViewModel(
             // before they could try again.
             when (val result = deleteBooksUseCase.execute(ids)) {
                 is Resource.Success -> clearSelection()
-                is Resource.Error -> deleteError.value = result.message
+                is Resource.Error ->
+                    deleteError.value = DeleteErrorEvent(++deleteErrorSeq, result.message)
                 else -> Unit
             }
         }

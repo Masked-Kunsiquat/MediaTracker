@@ -84,8 +84,11 @@ class SampleLibraryCsvTest {
         // A session whose media_id matches no book is skipped and reported as an orphan rather than
         // failing the import, so this would otherwise degrade silently: the data would look fine
         // and the sessions would simply never appear.
+        val sessions = parsedSessions()
+        assertTrue(sessions.isNotEmpty(), "no sessions means this would pass vacuously")
+
         val knownIds = parsedRows().map { it.mediaId }.toSet()
-        val orphans = parsedSessions().map { it.mediaId }.filterNot { it in knownIds }
+        val orphans = sessions.map { it.mediaId }.filterNot { it in knownIds }
 
         assertTrue(orphans.isEmpty(), "reading sessions reference unknown books: $orphans")
     }

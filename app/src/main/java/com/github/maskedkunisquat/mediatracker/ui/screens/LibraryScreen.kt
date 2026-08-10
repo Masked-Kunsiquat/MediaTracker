@@ -152,7 +152,7 @@ fun LibraryScreen(
     onToggleSelection: (String) -> Unit = {},
     onClearSelection: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
-    onDeleteErrorShown: () -> Unit = {},
+    onDeleteErrorShown: (Long) -> Unit = {},
 ) {
     var showBulkDeleteConfirmation by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -160,10 +160,10 @@ fun LibraryScreen(
     // A failed delete previously left the books present, the selection intact, and nothing on
     // screen -- which from the user's side is identical to the Delete button doing nothing. Shown
     // once and then acknowledged, so it reports an event rather than a state the screen sticks in.
-    LaunchedEffect(uiState.deleteError) {
-        val message = uiState.deleteError ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(message)
-        onDeleteErrorShown()
+    LaunchedEffect(uiState.deleteError?.id) {
+        val event = uiState.deleteError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(event.message)
+        onDeleteErrorShown(event.id)
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },

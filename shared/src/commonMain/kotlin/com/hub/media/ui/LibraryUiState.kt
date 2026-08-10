@@ -32,13 +32,23 @@ import com.hub.media.features.books.data.BookWithDetails
  *   side indistinguishable from the Delete button being ignored. Cleared once shown, so it reports
  *   an event rather than becoming a state the screen can get stuck in.
  */
+/**
+ * A delete failure, carried as an event rather than a bare message.
+ *
+ * [id] exists because two consecutive failures can produce an identical [message] -- a repeated
+ * retry against the same broken state is the likely case, not an exotic one. Keyed only on the
+ * text, the UI's `LaunchedEffect` would see no change and silently swallow the second, leaving the
+ * user with a delete that appears to have quietly succeeded.
+ */
+public data class DeleteErrorEvent(public val id: Long, public val message: String)
+
 public data class LibraryUiState(
     val books: List<BookWithDetails> = emptyList(),
     val statusFilter: ReadingStatus? = null,
     val searchQuery: String = "",
     val isEmpty: Boolean = books.isEmpty(),
     val selectedIds: Set<String> = emptySet(),
-    val deleteError: String? = null,
+    val deleteError: DeleteErrorEvent? = null,
 ) {
 
     /**

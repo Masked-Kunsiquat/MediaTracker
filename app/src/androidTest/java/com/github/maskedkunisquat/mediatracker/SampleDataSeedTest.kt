@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hub.media.core.util.Resource
 import com.hub.media.features.portability.domain.DuplicatePolicy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,8 +32,10 @@ import org.junit.runner.RunWith
  *
  * ```
  * ./gradlew :app:installDebug :app:installDebugAndroidTest
- * adb shell am instrument -w -e class com.github.maskedkunisquat.mediatracker.SampleDataSeedTest  *   com.github.maskedkunisquat.mediatracker.debug.test/androidx.test.runner.AndroidJUnitRunner
+ * adb shell am instrument -w -e class com.github.maskedkunisquat.mediatracker.SampleDataSeedTest com.github.maskedkunisquat.mediatracker.debug.test/androidx.test.runner.AndroidJUnitRunner
  * ```
+ *
+ * (one line -- the KDoc renders a leading asterisk on wrapped lines, which breaks a paste)
  *
  * [DuplicatePolicy.SKIP] makes that idempotent, so re-running tops the data up rather than
  * multiplying it.
@@ -70,18 +73,23 @@ class SampleDataSeedTest {
             else -> throw AssertionError("sample data failed to import: $result")
         }
 
-        val booksAfter = container.bookRepository.getAllBooksWithDetails().size
-        assertTrue(
-            "the library must hold the sample books afterwards; was $booksBefore, now $booksAfter, " +
-                "summary=$summary",
-            booksAfter >= 8,
-        )
         // Rejections are reported rather than fatal, so an import can "succeed" having skipped
-        // everything. Failing here is what keeps this a real check of the fixture on real hardware
-        // rather than a check that the method returned.
+        // every row. Unconditional: the previous `|| booksBefore > 0` meant a device that already
+        // held books would pass no matter how badly the fixture failed to import.
         assertTrue(
             "no sample row should be rejected on a real device: $summary",
-            summary.rejections.isEmpty() || booksBefore > 0,
+            summary.rejections.isEmpty(),
+        )
+
+        // Named records rather than a count, for the same reason: a count is satisfied by whatever
+        // happened to be on the device already.
+        val titles = container.bookRepository.getAllBooksWithDetails().map { it.mediaItem.title }
+        listOf("The Way of Kings", "Beowulf", "A Wizard of Earthsea").forEach { expected ->
+            assertTrue("fixture book missing after import: $expected (had $booksBefore before)", expected in titles)
+        }
+        assertTrue(
+            "the fixture's reading sessions must import too, not just the books",
+            container.readingSessionRepository.observeAllSessions().first().isNotEmpty(),
         )
     }
 }

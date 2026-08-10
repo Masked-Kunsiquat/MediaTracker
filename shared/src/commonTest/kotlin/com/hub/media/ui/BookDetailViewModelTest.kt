@@ -262,7 +262,7 @@ class BookDetailViewModelTest {
         viewModel.startReading()
         assertIs<ReadingTimerState.Running>(
             viewModel.timerState.value,
-            "a second resume while Running must no-op",
+            "startReading must put the timer into Running",
         )
 
         viewModel.stopReading()
@@ -925,6 +925,7 @@ class BookDetailViewModelTest {
             viewModel.timerState.value,
             "a second stop while Idle must no-op",
         )
+        runCurrent()
         assertEquals(
             pendingAfterFirstStop,
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession,
