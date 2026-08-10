@@ -148,6 +148,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   `uiState.first { <the condition you are about to assert> }`, or drain with `runCurrent()` when
   the action is a genuine no-op and there is no new state to wait for. Reading `.value` is only
   safe for the *initial* state, before anything asynchronous has happened.
+* **A test about concurrency must be able to *create* the concurrency.** The default test dispatcher runs a `launch` eagerly, so a coroutine can finish inside the call that started it — which means "call this twice before the first completes" is not something the test can guarantee. It passes locally, then fails on a runner where the timing differs, and the failure looks like a broken guard rather than a test that never exercised one. Install a `StandardTestDispatcher` for the window that must stay pending, so the work only *enqueues* until the scheduler is driven, then `runCurrent()`. Verify by removing the guard: if the test still passes, it was never testing it.
 * **A test that cannot fail is worse than no test.** Assert a positive control alongside the negative one — that the thing you expect to be present *is* present, not merely that the forbidden thing is absent. A test asserting "no log data in the export" passes trivially if the export was empty or never ran. This has bitten this project before (PR #16).
 ---
 
