@@ -28,6 +28,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -118,11 +119,12 @@ class BookDetailViewModelTest {
      * between rounds, yields real (non-virtual) time so work dispatched to a genuinely different
      * dispatcher (Room's own query/invalidation dispatching, entirely outside this test's virtual
      * scheduler) gets a chance to run and re-enqueue its continuation back onto the (test-driven)
-     * Main dispatcher. Bounded so an actual regression fails with a clear assertion below instead
-     * of hanging.
+     * Main dispatcher. Bounded, and on exhausting that bound it fails *here* with a message naming
+     * the timeout -- see the comment at the bottom of the loop for why returning silently instead
+     * was the bug that made three tests in this class intermittently red.
      */
     private suspend fun TestScope.runCurrentUntilOrTimeOut(
-        maxAttempts: Int = 200,
+        maxAttempts: Int = 1_000,
         condition: suspend () -> Boolean,
     ) {
         var attempts = 0
@@ -132,6 +134,23 @@ class BookDetailViewModelTest {
             withContext(Dispatchers.Default) { delay(5) }
             attempts++
         }
+        // Fails here rather than returning, which is what the first version did. Falling through
+        // silently meant a timeout surfaced as whichever assertion happened to come next -- so a
+        // machine too busy to propagate a Room invalidation in time produced "pendingSession must
+        // have moved on to a new session B", which describes neither the cause nor the location.
+        // These three tests were intermittently red for exactly that reason, and the message sent
+        // every reader looking at ViewModel state that was fine.
+        //
+        // The bound is also 5x what it was. 200 attempts is ~1 real second, which is ample on an
+        // idle developer machine and demonstrably not ample on a loaded CI runner -- the sibling
+        // helper in BackfillViewModelTest already documents 5 seconds as the generous-but-bounded
+        // figure, and this one being tighter was an accident rather than a decision. A test that is
+        // genuinely stuck still fails, just after a wait long enough to mean it.
+        fail(
+            "runCurrentUntilOrTimeOut gave up after $maxAttempts attempts (~${maxAttempts * 5}ms " +
+                "of real time) waiting for its condition. Either the awaited work never happened " +
+                "(a real regression) or this machine needed longer than the bound allows.",
+        )
     }
 
     private fun newViewModel(id: String = mediaId) =
