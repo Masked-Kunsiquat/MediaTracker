@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-10
+
+Fixes bulk delete acting on less than you selected. Selecting books and then changing the status
+filter made the counter drop, as though the selection were being lost, and deleting would then
+remove only the books the filter happened to be showing — leaving the rest selected and invisible
+with nothing to explain it. The confirmation now lists every book by name, so what is about to go is
+never a surprise.
+
 ### Fixed
 
 - **Bulk delete now removes everything you selected**, not just the books the current filter happens
