@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Select several books at once and delete them together (ROADMAP Task 14 Phase B)** — long-press
+  any book in the library to start selecting, then tap others to add them. A contextual bar shows
+  how many are selected and offers a delete, which asks for confirmation before removing anything.
+  - **Deleting books now reclaims their cover images.** Previously a deleted book left its
+    downloaded cover on disk forever; a bulk delete would have stranded that many files at once.
+    Covers are shared between books with identical artwork, so a cover is only removed once no
+    remaining book uses it — deleting one of two books that share a cover leaves the survivor's
+    intact.
+  - Selecting a book and then narrowing the list by status or search keeps the selection, but
+    deleting only ever affects books currently visible, so nothing disappears out of sight.
+
 - **Compose UI test harness** — the Android app module was previously verified only by whether it
   compiled, so a screen could render perfectly and do nothing. 18 instrumented tests now cover the
   log and changelog viewers, including an end-to-end navigation test that catches a control wired

@@ -582,7 +582,7 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
     "Start backfill" action on the import summary dialog once an import actually adds books.
   - Books with no ISBN are computed once at scan time, reported as skipped, and never enter the
     retry queue — manual cover entry (still in the backlog) remains their only route.
-- **Library multi-select and bulk actions (Phase B — not started).** Long-press a library card to enter selection mode,
+- **Library multi-select and bulk delete (Phase B — done).** Long-press a library card to enter selection mode,
   with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
   bulk reading-status change is the obvious companion and probably cheap once selection exists.
   Deletion of several books at once deserves the same confirmation care the single-book delete
@@ -598,6 +598,26 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
       orphaned-cover-files backlog item rather than growing it.
     - **Or explicitly defer** cleanup, and document the resulting disk growth as accepted — but
       then say it in the release notes, because "deleted books still cost storage" is surprising.
+    - **Decided: reference-aware removal.** `DeleteBooksUseCase` reads the candidate hashes, deletes
+      the rows, then counts remaining references per hash and removes only the files that reach
+      zero. **This retires the orphaned-cover-files backlog item.** Ordering is the load-bearing
+      part and is documented in that class: counting *after* the delete is what makes zero
+      trustworthy (counting before always includes the books being deleted, so nothing would ever
+      be cleaned up), and deleting rows before files means a crash between them leaks disk rather
+      than leaving surviving books pointing at artwork that is gone.
+    - **Known consequence, accepted:** restoring a `.sqlite` backup taken *before* a deletion brings
+      those books back pointing at files now removed, so their covers show as missing until a
+      backfill re-fetches them. Recoverable, not data loss, and the same situation a CSV import onto
+      a new device already produces — for which the Task 14 Phase A backfill is the documented
+      remedy.
+    - **Selection survives filter and search changes, but a bulk action only touches what is
+      visible.** Clearing selection whenever a filter changed would discard work the moment someone
+      refined a search to reach the next book; acting on something the user cannot currently see
+      would delete it with no way for them to notice. Both directions are tested.
+    - **Bulk reading-status change was not built.** It was floated here as the obvious companion and
+      remains cheap now that selection exists, but bulk delete was the motivating case and shipping
+      the destructive action with full test coverage was worth more than widening scope. Left in the
+      backlog rather than silently dropped.
   - Tests must cover **both** directions, since each failure mode is invisible in the other's test:
     a shared cover file that must **survive** deletion of one of its referencing books, and an
     unreferenced file that must actually **be removed**. A cleanup that only tests the second
@@ -871,6 +891,22 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
 
+- **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
+  viewer state and viewer rendering are all covered, but the composition that connects them is not:
+  `MediaTrackerApplication.onCreate`'s `AppLogger.configure(minLevel, FileLogSink(store)
+  .withPlatformLogger())` could be deleted and the entire suite — unit and instrumented — would
+  still pass while nothing was ever written to a log file. Same for `applyPersistedLogVerbosity`:
+  if that collector never ran, changing "Log detail" in Settings would silently do nothing. Both are
+  the wired-to-nothing shape this project has now shipped three times.
+  - **Eyeballing it does not substitute.** Adoption sites log on failure paths only, so an empty log
+    is the *expected* result when nothing has gone wrong — "no entries" cannot distinguish
+    working-and-quiet from completely unwired.
+  - **Cheapest test with real teeth**, and it needs no device: configure `AppLogger` exactly as the
+    Application does (a real `FileLogSink` over a temp directory), log through `AppLogger`, assert
+    the entry reaches the file. That covers the composition seam in `commonTest`. It still would not
+    cover the literal `onCreate` line, which would need an instrumented test that triggers a known
+    failure and reads the store back.
+
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
   and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive
@@ -891,9 +927,6 @@ numbered task rather than left to be rediscovered.
   across a calendar day (streaks/period bounds are unaffected), and `durationSeconds` is now
   preserved exactly, so nothing sums the drift. Fix if it ever matters by applying the same
   "was it touched?" tracking used for duration to the date/time pickers.
-- Orphaned cover files: deleting a book leaves its content-addressed cover on disk
-  (dedup means the file may be shared by other books, so deletion needs a reference check
-  or a periodic sweep).
 - **`releaseYear` now means different things depending on how a book was added.** ISBN ingestion
   reads Open Library's *edition* record, so it stores the printing's year (a 2026 anniversary
   edition of a 2016 novel stores 2026). The Goodreads importer (Task 8 Phase D) deliberately
