@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Debug builds now install as a separate app** ("MediaTracker Debug", its own icon). Previously a
+  development build and a real build were the same app to Android but signed differently, so
+  installing one over the other silently wiped everything — the database and every downloaded
+  cover. They now sit side by side with separate data. **If you already have a development build
+  installed, it stays as-is and the new one appears alongside it; the old one can be uninstalled.**
+
 ### Added
 
 - **Select several books at once and delete them together (ROADMAP Task 14 Phase B)** — long-press

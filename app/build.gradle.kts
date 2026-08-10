@@ -28,6 +28,28 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Debug and release are separate installed apps, not two builds of one.
+            //
+            // Android identifies an app by applicationId, so without this suffix the debug and
+            // release builds are the same app -- signed with different keys. Installing either over
+            // the other forces an uninstall first, which wipes the database and every downloaded
+            // cover. That is not hypothetical: it happened during development, taking a real
+            // library with it, and it would happen again the first time `installDebug` ran against
+            // a release build installed as the daily driver.
+            //
+            // With the suffix they coexist: separate applicationId, separate data directories,
+            // separate icons. `installDebug` and `connectedDebugAndroidTest` then physically cannot
+            // reach the release app's data whatever keys are involved -- which also makes running
+            // instrumented tests on a real phone safe, since those execute against the real
+            // installed app.
+            //
+            // Note this narrows the signing hazard rather than removing it: re-signing the
+            // *release* app with a different key still forces a wipe (ROADMAP Task 16).
+            applicationIdSuffix = ".debug"
+            // The label is overridden in src/debug/res rather than with resValue(), which would
+            // collide with the app_name already declared in src/main/res.
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

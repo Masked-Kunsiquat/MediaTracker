@@ -836,6 +836,21 @@ generates one:
 - **Losing the keystore is permanent.** No update can ever be shipped to an installed copy again,
   by anyone, ever. Back it up somewhere separate from this repository, and never commit it.
 
+### Debug builds install as a separate app (done)
+`applicationIdSuffix = ".debug"` on the debug build type, with a distinct label in
+`src/debug/res`. Recorded here because the reason is easy to lose and expensive to relearn.
+
+Android identifies an app by `applicationId`. Without the suffix, debug and release are the *same*
+app signed with *different* keys, so installing either over the other forces an uninstall — which
+wipes the database and every downloaded cover. **This happened during development and took a real
+library with it**, via a routine `installDebug` during instrumented-test work. The suffix makes them
+coexist as separate installs with separate data, which also means `connectedDebugAndroidTest` runs
+against the debug app and can never reach a release build's data.
+
+Note what it does *not* fix: re-signing the **release** app with a different key still forces a
+wipe. That is the keystore hazard below, unchanged. `DebugApplicationIdTest` guards the suffix,
+since losing it would silently restore the hazard and nothing else would notice.
+
 ### Build and publish (CI)
 GitHub Actions on tag push: build the release APK, sign it with a keystore held in repository
 secrets, attach it to the GitHub Release for that tag. `versionCode` already derives from
