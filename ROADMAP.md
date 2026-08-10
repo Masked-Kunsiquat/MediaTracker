@@ -965,23 +965,24 @@ numbered task rather than left to be rediscovered.
     cover the literal `onCreate` line, which would need an instrumented test that triggers a known
     failure and reads the store back.
 
-- **The read-state-too-early sweep is incomplete, deliberately.** Four tests across three classes
-  have now failed CI by asserting on ViewModel state before it propagated through
-  `combine` -> `stateIn`. `LibraryViewModelTest` and `BookDetailViewModelTest` were swept; the rule
-  is recorded in AGENTS.md §7. But the pattern still exists elsewhere -- roughly ninety `.value`
-  reads remain across `BackfillViewModelTest`, `ImportViewModelTest`, `LogViewerViewModelTest`,
-  `AddBookViewModelTest`, `ExportViewModelTest` and `ChangelogViewModelTest`, and not all of them
-  are safe.
-  - Most are probably fine: a read of the *initial* state, before anything asynchronous has
-    happened, has nothing to race. Only reads that follow an action are suspect.
-  - Rewriting all of them blind is worse than leaving them: it is a large diff over a currently
-    green suite, with no failing case to verify against. Do it when one fails, or as a deliberate
-    pass with the class run in a loop before and after.
-  - `EditBookViewModelTest.save_doubleTapBeforeCompletion_persistsOnlyOnce` is a related but
-    distinct case worth knowing about: it never read `.value`, it snapshotted the DAO the instant
-    `uiState` reported `Saved`, which the ViewModel's own local state flips before the observing
-    query has necessarily re-emitted. Its `ComparisonFailure` values were truncated out of the CI
-    log, so the fix is reasoned rather than confirmed; the assertion now carries the value found.
+- **Read-state-too-early audit: complete.** Four tests across three classes failed CI by asserting
+  on ViewModel state before it propagated. All are fixed, and every remaining `.value` read in
+  `shared/src/commonTest/.../ui/` has now been classified rather than left as an open question.
+  - **The criterion is not which class, it is how the ViewModel exposes state.** The race exists
+    only where `uiState` is built with `combine` -> `stateIn` over a Room `Flow`: there is a real
+    dispatch between the action and the emission. A ViewModel that exposes a `MutableStateFlow`
+    directly (`ImportViewModel`, `ExportViewModel`, `AddBookViewModel`, `ChangelogViewModel`) sets
+    `.value` synchronously, so reading it straight after an action is safe *by construction* — not
+    by timing luck, and not something a loaded CI runner can change.
+  - **Room-backed and disciplined:** `BackfillViewModelTest` (`waitUntilOrTimeOut`) and
+    `LogViewerViewModelTest` (`awaitLoaded`) already await before every post-action read.
+  - **`SettingsViewModelTest` and `StatsViewModelTest`** hold one `.value` read each, both of the
+    *initial* state with no preceding action — nothing to race. Worth noting these are Room-backed
+    and were not on the list of classes flagged for audit; the audit found the risk profile splits
+    by state-exposure shape, not by the classes anyone guessed at.
+  - AGENTS.md §7 states the blanket rule deliberately ("never read `.value` straight after an
+    action"), rather than this nuance. The nuance is for auditing existing tests; the blunt rule is
+    the right thing to follow when writing new ones.
 
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),

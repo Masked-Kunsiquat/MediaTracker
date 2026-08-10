@@ -31,6 +31,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -310,9 +311,10 @@ class LibraryViewModelTest {
         viewModel.uiState.first { it.books.isNotEmpty() }
         viewModel.toggleSelection(id)
         viewModel.deleteSelected()
-        viewModel.uiState.first { it.deleteError != null }
+        // Use the state `first` returned rather than re-reading .value: awaiting and then reading
+        // separately is the habit that causes the race even when it happens to be safe here.
+        val shown = viewModel.uiState.first { it.deleteError != null }.deleteError!!
 
-        val shown = viewModel.uiState.value.deleteError!!
         viewModel.consumeDeleteError(shown.id)
 
         assertNull(
@@ -354,6 +356,10 @@ class LibraryViewModelTest {
 
         viewModel.consumeDeleteError(current.id - 1)
 
+        // A no-op: the ids do not match, so nothing changes and there is no new state to await.
+        // Drain instead, or this asserts before the call has been processed at all and would pass
+        // whether the id check works or not.
+        runCurrent()
         assertNotNull(
             viewModel.uiState.value.deleteError,
             "acknowledging an older event must not discard the one on screen",
