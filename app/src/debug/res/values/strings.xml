@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Debug-variant overrides. Values here replace their src/main/res counterparts for debug builds
+   only, which is why app_name can be redefined without the duplicate-resource error that
+   resValue() in build.gradle.kts would cause.
+
+   The distinct label matters because the debug build now installs as a separate app
+   (applicationIdSuffix ".debug"): without it there would be two identically-named icons and no way
+   to tell which one holds real data.
+-->
+<resources>
+    <string name="app_name">MediaTracker Debug</string>
+</resources>
