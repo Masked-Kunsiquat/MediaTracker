@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-10
+
+Tidying up a library, and the plumbing to trust that it worked. Deleting books one at a time was
+the only option, which made cleaning up after an import a long afternoon; now you can long-press to
+select several and remove them together, behind a confirmation. Deleting also finally reclaims the
+cover images it downloaded, which it never used to — and does so carefully, since two books with
+the same artwork share one file on disk.
+
+The rest is groundwork you will mostly not see. The app module was previously verified only by
+whether it compiled, so a button could render perfectly and do nothing; there are now instrumented
+tests that catch exactly that. Development builds install as a separate app from real ones, which
+they should always have done — as the same app signed with different keys, installing either over
+the other silently wiped everything. No schema change: still v5.
+
 ### Changed
 
 - **Debug builds now install as a separate app** ("MediaTracker Debug", its own icon). Previously a
