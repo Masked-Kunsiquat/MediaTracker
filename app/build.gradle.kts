@@ -157,8 +157,14 @@ val seedDebugDevice by tasks.registering {
         println(text)
         // `am instrument` exits 0 even when the test fails, so the exit code proves nothing -- this
         // task would silently claim success on an empty library without checking the output itself.
-        check("OK (" in text && "FAILURES!!!" !in text) {
-            "Seeding failed -- the device was not populated. Output above."
+        //
+        // The count matters as well as the "OK": a filter matching no test at all reports
+        // `OK (0 tests)`, which passes a naive substring check. That is the likeliest failure here,
+        // since the class name is a string that a rename would silently invalidate -- and the task
+        // would then cheerfully announce a seeded device having run nothing.
+        val ranCount = Regex("""OK \((\d+) test""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        check(ranCount > 0 && "FAILURES!!!" !in text) {
+            "Seeding failed -- the device was not populated (tests run: $ranCount). Output above."
         }
         println("Seeded. Open \"MediaTracker Debug\" to see the sample library.")
     }

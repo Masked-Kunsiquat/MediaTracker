@@ -260,7 +260,12 @@ class LibraryViewModelTest {
 
         viewModel.setStatusFilter(ReadingStatus.READING)
 
-        val state = viewModel.uiState.first { it.statusFilter == ReadingStatus.READING }
+        // Both halves of the state, not just the filter: the toggles and the filter propagate
+        // separately, so the first emission carrying READING can still hold a stale selection --
+        // which would make the assertion below pass or fail on timing rather than on behaviour.
+        val state = viewModel.uiState.first {
+            it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2
+        }
         assertEquals(1, state.filteredBooks.size, "the filter still narrows what is *shown*")
         assertEquals(
             listOf("Hidden", "Visible"),
