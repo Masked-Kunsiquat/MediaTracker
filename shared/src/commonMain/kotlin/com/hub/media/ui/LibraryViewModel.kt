@@ -109,7 +109,13 @@ public class LibraryViewModel(
      * [deleteBook]'s existing shape.
      */
     public fun deleteSelected() {
-        val ids = uiState.value.selectedIds.toList()
+        // Reads the selection source of truth, NOT uiState.value. uiState is
+        // stateIn(WhileSubscribed), so its value is only recomputed while something is collecting
+        // it -- during the stop-timeout window after the screen stops collecting, a selection made
+        // here is simply not in it yet, `ids` comes back empty, and this returns having deleted
+        // nothing and reported nothing. A delete button that silently does nothing is the exact
+        // failure this class's KDoc already records shipping twice.
+        val ids = selectedIds.value.toList()
         if (ids.isEmpty()) {
             clearSelection()
             return
