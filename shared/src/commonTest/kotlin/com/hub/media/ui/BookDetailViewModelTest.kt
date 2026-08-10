@@ -260,7 +260,10 @@ class BookDetailViewModelTest {
         viewModel.uiState.first { it is BookDetailUiState.Ready }
 
         viewModel.startReading()
-        assertIs<ReadingTimerState.Running>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Running>(
+            viewModel.timerState.value,
+            "a second resume while Running must no-op",
+        )
 
         viewModel.stopReading()
         assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
@@ -860,27 +863,54 @@ class BookDetailViewModelTest {
         viewModel.pauseReading()
         viewModel.resumeReading()
         viewModel.stopReading()
-        assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Idle>(
+            viewModel.timerState.value,
+            "pause/resume/stop before any start must no-op, leaving the timer Idle",
+        )
 
         viewModel.startReading()
         viewModel.startReading() // second start while Running must no-op, not throw.
-        assertIs<ReadingTimerState.Running>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Running>(
+            viewModel.timerState.value,
+            "a second start while Running must no-op",
+        )
 
         viewModel.pauseReading()
         viewModel.pauseReading() // second pause while Paused must no-op, not throw.
-        assertIs<ReadingTimerState.Paused>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Paused>(
+            viewModel.timerState.value,
+            "a second pause while Paused must no-op",
+        )
 
         viewModel.resumeReading()
         viewModel.resumeReading() // second resume while Running must no-op, not throw.
-        assertIs<ReadingTimerState.Running>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Running>(
+            viewModel.timerState.value,
+            "a second resume while Running must no-op",
+        )
 
         viewModel.stopReading()
+        // Waited for, not read. The pending session reaches uiState through combine -> stateIn,
+        // which is not guaranteed to have propagated by the time stopReading() returns -- reading
+        // .value straight away made this the likely source of a message-less AssertionError that
+        // failed CI once and never reproduced locally. Same mistake as reading state immediately
+        // after an action anywhere else in this file; the surrounding tests already wait.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
         val pendingAfterFirstStop =
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
-        assertNotNull(pendingAfterFirstStop)
+        assertNotNull(pendingAfterFirstStop, "stopReading must leave a pending session to save")
 
         viewModel.stopReading() // second stop while Idle must no-op, not throw or overwrite pending.
-        assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
-        assertEquals(pendingAfterFirstStop, (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession)
+        assertIs<ReadingTimerState.Idle>(
+            viewModel.timerState.value,
+            "a second stop while Idle must no-op",
+        )
+        assertEquals(
+            pendingAfterFirstStop,
+            (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession,
+            "a second stop must not overwrite the pending session the first one produced",
+        )
     }
 }

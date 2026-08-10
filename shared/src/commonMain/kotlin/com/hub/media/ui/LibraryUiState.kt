@@ -27,6 +27,10 @@ import com.hub.media.features.books.data.BookWithDetails
  *   [BookWithDetails] objects deliberately: the underlying list is reactive, so a selected book can
  *   be re-emitted (an edit elsewhere) or vanish (deleted on another screen) while selection is
  *   active, and an id survives both where a captured object would go stale.
+ * @property deleteError Message from the most recent failed bulk delete, or `null`. Without this a
+ *   failure left the books present, the selection intact, and nothing on screen -- from the user's
+ *   side indistinguishable from the Delete button being ignored. Cleared once shown, so it reports
+ *   an event rather than becoming a state the screen can get stuck in.
  */
 public data class LibraryUiState(
     val books: List<BookWithDetails> = emptyList(),
@@ -34,6 +38,7 @@ public data class LibraryUiState(
     val searchQuery: String = "",
     val isEmpty: Boolean = books.isEmpty(),
     val selectedIds: Set<String> = emptySet(),
+    val deleteError: String? = null,
 ) {
 
     /**

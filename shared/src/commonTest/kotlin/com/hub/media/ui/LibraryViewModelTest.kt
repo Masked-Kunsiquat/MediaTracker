@@ -13,12 +13,15 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.cleanupTestTempDir
 import com.hub.media.core.storage.createTestTempDir
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.domain.BulkDeleteUseCase
+import com.hub.media.features.books.domain.DeleteBooksSummary
 import com.hub.media.features.books.domain.DeleteBooksUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
@@ -136,6 +139,22 @@ class LibraryViewModelTest {
     }
 
     /**
+     * Bulk delete that fails on demand. The real use case cannot be made to fail from a test --
+     * closing the database yields CancellationException, which it rethrows by design -- so the
+     * error surface would otherwise be untestable. Mirrors this codebase's existing hand-rolled
+     * fakes (FakeExportDataUseCase and friends); AGENTS.md section 5 rules out a mocking library.
+     */
+    private class FailingBulkDelete(private val message: String) : BulkDeleteUseCase {
+        override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> =
+            Resource.Error(message)
+    }
+
+    /** Rebuilds the ViewModel with a delete that always fails, tracked for teardown like the rest. */
+    private fun useFailingDelete(message: String = "Database unavailable") {
+        viewModel = viewModels.track(LibraryViewModel(repository, FailingBulkDelete(message)))
+    }
+
+    /**
      * Adds a book through the repository (so it goes through the same path production does) and
      * returns its media id, optionally setting a reading status for the filter tests.
      */
@@ -250,6 +269,38 @@ class LibraryViewModelTest {
         viewModel.deleteSelected()
 
         assertEquals(1, viewModel.uiState.value.books.size, "nothing selected, nothing deleted")
+    }
+
+
+    @Test
+    fun deleteSelected_whenTheDeleteFails_reportsAnErrorAndKeepsTheSelection() = runTest {
+        // Closing the database makes the delete fail. Without a reported error the books stay, the
+        // selection stays, and nothing appears -- indistinguishable from the button being ignored.
+        val id = insertBook("Doomed")
+        useFailingDelete("Database unavailable")
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+
+        viewModel.deleteSelected()
+
+        val state = viewModel.uiState.first { it.deleteError != null }
+        assertEquals("Database unavailable", state.deleteError)
+        assertEquals(setOf(id), state.selectedIds, "selection must survive so a retry is possible")
+        assertEquals(1, state.books.size, "a failed delete must not remove anything")
+    }
+
+    @Test
+    fun consumeDeleteError_clearsIt_soTheSameFailureIsNotShownTwice() = runTest {
+        val id = insertBook("Doomed")
+        useFailingDelete()
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+        viewModel.deleteSelected()
+        viewModel.uiState.first { it.deleteError != null }
+
+        viewModel.consumeDeleteError()
+
+        assertNull(viewModel.uiState.value.deleteError, "an error already shown is not a state")
     }
 
 }

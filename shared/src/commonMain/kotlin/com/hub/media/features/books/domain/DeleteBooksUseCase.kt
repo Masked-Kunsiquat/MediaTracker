@@ -27,6 +27,23 @@ public data class DeleteBooksSummary(
 )
 
 /**
+ * Abstraction over bulk delete so [com.hub.media.ui.LibraryViewModel] can depend on a narrow
+ * contract instead of the concrete [DeleteBooksUseCase] -- the same reason
+ * [com.hub.media.features.portability.domain.ExportUseCase] exists (AGENTS.md section 5: no mocking
+ * library, so `commonTest` hand-rolls fakes).
+ *
+ * Specifically this is what makes the *failure* path testable. The only way to provoke a real
+ * database failure from a test is to close the database, and Room answers a closed database with
+ * `CancellationException`, which this use case deliberately rethrows rather than converting to
+ * [Resource.Error]. So without a fake there is no way to exercise "the delete failed" at all, and
+ * the error surface it drives would ship unverified.
+ */
+public interface BulkDeleteUseCase {
+    /** See [DeleteBooksUseCase.execute]. */
+    public suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary>
+}
+
+/**
  * Deletes one or more books and cleans up any cover files that become unreferenced (ROADMAP Task
  * 14 Phase B).
  *
@@ -84,7 +101,7 @@ public class DeleteBooksUseCase(
     private val database: AppDatabase,
     private val imageStorage: LocalImageStorageManager,
     private val logger: Logger = AppLogger,
-) {
+) : BulkDeleteUseCase {
 
     /**
      * Deletes the books identified by [ids] and removes any cover file left unreferenced.
@@ -97,7 +114,7 @@ public class DeleteBooksUseCase(
      * books are gone) holds either way, and turning "already deleted" into an error would surface a
      * scary message for an outcome the user wanted.
      */
-    public suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> {
+    public override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> {
         if (ids.isEmpty()) return Resource.Success(DeleteBooksSummary(0, 0, 0))
         return try {
 
