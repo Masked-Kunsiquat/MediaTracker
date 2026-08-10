@@ -20,6 +20,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 
@@ -150,6 +152,18 @@ class EditBookViewModelTest {
         insertBook()
         val viewModel = newViewModel()
         viewModel.uiState.first { it is EditBookUiState.Ready }
+
+        // Main becomes a StandardTestDispatcher for the two save calls, so `launch` only *enqueues*
+        // and the first save cannot finish before the second is made. Under the default eager
+        // dispatcher it sometimes did: the first coroutine ran to completion inside the first
+        // save() call, clearing saveInFlight, so the second save legitimately proceeded and won.
+        // That made this test's premise -- "a second tap while the first is still in flight" --
+        // something it could not actually guarantee, and it failed on CI twice for that reason
+        // while passing locally.
+        //
+        // Same technique, and the same reason, as
+        // BookDetailViewModelTest.saveSession_staleCompletionDoesNotClobberNewerPendingSession.
+        viewModels.installMain(StandardTestDispatcher(testScheduler))
 
         viewModel.save(
             title = "Corrected Title",
@@ -303,6 +317,8 @@ class EditBookViewModelTest {
             trackingMode = TrackingMode.PAGES,
         )
 
+        // Now let the enqueued save actually run.
+        runCurrent()
         viewModel.uiState.first { it is EditBookUiState.Saved }
 
         // Awaited through the reactive path the UI itself reads, rather than snapshotting the DAO

@@ -132,7 +132,13 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   - **A route actually being wired** — start at the real `MainActivity` and tap through (`SettingsNavigationTest`). Only this can prove a route hands a screen a real callback rather than a stub, which is the failure that has shipped here more than once. Slow, so keep it to smoke tests.
   - **A flow needing real data** — seed it in `@Before` from `docs/sample-data` (`SampleDataSeedTest` is the template: read the fixture from test assets, import through `ImportDataUseCase`, which takes CSV strings and so needs no file picker).
 * **A test must never assume the device already has data.** `connectedDebugAndroidTest` **uninstalls the app when it finishes**, so nothing survives between runs — seeding a device by hand and then writing tests against it produces a suite that passes only on your machine. Tests that need data seed themselves.
-* **To put sample data on a device for manual poking**, install the APKs and drive the seed test directly, which skips Gradle's teardown — see `docs/sample-data/README.md` for the commands.
+* **To put sample data on a device for manual poking:**
+
+  ```bash
+  ./gradlew :app:seedDebugDevice
+  ```
+
+  Installs the debug app and its test APK, then seeds the sample library. Run it **after** `connectedDebugAndroidTest`, which leaves you with no app — the point at which you most want one, to check by hand what the tests just claimed. Idempotent (the import uses `SKIP`), so re-running tops the library back up rather than duplicating it.
 * **Never read `uiState.value` straight after an action in a ViewModel test.** State reaches
   `uiState` through `combine` -> `stateIn`, which needs a dispatch, so `.value` can still hold the
   previous state when the assertion runs. It usually passes on an idle developer machine and fails
@@ -142,6 +148,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   `uiState.first { <the condition you are about to assert> }`, or drain with `runCurrent()` when
   the action is a genuine no-op and there is no new state to wait for. Reading `.value` is only
   safe for the *initial* state, before anything asynchronous has happened.
+* **A test about concurrency must be able to *create* the concurrency.** The default test dispatcher runs a `launch` eagerly, so a coroutine can finish inside the call that started it — which means "call this twice before the first completes" is not something the test can guarantee. It passes locally, then fails on a runner where the timing differs, and the failure looks like a broken guard rather than a test that never exercised one. Install a `StandardTestDispatcher` for the window that must stay pending, so the work only *enqueues* until the scheduler is driven, then `runCurrent()`. Verify by removing the guard: if the test still passes, it was never testing it.
 * **A test that cannot fail is worse than no test.** Assert a positive control alongside the negative one — that the thing you expect to be present *is* present, not merely that the forbidden thing is absent. A test asserting "no log data in the export" passes trivially if the export was empty or never ran. This has bitten this project before (PR #16).
 ---
 

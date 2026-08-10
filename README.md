@@ -44,6 +44,13 @@ Compose screens have instrumented tests, which need a connected device:
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
+That run **uninstalls the app when it finishes**, so to get a working debug build back with sample
+data in it:
+
+```bash
+./gradlew :app:seedDebugDevice
+```
+
 **Not `./gradlew test`** — that omits `:shared:jvmTest`, which is the authoritative run for the
 data layer. Every Room-touching test is excluded from the Android unit-test variants, so
 `./gradlew test` passes while skipping them entirely. See AGENTS.md §7 and the comment block in

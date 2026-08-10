@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.github.maskedkunisquat.mediatracker.BuildConfig
 import com.github.maskedkunisquat.mediatracker.MainActivity
 import org.junit.Rule
 import org.junit.Test
@@ -73,6 +74,10 @@ class SettingsNavigationTest {
 
         // "What's new" is both the Settings row label and the destination's title, so this asserts
         // on content only the destination has: the running version's own changelog section.
-        composeRule.onNodeWithText("0.9.0", substring = true).assertIsDisplayed()
+        //
+        // Read from BuildConfig rather than written literally. Hardcoding "0.9.0" here meant this
+        // test broke the moment v0.10.0 was tagged -- a release should not require editing a test
+        // that is not about the release.
+        composeRule.onNodeWithText(BuildConfig.VERSION_NAME, substring = true).assertIsDisplayed()
     }
 }

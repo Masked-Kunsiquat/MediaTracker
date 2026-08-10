@@ -60,18 +60,22 @@ public data class LibraryUiState(
     public val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
 
     /**
-     * [selectedIds] narrowed to books actually present in [filteredBooks].
+     * The books [selectedIds] refers to, in library order, regardless of the active filter or
+     * search.
      *
-     * Selection is deliberately *not* cleared when a filter or search changes -- doing so would
-     * silently discard work the moment someone refined a search to reach the next book they wanted.
-     * But a bulk action must never act on something the user cannot currently see, so this is what
-     * the action operates on, and what the count in the contextual bar reflects.
+     * Selection is a property of the books, not of the current view: hiding a selected book behind
+     * a filter does not unselect it, and a bulk action operates on everything selected. An earlier
+     * version scoped actions to only the *visible* selection, which was reasoned as a safety
+     * measure -- never act on something the user cannot see -- and turned out to be worse in
+     * practice. The count changed as filters changed, which read as the selection being silently
+     * lost, and a delete then did a partial job leaving the rest selected and invisible with
+     * nothing to explain it. Found by using the app, not by any test.
+     *
+     * What replaces that safety is the confirmation naming the books by title, so "something you
+     * cannot see" no longer applies -- it is listed in the dialog.
      */
-    public val visibleSelectedIds: Set<String>
-        get() {
-            val visible = filteredBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
-            return selectedIds intersect visible
-        }
+    public val selectedBooks: List<BookWithDetails>
+        get() = books.filter { it.mediaItem.id in selectedIds }
 
     /**
      * [books] narrowed by [statusFilter] and [searchQuery] **together (AND/intersection, not
