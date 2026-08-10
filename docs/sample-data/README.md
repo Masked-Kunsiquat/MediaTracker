@@ -9,13 +9,17 @@ Task 16).
 **The fast way — no file picker:**
 
 ```bash
-./gradlew :app:installDebug :app:installDebugAndroidTest
-adb shell am instrument -w -e class com.github.maskedkunisquat.mediatracker.SampleDataSeedTest   com.github.maskedkunisquat.mediatracker.debug.test/androidx.test.runner.AndroidJUnitRunner
+./gradlew :app:seedDebugDevice
 ```
 
-`ImportDataUseCase` takes CSV *strings*, so `SampleDataSeedTest` reads these fixtures from the test
-APK's assets and imports them directly. Re-running is safe — the import uses `SKIP`, so it tops the
-data up rather than duplicating it.
+That installs the debug app and its test APK, then runs `SampleDataSeedTest` directly against them.
+`ImportDataUseCase` takes CSV *strings*, so the fixtures are read from the test APK's assets and
+imported without any file picker. Re-running is safe — the import uses `SKIP`, so it tops the data
+up rather than duplicating it.
+
+The task inspects the instrumentation output rather than trusting the exit code: `am instrument`
+reports success even when the test inside it fails, so a silent no-op would otherwise look exactly
+like a seeded device.
 
 **Do not use `./gradlew :app:connectedDebugAndroidTest` for this.** It runs the same test but
 **uninstalls the app afterwards**, taking the imported data with it. Verified directly: the package

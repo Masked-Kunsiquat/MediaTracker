@@ -350,10 +350,15 @@ class LibraryViewModelTest {
         viewModel.deleteSelected()
         val first = viewModel.uiState.first { it.deleteError != null }.deleteError!!
         viewModel.consumeDeleteError(first.id)
-        viewModel.uiState.first { it.deleteError == null }
 
         viewModel.deleteSelected()
-        val second = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+        // Awaits an event with a *different* id rather than awaiting null in between and then any
+        // non-null. Each `first` subscribes and unsubscribes from a WhileSubscribed flow, and this
+        // test had four such cycles -- one of them failed to complete on CI (UncompletedCoroutines-
+        // Error). Fewer awaits, and a condition that cannot be satisfied by the stale event, is
+        // both more robust and a sharper assertion.
+        val second = viewModel.uiState
+            .first { it.deleteError != null && it.deleteError?.id != first.id }.deleteError!!
 
         assertEquals(first.message, second.message, "the same failure produces the same text")
         assertNotEquals(first.id, second.id, "but it must still be a distinct, showable event")

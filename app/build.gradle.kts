@@ -1,3 +1,6 @@
+import java.io.ByteArrayOutputStream
+import org.gradle.kotlin.dsl.support.serviceOf
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -112,6 +115,53 @@ val copySampleDataToTestAssets by tasks.registering(Sync::class) {
 
 tasks.matching { it.name == "preDebugAndroidTestBuild" }.configureEach {
     dependsOn(copySampleDataToTestAssets)
+}
+
+/**
+ * Installs the debug app and its test APK, then seeds the device with the sample library.
+ *
+ * Exists because `connectedDebugAndroidTest` **uninstalls the app when it finishes**, so every run
+ * of the instrumented suite leaves you with no app to look at -- which is precisely when you most
+ * want one, to check by hand whatever the tests just claimed. Driving the seed test directly
+ * against already-installed APKs skips Gradle's teardown; this wraps the two commands that does.
+ *
+ * Idempotent: the import uses SKIP, so re-running tops the library back up rather than duplicating
+ * it.
+ */
+val seedDebugDevice by tasks.registering {
+    group = "install"
+    description = "Installs the debug app and seeds it with docs/sample-data (run after connectedDebugAndroidTest)."
+    dependsOn("installDebug", "installDebugAndroidTest")
+
+    val adbPath = android.sdkDirectory.resolve(
+        if (System.getProperty("os.name").startsWith("Windows")) "platform-tools/adb.exe"
+        else "platform-tools/adb",
+    ).absolutePath
+    // Derived rather than written out, so renaming the applicationId or changing the debug suffix
+    // cannot leave this pointing at a package that no longer exists.
+    val testPackage = "${android.defaultConfig.applicationId}.debug.test"
+    val execOps = project.serviceOf<org.gradle.process.ExecOperations>()
+
+    doLast {
+        val output = ByteArrayOutputStream()
+        execOps.exec {
+            commandLine(
+                adbPath, "shell", "am", "instrument", "-w",
+                "-e", "class", "com.github.maskedkunisquat.mediatracker.SampleDataSeedTest",
+                "$testPackage/androidx.test.runner.AndroidJUnitRunner",
+            )
+            standardOutput = output
+            errorOutput = output
+        }
+        val text = output.toString()
+        println(text)
+        // `am instrument` exits 0 even when the test fails, so the exit code proves nothing -- this
+        // task would silently claim success on an empty library without checking the output itself.
+        check("OK (" in text && "FAILURES!!!" !in text) {
+            "Seeding failed -- the device was not populated. Output above."
+        }
+        println("Seeded. Open \"MediaTracker Debug\" to see the sample library.")
+    }
 }
 
 kotlin {

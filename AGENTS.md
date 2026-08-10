@@ -132,7 +132,13 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   - **A route actually being wired** — start at the real `MainActivity` and tap through (`SettingsNavigationTest`). Only this can prove a route hands a screen a real callback rather than a stub, which is the failure that has shipped here more than once. Slow, so keep it to smoke tests.
   - **A flow needing real data** — seed it in `@Before` from `docs/sample-data` (`SampleDataSeedTest` is the template: read the fixture from test assets, import through `ImportDataUseCase`, which takes CSV strings and so needs no file picker).
 * **A test must never assume the device already has data.** `connectedDebugAndroidTest` **uninstalls the app when it finishes**, so nothing survives between runs — seeding a device by hand and then writing tests against it produces a suite that passes only on your machine. Tests that need data seed themselves.
-* **To put sample data on a device for manual poking**, install the APKs and drive the seed test directly, which skips Gradle's teardown — see `docs/sample-data/README.md` for the commands.
+* **To put sample data on a device for manual poking:**
+
+  ```bash
+  ./gradlew :app:seedDebugDevice
+  ```
+
+  Installs the debug app and its test APK, then seeds the sample library. Run it **after** `connectedDebugAndroidTest`, which leaves you with no app — the point at which you most want one, to check by hand what the tests just claimed. Idempotent (the import uses `SKIP`), so re-running tops the library back up rather than duplicating it.
 * **Never read `uiState.value` straight after an action in a ViewModel test.** State reaches
   `uiState` through `combine` -> `stateIn`, which needs a dispatch, so `.value` can still hold the
   previous state when the assertion runs. It usually passes on an idle developer machine and fails
