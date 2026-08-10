@@ -23,6 +23,10 @@ never a surprise.
   rest selected but invisible.
 - **The delete confirmation now lists the books by name**, so you can see exactly what is about to
   go — including any hidden behind the current filter.
+- **Deleting a selection no longer does nothing** in the moment after the library screen has been
+  away — coming back from another app, or rotating the phone. The delete read a snapshot of the
+  selection that stops being kept up to date while nothing is watching it, so it could find nothing
+  selected and quietly return, with no books removed and no message.
 
 ## [0.10.0] - 2026-08-10
 
