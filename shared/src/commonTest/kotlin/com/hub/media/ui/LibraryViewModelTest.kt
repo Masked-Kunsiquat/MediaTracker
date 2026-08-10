@@ -308,15 +308,21 @@ class LibraryViewModelTest {
 
     @Test
     fun deleteSelected_withNothingSelected_isANoOp() = runTest {
+        // Asserts the delete is never invoked, rather than that the book survives. The previous
+        // form awaited `books.size == 1` when the state already held one book, so it was satisfied
+        // by the stale replay and returned before the delete could have propagated -- it would have
+        // passed just as happily if the guard were gone and the book deleted.
+        val recorder = useRecordingDelete()
         insertBook("Untouched")
         viewModel.uiState.first { it.books.isNotEmpty() }
 
         viewModel.deleteSelected()
+        runCurrent()
 
         assertEquals(
-            1,
-            viewModel.uiState.first { it.books.size == 1 }.books.size,
-            "nothing selected, nothing deleted",
+            emptyList(),
+            recorder.calls,
+            "nothing selected must not reach the delete at all",
         )
     }
 
