@@ -993,6 +993,19 @@ numbered task rather than left to be rediscovered.
   - AGENTS.md §7 states the blanket rule deliberately ("never read `.value` straight after an
     action"), rather than this nuance. The nuance is for auditing existing tests; the blunt rule is
     the right thing to follow when writing new ones.
+  - **One failure in this family was not in this family at all**, and it took three attempts to see
+    that. `EditBookViewModelTest.save_doubleTapBeforeCompletion_persistsOnlyOnce` was not reading
+    state too early — it could not *create* the condition it tested. Under the eager default
+    dispatcher the first save sometimes ran to completion inside the call that started it, clearing
+    `saveInFlight`, so the second save legitimately proceeded and won. The guard was correct
+    throughout; on those runs the test never exercised it. Fixed with a `StandardTestDispatcher`
+    across the two calls, and verified by removing the guard — the test now fails, which it did not
+    reliably do before.
+  - **The lesson that generalises is about diagnosis, not dispatchers.** Two of the three attempts
+    were reasoned from a CI console log that truncates the comparison values. Downloading the
+    workflow's test-report artifact (`gh run download <run> -n test-reports`) gave
+    `expected:<[First] Call Title> but was:<[Second] Call Title>`, which ended the guessing in
+    seconds. Reach for the artifact before theorising.
 
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
