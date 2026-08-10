@@ -209,6 +209,12 @@ class LogFileStoreTest {
         // directly before any explicit flush() is ever called.
         secondBatch.forEach { store.append(LogLevel.INFO, "T", it) }
 
+        // This assertion caught a real defect, but only on CI and only on the Android variant --
+        // reverting the fix does not reliably fail it locally, because a local flush finishes
+        // before the second batch is appended and the gate is free again. Under load the first
+        // flush is still in flight, those appends fail tryLock, and with no further appends nothing
+        // re-triggers the check: the batch then sits in memory until the periodic flush, which this
+        // store has disabled. Treat a failure here as a genuine dropped-crossing bug, not as flake.
         val secondBatchLanded = pollUntilOrTimeOut { entriesOnDiskNow().size >= threshold * 2 }
         assertTrue(
             secondBatchLanded,

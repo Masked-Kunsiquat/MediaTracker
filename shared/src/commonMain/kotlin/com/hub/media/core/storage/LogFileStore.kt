@@ -181,7 +181,15 @@ public class LogFileStore(
             if (buffer.size() >= flushThreshold && autoFlushGate.tryLock()) {
                 backgroundScope.launch {
                     try {
-                        flush()
+                        // Drains until the buffer is back under the threshold, rather than flushing
+                        // once. A crossing that happens *while* this flush is in flight is
+                        // otherwise dropped: those appends fail tryLock above, and once appends
+                        // stop nothing re-triggers the check -- so the batch sits in memory until
+                        // the periodic flush, or forever if that loop is disabled. The gate is what
+                        // introduced that, so re-checking before releasing it is what removes it.
+                        do {
+                            flush()
+                        } while (buffer.size() >= flushThreshold)
                     } finally {
                         autoFlushGate.unlock()
                     }
