@@ -965,6 +965,27 @@ numbered task rather than left to be rediscovered.
     cover the literal `onCreate` line, which would need an instrumented test that triggers a known
     failure and reads the store back.
 
+- **A failed bulk delete tells the user nothing.** `DeleteBooksUseCase` returns `Resource`, and
+  `LibraryViewModel.deleteSelected` correctly keeps the selection when it fails so a retry is
+  possible — but nothing surfaces. The books stay, the selection stays, and no message explains why.
+  From the user's side that is indistinguishable from tapping Delete and having it ignored, which is
+  the same "control does nothing" shape this project keeps running into. Needs an error field on
+  `LibraryUiState` and a `SnackbarHost` on `LibraryScreen` (which currently has none). Deferred
+  during Task 14 Phase B review to keep that change minimal, and then not written down at the time
+  — recorded here late.
+
+- **`BookDetailViewModelTest.doubleFireGuards_neverThrow` is flaky.** Failed a CI run on a PR that
+  touched only YAML and Markdown, and does not reproduce locally across repeated runs. It is in the
+  class whose helper was already fixed for exactly this (`runCurrentUntilOrTimeOut` returning
+  silently on a too-tight bound), but this test uses `uiState.first { ... }` directly rather than
+  that helper, so the fix did not reach it.
+  - **Do not guess at it.** The lesson from the earlier fix applies: a timing change can pass by
+    perturbing the schedule rather than removing the race, which looks solved and is not. Get a
+    baseline failure rate first — the class ran clean 25 times locally, so reproducing it may need
+    artificial load — and require that same loop clean afterwards.
+  - Until then, a red CI naming only this test is *probably* the flake, but **verify rather than
+    assume**: waving through a red run is how a real regression ships.
+
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
   and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive
