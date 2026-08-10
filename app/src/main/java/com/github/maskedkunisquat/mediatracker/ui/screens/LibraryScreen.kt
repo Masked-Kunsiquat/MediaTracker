@@ -1,5 +1,10 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,6 +94,7 @@ fun LibraryScreenRoute(
         onNavigateToSettings = onNavigateToSettings,
         onStatusFilterChange = viewModel::setStatusFilter,
         onSearchQueryChange = viewModel::setSearchQuery,
+        onToggleSelection = viewModel::toggleSelection,
     )
 }
 
@@ -127,6 +133,7 @@ fun LibraryScreen(
     onNavigateToSettings: () -> Unit,
     onStatusFilterChange: (ReadingStatus?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onToggleSelection: (String) -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -222,6 +229,9 @@ fun LibraryScreen(
                                     book = book,
                                     coverStorageDir = coverStorageDir,
                                     onClick = { onBookClick(book.mediaItem.id) },
+                                    selectionMode = uiState.isSelectionMode,
+                                    selected = book.mediaItem.id in uiState.selectedIds,
+                                    onToggleSelection = { onToggleSelection(book.mediaItem.id) },
                                 )
                             }
                         }
@@ -313,20 +323,38 @@ private fun StatusFilterRow(
 /**
  * A card displaying a single book.
  * Shows the cover thumbnail (left), title (top), and release year (bottom).
- * Tapping anywhere on the row calls [onClick] to open the book detail screen (where deletion
- * now lives -- Task4 Phase E).
+ * Tapping anywhere on the row calls [onClick] to open the book detail screen (where single-book
+ * deletion lives -- Task4 Phase E).
+ *
+ * ### Selection (ROADMAP Task 14 Phase B)
+ * Long-press enters selection mode. While [selectionMode] is active a plain tap toggles selection
+ * instead of navigating -- deliberately, because a mode where tapping still opened a book would
+ * make selecting several in a row an exercise in precision, and because navigating away mid
+ * selection is almost never what was meant. Long-press keeps working while selecting, so the
+ * gesture that started the mode is not suddenly inert.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun BookCard(
     book: BookWithDetails,
     coverStorageDir: String,
     onClick: () -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
 ) {
     val mediaItem = book.mediaItem
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+            )
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelection() else onClick() },
+                onLongClick = onToggleSelection,
+            )
+            .semantics { if (selected) this.selected = true }
             .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
