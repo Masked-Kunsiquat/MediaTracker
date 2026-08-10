@@ -979,12 +979,24 @@ numbered task rather than left to be rediscovered.
   class whose helper was already fixed for exactly this (`runCurrentUntilOrTimeOut` returning
   silently on a too-tight bound), but this test uses `uiState.first { ... }` directly rather than
   that helper, so the fix did not reach it.
-  - **Do not guess at it.** The lesson from the earlier fix applies: a timing change can pass by
-    perturbing the schedule rather than removing the race, which looks solved and is not. Get a
-    baseline failure rate first — the class ran clean 25 times locally, so reproducing it may need
-    artificial load — and require that same loop clean afterwards.
+  - **No diagnosis is possible from what CI reported.** The failure is a bare
+    `java.lang.AssertionError` with no message, at a line number pointing at the enclosing function
+    rather than the failing assertion. Not reproducible locally: 25 clean runs, then 12 more under
+    deliberate CPU contention.
+  - **Do not guess at it.** A timing change can pass by perturbing the schedule rather than removing
+    the race, which looks solved and is not. The next step is a baseline, and getting one probably
+    means adding a message to each assertion in that test so the *next* CI failure identifies
+    itself — cheap, and it converts an unfixable report into a fixable one.
   - Until then, a red CI naming only this test is *probably* the flake, but **verify rather than
     assume**: waving through a red run is how a real regression ships.
+
+- **The `deleteSelected` flake fix was made against a misread failure and is unconfirmed.** The CI
+  failure was `kotlinx.coroutines.test.UncompletedCoroutinesError` — `runTest` giving up waiting for
+  coroutines to finish — not the assertion-ordering race it was diagnosed and committed as. The fix
+  (waiting on both the book count *and* the cleared selection before asserting) plausibly addresses
+  that too, since the test now waits for the state instead of racing it, but the reasoning in that
+  commit describes the wrong failure mode. One green run afterwards does not confirm a flake fixed.
+  Re-check if it recurs, and do not treat the existing fix as established.
 
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
