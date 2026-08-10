@@ -24,10 +24,12 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -118,11 +120,12 @@ class BookDetailViewModelTest {
      * between rounds, yields real (non-virtual) time so work dispatched to a genuinely different
      * dispatcher (Room's own query/invalidation dispatching, entirely outside this test's virtual
      * scheduler) gets a chance to run and re-enqueue its continuation back onto the (test-driven)
-     * Main dispatcher. Bounded so an actual regression fails with a clear assertion below instead
-     * of hanging.
+     * Main dispatcher. Bounded, and on exhausting that bound it fails *here* with a message naming
+     * the timeout -- see the comment at the bottom of the loop for why returning silently instead
+     * was the bug that made three tests in this class intermittently red.
      */
     private suspend fun TestScope.runCurrentUntilOrTimeOut(
-        maxAttempts: Int = 200,
+        maxAttempts: Int = 1_000,
         condition: suspend () -> Boolean,
     ) {
         var attempts = 0
@@ -132,6 +135,31 @@ class BookDetailViewModelTest {
             withContext(Dispatchers.Default) { delay(5) }
             attempts++
         }
+        // One final drain and check. The loop above ends with a delay, so without this the work
+        // that completed during that last wait is never looked at -- the helper would sleep for it
+        // and then fail without ever asking. Cheap, and it removes an off-by-one that would only
+        // ever show up as a rare failure at exactly the boundary, which is the hardest kind to
+        // diagnose and precisely the sort of thing this whole change is about.
+        runCurrent()
+        if (condition()) return
+        // Fails here rather than returning, which is what the first version did. Falling through
+        // silently meant a timeout surfaced as whichever assertion happened to come next -- so a
+        // machine too busy to propagate a Room invalidation in time produced "pendingSession must
+        // have moved on to a new session B", which describes neither the cause nor the location.
+        // These three tests were intermittently red for exactly that reason, and the message sent
+        // every reader looking at ViewModel state that was fine.
+        //
+        // The bound is also 5x what it was. 200 attempts is ~1 real second, which is ample on an
+        // idle developer machine and demonstrably not ample on a loaded CI runner -- the sibling
+        // helper in BackfillViewModelTest already documents 5 seconds as the generous-but-bounded
+        // figure, and this one being tighter was an accident rather than a decision. A test that is
+        // genuinely stuck still fails, just after a wait long enough to mean it.
+        fail(
+            "runCurrentUntilOrTimeOut gave up after $maxAttempts attempts plus a final check " +
+                "(~${maxAttempts * 5}ms of real time) waiting for its condition. Either the " +
+                "awaited work never happened (a real regression) or this machine needed longer " +
+                "than the bound allows.",
+        )
     }
 
     private fun newViewModel(id: String = mediaId) =
@@ -144,6 +172,38 @@ class BookDetailViewModelTest {
                 refetchCoverUseCase = refetchCoverUseCase,
             ),
         )
+
+    /**
+     * The helper is test-only, but it is load-bearing: its silently-returning-on-timeout behaviour
+     * is what made three tests in this class intermittently red while pointing at the wrong thing.
+     * These two cover it directly so that regression cannot come back unnoticed.
+     */
+    @Test
+    fun runCurrentUntilOrTimeOut_conditionEventuallyTrue_returnsWithoutFailing() = runTest {
+        var evaluations = 0
+
+        runCurrentUntilOrTimeOut(maxAttempts = 10) { ++evaluations >= 3 }
+
+        // Positive control for the timeout test below: proves the helper genuinely polls and
+        // returns on success, so that test's failure is about the timeout and not about the helper
+        // being broken in some way that fails everything.
+        assertEquals(3, evaluations, "must stop polling as soon as the condition holds")
+    }
+
+    @Test
+    fun runCurrentUntilOrTimeOut_conditionNeverTrue_failsNamingTheTimeout() = runTest {
+        // Deterministic: the condition can never hold, so this always times out. maxAttempts is
+        // tiny to keep it fast -- the default would spend five real seconds proving nothing extra.
+        val error = assertFailsWith<AssertionError> {
+            runCurrentUntilOrTimeOut(maxAttempts = 3) { false }
+        }
+
+        assertTrue(
+            error.message.orEmpty().contains("gave up after 3 attempts"),
+            "the timeout must identify itself rather than surfacing as a later assertion; " +
+                "was: ${error.message}",
+        )
+    }
 
     @Test
     fun uiState_initialValue_isLoading() {
