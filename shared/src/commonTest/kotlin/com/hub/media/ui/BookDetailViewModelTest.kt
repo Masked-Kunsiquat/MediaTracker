@@ -260,7 +260,10 @@ class BookDetailViewModelTest {
         viewModel.uiState.first { it is BookDetailUiState.Ready }
 
         viewModel.startReading()
-        assertIs<ReadingTimerState.Running>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Running>(
+            viewModel.timerState.value,
+            "startReading must put the timer into Running",
+        )
 
         viewModel.stopReading()
         assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
@@ -300,9 +303,14 @@ class BookDetailViewModelTest {
 
         viewModel.startReading()
         viewModel.stopReading()
+        // Awaited, not read -- see runCurrentUntilOrTimeOut's KDoc and doubleFireGuards for why
+        // reading .value straight after an action races combine -> stateIn.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
         val pendingBeforeSave =
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
-        assertNotNull(pendingBeforeSave)
+        assertNotNull(pendingBeforeSave, "stopReading must leave a pending session")
 
         // Negative startUnit fails LogReadingSessionUseCase validation without persisting.
         viewModel.saveSession(startUnit = -1.0, endUnit = 10.0)
@@ -326,9 +334,14 @@ class BookDetailViewModelTest {
 
         viewModel.startReading()
         viewModel.stopReading()
+        // Awaited, not read -- see runCurrentUntilOrTimeOut's KDoc and doubleFireGuards for why
+        // reading .value straight after an action races combine -> stateIn.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
         val pendingBeforeDiscard =
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
-        assertNotNull(pendingBeforeDiscard)
+        assertNotNull(pendingBeforeDiscard, "stopReading must leave a pending session")
 
         // Negative startUnit fails LogReadingSessionUseCase validation without persisting, so
         // errorMessage is populated before discardPendingSession is exercised.
@@ -337,6 +350,9 @@ class BookDetailViewModelTest {
 
         viewModel.discardPendingSession()
 
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession == null
+        }
         val ready = viewModel.uiState.value as BookDetailUiState.Ready
         assertNull(ready.pendingSession)
         assertNull(ready.errorMessage)
@@ -388,6 +404,11 @@ class BookDetailViewModelTest {
 
         viewModel.saveSession(startUnit = 0.0, endUnit = 10.0)
 
+        // A save with no pending session is a no-op, so there is no state change to wait *for* --
+        // runCurrentUntilOrTimeOut is the wrong tool here, since it now fails when its condition
+        // never holds. Draining the scheduler is enough, and it matters: without it this asserts
+        // before the save's coroutine has run at all, and would pass whether the guard works or not.
+        runCurrent()
         val ready = viewModel.uiState.value as BookDetailUiState.Ready
         assertTrue(ready.sessions.isEmpty())
         assertNull(ready.errorMessage)
@@ -860,27 +881,55 @@ class BookDetailViewModelTest {
         viewModel.pauseReading()
         viewModel.resumeReading()
         viewModel.stopReading()
-        assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Idle>(
+            viewModel.timerState.value,
+            "pause/resume/stop before any start must no-op, leaving the timer Idle",
+        )
 
         viewModel.startReading()
         viewModel.startReading() // second start while Running must no-op, not throw.
-        assertIs<ReadingTimerState.Running>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Running>(
+            viewModel.timerState.value,
+            "a second start while Running must no-op",
+        )
 
         viewModel.pauseReading()
         viewModel.pauseReading() // second pause while Paused must no-op, not throw.
-        assertIs<ReadingTimerState.Paused>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Paused>(
+            viewModel.timerState.value,
+            "a second pause while Paused must no-op",
+        )
 
         viewModel.resumeReading()
         viewModel.resumeReading() // second resume while Running must no-op, not throw.
-        assertIs<ReadingTimerState.Running>(viewModel.timerState.value)
+        assertIs<ReadingTimerState.Running>(
+            viewModel.timerState.value,
+            "a second resume while Running must no-op",
+        )
 
         viewModel.stopReading()
+        // Waited for, not read. The pending session reaches uiState through combine -> stateIn,
+        // which is not guaranteed to have propagated by the time stopReading() returns -- reading
+        // .value straight away made this the likely source of a message-less AssertionError that
+        // failed CI once and never reproduced locally. Same mistake as reading state immediately
+        // after an action anywhere else in this file; the surrounding tests already wait.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
         val pendingAfterFirstStop =
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
-        assertNotNull(pendingAfterFirstStop)
+        assertNotNull(pendingAfterFirstStop, "stopReading must leave a pending session to save")
 
         viewModel.stopReading() // second stop while Idle must no-op, not throw or overwrite pending.
-        assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
-        assertEquals(pendingAfterFirstStop, (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession)
+        assertIs<ReadingTimerState.Idle>(
+            viewModel.timerState.value,
+            "a second stop while Idle must no-op",
+        )
+        runCurrent()
+        assertEquals(
+            pendingAfterFirstStop,
+            (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession,
+            "a second stop must not overwrite the pending session the first one produced",
+        )
     }
 }

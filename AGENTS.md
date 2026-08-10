@@ -127,6 +127,21 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   - Screen-level tests drive a **stateless** composable with fake callbacks — they prove a screen honours the contract it is handed.
   - `SettingsNavigationTest` starts at the real `MainActivity` and taps through, because only that can prove a **route** hands the screen a real callback rather than a stub. That is the failure that actually shipped.
   - Put behaviour that does not need a device in a ViewModel and unit-test it there instead. `ChangelogViewModel` takes its content as a lambda rather than reading `context.assets` specifically so its logic stays in `commonTest`.
+* **Choosing where a UI test lives.** Three cases, and picking the wrong one is how tests become slow, flaky, or dependent on a particular phone:
+  - **A screen's behaviour** — drive the *stateless* composable directly with fabricated state and fake callbacks (`LibrarySelectionTest`). It touches no database, so it behaves identically on an empty device, a full one, or a fresh emulator. This should be the default and covers most cases.
+  - **A route actually being wired** — start at the real `MainActivity` and tap through (`SettingsNavigationTest`). Only this can prove a route hands a screen a real callback rather than a stub, which is the failure that has shipped here more than once. Slow, so keep it to smoke tests.
+  - **A flow needing real data** — seed it in `@Before` from `docs/sample-data` (`SampleDataSeedTest` is the template: read the fixture from test assets, import through `ImportDataUseCase`, which takes CSV strings and so needs no file picker).
+* **A test must never assume the device already has data.** `connectedDebugAndroidTest` **uninstalls the app when it finishes**, so nothing survives between runs — seeding a device by hand and then writing tests against it produces a suite that passes only on your machine. Tests that need data seed themselves.
+* **To put sample data on a device for manual poking**, install the APKs and drive the seed test directly, which skips Gradle's teardown — see `docs/sample-data/README.md` for the commands.
+* **Never read `uiState.value` straight after an action in a ViewModel test.** State reaches
+  `uiState` through `combine` -> `stateIn`, which needs a dispatch, so `.value` can still hold the
+  previous state when the assertion runs. It usually passes on an idle developer machine and fails
+  on a loaded CI runner, surfacing as a message-less `AssertionError` at a line number pointing at
+  the enclosing function — a symptom that is nearly impossible to diagnose from a CI log. Four
+  separate tests in this repository have failed this way. Await the state instead:
+  `uiState.first { <the condition you are about to assert> }`, or drain with `runCurrent()` when
+  the action is a genuine no-op and there is no new state to wait for. Reading `.value` is only
+  safe for the *initial* state, before anything asynchronous has happened.
 * **A test that cannot fail is worse than no test.** Assert a positive control alongside the negative one — that the thing you expect to be present *is* present, not merely that the forbidden thing is absent. A test asserting "no log data in the export" passes trivially if the export was empty or never ran. This has bitten this project before (PR #16).
 ---
 

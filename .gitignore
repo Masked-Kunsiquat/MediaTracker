@@ -14,3 +14,7 @@ local.properties
 # stays the single source of truth, and ignoring the copy is what makes it impossible to commit a
 # stale duplicate of it.
 /app/src/main/assets/CHANGELOG.md
+
+# Build-time copies of docs/sample-data/*.csv, used by the instrumented seeding test. Same reasoning
+# as the changelog copy above: docs/sample-data stays the single source of truth.
+/app/src/androidTest/assets/

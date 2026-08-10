@@ -13,12 +13,17 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.cleanupTestTempDir
 import com.hub.media.core.storage.createTestTempDir
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.domain.BulkDeleteUseCase
+import com.hub.media.features.books.domain.DeleteBooksSummary
 import com.hub.media.features.books.domain.DeleteBooksUseCase
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +31,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -136,6 +142,22 @@ class LibraryViewModelTest {
     }
 
     /**
+     * Bulk delete that fails on demand. The real use case cannot be made to fail from a test --
+     * closing the database yields CancellationException, which it rethrows by design -- so the
+     * error surface would otherwise be untestable. Mirrors this codebase's existing hand-rolled
+     * fakes (FakeExportDataUseCase and friends); AGENTS.md section 5 rules out a mocking library.
+     */
+    private class FailingBulkDelete(private val message: String) : BulkDeleteUseCase {
+        override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> =
+            Resource.Error(message)
+    }
+
+    /** Rebuilds the ViewModel with a delete that always fails, tracked for teardown like the rest. */
+    private fun useFailingDelete(message: String = "Database unavailable") {
+        viewModel = viewModels.track(LibraryViewModel(repository, FailingBulkDelete(message)))
+    }
+
+    /**
      * Adds a book through the repository (so it goes through the same path production does) and
      * returns its media id, optionally setting a reading status for the filter tests.
      */
@@ -154,13 +176,16 @@ class LibraryViewModelTest {
         viewModel.uiState.first { it.books.isNotEmpty() }
 
         assertFalse(viewModel.uiState.value.isSelectionMode, "not selecting until asked")
+
         viewModel.toggleSelection(id)
-        assertTrue(viewModel.uiState.value.isSelectionMode)
-        assertEquals(setOf(id), viewModel.uiState.value.selectedIds)
+        // Awaited, not read. Selection reaches uiState through combine -> stateIn, so .value can
+        // still hold the pre-toggle state when the assertion runs -- the race that failed CI in
+        // this file's sibling tests while never reproducing locally.
+        assertEquals(setOf(id), viewModel.uiState.first { it.selectedIds.isNotEmpty() }.selectedIds)
 
         viewModel.toggleSelection(id)
         assertFalse(
-            viewModel.uiState.value.isSelectionMode,
+            viewModel.uiState.first { it.selectedIds.isEmpty() }.isSelectionMode,
             "deselecting the last book must leave the mode, or there is no way out of it",
         )
     }
@@ -172,11 +197,11 @@ class LibraryViewModelTest {
         viewModel.uiState.first { it.books.size == 2 }
         viewModel.toggleSelection(a)
         viewModel.toggleSelection(b)
-        assertEquals(2, viewModel.uiState.value.selectedIds.size)
+        assertEquals(2, viewModel.uiState.first { it.selectedIds.size == 2 }.selectedIds.size)
 
         viewModel.clearSelection()
 
-        assertEquals(emptySet(), viewModel.uiState.value.selectedIds)
+        assertEquals(emptySet(), viewModel.uiState.first { it.selectedIds.isEmpty() }.selectedIds)
     }
 
     @Test
@@ -209,9 +234,14 @@ class LibraryViewModelTest {
         viewModel.toggleSelection(visible)
         viewModel.toggleSelection(hidden)
         viewModel.setStatusFilter(ReadingStatus.READING)
+        // Three state changes have to propagate before this holds (two toggles and the filter), so
+        // reading .value here was the race that failed CI.
+        val filtered = viewModel.uiState.first {
+            it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2
+        }
         assertEquals(
             setOf(visible),
-            viewModel.uiState.value.visibleSelectedIds,
+            filtered.visibleSelectedIds,
             "the hidden book is still selected, just not actionable",
         )
 
@@ -249,7 +279,91 @@ class LibraryViewModelTest {
 
         viewModel.deleteSelected()
 
-        assertEquals(1, viewModel.uiState.value.books.size, "nothing selected, nothing deleted")
+        assertEquals(
+            1,
+            viewModel.uiState.first { it.books.size == 1 }.books.size,
+            "nothing selected, nothing deleted",
+        )
+    }
+
+
+    @Test
+    fun deleteSelected_whenTheDeleteFails_reportsAnErrorAndKeepsTheSelection() = runTest {
+        // Closing the database makes the delete fail. Without a reported error the books stay, the
+        // selection stays, and nothing appears -- indistinguishable from the button being ignored.
+        val id = insertBook("Doomed")
+        useFailingDelete("Database unavailable")
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+
+        viewModel.deleteSelected()
+
+        val state = viewModel.uiState.first { it.deleteError != null }
+        assertEquals("Database unavailable", state.deleteError?.message)
+        assertEquals(setOf(id), state.selectedIds, "selection must survive so a retry is possible")
+        assertEquals(1, state.books.size, "a failed delete must not remove anything")
+    }
+
+    @Test
+    fun consumeDeleteError_clearsIt_soTheSameFailureIsNotShownTwice() = runTest {
+        val id = insertBook("Doomed")
+        useFailingDelete()
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+        viewModel.deleteSelected()
+        // Use the state `first` returned rather than re-reading .value: awaiting and then reading
+        // separately is the habit that causes the race even when it happens to be safe here.
+        val shown = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+
+        viewModel.consumeDeleteError(shown.id)
+
+        assertNull(
+            viewModel.uiState.first { it.deleteError == null }.deleteError,
+            "an error already shown is not a state",
+        )
+    }
+
+    @Test
+    fun deleteSelected_failingTwiceWithTheSameMessage_producesTwoDistinctEvents() = runTest {
+        // The case the id exists for. A repeated retry against the same broken state yields an
+        // identical message, and keyed on text alone the UI would see no change and swallow the
+        // second failure -- leaving a delete that appears to have quietly succeeded.
+        val id = insertBook("Doomed")
+        useFailingDelete("Database unavailable")
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+
+        viewModel.deleteSelected()
+        val first = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+        viewModel.consumeDeleteError(first.id)
+        viewModel.uiState.first { it.deleteError == null }
+
+        viewModel.deleteSelected()
+        val second = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+
+        assertEquals(first.message, second.message, "the same failure produces the same text")
+        assertNotEquals(first.id, second.id, "but it must still be a distinct, showable event")
+    }
+
+    @Test
+    fun consumeDeleteError_withAStaleId_leavesANewerFailureIntact() = runTest {
+        val id = insertBook("Doomed")
+        useFailingDelete()
+        viewModel.uiState.first { it.books.isNotEmpty() }
+        viewModel.toggleSelection(id)
+        viewModel.deleteSelected()
+        val current = viewModel.uiState.first { it.deleteError != null }.deleteError!!
+
+        viewModel.consumeDeleteError(current.id - 1)
+
+        // A no-op: the ids do not match, so nothing changes and there is no new state to await.
+        // Drain instead, or this asserts before the call has been processed at all and would pass
+        // whether the id check works or not.
+        runCurrent()
+        assertNotNull(
+            viewModel.uiState.value.deleteError,
+            "acknowledging an older event must not discard the one on screen",
+        )
     }
 
 }

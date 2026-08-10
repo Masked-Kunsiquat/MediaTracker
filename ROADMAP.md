@@ -965,6 +965,25 @@ numbered task rather than left to be rediscovered.
     cover the literal `onCreate` line, which would need an instrumented test that triggers a known
     failure and reads the store back.
 
+- **Read-state-too-early audit: complete.** Four tests across three classes failed CI by asserting
+  on ViewModel state before it propagated. All are fixed, and every remaining `.value` read in
+  `shared/src/commonTest/.../ui/` has now been classified rather than left as an open question.
+  - **The criterion is not which class, it is how the ViewModel exposes state.** The race exists
+    only where `uiState` is built with `combine` -> `stateIn` over a Room `Flow`: there is a real
+    dispatch between the action and the emission. A ViewModel that exposes a `MutableStateFlow`
+    directly (`ImportViewModel`, `ExportViewModel`, `AddBookViewModel`, `ChangelogViewModel`) sets
+    `.value` synchronously, so reading it straight after an action is safe *by construction* — not
+    by timing luck, and not something a loaded CI runner can change.
+  - **Room-backed and disciplined:** `BackfillViewModelTest` (`waitUntilOrTimeOut`) and
+    `LogViewerViewModelTest` (`awaitLoaded`) already await before every post-action read.
+  - **`SettingsViewModelTest` and `StatsViewModelTest`** hold one `.value` read each, both of the
+    *initial* state with no preceding action — nothing to race. Worth noting these are Room-backed
+    and were not on the list of classes flagged for audit; the audit found the risk profile splits
+    by state-exposure shape, not by the classes anyone guessed at.
+  - AGENTS.md §7 states the blanket rule deliberately ("never read `.value` straight after an
+    action"), rather than this nuance. The nuance is for auditing existing tests; the blunt rule is
+    the right thing to follow when writing new ones.
+
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
   and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive

@@ -31,6 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -107,6 +110,7 @@ fun LibraryScreenRoute(
         onToggleSelection = viewModel::toggleSelection,
         onClearSelection = viewModel::clearSelection,
         onDeleteSelected = viewModel::deleteSelected,
+        onDeleteErrorShown = viewModel::consumeDeleteError,
     )
 }
 
@@ -148,9 +152,21 @@ fun LibraryScreen(
     onToggleSelection: (String) -> Unit = {},
     onClearSelection: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
+    onDeleteErrorShown: (Long) -> Unit = {},
 ) {
     var showBulkDeleteConfirmation by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // A failed delete previously left the books present, the selection intact, and nothing on
+    // screen -- which from the user's side is identical to the Delete button doing nothing. Shown
+    // once and then acknowledged, so it reports an event rather than a state the screen sticks in.
+    LaunchedEffect(uiState.deleteError?.id) {
+        val event = uiState.deleteError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(event.message)
+        onDeleteErrorShown(event.id)
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             // Selection swaps the whole bar rather than adding actions to it. The library's own
             // actions (stats, settings) are navigations away, which is precisely what someone

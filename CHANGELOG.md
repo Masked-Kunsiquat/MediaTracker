@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A failed bulk delete now says so.** Previously a failure left the books in place, the selection
+  intact, and nothing on screen — indistinguishable from the Delete button being ignored. It now
+  shows the reason and keeps the selection so the action can be retried.
+
 - **Select several books at once and delete them together (ROADMAP Task 14 Phase B)** — long-press
   any book in the library to start selecting, then tap others to add them. A contextual bar shows
   how many are selected and offers a delete, which asks for confirmation before removing anything.

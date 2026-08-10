@@ -94,6 +94,26 @@ tasks.named("preBuild") {
     dependsOn(copyChangelogToAssets)
 }
 
+/**
+ * Copies the sample-data CSVs into the *androidTest* assets so `SampleDataSeedTest` can import them
+ * into the debug app (ROADMAP Task 14 Phase B).
+ *
+ * A build-time copy for the same reason the changelog is one: `docs/sample-data/` stays the single
+ * source of truth, the copy is gitignored, and a stale duplicate cannot be committed. Also means
+ * the fixture is verified by `SampleLibraryCsvTest` against the real parser in one place rather
+ * than drifting between two.
+ */
+val copySampleDataToTestAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("docs/sample-data")) {
+        include("*.csv")
+    }
+    into(layout.projectDirectory.dir("src/androidTest/assets"))
+}
+
+tasks.matching { it.name == "preDebugAndroidTestBuild" }.configureEach {
+    dependsOn(copySampleDataToTestAssets)
+}
+
 kotlin {
     jvmToolchain(21)
     compilerOptions {
