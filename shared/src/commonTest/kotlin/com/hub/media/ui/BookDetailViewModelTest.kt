@@ -24,6 +24,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -134,6 +135,13 @@ class BookDetailViewModelTest {
             withContext(Dispatchers.Default) { delay(5) }
             attempts++
         }
+        // One final drain and check. The loop above ends with a delay, so without this the work
+        // that completed during that last wait is never looked at -- the helper would sleep for it
+        // and then fail without ever asking. Cheap, and it removes an off-by-one that would only
+        // ever show up as a rare failure at exactly the boundary, which is the hardest kind to
+        // diagnose and precisely the sort of thing this whole change is about.
+        runCurrent()
+        if (condition()) return
         // Fails here rather than returning, which is what the first version did. Falling through
         // silently meant a timeout surfaced as whichever assertion happened to come next -- so a
         // machine too busy to propagate a Room invalidation in time produced "pendingSession must
@@ -147,9 +155,10 @@ class BookDetailViewModelTest {
         // figure, and this one being tighter was an accident rather than a decision. A test that is
         // genuinely stuck still fails, just after a wait long enough to mean it.
         fail(
-            "runCurrentUntilOrTimeOut gave up after $maxAttempts attempts (~${maxAttempts * 5}ms " +
-                "of real time) waiting for its condition. Either the awaited work never happened " +
-                "(a real regression) or this machine needed longer than the bound allows.",
+            "runCurrentUntilOrTimeOut gave up after $maxAttempts attempts plus a final check " +
+                "(~${maxAttempts * 5}ms of real time) waiting for its condition. Either the " +
+                "awaited work never happened (a real regression) or this machine needed longer " +
+                "than the bound allows.",
         )
     }
 
@@ -163,6 +172,38 @@ class BookDetailViewModelTest {
                 refetchCoverUseCase = refetchCoverUseCase,
             ),
         )
+
+    /**
+     * The helper is test-only, but it is load-bearing: its silently-returning-on-timeout behaviour
+     * is what made three tests in this class intermittently red while pointing at the wrong thing.
+     * These two cover it directly so that regression cannot come back unnoticed.
+     */
+    @Test
+    fun runCurrentUntilOrTimeOut_conditionEventuallyTrue_returnsWithoutFailing() = runTest {
+        var evaluations = 0
+
+        runCurrentUntilOrTimeOut(maxAttempts = 10) { ++evaluations >= 3 }
+
+        // Positive control for the timeout test below: proves the helper genuinely polls and
+        // returns on success, so that test's failure is about the timeout and not about the helper
+        // being broken in some way that fails everything.
+        assertEquals(3, evaluations, "must stop polling as soon as the condition holds")
+    }
+
+    @Test
+    fun runCurrentUntilOrTimeOut_conditionNeverTrue_failsNamingTheTimeout() = runTest {
+        // Deterministic: the condition can never hold, so this always times out. maxAttempts is
+        // tiny to keep it fast -- the default would spend five real seconds proving nothing extra.
+        val error = assertFailsWith<AssertionError> {
+            runCurrentUntilOrTimeOut(maxAttempts = 3) { false }
+        }
+
+        assertTrue(
+            error.message.orEmpty().contains("gave up after 3 attempts"),
+            "the timeout must identify itself rather than surfacing as a later assertion; " +
+                "was: ${error.message}",
+        )
+    }
 
     @Test
     fun uiState_initialValue_isLoading() {
