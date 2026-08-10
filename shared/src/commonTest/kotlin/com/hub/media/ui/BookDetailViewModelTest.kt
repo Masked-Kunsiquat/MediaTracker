@@ -303,9 +303,14 @@ class BookDetailViewModelTest {
 
         viewModel.startReading()
         viewModel.stopReading()
+        // Awaited, not read -- see runCurrentUntilOrTimeOut's KDoc and doubleFireGuards for why
+        // reading .value straight after an action races combine -> stateIn.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
         val pendingBeforeSave =
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
-        assertNotNull(pendingBeforeSave)
+        assertNotNull(pendingBeforeSave, "stopReading must leave a pending session")
 
         // Negative startUnit fails LogReadingSessionUseCase validation without persisting.
         viewModel.saveSession(startUnit = -1.0, endUnit = 10.0)
@@ -329,9 +334,14 @@ class BookDetailViewModelTest {
 
         viewModel.startReading()
         viewModel.stopReading()
+        // Awaited, not read -- see runCurrentUntilOrTimeOut's KDoc and doubleFireGuards for why
+        // reading .value straight after an action races combine -> stateIn.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
         val pendingBeforeDiscard =
             (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession
-        assertNotNull(pendingBeforeDiscard)
+        assertNotNull(pendingBeforeDiscard, "stopReading must leave a pending session")
 
         // Negative startUnit fails LogReadingSessionUseCase validation without persisting, so
         // errorMessage is populated before discardPendingSession is exercised.
@@ -340,6 +350,9 @@ class BookDetailViewModelTest {
 
         viewModel.discardPendingSession()
 
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession == null
+        }
         val ready = viewModel.uiState.value as BookDetailUiState.Ready
         assertNull(ready.pendingSession)
         assertNull(ready.errorMessage)
@@ -391,6 +404,11 @@ class BookDetailViewModelTest {
 
         viewModel.saveSession(startUnit = 0.0, endUnit = 10.0)
 
+        // A save with no pending session is a no-op, so there is no state change to wait *for* --
+        // runCurrentUntilOrTimeOut is the wrong tool here, since it now fails when its condition
+        // never holds. Draining the scheduler is enough, and it matters: without it this asserts
+        // before the save's coroutine has run at all, and would pass whether the guard works or not.
+        runCurrent()
         val ready = viewModel.uiState.value as BookDetailUiState.Ready
         assertTrue(ready.sessions.isEmpty())
         assertNull(ready.errorMessage)

@@ -173,13 +173,16 @@ class LibraryViewModelTest {
         viewModel.uiState.first { it.books.isNotEmpty() }
 
         assertFalse(viewModel.uiState.value.isSelectionMode, "not selecting until asked")
+
         viewModel.toggleSelection(id)
-        assertTrue(viewModel.uiState.value.isSelectionMode)
-        assertEquals(setOf(id), viewModel.uiState.value.selectedIds)
+        // Awaited, not read. Selection reaches uiState through combine -> stateIn, so .value can
+        // still hold the pre-toggle state when the assertion runs -- the race that failed CI in
+        // this file's sibling tests while never reproducing locally.
+        assertEquals(setOf(id), viewModel.uiState.first { it.selectedIds.isNotEmpty() }.selectedIds)
 
         viewModel.toggleSelection(id)
         assertFalse(
-            viewModel.uiState.value.isSelectionMode,
+            viewModel.uiState.first { it.selectedIds.isEmpty() }.isSelectionMode,
             "deselecting the last book must leave the mode, or there is no way out of it",
         )
     }
@@ -191,11 +194,11 @@ class LibraryViewModelTest {
         viewModel.uiState.first { it.books.size == 2 }
         viewModel.toggleSelection(a)
         viewModel.toggleSelection(b)
-        assertEquals(2, viewModel.uiState.value.selectedIds.size)
+        assertEquals(2, viewModel.uiState.first { it.selectedIds.size == 2 }.selectedIds.size)
 
         viewModel.clearSelection()
 
-        assertEquals(emptySet(), viewModel.uiState.value.selectedIds)
+        assertEquals(emptySet(), viewModel.uiState.first { it.selectedIds.isEmpty() }.selectedIds)
     }
 
     @Test
@@ -228,9 +231,14 @@ class LibraryViewModelTest {
         viewModel.toggleSelection(visible)
         viewModel.toggleSelection(hidden)
         viewModel.setStatusFilter(ReadingStatus.READING)
+        // Three state changes have to propagate before this holds (two toggles and the filter), so
+        // reading .value here was the race that failed CI.
+        val filtered = viewModel.uiState.first {
+            it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2
+        }
         assertEquals(
             setOf(visible),
-            viewModel.uiState.value.visibleSelectedIds,
+            filtered.visibleSelectedIds,
             "the hidden book is still selected, just not actionable",
         )
 
@@ -268,7 +276,11 @@ class LibraryViewModelTest {
 
         viewModel.deleteSelected()
 
-        assertEquals(1, viewModel.uiState.value.books.size, "nothing selected, nothing deleted")
+        assertEquals(
+            1,
+            viewModel.uiState.first { it.books.size == 1 }.books.size,
+            "nothing selected, nothing deleted",
+        )
     }
 
 
@@ -300,7 +312,10 @@ class LibraryViewModelTest {
 
         viewModel.consumeDeleteError()
 
-        assertNull(viewModel.uiState.value.deleteError, "an error already shown is not a state")
+        assertNull(
+            viewModel.uiState.first { it.deleteError == null }.deleteError,
+            "an error already shown is not a state",
+        )
     }
 
 }
