@@ -9,6 +9,7 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
+import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
@@ -80,6 +81,17 @@ public class AppContainer(
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
+
+    /**
+     * Bulk delete with reference-aware cover cleanup (ROADMAP Task 14 Phase B), consumed by
+     * [LibraryViewModel]'s selection mode. Needs [imageStorage] as well as the database because
+     * deleting a book can leave its content-addressed cover unreferenced -- see that use case's
+     * KDoc for why the file cannot simply be deleted alongside the row.
+     */
+    public val deleteBooksUseCase: DeleteBooksUseCase = DeleteBooksUseCase(
+        database = database,
+        imageStorage = imageStorage,
+    )
 
     /** Reading session logging/history, shared by future reading-session screens. */
     public val readingSessionRepository: ReadingSessionRepository = ReadingSessionRepository(database)

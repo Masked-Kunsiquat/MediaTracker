@@ -35,3 +35,13 @@ internal actual suspend fun writeImageIfNotExists(
         true
     }
 }
+
+internal actual suspend fun deleteImageFile(directoryPath: String, fileName: String): Boolean =
+    withContext(Dispatchers.IO) {
+        try {
+            val file = File(directoryPath, fileName)
+            if (file.exists()) file.delete() else false
+        } catch (e: Exception) {
+            false
+        }
+    }

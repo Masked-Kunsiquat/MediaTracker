@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.domain.DeleteBooksUseCase
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,21 +26,38 @@ import kotlinx.coroutines.launch
  * when the first subscriber appears and stops 5 seconds after the last one disappears (survives
  * brief configuration-change-style gaps without leaking a live DB query forever).
  *
- * @param bookRepository Source of the reactive book list and the delete operation.
+ * @param bookRepository Source of the reactive book list and the single-book delete operation.
+ * @param deleteBooksUseCase Bulk delete with reference-aware cover cleanup (ROADMAP Task 14 Phase
+ *   B). Required rather than optional-with-a-default: an unwired dependency would make
+ *   [deleteSelected] silently do nothing, and a delete button that quietly does nothing is the
+ *   exact failure this codebase has already shipped twice (see ROADMAP's Compose-test-harness
+ *   entry). A missing dependency should not compile.
  */
 public class LibraryViewModel(
     private val bookRepository: BookRepository,
+    private val deleteBooksUseCase: DeleteBooksUseCase,
 ) : ViewModel() {
 
     private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
     private val searchQuery = MutableStateFlow("")
+    private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
 
     public val uiState: StateFlow<LibraryUiState> = combine(
         bookRepository.observeAllBooksWithDetails(),
         statusFilter,
         searchQuery,
-    ) { books, filter, query ->
-        LibraryUiState(books = books, statusFilter = filter, searchQuery = query, isEmpty = books.isEmpty())
+        selectedIds,
+    ) { books, filter, query, selected ->
+        LibraryUiState(
+            books = books,
+            statusFilter = filter,
+            searchQuery = query,
+            isEmpty = books.isEmpty(),
+            // Drop ids that no longer exist. A selected book can be deleted from Book Detail while
+            // selection is active, and a stale id would keep inflating the contextual bar's count
+            // and be passed to a delete that could do nothing with it.
+            selectedIds = selected intersect books.mapTo(mutableSetOf()) { it.mediaItem.id },
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5.seconds),
@@ -51,6 +69,41 @@ public class LibraryViewModel(
      * reactively via [BookRepository.observeAllBooksWithDetails] once the delete completes, so no
      * separate result needs to be threaded back to the caller here.
      */
+    /**
+     * Adds or removes [id] from the current selection (ROADMAP Task 14 Phase B), entering selection
+     * mode on the first one and leaving it when the last is removed -- see
+     * [LibraryUiState.isSelectionMode] for why that is derived rather than a separate flag.
+     */
+    public fun toggleSelection(id: String) {
+        selectedIds.value = selectedIds.value.let { if (id in it) it - id else it + id }
+    }
+
+    /** Leaves selection mode, discarding the selection. Backs the contextual bar's close action. */
+    public fun clearSelection() {
+        selectedIds.value = emptySet()
+    }
+
+    /**
+     * Deletes every currently selected book that is also visible under the active filter/search
+     * (see [LibraryUiState.visibleSelectedIds]), then leaves selection mode.
+     *
+     * Selection is cleared **after** the delete completes, not before: clearing first would leave a
+     * failure with nothing selected and no way to retry without re-picking every book. [uiState]
+     * reflects the removal reactively, so nothing needs threading back here -- matching
+     * [deleteBook]'s existing shape.
+     */
+    public fun deleteSelected() {
+        val ids = uiState.value.visibleSelectedIds.toList()
+        if (ids.isEmpty()) {
+            clearSelection()
+            return
+        }
+        viewModelScope.launch {
+            deleteBooksUseCase.execute(ids)
+            clearSelection()
+        }
+    }
+
     public fun deleteBook(id: String) {
         viewModelScope.launch {
             bookRepository.deleteBook(id)
