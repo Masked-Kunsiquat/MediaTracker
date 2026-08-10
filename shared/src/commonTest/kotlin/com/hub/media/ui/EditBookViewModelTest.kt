@@ -305,7 +305,22 @@ class EditBookViewModelTest {
 
         viewModel.uiState.first { it is EditBookUiState.Saved }
 
-        assertEquals("First Call Title", db.mediaItemDao().getById(mediaId)?.title)
+        // Awaited through the reactive path the UI itself reads, rather than snapshotting the DAO
+        // the instant uiState reports Saved. `Saved` is derived from the ViewModel's own local
+        // state, which flips as soon as the repository call returns -- it says nothing about the
+        // observing query having re-emitted. Snapshotting there failed once on CI with a
+        // ComparisonFailure whose values the console log truncated away.
+        //
+        // The guard itself is not in question: saveInFlight is checked and set synchronously
+        // before viewModelScope.launch, so a second call cannot slip past it. If this fails again
+        // the message now carries the value actually found, which is what the last failure lacked.
+        val persisted = bookRepository.observeBookDetail(mediaId)
+            .first { it?.mediaItem?.title != "Project Hail Mary" }
+        assertEquals(
+            "First Call Title",
+            persisted?.mediaItem?.title,
+            "the in-flight guard must have dropped the second save; found instead",
+        )
     }
 
     /**

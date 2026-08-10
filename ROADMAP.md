@@ -965,6 +965,24 @@ numbered task rather than left to be rediscovered.
     cover the literal `onCreate` line, which would need an instrumented test that triggers a known
     failure and reads the store back.
 
+- **The read-state-too-early sweep is incomplete, deliberately.** Four tests across three classes
+  have now failed CI by asserting on ViewModel state before it propagated through
+  `combine` -> `stateIn`. `LibraryViewModelTest` and `BookDetailViewModelTest` were swept; the rule
+  is recorded in AGENTS.md §7. But the pattern still exists elsewhere -- roughly ninety `.value`
+  reads remain across `BackfillViewModelTest`, `ImportViewModelTest`, `LogViewerViewModelTest`,
+  `AddBookViewModelTest`, `ExportViewModelTest` and `ChangelogViewModelTest`, and not all of them
+  are safe.
+  - Most are probably fine: a read of the *initial* state, before anything asynchronous has
+    happened, has nothing to race. Only reads that follow an action are suspect.
+  - Rewriting all of them blind is worse than leaving them: it is a large diff over a currently
+    green suite, with no failing case to verify against. Do it when one fails, or as a deliberate
+    pass with the class run in a loop before and after.
+  - `EditBookViewModelTest.save_doubleTapBeforeCompletion_persistsOnlyOnce` is a related but
+    distinct case worth knowing about: it never read `.value`, it snapshotted the DAO the instant
+    `uiState` reported `Saved`, which the ViewModel's own local state flips before the observing
+    query has necessarily re-emitted. Its `ComparisonFailure` values were truncated out of the CI
+    log, so the fix is reasoned rather than confirmed; the assertion now carries the value found.
+
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
   and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive
