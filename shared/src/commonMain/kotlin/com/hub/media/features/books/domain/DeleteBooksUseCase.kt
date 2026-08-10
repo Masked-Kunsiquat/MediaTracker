@@ -5,6 +5,8 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.deleteImage
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import kotlin.coroutines.cancellation.CancellationException
+import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 
 /**
@@ -50,6 +52,23 @@ public data class DeleteBooksSummary(
  *   present, and surviving books pointing at artwork that no longer exists. Given the choice
  *   between leaking disk and corrupting what the user sees, this leaks disk.
  *
+ * ### Known race with concurrent cover writes, accepted rather than locked against
+ * Between `countByCoverHash` returning zero and the file being deleted, another operation (the bulk
+ * backfill, or an interactive cover re-fetch) could save an image with that same hash and point a
+ * book at it. The file would then be deleted out from under a book that references it.
+ *
+ * Not fixed with a shared per-hash lock, deliberately. That would mean threading a coordinator
+ * through `saveImage`/`updateCoverImageHash` and every writer that calls them --
+ * `AddBookByIsbnUseCase`, `RefetchCoverUseCase`, `BulkBackfillUseCase` -- which is a large,
+ * cross-cutting change for a window measured in microseconds, on two operations a single user has
+ * to run simultaneously from two different screens.
+ *
+ * It is also self-healing, which is what makes deferring reasonable rather than lazy: covers are
+ * content-addressed, so the affected book simply shows no cover until the next backfill re-fetches
+ * it and `saveImage` writes the same file back. That is precisely the failure mode already
+ * documented and accepted for restoring a backup taken before a deletion (ROADMAP Task 14 Phase B)
+ * -- recoverable, not data loss. Revisit if cover writes ever move off a user-initiated path.
+ *
  * ### Failure handling
  * A failed *file* delete never fails the operation. The books are already gone, which is what the
  * user asked for; a cover that outlives its last reference is wasted space, not broken state, and
@@ -78,29 +97,42 @@ public class DeleteBooksUseCase(
      * books are gone) holds either way, and turning "already deleted" into an error would surface a
      * scary message for an outcome the user wanted.
      */
-    public suspend fun execute(ids: List<String>): DeleteBooksSummary {
-        if (ids.isEmpty()) return DeleteBooksSummary(0, 0, 0)
+    public suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> {
+        if (ids.isEmpty()) return Resource.Success(DeleteBooksSummary(0, 0, 0))
+        return try {
 
-        val dao = database.mediaItemDao()
-        // Read the candidate hashes before the rows go: afterwards there is nothing left to ask.
-        val candidateHashes = dao.getCoverHashesForIds(ids)
-        val booksDeleted = dao.deleteByIds(ids)
+            val dao = database.mediaItemDao()
+            // Read the candidate hashes before the rows go: afterwards there is nothing left to ask.
+            val candidateHashes = dao.getCoverHashesForIds(ids)
+            val booksDeleted = dao.deleteByIds(ids)
 
-        var removed = 0
-        var kept = 0
-        for (hash in candidateHashes) {
-            if (dao.countByCoverHash(hash) > 0) {
-                // A surviving book still shows this artwork. Leaving it is the whole point.
-                kept++
-                continue
+            var removed = 0
+            var kept = 0
+            for (hash in candidateHashes) {
+                if (dao.countByCoverHash(hash) > 0) {
+                    // A surviving book still shows this artwork. Leaving it is the whole point.
+                    kept++
+                    continue
+                }
+                if (imageStorage.deleteImage(hash)) {
+                    removed++
+                } else {
+                    logger.error(TAG) { "Failed to delete unreferenced cover file: $hash" }
+                }
             }
-            if (imageStorage.deleteImage(hash)) {
-                removed++
-            } else {
-                logger.error(TAG) { "Failed to delete unreferenced cover file: $hash" }
-            }
+            Resource.Success(
+                DeleteBooksSummary(booksDeleted = booksDeleted, coversRemoved = removed, coversKept = kept),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A database failure must not escape into the caller's coroutine scope. This runs from
+            // viewModelScope, where an uncaught exception takes the whole scope down -- so a failed
+            // delete would crash the app rather than report. AGENTS.md section 5 requires database
+            // operations to surface as Resource for exactly this reason.
+            logger.error(TAG, e) { "Bulk delete failed for ${ids.size} books" }
+            Resource.Error(message = "Failed to delete books: ${e.message ?: "Unknown error"}", cause = e)
         }
-        return DeleteBooksSummary(booksDeleted = booksDeleted, coversRemoved = removed, coversKept = kept)
     }
 
     private companion object {

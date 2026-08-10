@@ -151,7 +151,7 @@ class LibrarySelectionTest {
 
         composeRule.onNodeWithContentDescription("Delete selected").performClick()
 
-        composeRule.onNodeWithText("Delete 1 books?").assertIsDisplayed()
+        composeRule.onNodeWithText("Delete 1 book?").assertIsDisplayed()
         assertEquals("tapping delete must ask, not act", 0, deletes)
     }
 
@@ -182,7 +182,7 @@ class LibrarySelectionTest {
         composeRule.onNodeWithText("Cancel").performClick()
 
         assertEquals(0, deletes)
-        composeRule.onNodeWithText("Delete 1 books?").assertDoesNotExist()
+        composeRule.onNodeWithText("Delete 1 book?").assertDoesNotExist()
     }
 
     @Test

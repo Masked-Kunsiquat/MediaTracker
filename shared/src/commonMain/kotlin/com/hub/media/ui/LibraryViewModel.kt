@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.domain.DeleteBooksUseCase
 import kotlin.time.Duration.Companion.seconds
@@ -99,8 +100,12 @@ public class LibraryViewModel(
             return
         }
         viewModelScope.launch {
-            deleteBooksUseCase.execute(ids)
-            clearSelection()
+            // Selection is cleared only on success. A failed delete that also wiped the selection
+            // would leave the user with nothing selected, no feedback, and every book to re-pick
+            // before they could try again.
+            if (deleteBooksUseCase.execute(ids) is Resource.Success) {
+                clearSelection()
+            }
         }
     }
 

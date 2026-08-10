@@ -188,7 +188,12 @@ class LibraryViewModelTest {
 
         viewModel.deleteSelected()
 
-        val after = viewModel.uiState.first { it.books.size == 1 }
+        // Wait on BOTH conditions, not just the book count. deleteSelected clears the selection
+        // *after* execute() returns, while the deletion reaches uiState via Room's own async
+        // invalidation -- so the emission with one book can legitimately arrive before the one
+        // with an empty selection. Waiting only for the count and then asserting the mode was a
+        // real race, and CI caught it on a loaded runner where the local machine never did.
+        val after = viewModel.uiState.first { it.books.size == 1 && !it.isSelectionMode }
         assertEquals(listOf("Keeper"), after.books.map { it.mediaItem.title })
         assertFalse(after.isSelectionMode, "selection must not survive the delete that consumed it")
     }

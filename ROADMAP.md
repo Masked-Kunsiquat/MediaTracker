@@ -12,26 +12,28 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 14 — Bulk operations & cover backfill** ← next. *Partially done*. Phase A (bulk
-   cover/author backfill) shipped; Phase B (library multi-select + bulk delete) remains. The
-   Compose UI test harness was built first, deliberately, because bulk delete is destructive and
-   selection-driven — exactly the shape where a mis-wired callback deletes the wrong books without
-   crashing or failing anything. Phase B should add screen-level tests for the selection state and
-   a navigation test for the delete confirmation as it goes, not afterwards.
-3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+1. **Task 15 Phase C — logging adoption coverage and lifecycle tracing** ← next. Small and
+   mechanical, but it is what turns a log that is empty until something breaks into one that
+   explains what led there. See that task's section for the measured numbers.
+2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
    providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
    rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
    retroactively for books added before it.
-4. Task 10 — Re-read modeling (ratings land here)
-5. Task 11 — Analytics & stats revamp
-6. Task 12 — Genre tracking
-7. Task 13 — Movies & TV
-8. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
+3. Task 10 — Re-read modeling (ratings land here)
+4. Task 11 — Analytics & stats revamp
+5. Task 12 — Genre tracking
+6. Task 13 — Movies & TV
+7. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
 ## Done
+
+- **Task 14 — Bulk operations & cover backfill**: bulk cover/author backfill over the whole library
+  behind one shared rate limiter (Phase A); library multi-select with bulk delete and reference-aware
+  cover cleanup, which retires the orphaned-cover-files backlog item (Phase B). Bulk reading-status
+  change was floated as the companion and deliberately not built — see that task's section.
 
 - **Compose UI test harness** (`v0.9.0`+): 18 instrumented tests in `app/src/androidTest/`,
   covering the log viewer and changelog screens at the screen level (stateless composables driven
@@ -877,6 +879,47 @@ for the same reasons.
 The signing half can be pulled forward independently of the CI and update-check work, and there is
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
+
+### Phase C — Adoption coverage and lifecycle tracing (not started)
+
+**The plumbing is sound and now proven end to end; the adoption is thin.** Phase A deliberately
+adopted logging at exactly three sites — the ones that had been actively painful — and stopped.
+That was the right call for the task it was solving ("we can't tell you why it failed"), but it
+leaves most of the codebase silent. Measured on `shared/src/commonMain` at the close of Task 14
+Phase B:
+
+| | Count |
+| :--- | ---: |
+| `Resource.Error(...)` construction sites | 61 |
+| `catch` blocks | 46 |
+| Log calls | 12 |
+| Files that log at all | 6 (of ~90) |
+
+So roughly **49 places construct an error that nothing records**. `BookRepository`, the whole CSV
+import/export layer, and every ingestion failure still fold their cause into a message string and
+drop it — exactly the situation Phase A was created to fix, just at the sites Phase A did not reach.
+Recorded with numbers because they are far more persuasive measured than asserted, and because they
+will be stale within a month; re-measure before acting rather than trusting this table.
+
+- **Adopt at the remaining error sites.** Mechanical and low-risk. A failure that currently reaches
+  the user as "Failed to import data" would gain a recorded cause. The identifier rule from Phase A
+  applies unchanged at every new site, and `RecordingLogger` makes each one testable the same way
+  the original three are.
+- **Add lifecycle tracing at `INFO`, which matters more than it sounds.** Nothing in this codebase
+  logs below `WARN` — there is not a single `DEBUG` or `INFO` call site. Two consequences, both
+  observed rather than theorised:
+  - **The log is empty until something breaks**, which reads as a broken feature. It is not: it is
+    a log containing only failures, and it was mistaken for broken by the one person using it.
+  - **The "Log detail" setting offers four options where only two behave differently.** `DEBUG` and
+    `INFO` are currently identical to `Warnings`, because nothing emits at those levels. The setting
+    overstates what it does.
+  A handful of `INFO` entries at real lifecycle points — app start, backfill start/finish,
+  import/export/restore completion — fixes both. And it is what makes a log worth reading at all:
+  when something does break, the entries *before* the failure are the context that explains it. A
+  log containing only the error tells you what fell over, never what led there.
+- **Decide whether the level list should shrink instead.** Adding `INFO` sites is the better answer,
+  but if it is not taken, the honest alternative is reducing the Settings picker to the levels that
+  actually differ, rather than continuing to offer a choice that changes nothing.
 
 ## Blocked on external changes
 

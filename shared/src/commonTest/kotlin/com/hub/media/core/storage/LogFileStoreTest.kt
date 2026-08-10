@@ -51,7 +51,10 @@ class LogFileStoreTest {
      * scheduler -- so there is no `advanceUntilIdle()`/`runCurrent()` that would wait for it.
      * Mirrors `BookDetailViewModelTest.runCurrentUntilOrTimeOut`'s real-time-yielding idiom.
      */
-    private suspend fun pollUntilOrTimeOut(maxAttempts: Int = 200, condition: suspend () -> Boolean): Boolean {
+    // 1_000 attempts x 5ms is ~5 real seconds, matching BookDetailViewModelTest's helper. The
+    // original 200 (~1s) was ample on an idle developer machine and demonstrably not on a loaded
+    // CI runner, which is where this surfaced -- the same too-tight bound, in a second helper.
+    private suspend fun pollUntilOrTimeOut(maxAttempts: Int = 1_000, condition: suspend () -> Boolean): Boolean {
         var attempts = 0
         while (attempts < maxAttempts) {
             if (condition()) return true

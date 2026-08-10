@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -312,7 +313,15 @@ private fun BulkDeleteConfirmationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.library_bulk_delete_title, selectedCount)) },
+        title = {
+            Text(
+                pluralStringResource(
+                    R.plurals.library_bulk_delete_title,
+                    selectedCount,
+                    selectedCount,
+                ),
+            )
+        },
         text = { Text(stringResource(R.string.library_bulk_delete_message)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
