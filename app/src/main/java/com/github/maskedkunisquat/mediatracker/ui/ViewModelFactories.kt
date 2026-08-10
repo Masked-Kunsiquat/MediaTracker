@@ -26,7 +26,7 @@ class LibraryViewModelFactory(private val appContainer: AppContainer) : ViewMode
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return when {
             modelClass.isAssignableFrom(LibraryViewModel::class.java) -> {
-                LibraryViewModel(appContainer.bookRepository) as T
+                LibraryViewModel(appContainer.bookRepository, appContainer.deleteBooksUseCase) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

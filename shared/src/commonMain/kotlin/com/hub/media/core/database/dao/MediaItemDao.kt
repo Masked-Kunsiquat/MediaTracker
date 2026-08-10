@@ -38,6 +38,39 @@ interface MediaItemDao {
     @Query("DELETE FROM media_items WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    /**
+     * Deletes every media item whose id is in [ids], cascading to child tables via FK constraints
+     * exactly as [deleteById] does. One statement rather than a loop of [deleteById] calls, so a
+     * bulk delete is atomic at the database level: it cannot half-apply and leave the user looking
+     * at a partially deleted selection (ROADMAP Task 14 Phase B).
+     *
+     * @return The number of rows actually removed, which can be lower than `ids.size` if an id no
+     *   longer exists -- see [com.hub.media.features.books.domain.DeleteBooksUseCase] for why that
+     *   is reported rather than treated as an error.
+     */
+    @Query("DELETE FROM media_items WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>): Int
+
+    /**
+     * The distinct, non-null cover hashes referenced by [ids]. Read *before* the rows are deleted,
+     * since afterwards there is nothing left to ask -- these are the only files a delete could
+     * possibly make unreferenced (ROADMAP Task 14 Phase B).
+     */
+    @Query("SELECT DISTINCT coverImageHash FROM media_items WHERE id IN (:ids) AND coverImageHash IS NOT NULL")
+    suspend fun getCoverHashesForIds(ids: List<String>): List<String>
+
+    /**
+     * How many media items still reference [coverImageHash].
+     *
+     * Covers are content-addressed (AGENTS.md §4), so identical artwork is stored once and shared:
+     * two books with the same cover point at the same file. Deleting that file because *one* of
+     * them was removed would silently blank the other's cover. This is the check that prevents it
+     * -- called *after* the delete, so a zero result genuinely means nothing references the file
+     * any more (ROADMAP Task 14 Phase B).
+     */
+    @Query("SELECT COUNT(*) FROM media_items WHERE coverImageHash = :coverImageHash")
+    suspend fun countByCoverHash(coverImageHash: String): Int
+
     @Query("SELECT * FROM media_items WHERE id = :id")
     suspend fun getById(id: String): MediaItemEntity?
 

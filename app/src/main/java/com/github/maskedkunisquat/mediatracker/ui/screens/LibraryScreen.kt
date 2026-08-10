@@ -1,5 +1,10 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +22,15 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -31,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -89,6 +104,9 @@ fun LibraryScreenRoute(
         onNavigateToSettings = onNavigateToSettings,
         onStatusFilterChange = viewModel::setStatusFilter,
         onSearchQueryChange = viewModel::setSearchQuery,
+        onToggleSelection = viewModel::toggleSelection,
+        onClearSelection = viewModel::clearSelection,
+        onDeleteSelected = viewModel::deleteSelected,
     )
 }
 
@@ -127,9 +145,24 @@ fun LibraryScreen(
     onNavigateToSettings: () -> Unit,
     onStatusFilterChange: (ReadingStatus?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onToggleSelection: (String) -> Unit = {},
+    onClearSelection: () -> Unit = {},
+    onDeleteSelected: () -> Unit = {},
 ) {
+    var showBulkDeleteConfirmation by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
+            // Selection swaps the whole bar rather than adding actions to it. The library's own
+            // actions (stats, settings) are navigations away, which is precisely what someone
+            // part-way through choosing books should not be one mis-tap from doing.
+            if (uiState.isSelectionMode) {
+                SelectionTopBar(
+                    selectedCount = uiState.visibleSelectedIds.size,
+                    onClose = onClearSelection,
+                    onDelete = { showBulkDeleteConfirmation = true },
+                )
+                return@Scaffold
+            }
             CenterAlignedTopAppBar(
                 title = { Text("Library") },
                 actions = {
@@ -154,6 +187,16 @@ fun LibraryScreen(
             }
         },
     ) { innerPadding ->
+        if (showBulkDeleteConfirmation) {
+            BulkDeleteConfirmationDialog(
+                selectedCount = uiState.visibleSelectedIds.size,
+                onConfirm = {
+                    showBulkDeleteConfirmation = false
+                    onDeleteSelected()
+                },
+                onDismiss = { showBulkDeleteConfirmation = false },
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -222,6 +265,9 @@ fun LibraryScreen(
                                     book = book,
                                     coverStorageDir = coverStorageDir,
                                     onClick = { onBookClick(book.mediaItem.id) },
+                                    selectionMode = uiState.isSelectionMode,
+                                    selected = book.mediaItem.id in uiState.selectedIds,
+                                    onToggleSelection = { onToggleSelection(book.mediaItem.id) },
                                 )
                             }
                         }
@@ -243,6 +289,88 @@ fun LibraryScreen(
  * A trailing clear [IconButton] appears only once [query] is non-empty, mirroring the standard
  * Material search-field affordance.
  */
+/**
+ * The contextual app bar shown while a selection is active (ROADMAP Task 14 Phase B).
+ *
+ * The count reflects *visible* selected books, matching what a delete would actually act on -- see
+ * [com.hub.media.ui.LibraryUiState.visibleSelectedIds]. Showing the raw selection size instead
+ * would promise to delete more than the action delivers, which is a bad thing to be wrong about on
+ * a destructive control.
+ */
+/**
+ * Confirmation for a bulk delete (ROADMAP Task 14 Phase B), which asks for the same care the
+ * single-book delete already does -- more, arguably, since the count is the only thing telling the
+ * user how much is about to go.
+ *
+ * The count comes from the same visible-selection figure the bar shows and the delete acts on, so
+ * the number in the question is the number of books that will actually disappear.
+ */
+@Composable
+private fun BulkDeleteConfirmationDialog(
+    selectedCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                pluralStringResource(
+                    R.plurals.library_bulk_delete_title,
+                    selectedCount,
+                    selectedCount,
+                ),
+            )
+        },
+        text = { Text(stringResource(R.string.library_bulk_delete_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.library_bulk_delete_confirm),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.library_bulk_delete_cancel))
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    selectedCount: Int,
+    onClose: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    TopAppBar(
+        title = { Text(stringResource(R.string.library_selection_count, selectedCount)) },
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(R.string.library_selection_close),
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onDelete, enabled = selectedCount > 0) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.library_selection_delete),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    )
+}
+
 @Composable
 private fun LibrarySearchField(
     query: String,
@@ -313,20 +441,38 @@ private fun StatusFilterRow(
 /**
  * A card displaying a single book.
  * Shows the cover thumbnail (left), title (top), and release year (bottom).
- * Tapping anywhere on the row calls [onClick] to open the book detail screen (where deletion
- * now lives -- Task4 Phase E).
+ * Tapping anywhere on the row calls [onClick] to open the book detail screen (where single-book
+ * deletion lives -- Task4 Phase E).
+ *
+ * ### Selection (ROADMAP Task 14 Phase B)
+ * Long-press enters selection mode. While [selectionMode] is active a plain tap toggles selection
+ * instead of navigating -- deliberately, because a mode where tapping still opened a book would
+ * make selecting several in a row an exercise in precision, and because navigating away mid
+ * selection is almost never what was meant. Long-press keeps working while selecting, so the
+ * gesture that started the mode is not suddenly inert.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun BookCard(
     book: BookWithDetails,
     coverStorageDir: String,
     onClick: () -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
 ) {
     val mediaItem = book.mediaItem
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+            )
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelection() else onClick() },
+                onLongClick = onToggleSelection,
+            )
+            .semantics { if (selected) this.selected = true }
             .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,

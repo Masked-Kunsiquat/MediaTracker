@@ -22,13 +22,41 @@ import com.hub.media.features.books.data.BookWithDetails
  *   empty, which can happen even with a non-empty library (e.g. filtering to a status nothing
  *   currently has, or a search query matching nothing) — the screen renders a different message for
  *   each case.
+ * @property selectedIds Media ids currently selected for a bulk action (ROADMAP Task 14 Phase B).
+ *   Empty means selection mode is off -- see [isSelectionMode]. Held as ids rather than as
+ *   [BookWithDetails] objects deliberately: the underlying list is reactive, so a selected book can
+ *   be re-emitted (an edit elsewhere) or vanish (deleted on another screen) while selection is
+ *   active, and an id survives both where a captured object would go stale.
  */
 public data class LibraryUiState(
     val books: List<BookWithDetails> = emptyList(),
     val statusFilter: ReadingStatus? = null,
     val searchQuery: String = "",
     val isEmpty: Boolean = books.isEmpty(),
+    val selectedIds: Set<String> = emptySet(),
 ) {
+
+    /**
+     * True when a bulk selection is active, which is what swaps the library's app bar for the
+     * contextual one. Derived from [selectedIds] rather than tracked as its own flag so the two
+     * cannot disagree -- a separate boolean could be left true over an empty selection, leaving the
+     * user in a mode with no way out and no visible reason why.
+     */
+    public val isSelectionMode: Boolean get() = selectedIds.isNotEmpty()
+
+    /**
+     * [selectedIds] narrowed to books actually present in [filteredBooks].
+     *
+     * Selection is deliberately *not* cleared when a filter or search changes -- doing so would
+     * silently discard work the moment someone refined a search to reach the next book they wanted.
+     * But a bulk action must never act on something the user cannot currently see, so this is what
+     * the action operates on, and what the count in the contextual bar reflects.
+     */
+    public val visibleSelectedIds: Set<String>
+        get() {
+            val visible = filteredBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
+            return selectedIds intersect visible
+        }
 
     /**
      * [books] narrowed by [statusFilter] and [searchQuery] **together (AND/intersection, not

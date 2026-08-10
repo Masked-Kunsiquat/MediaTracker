@@ -12,26 +12,28 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 14 — Bulk operations & cover backfill** ← next. *Partially done*. Phase A (bulk
-   cover/author backfill) shipped; Phase B (library multi-select + bulk delete) remains. The
-   Compose UI test harness was built first, deliberately, because bulk delete is destructive and
-   selection-driven — exactly the shape where a mis-wired callback deletes the wrong books without
-   crashing or failing anything. Phase B should add screen-level tests for the selection state and
-   a navigation test for the delete confirmation as it goes, not afterwards.
-3. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+1. **Task 15 Phase C — logging adoption coverage and lifecycle tracing** ← next. Small and
+   mechanical, but it is what turns a log that is empty until something breaks into one that
+   explains what led there. See that task's section for the measured numbers.
+2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
    providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
    rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
    retroactively for books added before it.
-4. Task 10 — Re-read modeling (ratings land here)
-5. Task 11 — Analytics & stats revamp
-6. Task 12 — Genre tracking
-7. Task 13 — Movies & TV
-8. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
+3. Task 10 — Re-read modeling (ratings land here)
+4. Task 11 — Analytics & stats revamp
+5. Task 12 — Genre tracking
+6. Task 13 — Movies & TV
+7. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
 ## Done
+
+- **Task 14 — Bulk operations & cover backfill**: bulk cover/author backfill over the whole library
+  behind one shared rate limiter (Phase A); library multi-select with bulk delete and reference-aware
+  cover cleanup, which retires the orphaned-cover-files backlog item (Phase B). Bulk reading-status
+  change was floated as the companion and deliberately not built — see that task's section.
 
 - **Compose UI test harness** (`v0.9.0`+): 18 instrumented tests in `app/src/androidTest/`,
   covering the log viewer and changelog screens at the screen level (stateless composables driven
@@ -582,7 +584,7 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
     "Start backfill" action on the import summary dialog once an import actually adds books.
   - Books with no ISBN are computed once at scan time, reported as skipped, and never enter the
     retry queue — manual cover entry (still in the backlog) remains their only route.
-- **Library multi-select and bulk actions (Phase B — not started).** Long-press a library card to enter selection mode,
+- **Library multi-select and bulk delete (Phase B — done).** Long-press a library card to enter selection mode,
   with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
   bulk reading-status change is the obvious companion and probably cheap once selection exists.
   Deletion of several books at once deserves the same confirmation care the single-book delete
@@ -598,6 +600,26 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
       orphaned-cover-files backlog item rather than growing it.
     - **Or explicitly defer** cleanup, and document the resulting disk growth as accepted — but
       then say it in the release notes, because "deleted books still cost storage" is surprising.
+    - **Decided: reference-aware removal.** `DeleteBooksUseCase` reads the candidate hashes, deletes
+      the rows, then counts remaining references per hash and removes only the files that reach
+      zero. **This retires the orphaned-cover-files backlog item.** Ordering is the load-bearing
+      part and is documented in that class: counting *after* the delete is what makes zero
+      trustworthy (counting before always includes the books being deleted, so nothing would ever
+      be cleaned up), and deleting rows before files means a crash between them leaks disk rather
+      than leaving surviving books pointing at artwork that is gone.
+    - **Known consequence, accepted:** restoring a `.sqlite` backup taken *before* a deletion brings
+      those books back pointing at files now removed, so their covers show as missing until a
+      backfill re-fetches them. Recoverable, not data loss, and the same situation a CSV import onto
+      a new device already produces — for which the Task 14 Phase A backfill is the documented
+      remedy.
+    - **Selection survives filter and search changes, but a bulk action only touches what is
+      visible.** Clearing selection whenever a filter changed would discard work the moment someone
+      refined a search to reach the next book; acting on something the user cannot currently see
+      would delete it with no way for them to notice. Both directions are tested.
+    - **Bulk reading-status change was not built.** It was floated here as the obvious companion and
+      remains cheap now that selection exists, but bulk delete was the motivating case and shipping
+      the destructive action with full test coverage was worth more than widening scope. Left in the
+      backlog rather than silently dropped.
   - Tests must cover **both** directions, since each failure mode is invisible in the other's test:
     a shared cover file that must **survive** deletion of one of its referencing books, and an
     unreferenced file that must actually **be removed**. A cleanup that only tests the second
@@ -858,6 +880,47 @@ The signing half can be pulled forward independently of the CI and update-check 
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
 
+### Phase C — Adoption coverage and lifecycle tracing (not started)
+
+**The plumbing is sound and now proven end to end; the adoption is thin.** Phase A deliberately
+adopted logging at exactly three sites — the ones that had been actively painful — and stopped.
+That was the right call for the task it was solving ("we can't tell you why it failed"), but it
+leaves most of the codebase silent. Measured on `shared/src/commonMain` at the close of Task 14
+Phase B:
+
+| | Count |
+| :--- | ---: |
+| `Resource.Error(...)` construction sites | 61 |
+| `catch` blocks | 46 |
+| Log calls | 12 |
+| Files that log at all | 6 (of ~90) |
+
+So roughly **49 places construct an error that nothing records**. `BookRepository`, the whole CSV
+import/export layer, and every ingestion failure still fold their cause into a message string and
+drop it — exactly the situation Phase A was created to fix, just at the sites Phase A did not reach.
+Recorded with numbers because they are far more persuasive measured than asserted, and because they
+will be stale within a month; re-measure before acting rather than trusting this table.
+
+- **Adopt at the remaining error sites.** Mechanical and low-risk. A failure that currently reaches
+  the user as "Failed to import data" would gain a recorded cause. The identifier rule from Phase A
+  applies unchanged at every new site, and `RecordingLogger` makes each one testable the same way
+  the original three are.
+- **Add lifecycle tracing at `INFO`, which matters more than it sounds.** Nothing in this codebase
+  logs below `WARN` — there is not a single `DEBUG` or `INFO` call site. Two consequences, both
+  observed rather than theorised:
+  - **The log is empty until something breaks**, which reads as a broken feature. It is not: it is
+    a log containing only failures, and it was mistaken for broken by the one person using it.
+  - **The "Log detail" setting offers four options where only two behave differently.** `DEBUG` and
+    `INFO` are currently identical to `Warnings`, because nothing emits at those levels. The setting
+    overstates what it does.
+  A handful of `INFO` entries at real lifecycle points — app start, backfill start/finish,
+  import/export/restore completion — fixes both. And it is what makes a log worth reading at all:
+  when something does break, the entries *before* the failure are the context that explains it. A
+  log containing only the error tells you what fell over, never what led there.
+- **Decide whether the level list should shrink instead.** Adding `INFO` sites is the better answer,
+  but if it is not taken, the honest alternative is reducing the Settings picker to the levels that
+  actually differ, rather than continuing to offer a choice that changes nothing.
+
 ## Blocked on external changes
 
 Nothing to schedule — these unblock when an upstream dependency moves.
@@ -870,6 +933,22 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
+
+- **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
+  viewer state and viewer rendering are all covered, but the composition that connects them is not:
+  `MediaTrackerApplication.onCreate`'s `AppLogger.configure(minLevel, FileLogSink(store)
+  .withPlatformLogger())` could be deleted and the entire suite — unit and instrumented — would
+  still pass while nothing was ever written to a log file. Same for `applyPersistedLogVerbosity`:
+  if that collector never ran, changing "Log detail" in Settings would silently do nothing. Both are
+  the wired-to-nothing shape this project has now shipped three times.
+  - **Eyeballing it does not substitute.** Adoption sites log on failure paths only, so an empty log
+    is the *expected* result when nothing has gone wrong — "no entries" cannot distinguish
+    working-and-quiet from completely unwired.
+  - **Cheapest test with real teeth**, and it needs no device: configure `AppLogger` exactly as the
+    Application does (a real `FileLogSink` over a temp directory), log through `AppLogger`, assert
+    the entry reaches the file. That covers the composition seam in `commonTest`. It still would not
+    cover the literal `onCreate` line, which would need an instrumented test that triggers a known
+    failure and reads the store back.
 
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
@@ -891,9 +970,6 @@ numbered task rather than left to be rediscovered.
   across a calendar day (streaks/period bounds are unaffected), and `durationSeconds` is now
   preserved exactly, so nothing sums the drift. Fix if it ever matters by applying the same
   "was it touched?" tracking used for duration to the date/time pickers.
-- Orphaned cover files: deleting a book leaves its content-addressed cover on disk
-  (dedup means the file may be shared by other books, so deletion needs a reference check
-  or a periodic sweep).
 - **`releaseYear` now means different things depending on how a book was added.** ISBN ingestion
   reads Open Library's *edition* record, so it stores the printing's year (a 2026 anniversary
   edition of a 2016 novel stores 2026). The Goodreads importer (Task 8 Phase D) deliberately

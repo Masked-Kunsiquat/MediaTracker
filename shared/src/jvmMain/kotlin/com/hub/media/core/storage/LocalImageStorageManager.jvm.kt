@@ -35,3 +35,17 @@ internal actual suspend fun writeImageIfNotExists(
         true
     }
 }
+
+internal actual suspend fun deleteImageFile(directoryPath: String, fileName: String): Boolean =
+    withContext(Dispatchers.IO) {
+        try {
+            val file = File(directoryPath, fileName)
+            if (file.exists()) file.delete() else false
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            // Never swallowed: this is coroutine cancellation, not a delete failure. Absorbing it
+            // would let a cancelled caller carry on as though nothing happened.
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }

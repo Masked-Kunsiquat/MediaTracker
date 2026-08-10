@@ -12,7 +12,7 @@ package com.hub.media.core.storage
  * @param baseDirectoryPath Absolute or relative path to the storage directory.
  *   Created if it does not exist.
  */
-public class LocalImageStorageManager(private val baseDirectoryPath: String) {
+public class LocalImageStorageManager(internal val baseDirectoryPath: String) {
 
     /**
      * Saves an image byte array with content-addressing (SHA-256 hash).
@@ -42,6 +42,24 @@ public class LocalImageStorageManager(private val baseDirectoryPath: String) {
  * Computes SHA-256 hash as lowercase hex string.
  * Platform-specific implementation required due to java.security.MessageDigest.
  */
+/**
+ * Removes the stored image named [fileName] from this manager's directory, if it is there.
+ *
+ * **Callers must establish that nothing references the file first.** Storage here is
+ * content-addressed (AGENTS.md §4), so a file is shared by every book with identical cover
+ * artwork -- this class cannot tell whether that is one book or five, and deleting on behalf of
+ * one of five would blank the other four. The reference check lives with the database, in
+ * [com.hub.media.features.books.domain.DeleteBooksUseCase] (ROADMAP Task 14 Phase B).
+ *
+ * @return `true` if a file was present and removed; `false` if there was nothing to delete or the
+ *   delete failed. Both are non-fatal to the caller: a cover that outlives its last reference is
+ *   wasted disk, not broken state, which is why this reports rather than throws.
+ */
+public suspend fun LocalImageStorageManager.deleteImage(fileName: String): Boolean =
+    deleteImageFile(baseDirectoryPath, fileName)
+
+internal expect suspend fun deleteImageFile(directoryPath: String, fileName: String): Boolean
+
 internal expect suspend fun sha256Hex(bytes: ByteArray): String
 
 /**
