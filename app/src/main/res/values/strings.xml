@@ -258,4 +258,13 @@
     <string name="changelog_unavailable">Release notes are unavailable in this build.</string>
     <string name="changelog_expand">Expand</string>
     <string name="changelog_collapse">Collapse</string>
+
+    <!-- ROADMAP Task 14 Phase B: library multi-select and bulk delete -->
+    <string name="library_selection_count">%1$d selected</string>
+    <string name="library_selection_close">Leave selection</string>
+    <string name="library_selection_delete">Delete selected</string>
+    <string name="library_bulk_delete_title">Delete %1$d books?</string>
+    <string name="library_bulk_delete_message">This permanently deletes the selected books and their reading history. This cannot be undone.</string>
+    <string name="library_bulk_delete_confirm">Delete</string>
+    <string name="library_bulk_delete_cancel">Cancel</string>
 </resources>
