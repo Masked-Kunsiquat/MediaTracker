@@ -153,18 +153,6 @@ class EditBookViewModelTest {
         val viewModel = newViewModel()
         viewModel.uiState.first { it is EditBookUiState.Ready }
 
-        // Main becomes a StandardTestDispatcher for the two save calls, so `launch` only *enqueues*
-        // and the first save cannot finish before the second is made. Under the default eager
-        // dispatcher it sometimes did: the first coroutine ran to completion inside the first
-        // save() call, clearing saveInFlight, so the second save legitimately proceeded and won.
-        // That made this test's premise -- "a second tap while the first is still in flight" --
-        // something it could not actually guarantee, and it failed on CI twice for that reason
-        // while passing locally.
-        //
-        // Same technique, and the same reason, as
-        // BookDetailViewModelTest.saveSession_staleCompletionDoesNotClobberNewerPendingSession.
-        viewModels.installMain(StandardTestDispatcher(testScheduler))
-
         viewModel.save(
             title = "Corrected Title",
             releaseYear = 2022,
@@ -297,6 +285,18 @@ class EditBookViewModelTest {
         val viewModel = newViewModel()
         viewModel.uiState.first { it is EditBookUiState.Ready }
 
+        // Main becomes a StandardTestDispatcher for the two save calls, so `launch` only *enqueues*
+        // and the first save cannot finish before the second is made. Under the default eager
+        // dispatcher it sometimes did: the first coroutine ran to completion inside the first
+        // save() call, clearing saveInFlight, so the second save legitimately proceeded and won.
+        // That made this test's premise -- "a second tap while the first is still in flight" --
+        // something it could not actually guarantee, and it failed on CI twice for that reason
+        // while passing locally.
+        //
+        // Same technique, and the same reason, as
+        // BookDetailViewModelTest.saveSession_staleCompletionDoesNotClobberNewerPendingSession.
+        viewModels.installMain(StandardTestDispatcher(testScheduler))
+
         viewModel.save(
             title = "First Call Title",
             releaseYear = 2021,
@@ -327,9 +327,9 @@ class EditBookViewModelTest {
         // observing query having re-emitted. Snapshotting there failed once on CI with a
         // ComparisonFailure whose values the console log truncated away.
         //
-        // The guard itself is not in question: saveInFlight is checked and set synchronously
-        // before viewModelScope.launch, so a second call cannot slip past it. If this fails again
-        // the message now carries the value actually found, which is what the last failure lacked.
+        // The guard is correct -- saveInFlight is checked and set synchronously before
+        // viewModelScope.launch. What this test could not previously do was *create* the condition
+        // it names, which is what the dispatcher swap above fixes.
         val persisted = bookRepository.observeBookDetail(mediaId)
             .first { it?.mediaItem?.title != "Project Hail Mary" }
         assertEquals(

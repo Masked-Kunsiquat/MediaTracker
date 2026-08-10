@@ -123,9 +123,16 @@ public class LogFileStore(
     private val clock: Clock = Clock.System,
     private val maxFileSizeBytes: Long = MAX_LOG_FILE_SIZE_BYTES,
     bufferCapacity: Int = DEFAULT_BUFFER_CAPACITY,
-    private val flushThreshold: Int = DEFAULT_FLUSH_THRESHOLD,
+    flushThreshold: Int = DEFAULT_FLUSH_THRESHOLD,
     flushIntervalMillis: Long = DEFAULT_FLUSH_INTERVAL_MILLIS,
 ) {
+    // Coerced, not trusted: at or below zero, `buffer.size() >= flushThreshold` is permanently
+    // true, so the drain loop in append() would never exit and would spin flushing an empty buffer
+    // forever. Clamped rather than rejected, in keeping with a facility that must never become a
+    // new source of failure for its caller -- one entry is the smallest threshold that means
+    // anything.
+    private val flushThreshold: Int = flushThreshold.coerceAtLeast(1)
+
     private val currentPath = "$directoryPath/$CURRENT_FILE_NAME"
     private val previousPath = "$directoryPath/$PREVIOUS_FILE_NAME"
     private val buffer = LogBuffer(bufferCapacity, initialSeq)
@@ -180,10 +187,27 @@ public class LogFileStore(
             // off for the rest of the process.
             if (buffer.size() >= flushThreshold && autoFlushGate.tryLock()) {
                 backgroundScope.launch {
-                    try {
-                        flush()
-                    } finally {
-                        autoFlushGate.unlock()
+                    // Drains until the buffer is back under the threshold, rather than flushing
+                    // once. A crossing that happens *while* this flush is in flight is otherwise
+                    // dropped: those appends fail tryLock above, and once appends stop nothing
+                    // re-triggers the check -- so the batch sits in memory until the periodic
+                    // flush, or forever if that loop is disabled. The gate introduced that, so
+                    // draining before releasing it is what removes it.
+                    //
+                    // The outer loop closes the same hole once more, in the handoff itself: an
+                    // append landing between the last size check and the unlock would also fail
+                    // tryLock and find nothing scheduled. Re-checking *after* releasing, and
+                    // re-acquiring if it is still needed, leaves no window where a crossing is
+                    // both unscheduled and unnoticed.
+                    while (true) {
+                        try {
+                            do {
+                                flush()
+                            } while (buffer.size() >= flushThreshold)
+                        } finally {
+                            autoFlushGate.unlock()
+                        }
+                        if (buffer.size() < flushThreshold || !autoFlushGate.tryLock()) break
                     }
                 }
             }

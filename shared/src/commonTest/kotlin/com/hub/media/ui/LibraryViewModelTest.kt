@@ -157,6 +157,21 @@ class LibraryViewModelTest {
         viewModel = viewModels.track(LibraryViewModel(repository, FailingBulkDelete(message)))
     }
 
+    /** Records the ids it was handed, so a test can assert on the request rather than the outcome. */
+    private class RecordingBulkDelete : BulkDeleteUseCase {
+        val calls = mutableListOf<List<String>>()
+        override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> {
+            calls += ids
+            return Resource.Success(DeleteBooksSummary(ids.size, 0, 0))
+        }
+    }
+
+    /** Rebuilds the ViewModel with a recording delete and returns the recorder. */
+    private fun useRecordingDelete(): RecordingBulkDelete =
+        RecordingBulkDelete().also {
+            viewModel = viewModels.track(LibraryViewModel(repository, it))
+        }
+
     /**
      * Adds a book through the repository (so it goes through the same path production does) and
      * returns its media id, optionally setting a reading status for the filter tests.
@@ -293,15 +308,21 @@ class LibraryViewModelTest {
 
     @Test
     fun deleteSelected_withNothingSelected_isANoOp() = runTest {
+        // Asserts the delete is never invoked, rather than that the book survives. The previous
+        // form awaited `books.size == 1` when the state already held one book, so it was satisfied
+        // by the stale replay and returned before the delete could have propagated -- it would have
+        // passed just as happily if the guard were gone and the book deleted.
+        val recorder = useRecordingDelete()
         insertBook("Untouched")
         viewModel.uiState.first { it.books.isNotEmpty() }
 
         viewModel.deleteSelected()
+        runCurrent()
 
         assertEquals(
-            1,
-            viewModel.uiState.first { it.books.size == 1 }.books.size,
-            "nothing selected, nothing deleted",
+            emptyList(),
+            recorder.calls,
+            "nothing selected must not reach the delete at all",
         )
     }
 
@@ -339,6 +360,33 @@ class LibraryViewModelTest {
         assertNull(
             viewModel.uiState.first { it.deleteError == null }.deleteError,
             "an error already shown is not a state",
+        )
+    }
+
+    @Test
+    fun deleteSelected_withNothingCollectingUiState_stillDeletesTheWholeSelection() = runTest {
+        // Deliberately never collects uiState. That is the whole point: deleteSelected() used to
+        // read uiState.value.selectedIds, and stateIn(WhileSubscribed) does not recompute that
+        // value with no subscriber -- so the selection was invisible, `ids` came back empty, and
+        // the delete silently no-opped. On a device the screen is normally collecting, which is
+        // why this survived every other test here (they all await uiState first) and surfaced only
+        // as a CI hang in the failure test below, where the delete that never ran produced no
+        // error to await.
+        //
+        // Asserts on the ids handed to the use case rather than on the rows being gone: the real
+        // delete completes on Room's own dispatcher, so an outcome assertion would need an await
+        // that simply hangs when the regression returns -- a 60s timeout instead of this message.
+        val recorder = useRecordingDelete()
+        val id = insertBook("Doomed")
+
+        viewModel.toggleSelection(id)
+        viewModel.deleteSelected()
+        runCurrent()
+
+        assertEquals(
+            listOf(listOf(id)),
+            recorder.calls,
+            "the selection must reach the delete whether or not anything is observing uiState",
         )
     }
 

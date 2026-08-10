@@ -268,8 +268,16 @@ class BookDetailViewModelTest {
         viewModel.stopReading()
         assertIs<ReadingTimerState.Idle>(viewModel.timerState.value)
 
-        val ready = viewModel.uiState.first { it is BookDetailUiState.Ready } as BookDetailUiState.Ready
-        assertNotNull(ready.pendingSession)
+        // Awaited on the field that actually changes, not on Ready. The state was *already* Ready
+        // before stopReading, so `first { it is Ready }` is satisfied by the stale value and
+        // returns before the pending session has propagated through combine -> stateIn -- the same
+        // race as reading .value directly, wearing an await's clothing. The last holdout in this
+        // file; every sibling below already does it this way.
+        runCurrentUntilOrTimeOut {
+            (viewModel.uiState.value as? BookDetailUiState.Ready)?.pendingSession != null
+        }
+        val ready = viewModel.uiState.value as BookDetailUiState.Ready
+        assertNotNull(ready.pendingSession, "stopReading must leave a pending session")
     }
 
     @Test

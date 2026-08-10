@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-10
+
+Fixes bulk delete acting on less than you selected. Selecting books and then changing the status
+filter made the counter drop, as though the selection were being lost, and deleting would then
+remove only the books the filter happened to be showing — leaving the rest selected and invisible
+with nothing to explain it. The confirmation now lists every book by name, so what is about to go is
+never a surprise.
+
 ### Fixed
 
 - **Bulk delete now removes everything you selected**, not just the books the current filter happens
@@ -15,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rest selected but invisible.
 - **The delete confirmation now lists the books by name**, so you can see exactly what is about to
   go — including any hidden behind the current filter.
+- **Deleting a selection no longer does nothing** in the moment after the library screen has been
+  away — coming back from another app, or rotating the phone. The delete read a snapshot of the
+  selection that stops being kept up to date while nothing is watching it, so it could find nothing
+  selected and quietly return, with no books removed and no message.
 
 ## [0.10.0] - 2026-08-10
 
