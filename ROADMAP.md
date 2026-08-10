@@ -871,6 +871,31 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
 
+- **Three `BookDetailViewModelTest` cases are flaky, and CI proved it on day one.** On the very
+  first PR after CI existed — a PR touching only YAML and Markdown — `:shared:jvmTest` failed with
+  3 of 642 tests red: `stopReading_afterStart_producesPendingSession`,
+  `saveSession_validationError_keepsPendingSession`, and
+  `discardPendingSession_clearsPendingSessionAndError`. **Re-running the identical commit passed.**
+  Same SHA, opposite result, so this is flakiness rather than a regression, and it is not
+  reproducible on a developer machine — which is why it went unnoticed until something slower and
+  more contended ran the suite.
+  - **Likely cause, not yet confirmed.** All three report their failure at the *first* line of the
+    test body, and all three bodies open the same way: `insertBook()` (a real Room write), then
+    `newViewModel()`, then `uiState.first { it is BookDetailUiState.Ready }`. That last call waits
+    on a genuinely asynchronous Room-backed `Flow` from inside `runTest`'s virtual-time scheduler.
+    `ViewModelTestSupport.kt`'s KDoc already documents this exact real-vs-virtual-time boundary for
+    a *different* symptom (the `Dispatchers.Main` teardown race), so the seam is known to be
+    hazardous here; this looks like the same seam biting a different way.
+  - **How to approach it, because the obvious mistake is expensive.** A timing fix can easily pass
+    for the wrong reason — perturbing the schedule rather than removing the race — and that is
+    worse than the flake, because it looks solved. Get a baseline first by running the class in a
+    loop (`--rerun-tasks`, tens of iterations) to establish an actual failure rate, then require
+    the same loop to be clean afterwards. A single green run proves nothing here; the second CI
+    attempt on the unchanged commit was green.
+  - Until fixed, a red CI run naming only these three tests is very likely this and not the change
+    under review — but **verify that rather than assuming it**, since "the flaky tests again" is
+    how a real regression gets waved through.
+
 - **The single-book cover re-fetch still reports a rate-limit as "no cover".** Task 14 Phase A
   taught `OpenLibraryIsbnCoverProbe` to distinguish 429/5xx (`RateLimited`) from 404 (`NotFound`),
   and the bulk backfill acts on that — but `FallbackBookMetadataProvider`, which the interactive
