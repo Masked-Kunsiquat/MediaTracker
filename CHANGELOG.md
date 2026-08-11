@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-11
+
+The log now tells you what the app was doing, not just what broke. Until now nothing was recorded
+below the level of a warning, so a healthy app wrote nothing at all and the log screen sat empty —
+which looks like a broken feature rather than good news. It now records the ordinary things too:
+the app starting, an import or export finishing, a backfill starting and how far it got. When
+something does go wrong, the entries before it are the context that explains how you got there.
+
+A batch of failures that used to vanish without trace now explain themselves. If a book arrives with
+no author, or no cover, or an import refuses your file, there is now an entry saying why — those
+were all previously discarded in silence.
+
+### Added
+
+- **The log records normal activity**, not only failures: app start, import and export completion,
+  and backfill start/finish with its counts.
+- **Failures that used to disappear now leave a reason behind** — a missing author, a cover that
+  could not be saved, a refused import, a provider that could not be reached.
+
+### Changed
+
+- **"Log detail" now starts at Detailed** instead of Warnings, so the log is useful without having
+  to turn anything on first.
+- **The "Debug" option is gone.** Nothing in the app ever logged at that level, so it behaved
+  identically to Detailed and promised detail that did not exist. If you had already selected it,
+  your choice is left alone.
+- Rejected rows from an import are summarised as a count with their row numbers rather than one
+  entry each, so a single malformed file cannot flood the log.
+
+### Fixed
+
+- **Opening Settings could crash the app** if reading your saved backfill progress failed. The
+  failure is now recorded and Settings opens normally.
+
+### Note on privacy
+
+Everything above keeps the existing rule: the log records *what failed and why*, never what you are
+reading. Book titles, author names and session notes are never written to it, and it stays on your
+device.
+
 ## [0.10.1] - 2026-08-10
 
 Fixes bulk delete acting on less than you selected. Selecting books and then changing the status

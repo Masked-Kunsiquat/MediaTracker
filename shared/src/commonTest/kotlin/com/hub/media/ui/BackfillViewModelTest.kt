@@ -238,6 +238,26 @@ class BackfillViewModelTest {
         )
     }
 
+    @Test
+    fun init_whenReadingPersistedProgressFails_logsInsteadOfCrashingTheScope() = runTest {
+        // Drops the table *before* constructing the ViewModel, so init's peekProgress() is
+        // guaranteed to fail rather than racing the drop. That race is how this was found:
+        // start_dbFailureMidBackfill below drops the table after construction, so whether init
+        // resumed before or after decided the outcome, and CI failed intermittently with a raw
+        // SQLiteException escaping viewModelScope. On a device that escape is a crash when Settings
+        // opens -- from a read whose only job is to restore a progress bar.
+        db.useWriterConnection { connection -> connection.execSQL("DROP TABLE app_settings") }
+        val recorder = RecordingLogger()
+
+        newViewModel(GatedMetadataProvider(emptyMap(), gatedIsbns = emptySet()), logger = recorder)
+        waitUntilOrTimeOut { recorder.entries.any { it.level == LogLevel.ERROR } }
+
+        val errors = recorder.entries.filter { it.level == LogLevel.ERROR }
+        assertTrue(errors.isNotEmpty(), "a failed progress read must be logged, not discarded")
+        assertTrue(errors.all { it.tag == "BackfillViewModel" })
+        assertTrue(errors.all { it.throwable != null }, "the cause must be attached, not just a message")
+    }
+
     // ---- Finding 3: init's late peekProgress() must not clobber a start() already in flight ----
 
     @Test

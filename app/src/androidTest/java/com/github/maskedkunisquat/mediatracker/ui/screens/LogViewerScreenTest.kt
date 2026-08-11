@@ -92,10 +92,38 @@ class LogViewerScreenTest {
 
     @Test
     fun entries_areRenderedAndSelectableAsText() {
-        setContent(uiState = LogViewerUiState(entries = listOf(entry(1, "first"), entry(2, "second"))))
+        // Fixture messages are deliberately not ordinary words. They were "first"/"second", which
+        // silently started matching the "Oldest first -- newest at the bottom" caption as well, so
+        // the substring assertion failed on ambiguity rather than on absence -- a failure that
+        // reads as "the entry is missing" when the entry is fine.
+        setContent(uiState = LogViewerUiState(entries = listOf(entry(1, "alpha-msg"), entry(2, "bravo-msg"))))
 
-        composeRule.onNodeWithText("first", substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText("second", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("alpha-msg", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("bravo-msg", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun entryList_statesWhichDirectionTimeRuns() {
+        // Entries carry no timestamp, and the screen opens scrolled to the newest one -- so without
+        // a stated direction the first thing on screen looks like the top of the log when it is
+        // actually the bottom. Reported from a device; nothing in the suite could have caught it.
+        setContent(uiState = LogViewerUiState(entries = listOf(entry(1, "alpha-msg"), entry(2, "bravo-msg"))))
+
+        composeRule.onNodeWithText("Oldest first", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("End of log").assertIsDisplayed()
+    }
+
+    @Test
+    fun emptySnapshot_showsNoDirectionHint() {
+        // The hint belongs to a list; with nothing to order it would be noise contradicting the
+        // "no entries recorded yet" message.
+        setContent(uiState = LogViewerUiState(entries = emptyList(), isLoading = false))
+
+        // Positive control: prove the screen actually rendered its empty state before trusting the
+        // hint's absence -- otherwise a blank screen (or a crash into nothing) would pass this test
+        // too, since it also fails to show "Oldest first".
+        composeRule.onNodeWithText("No log entries recorded yet.").assertIsDisplayed()
+        composeRule.onNodeWithText("Oldest first", substring = true).assertDoesNotExist()
     }
 
     @Test

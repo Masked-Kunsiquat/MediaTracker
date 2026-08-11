@@ -1,5 +1,10 @@
 package com.hub.media.features.books.domain
 
+import kotlin.coroutines.cancellation.CancellationException
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
@@ -129,6 +134,9 @@ public data class BulkBackfillProgress(
  * @param settingsRepository Backing store for [BulkBackfillState] (see that class's KDoc for why
  *   `app_settings` -- no schema change -- is where resume state lives).
  */
+/** Log tag for this use case's lifecycle tracing (ROADMAP Task 15 Phase C). */
+private const val TAG = "BulkBackfillUseCase"
+
 public class BulkBackfillUseCase(
     private val metadataProvider: BookMetadataProvider,
     private val isbnCoverProbe: OpenLibraryIsbnCoverProbe,
@@ -136,6 +144,7 @@ public class BulkBackfillUseCase(
     private val imageStorage: LocalImageStorageManager,
     private val bookRepository: BookRepository,
     private val settingsRepository: SettingsRepository,
+    private val logger: Logger = AppLogger,
 ) {
 
     /**
@@ -157,17 +166,27 @@ public class BulkBackfillUseCase(
         var state = settingsRepository.getBulkBackfillState() ?: seedState()
 
         if (state.pendingMediaIds.isEmpty()) {
+            // Traced too, and this is the case that most needs it: a run with nothing to do returns
+            // here without touching a single book, so without an entry the user presses "backfill",
+            // sees the log unchanged, and cannot tell a no-op apart from a button that did nothing.
+            // Found on a device -- the tests covered the loop and said nothing about this path.
+            logger.info(TAG) { "Backfill run: nothing pending, no books to update" }
             settingsRepository.clearBulkBackfillState()
             return state.toProgress(isPaused = false, retryAfter = null)
         }
 
         val toProcess = state.pendingMediaIds
+        // Lifecycle tracing: counts only. A backfill is the longest-running thing this app does and
+        // the likeliest to be interrupted, so "it started, over this many books" is the context that
+        // makes any later failure readable. No mediaIds -- one entry per run, not per book.
+        logger.info(TAG) { "Backfill run starting: ${toProcess.size} book(s) pending" }
         val stillPending = mutableListOf<String>()
         var updated = state.updated
         var noProviderData = state.noProviderData
         var quotaExhausted = false
         var retryAfterSeen: Duration? = null
 
+        try {
         for (index in toProcess.indices) {
             // Cooperative cancellation between books: a caller (e.g. the Settings screen's "cancel
             // backfill" action) cancelling this coroutine stops the loop here rather than mid-book,
@@ -196,8 +215,31 @@ public class BulkBackfillUseCase(
             onProgress?.invoke(state.toProgress(isPaused = quotaExhausted, retryAfter = retryAfterSeen))
         }
 
+        } catch (e: CancellationException) {
+            // Cancelling is normal -- the Settings screen offers it -- but without this the run
+            // logs "starting, 168 pending" and then nothing at all, which reads as a hang or a
+            // crash rather than as the user's own choice. Logged before rethrowing, never instead
+            // of it: the cancellation still has to propagate.
+            //
+            // Read from `state` (the last persisted checkpoint), not the loop-local `updated`/
+            // `stillPending` -- `stillPending` only accumulates ids deferred by books actually
+            // processed *this* iteration of the loop, not the full resume set. The true resume
+            // point is `state.pendingMediaIds` (= stillPending + the not-yet-processed remainder,
+            // see the `state = state.copy(...)` assignment above), and `state` is exactly what was
+            // just persisted via saveBulkBackfillState, so it's also the correct thing to report.
+            logger.info(TAG) {
+                "Backfill run cancelled: ${state.updated} updated, " +
+                    "${state.pendingMediaIds.size} left for the next run"
+            }
+            throw e
+        }
+
         if (state.pendingMediaIds.isEmpty()) {
             settingsRepository.clearBulkBackfillState()
+        }
+        logger.info(TAG) {
+            "Backfill run finished: $updated updated, $noProviderData without provider data, " +
+                "${state.pendingMediaIds.size} still pending"
         }
         return state.toProgress(
             isPaused = quotaExhausted && state.pendingMediaIds.isNotEmpty(),
@@ -303,7 +345,9 @@ public class BulkBackfillUseCase(
         if (needsCover && coverUrl != null) {
             val downloadResult = coverDownloader.download(coverUrl)
             if (downloadResult is Resource.Success) {
-                coverHashToWrite = imageStorage.saveImage(downloadResult.data).getOrNull()
+                coverHashToWrite = imageStorage.saveImage(downloadResult.data)
+                    .onFailure { logger.warn(TAG, it) { "Cover save failed for mediaId=$mediaId" } }
+                    .getOrNull()
                 if (coverHashToWrite == null) coverDeferred = true // save failed -- transient, retry later
             } else {
                 coverDeferred = true // download failed -- transient, retry later

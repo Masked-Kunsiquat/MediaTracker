@@ -1,11 +1,19 @@
 package com.hub.media.features.portability.domain
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
+import com.hub.media.core.util.info
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.first
+
+/** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "ExportDataUseCase"
 
 /**
  * Abstraction over "generate both CSV exports" so [com.hub.media.ui.ExportViewModel] can depend on
@@ -54,6 +62,7 @@ public interface ExportUseCase {
 public class ExportDataUseCase(
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
+    private val logger: Logger = AppLogger,
 ) : ExportUseCase {
 
     /**
@@ -70,13 +79,24 @@ public class ExportDataUseCase(
             .groupBy { it.mediaId }
         val sessions = readingSessionRepository.observeAllSessions().first()
 
-        Resource.Success(
-            CsvExportBundle(
-                libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
-                readingLogsCsv = ReadingLogCsvExporter.export(sessions),
-            ),
+        // Build the bundle BEFORE logging completion, deliberately -- a completion entry must
+        // never be written before the thing it claims completed. If either exporter throws, this
+        // ordering ensures the catch block below logs "Export failed" instead of this having
+        // already logged "Export completed" moments earlier.
+        val bundle = CsvExportBundle(
+            libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
+            readingLogsCsv = ReadingLogCsvExporter.export(sessions),
         )
+        logger.info(TAG) {
+            "Export completed: ${books.size} book(s), ${sessions.size} session(s)"
+        }
+        Resource.Success(bundle)
+    } catch (e: CancellationException) {
+        // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+        // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+        throw e
     } catch (e: Exception) {
+        logger.error(TAG, e) { "Export failed" }
         Resource.Error(
             message = "Failed to export data: ${e.message ?: "Unknown error"}",
             cause = e,

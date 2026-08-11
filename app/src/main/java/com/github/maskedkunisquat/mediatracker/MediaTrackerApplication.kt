@@ -6,6 +6,7 @@ import com.hub.media.core.storage.LogFileStore
 import com.hub.media.core.storage.createLogFileStore
 import com.hub.media.core.storage.logStorageDirectory
 import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.info
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.withPlatformLogger
 import com.hub.media.features.settings.data.observeLogVerbosityOrNull
@@ -17,6 +18,10 @@ import kotlinx.coroutines.launch
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.createAppContainer
 import kotlinx.coroutines.runBlocking
+
+
+/** Log tag for this class's lifecycle tracing (ROADMAP Task 15 Phase C). */
+private const val TAG = "MediaTrackerApplication"
 
 /**
  * Application class holding a lazily-created [AppContainer].
@@ -49,10 +54,14 @@ class MediaTrackerApplication : Application() {
      * component (including the first `Activity`, which is what actually triggers
      * [appContainer]'s lazy initialization via [MainActivity]) -- so every log call issued for the
      * rest of this process's lifetime is already governed by the right threshold. A debug build
-     * gets everything down to [LogLevel.DEBUG]; a release build gets [LogLevel.WARN] explicitly
-     * (matching [AppLogger]'s own pre-[AppLogger.configure] default, restated here rather than
-     * relied upon implicitly, so the release behavior is a deliberate statement, not an accident
-     * of never having called [AppLogger.configure] at all).
+     * gets everything down to [LogLevel.DEBUG]; a release build gets [LogLevel.INFO].
+     *
+     * Release was [LogLevel.WARN] until ROADMAP Task 15 Phase C, chosen when nothing in the
+     * codebase emitted below WARN -- so a healthy app wrote nothing and an empty log viewer read as
+     * a broken feature. Now that lifecycle tracing exists, INFO is what gives a later failure the
+     * context that led to it. Stated explicitly either way rather than relying on [AppLogger]'s own
+     * pre-[AppLogger.configure] default, so the release behavior is a deliberate statement and not
+     * an accident of never having called [AppLogger.configure] at all.
      *
      * ### Phase B: always-on logging, and the [logFileStore] construction this now does here
      * ROADMAP Task 15 Phase B makes logging "always-on (not debug-build-gated)". That is about
@@ -93,12 +102,20 @@ class MediaTrackerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         logFileStore = runBlocking { createLogFileStore(logStorageDirectory(applicationContext)) }
-        val buildTypeDefault = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.WARN
+        // Release bootstraps at INFO since ROADMAP Task 15 Phase C, not WARN. DEFAULT_LOG_VERBOSITY
+        // alone would not have changed anything on a fresh install: the never-set case resolves to
+        // this build-type default, not to the setting's default (see observeLogVerbosityOrNull).
+        val buildTypeDefault = if (BuildConfig.DEBUG) LogLevel.DEBUG else LogLevel.INFO
         AppLogger.configure(
             minLevel = buildTypeDefault,
             delegate = FileLogSink(logFileStore).withPlatformLogger(),
         )
         applyPersistedLogVerbosity(buildTypeDefault)
+        // The first entry in every session's log, and the anchor everything after it is read
+        // against: which build was running when whatever comes next went wrong. Emitted after
+        // configure() so it goes through the real sink rather than being dropped by the
+        // pre-configure threshold.
+        AppLogger.info(TAG) { "App started (version ${BuildConfig.VERSION_NAME})" }
     }
 
     /**

@@ -1,17 +1,27 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Downloads raw cover image bytes from a [BookMetadata.coverImageUrl]. The resulting bytes are
  * expected to be handed to [com.hub.media.core.storage.LocalImageStorageManager] for
  * content-addressed local storage per AGENTS.md §4.
  */
-public class CoverImageDownloader(private val client: HttpClient) {
+/** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "CoverImageDownloader"
+
+public class CoverImageDownloader(
+    private val client: HttpClient,
+    private val logger: Logger = AppLogger,
+) {
 
     /**
      * Downloads the image bytes at [url].
@@ -33,7 +43,15 @@ public class CoverImageDownloader(private val client: HttpClient) {
             }
 
             Resource.Success(bytes)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious WARN every
+            // time a screen is closed mid-download.
+            throw e
         } catch (e: Exception) {
+            // The url is a provider cover endpoint, not library content -- the same category as the
+            // isbn it is usually built from.
+            logger.warn(TAG, e) { "Cover image download failed for $url" }
             Resource.Error("Cover image download failed for $url: ${e.message}", e)
         }
     }

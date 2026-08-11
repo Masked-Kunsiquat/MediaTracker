@@ -5,10 +5,14 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorDto
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorRefDto
 import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
 
 private const val OPEN_LIBRARY_BASE_URL = "https://openlibrary.org"
 private const val OPEN_LIBRARY_COVERS_BASE_URL = "https://covers.openlibrary.org/b"
@@ -34,7 +38,13 @@ private val FOUR_DIGIT_YEAR_REGEX = Regex("""\b(1[5-9]\d{2}|20\d{2})\b""")
  * a real, provider-confirmed image), this client only sets [BookMetadata.coverImageUrl] when the
  * edition payload has an explicit cover id.
  */
-public class OpenLibraryClient(private val client: HttpClient) : BookMetadataProvider {
+/** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "OpenLibraryClient"
+
+public class OpenLibraryClient(
+    private val client: HttpClient,
+    private val logger: Logger = AppLogger,
+) : BookMetadataProvider {
 
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         return try {
@@ -47,7 +57,12 @@ public class OpenLibraryClient(private val client: HttpClient) : BookMetadataPro
 
             val dto = try {
                 response.body<OpenLibraryEditionDto>()
+            } catch (e: CancellationException) {
+                // Same rethrow as the outer catch below -- a cancelled deserialization is not a
+                // malformed-JSON failure.
+                throw e
             } catch (e: Exception) {
+                logger.warn(TAG, e) { "Open Library returned malformed JSON for isbn=$isbn" }
                 return Resource.Error("Open Library returned malformed JSON for ISBN $isbn", e)
             }
 
@@ -73,7 +88,16 @@ public class OpenLibraryClient(private val client: HttpClient) : BookMetadataPro
                     externalId = dto.key,
                 ),
             )
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception,
+            // so swallowing it here would both break structured concurrency and log a spurious WARN
+            // every time a screen is closed mid-lookup.
+            throw e
         } catch (e: Exception) {
+            // WARN, not ERROR: an offline device is the ordinary case here, and a failed lookup
+            // that the app recovers from by falling back to Google Books is not a fault to shout
+            // about. Same level, and the same isbn= identifier, as OpenLibraryIsbnCoverProbe.
+            logger.warn(TAG, e) { "Open Library lookup failed for isbn=$isbn" }
             Resource.Error("Open Library lookup failed for ISBN $isbn: ${e.message}", e)
         }
     }
@@ -95,9 +119,29 @@ public class OpenLibraryClient(private val client: HttpClient) : BookMetadataPro
     private suspend fun fetchAuthorName(key: String): String? {
         return try {
             val response = client.get("$OPEN_LIBRARY_BASE_URL$key.json")
-            if (!response.status.isSuccess()) return null
+            if (!response.status.isSuccess()) {
+                // The other half of the silent drop, and the likelier half: a non-2xx answer
+                // returns here without ever throwing, so the catch below never sees it. Status
+                // codes are explicitly loggable under the identifier rule.
+                logger.warn(TAG) {
+                    "Open Library author lookup returned ${response.status.value} for key=$key"
+                }
+                return null
+            }
             response.body<OpenLibraryAuthorDto>().name?.takeIf { it.isNotBlank() }
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch below: this method already returns null for an
+            // unresolved author, so a swallowed cancellation would look identical to "no such
+            // author" instead of propagating like every other cancellation in this file.
+            throw e
         } catch (e: Exception) {
+            // Was a silent drop -- the one swallow in this file that discarded its cause entirely,
+            // returning null with nothing recorded anywhere. It is also the one a user actually
+            // notices: an author that never arrives is exactly the "why has this book got no
+            // author?" symptom, and until now nothing explained it. The Open Library author key is
+            // public catalogue data, an identifier of the same kind as the isbn the rule already
+            // permits -- not the author name itself, which is library content and stays out.
+            logger.warn(TAG, e) { "Open Library author lookup failed for key=$key" }
             null
         }
     }

@@ -3,11 +3,20 @@ package com.hub.media.features.portability.domain
 import androidx.room.useWriterConnection
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.deleteFileIfExists
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+
+/** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "DatabaseBackupUseCase"
 
 /**
  * Abstraction over "produce a whole-database backup snapshot" so
@@ -101,6 +110,7 @@ public data class BackupResult(
 public class DefaultDatabaseBackupUseCase(
     private val database: AppDatabase,
     private val databaseFilePath: String,
+    private val logger: Logger = AppLogger,
 ) : DatabaseBackupUseCase {
 
     override suspend fun execute(): Resource<BackupResult> {
@@ -116,7 +126,19 @@ public class DefaultDatabaseBackupUseCase(
                 }
             }
             Resource.Success(BackupResult(stagedFilePath = stagingPath, suggestedFileName = suggestedBackupFileName()))
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            // Mirrors the Exception branch's cleanup below: VACUUM INTO's destination is created
+            // before the statement finishes, so a cancellation landing mid-write can leave a
+            // partial file at stagingPath just as surely as a thrown exception can. Wrapped in
+            // NonCancellable because this coroutine's Job is already cancelled at this point --
+            // without it, deleteFileIfExists's own withContext(Dispatchers.IO) hop would throw
+            // CancellationException immediately on entry and never actually run the delete.
+            withContext(NonCancellable) { deleteFileIfExists(stagingPath) }
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Database backup failed" }
             deleteFileIfExists(stagingPath)
             Resource.Error("Backup failed: ${e.message ?: "Unknown error"}", e)
         }

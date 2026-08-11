@@ -51,16 +51,38 @@ public class BackfillViewModel(
 
     init {
         viewModelScope.launch {
-            bulkBackfillUseCase.peekProgress()?.let { progress ->
-                // Only apply this late-arriving snapshot while nothing has happened yet this
-                // session. peekProgress() is a suspend DB read, so it's possible for the caller to
-                // already have called start() (moving uiState to Running, or even past it to
-                // Stopped(finalProgress) for a very short run) before this coroutine resumes --
-                // without this guard, that stale pre-start snapshot would clobber whatever start()
-                // has since done, including a run that's actively in flight.
-                if (_uiState.value is BackfillUiState.Idle) {
-                    _uiState.value = BackfillUiState.Stopped(progress)
-                }
+            // peekProgress() is an unguarded suspend DB read, and this launch has no caller to
+            // return a failure to -- so before this catch, anything it threw escaped straight into
+            // viewModelScope, where an uncaught exception takes the whole scope down. On a device
+            // that is a crash on opening Settings, from a read whose only job is to restore a
+            // progress bar. start() below has carried this reasoning since Phase A; init was simply
+            // missed, and it surfaced as an intermittent CI failure rather than as a bug report
+            // because provoking it needs the read to fail.
+            try {
+                peekPersistedProgress()
+            } catch (e: CancellationException) {
+                // Rethrown for the same reason start() rethrows it -- see that catch. On JVM
+                // CancellationException is an Exception, so ordering these two catches matters.
+                throw e
+            } catch (e: Exception) {
+                // Nothing to recover: uiState is already Idle, which is the correct state for "no
+                // persisted progress could be read". Logged so the cause is not simply discarded.
+                logger.error(TAG, e) { "Failed to read persisted backfill progress" }
+            }
+        }
+    }
+
+    /** The pre-start snapshot restore, extracted so [init]'s error handling stays legible. */
+    private suspend fun peekPersistedProgress() {
+        bulkBackfillUseCase.peekProgress()?.let { progress ->
+            // Only apply this late-arriving snapshot while nothing has happened yet this
+            // session. peekProgress() is a suspend DB read, so it's possible for the caller to
+            // already have called start() (moving uiState to Running, or even past it to
+            // Stopped(finalProgress) for a very short run) before this coroutine resumes --
+            // without this guard, that stale pre-start snapshot would clobber whatever start()
+            // has since done, including a run that's actively in flight.
+            if (_uiState.value is BackfillUiState.Idle) {
+                _uiState.value = BackfillUiState.Stopped(progress)
             }
         }
     }

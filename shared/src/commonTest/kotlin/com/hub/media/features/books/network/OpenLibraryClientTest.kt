@@ -3,6 +3,8 @@ package com.hub.media.features.books.network
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
@@ -10,8 +12,10 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -116,13 +120,23 @@ class OpenLibraryClientTest {
                 else -> respondError(HttpStatusCode.NotFound)
             }
         }
-        val client = OpenLibraryClient(createHttpClient(engine))
+        val recorder = RecordingLogger()
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
 
         val result = client.fetchByIsbn("9780547928227")
 
         assertTrue(result is Resource.Success, "expected Success, got $result")
         val metadata = (result as Resource.Success).data
         assertTrue(metadata.authors.isEmpty())
+
+        // ROADMAP Task 15 Phase C: dropping the author is still the right behaviour -- one
+        // unreachable author must not fail the whole lookup -- but it used to happen with nothing
+        // recorded anywhere, which made "why has this book got no author?" unanswerable. The name
+        // itself stays out of the log; the catalogue key and the status code do not.
+        val warning = recorder.entries.single { it.level == LogLevel.WARN }
+        assertEquals("OpenLibraryClient", warning.tag)
+        assertTrue(warning.message.contains("/authors/OL26320A"), "the key is what makes it diagnosable")
+        assertTrue(warning.message.contains("500"), "the status is what says why")
     }
 
     @Test
@@ -133,5 +147,23 @@ class OpenLibraryClientTest {
         val result = client.fetchByIsbn("1234567890")
 
         assertTrue(result is Resource.Error, "expected Error, got $result")
+    }
+
+    @Test
+    fun cancellation_duringLookup_propagatesInsteadOfBeingLoggedAsFailure() = runTest {
+        val engine = MockEngine { throw CancellationException("scope cancelled") }
+        val recorder = RecordingLogger()
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
+
+        // ROADMAP Task 15 Phase C: on JVM, CancellationException *is* an Exception, so a bare
+        // catch (e: Exception) here would both convert a cancelled screen into a bogus
+        // Resource.Error and log it as a provider failure it never was.
+        assertFailsWith<CancellationException> {
+            client.fetchByIsbn("9780547928227")
+        }
+        assertTrue(
+            recorder.entries.none { it.level == LogLevel.WARN },
+            "cancellation must not be logged as a lookup failure",
+        )
     }
 }

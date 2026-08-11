@@ -7,11 +7,16 @@ import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.BookWithDetails
 import com.hub.media.features.books.data.ReadingSessionRepository
-import com.hub.media.features.portability.data.ImportWriteRepository
+import com.hub.media.features.portability.csv.CsvTableReader
 import com.hub.media.features.portability.csv.CsvTableResult
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvImporter
@@ -21,10 +26,11 @@ import com.hub.media.features.portability.csv.ParsedSessionRow
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvImporter
 import com.hub.media.features.portability.csv.SessionRowParseResult
-import com.hub.media.features.portability.csv.CsvTableReader
+import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import com.hub.media.features.portability.goodreads.GoodreadsCsvTableReader
 import com.hub.media.features.portability.goodreads.GoodreadsCsvTableResult
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.first
 
 /** See [ImportDataUseCase.execute] and [ImportDataUseCase.executeGoodreads]. */
@@ -192,11 +198,60 @@ public interface ImportUseCase {
  * @param readingSessionRepository Source of the current session snapshot.
  * @param importWriteRepository Applies the resolved plan in one transaction.
  */
+/** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "ImportDataUseCase"
+
+/**
+ * Row references carried by a single rejection-summary entry. Bounded because the log file is
+ * capped: an import of a badly-formed export can reject thousands of rows, and one entry long
+ * enough to push everything else out of the file is its own kind of data loss.
+ */
+private const val MAX_LOGGED_REJECTED_ROWS = 20
+
 public class ImportDataUseCase(
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
     private val importWriteRepository: ImportWriteRepository,
+    private val logger: Logger = AppLogger,
 ) : ImportUseCase {
+
+    /**
+     * Refuses an import before anything is written, recording why at WARN.
+     *
+     * WARN rather than ERROR: a malformed file is the user's to fix, not a fault in the app -- but
+     * it is the single most likely thing to be asked about, and the log is where that question gets
+     * answered. The message describes file structure (headers, row shape), never cell contents, so
+     * the identifier rule holds.
+     */
+    private fun <T> refuse(message: String): Resource<T> {
+        logger.warn(TAG) { "Import refused before writing: $message" }
+        return Resource.Error(message)
+    }
+
+    /**
+     * Records the outcome of a completed import.
+     *
+     * Rejections are summarised by **count and row number, never by reason**. The reasons are
+     * genuinely the useful part for diagnosis, and they are deliberately left out anyway: they are
+     * built by `reject("$field is not a valid integer: '$raw'")` and friends, so they embed the raw
+     * cell that failed -- which for a title column is book content, straight into a file that
+     * outlives the import. Row numbers point at the same rows without carrying any of them, and the
+     * full reasons are already in front of the user in the import summary, where they belong.
+     *
+     * A per-row entry was the obvious alternative and is worse: one malformed export turns into
+     * hundreds of entries and buries everything else in a capped log.
+     */
+    private fun logRejectionSummary(pipeline: String, rejections: List<ImportRejection>) {
+        if (rejections.isEmpty()) return
+        val rows = rejections.take(MAX_LOGGED_REJECTED_ROWS).joinToString(", ") {
+            "${it.source}#${it.rowNumber}"
+        }
+        val more = (rejections.size - MAX_LOGGED_REJECTED_ROWS).coerceAtLeast(0)
+        logger.warn(TAG) {
+            "$pipeline: ${rejections.size} row(s) rejected" +
+                " [$rows${if (more > 0) ", and $more more" else ""}]"
+        }
+    }
 
     public override suspend fun execute(
         libraryCsv: String?,
@@ -204,7 +259,7 @@ public class ImportDataUseCase(
         duplicatePolicy: DuplicatePolicy,
     ): Resource<ImportSummary> {
         if (libraryCsv == null && readingLogsCsv == null) {
-            return Resource.Error("Nothing to import -- no file was selected.")
+            return refuse("Nothing to import -- no file was selected.")
         }
 
         val libraryParseResults = if (libraryCsv != null) {
@@ -217,7 +272,7 @@ public class ImportDataUseCase(
                     legacyHeaders = mapOf(LibraryCsvExporter.HEADER_V1 to LibraryCsvImporter::padLegacyV1Row),
                 )
             ) {
-                is CsvTableResult.Failure -> return Resource.Error("library_export.csv: ${table.message}")
+                is CsvTableResult.Failure -> return refuse("library_export.csv: ${table.message}")
                 is CsvTableResult.Success -> table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
             }
         } else {
@@ -226,7 +281,7 @@ public class ImportDataUseCase(
 
         val sessionDataRows = if (readingLogsCsv != null) {
             when (val table = CsvTableReader.read(readingLogsCsv, ReadingLogCsvExporter.HEADER)) {
-                is CsvTableResult.Failure -> return Resource.Error("reading_logs_export.csv: ${table.message}")
+                is CsvTableResult.Failure -> return refuse("reading_logs_export.csv: ${table.message}")
                 is CsvTableResult.Success -> table.rows
             }
         } else {
@@ -302,6 +357,12 @@ public class ImportDataUseCase(
             )
             if (writeResult is Resource.Error) return writeResult
 
+            logger.info(TAG) {
+                "CSV import completed: ${bookResolution.imported} imported, " +
+                    "${bookResolution.skipped} skipped, ${bookResolution.merged} merged, " +
+                    "${bookResolution.replaced} replaced, $sessionsImported session(s) imported"
+            }
+            logRejectionSummary("CSV import", rejections)
             Resource.Success(
                 ImportSummary(
                     booksImported = bookResolution.imported,
@@ -316,7 +377,12 @@ public class ImportDataUseCase(
                     notes = bookResolution.reviewNotes,
                 ),
             )
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Import failed" }
             Resource.Error("Import failed: ${e.message ?: "Unknown error"}", e)
         }
     }
@@ -353,7 +419,7 @@ public class ImportDataUseCase(
         duplicatePolicy: DuplicatePolicy,
     ): Resource<ImportSummary> {
         val parseResults = when (val table = GoodreadsCsvTableReader.read(goodreadsCsv)) {
-            is GoodreadsCsvTableResult.Failure -> return Resource.Error("goodreads_library_export.csv: ${table.message}")
+            is GoodreadsCsvTableResult.Failure -> return refuse("goodreads_library_export.csv: ${table.message}")
             is GoodreadsCsvTableResult.Success -> table.rows.map { row -> GoodreadsCsvImporter.parseRow(table.columnIndex, row) }
         }
 
@@ -371,6 +437,12 @@ public class ImportDataUseCase(
             )
             if (writeResult is Resource.Error) return writeResult
 
+            logger.info(TAG) {
+                "Goodreads import completed: ${bookResolution.imported} imported, " +
+                    "${bookResolution.skipped} skipped, ${bookResolution.merged} merged, " +
+                    "${bookResolution.replaced} replaced"
+            }
+            logRejectionSummary("Goodreads import", bookResolution.rejections)
             Resource.Success(
                 ImportSummary(
                     booksImported = bookResolution.imported,
@@ -385,7 +457,12 @@ public class ImportDataUseCase(
                     notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE) + bookResolution.reviewNotes,
                 ),
             )
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Goodreads import failed" }
             Resource.Error("Goodreads import failed: ${e.message ?: "Unknown error"}", e)
         }
     }

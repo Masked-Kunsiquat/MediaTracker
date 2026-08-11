@@ -544,12 +544,24 @@ fun SettingsScreenRoute(
  *   pass has no new gaps to fill).
  */
 /**
+ * The levels offered in "Log detail", most verbose first to match [LogLevel]'s declaration order.
+ *
+ * [LogLevel.DEBUG] is deliberately absent: there is still not one DEBUG call site in the codebase,
+ * so offering it promised a level of detail that behaved identically to Detailed. A value already
+ * persisted as DEBUG is left alone rather than rewritten -- it still displays and still works, and
+ * silently downgrading a diagnostic setting somebody deliberately turned on would be worse than
+ * leaving one unlisted option in place. Add DEBUG back here the moment something logs at it.
+ */
+private val SELECTABLE_LOG_LEVELS: List<LogLevel> =
+    listOf(LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR)
+
+/**
  * The log-verbosity setting row (ROADMAP Task 15 Phase B2).
  *
  * A dropdown rather than [WeekStartDaySetting]'s segmented buttons: Material 3 reserves segmented
- * buttons for a small set meant to be compared side by side, and four options whose labels are
- * words rather than single tokens would crowd a phone-width row. The order matches [LogLevel]'s
- * own declaration order, most verbose first, so "more detail" reads left-to-right as down-the-list.
+ * buttons for a small set meant to be compared side by side, and options whose labels are words
+ * rather than single tokens would crowd a phone-width row. The order follows [LogLevel]'s own
+ * declaration order, most verbose first, so "more detail" reads as down-the-list.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -591,7 +603,7 @@ private fun LogVerbositySetting(
                     .semantics { contentDescription = label },
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                LogLevel.entries.forEach { level ->
+                SELECTABLE_LOG_LEVELS.forEach { level ->
                     DropdownMenuItem(
                         text = { Text(level.displayLabel()) },
                         onClick = {

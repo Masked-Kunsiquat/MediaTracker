@@ -1,5 +1,8 @@
 package com.hub.media.features.books.domain
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.joinAuthors
@@ -28,6 +31,9 @@ public interface BookIngestionUseCase {
     public suspend fun execute(isbn: String): Resource<String>
 }
 
+/** Log tag for this use case's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "AddBookByIsbnUseCase"
+
 /**
  * End-to-end "add a book by ISBN" workflow: looks up metadata, best-effort downloads and
  * content-addresses the cover image, and atomically persists the result.
@@ -47,6 +53,7 @@ public class AddBookByIsbnUseCase(
     private val coverDownloader: CoverImageDownloader,
     private val imageStorage: LocalImageStorageManager,
     private val bookRepository: BookRepository,
+    private val logger: Logger = AppLogger,
 ) : BookIngestionUseCase {
 
     /**
@@ -121,7 +128,12 @@ public class AddBookByIsbnUseCase(
     private suspend fun downloadAndStoreCover(url: String): String? {
         val downloadResult = coverDownloader.download(url)
         if (downloadResult !is Resource.Success) return null
-        return imageStorage.saveImage(downloadResult.data).getOrNull()
+        // getOrNull() drops the cause on the floor. Not failing ingestion over a cover is right
+        // (see execute's KDoc), but doing it silently leaves "why has this book got no cover?"
+        // unanswerable -- the same silent-drop shape as OpenLibraryClient.fetchAuthorName.
+        return imageStorage.saveImage(downloadResult.data)
+            .onFailure { logger.warn(TAG, it) { "Cover save failed during ingestion" } }
+            .getOrNull()
     }
 
     /**
