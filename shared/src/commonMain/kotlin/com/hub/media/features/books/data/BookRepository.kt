@@ -9,13 +9,20 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.BookMetadataValidation
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+
+/** Log tag for this repository's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "BookRepository"
 
 /**
  * Repository for managing book-related data operations. Encapsulates all direct database
@@ -30,8 +37,15 @@ import kotlinx.coroutines.flow.combine
  *   [com.hub.media.features.stats.data.StatsRepository] / [com.hub.media.ui.StatsViewModel] /
  *   [com.hub.media.features.books.timer.ReadingTimer]). The default keeps every existing
  *   `BookRepository(db)` call site and test source-compatible.
+ * @param logger Injected for testability, defaulting to the production [AppLogger] exactly as the
+ *   other adoption sites do (ROADMAP Task 15 Phase C). Every catch below logs the cause it was
+ *   already discarding.
  */
-public class BookRepository(private val db: AppDatabase, private val clock: Clock = Clock.System) {
+public class BookRepository(
+    private val db: AppDatabase,
+    private val clock: Clock = Clock.System,
+    private val logger: Logger = AppLogger,
+) {
 
     /**
      * Observes all books in the database as a reactive stream, ordered by title.
@@ -188,7 +202,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities)
 
         Resource.Success(mediaId)
+    } catch (e: CancellationException) {
+        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+        // swallowing it here would both break structured concurrency and log a spurious ERROR every
+        // time a screen is closed mid-write.
+        throw e
     } catch (e: Exception) {
+        logger.error(TAG, e) { "Failed to add a book" }
         Resource.Error(
             message = "Failed to add book: ${e.message ?: "Unknown error"}",
             cause = e,
@@ -204,7 +224,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
     public suspend fun deleteBook(id: String): Resource<Unit> = try {
         db.mediaItemDao().deleteById(id)
         Resource.Success(Unit)
+    } catch (e: CancellationException) {
+        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+        // swallowing it here would both break structured concurrency and log a spurious ERROR every
+        // time a screen is closed mid-write.
+        throw e
     } catch (e: Exception) {
+        logger.error(TAG, e) { "Failed to delete book: id=$id" }
         Resource.Error(
             message = "Failed to delete book: ${e.message ?: "Unknown error"}",
             cause = e,
@@ -309,7 +335,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
                 return Resource.Error("Book with id=$mediaId not found")
             }
             Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious ERROR every
+            // time a screen is closed mid-write.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to update metadata for book: id=$mediaId" }
             Resource.Error(
                 message = "Failed to update book metadata: ${e.message ?: "Unknown error"}",
                 cause = e,
@@ -378,7 +410,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         } else {
             Resource.Success(Unit)
         }
+    } catch (e: CancellationException) {
+        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+        // swallowing it here would both break structured concurrency and log a spurious ERROR every
+        // time a screen is closed mid-write.
+        throw e
     } catch (e: Exception) {
+        logger.error(TAG, e) { "Failed to update the cover hash for book: id=$mediaId" }
         Resource.Error(
             message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
             cause = e,
@@ -424,7 +462,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
             } else {
                 Resource.Success(Unit)
             }
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious ERROR every
+            // time a screen is closed mid-write.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to apply backfilled metadata to book: id=$mediaId" }
             Resource.Error(
                 message = "Failed to apply backfilled metadata: ${e.message ?: "Unknown error"}",
                 cause = e,
@@ -463,7 +507,13 @@ public class BookRepository(private val db: AppDatabase, private val clock: Cloc
         )
         db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
         Resource.Success(Unit)
+    } catch (e: CancellationException) {
+        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+        // swallowing it here would both break structured concurrency and log a spurious ERROR every
+        // time a screen is closed mid-write.
+        throw e
     } catch (e: Exception) {
+        logger.error(TAG, e) { "Failed to update reading status for book: id=$mediaId" }
         Resource.Error(
             message = "Failed to update reading status: ${e.message ?: "Unknown error"}",
             cause = e,

@@ -1,5 +1,7 @@
 package com.hub.media.features.books.data
 
+import androidx.room.execSQL
+import androidx.room.useWriterConnection
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleExternalIdentifier
@@ -10,6 +12,8 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import kotlin.test.AfterTest
@@ -17,6 +21,9 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -37,6 +44,72 @@ class BookRepositoryTest {
     @AfterTest
     fun tearDown() {
         db.close()
+    }
+
+    // ---- Logging adoption (ROADMAP Task 15 Phase C) ------------------------------------------
+
+    /**
+     * Provokes a genuine DB failure by removing the table underneath the write.
+     *
+     * Closing the database -- the obvious alternative -- is no good here: Room answers a closed
+     * database with [CancellationException], which these catches now deliberately rethrow, so it
+     * exercises the wrong branch entirely. See [addBook_whenCancelled_rethrowsAndLogsNothing].
+     */
+    private suspend fun dropMediaItems() {
+        db.useWriterConnection { connection -> connection.execSQL("DROP TABLE media_items") }
+    }
+
+    @Test
+    fun addBook_whenTheWriteFails_logsTheCauseWithoutTheTitle() = runTest {
+        // The identifier rule from Phase A, at the one adoption site where a title is genuinely in
+        // scope and therefore possible to leak by accident.
+        val recorder = RecordingLogger()
+        val repo = BookRepository(db, logger = recorder)
+        dropMediaItems()
+
+        val result = repo.addBook(title = "A Title That Must Never Reach The Log", format = BookFormat.PHYSICAL)
+
+        assertIs<Resource.Error>(result)
+        val errors = recorder.entries.filter { it.level == LogLevel.ERROR }
+        assertEquals(1, errors.size, "the discarded cause must now be recorded exactly once")
+        assertEquals("BookRepository", errors.single().tag)
+        assertTrue(errors.single().throwable != null, "the cause must be attached, not just a message")
+        assertFalse(
+            errors.single().message.contains("A Title That Must Never Reach The Log"),
+            "a book title must never be persisted to the log",
+        )
+    }
+
+    @Test
+    fun updateReadingStatus_whenTheWriteFails_logsTheOpaqueIdOnly() = runTest {
+        val recorder = RecordingLogger()
+        val repo = BookRepository(db, logger = recorder)
+        val id = newId()
+        db.mediaItemDao().insert(sampleMediaItem(id = id, type = MediaType.BOOK, title = "Doomed"))
+        db.bookDetailsDao().insert(sampleBookDetails(mediaId = id))
+        db.useWriterConnection { connection -> connection.execSQL("DROP TABLE book_details") }
+
+        val result = repo.updateReadingStatus(id, ReadingStatus.FINISHED)
+
+        assertIs<Resource.Error>(result)
+        val error = recorder.entries.single { it.level == LogLevel.ERROR }
+        assertTrue(error.message.contains(id), "the opaque media id is what makes an entry actionable")
+        assertFalse(error.message.contains("Doomed"), "but never the title")
+    }
+
+    @Test
+    fun addBook_whenCancelled_rethrowsAndLogsNothing() = runTest {
+        // Cancellation is not a failure to report. Without the rethrow ahead of the Exception
+        // catch, closing a screen mid-write would both break structured concurrency and leave a
+        // spurious ERROR in the log -- making the log noisier exactly as adoption widens.
+        val recorder = RecordingLogger()
+        val repo = BookRepository(db, logger = recorder)
+        db.close()
+
+        assertFailsWith<CancellationException> {
+            repo.addBook(title = "Cancelled", format = BookFormat.PHYSICAL)
+        }
+        assertEquals(emptyList(), recorder.entries, "cancellation must not be logged as a failure")
     }
 
     @Test
