@@ -247,6 +247,8 @@
     <string name="log_viewer_export">Export full log</string>
     <string name="log_viewer_empty">No log entries recorded yet.</string>
     <string name="log_viewer_new_entries_divider">New since refresh</string>
+    <string name="log_viewer_direction_hint">Oldest first — newest at the bottom</string>
+    <string name="log_viewer_end_marker">End of log</string>
     <string name="log_viewer_export_success">Log exported</string>
     <string name="log_viewer_export_failed">Could not export the log</string>
 

@@ -186,22 +186,48 @@ fun LogViewerScreen(
                 }
 
                 else -> {
-                    SelectionContainer {
-                        Column(
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Fixed, not part of the scrolling list: without timestamps there is
+                        // nothing in an entry that says which way time runs, and the screen opens
+                        // scrolled to the *newest* entry -- so the first thing you see looks like
+                        // the top of the log when it is the bottom. A caption inside the scroll
+                        // would answer the question only until you scrolled past it.
+                        Text(
+                            text = stringResource(R.string.log_viewer_direction_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(scrollState)
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            // Read once: firstNewEntryIndex scans the list to find the boundary, so
-                            // touching it per entry would make rendering quadratic in the window size.
-                            val dividerIndex = uiState.firstNewEntryIndex
-                            uiState.entries.forEachIndexed { index, entry ->
-                                if (index == dividerIndex) {
-                                    NewEntriesDivider()
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                        HorizontalDivider()
+                        SelectionContainer(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(scrollState)
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                // Read once: firstNewEntryIndex scans the list to find the
+                                // boundary, so touching it per entry would make rendering
+                                // quadratic in the window size.
+                                val dividerIndex = uiState.firstNewEntryIndex
+                                uiState.entries.forEachIndexed { index, entry ->
+                                    if (index == dividerIndex) {
+                                        NewEntriesDivider()
+                                    }
+                                    LogEntryRow(entry)
                                 }
-                                LogEntryRow(entry)
+                                // Confirms the bottom really is the newest entry, rather than the
+                                // point the on-screen window happens to have been cut off at.
+                                Text(
+                                    text = stringResource(R.string.log_viewer_end_marker),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
                     }
@@ -229,7 +255,7 @@ private fun NewEntriesDivider() {
     }
 }
 
-/** One log entry, monospaced so timestamps and levels line up down the column. */
+/** One log entry, monospaced so levels and tags line up down the column. */
 @Composable
 private fun LogEntryRow(entry: LogEntry) {
     Text(
@@ -240,10 +266,3 @@ private fun LogEntryRow(entry: LogEntry) {
         modifier = Modifier.fillMaxWidth(),
     )
 }
-
-/** Local `HH:mm:ss.SSS` for a log entry's epoch-millis timestamp -- see [LogEntryRow]. */
-private fun formatLogTime(epochMillis: Long): String =
-    java.time.Instant.ofEpochMilli(epochMillis)
-        .atZone(java.time.ZoneId.systemDefault())
-        .toLocalTime()
-        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
