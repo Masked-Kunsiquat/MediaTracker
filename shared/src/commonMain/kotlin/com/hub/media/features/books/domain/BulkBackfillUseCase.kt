@@ -220,9 +220,16 @@ public class BulkBackfillUseCase(
             // logs "starting, 168 pending" and then nothing at all, which reads as a hang or a
             // crash rather than as the user's own choice. Logged before rethrowing, never instead
             // of it: the cancellation still has to propagate.
+            //
+            // Read from `state` (the last persisted checkpoint), not the loop-local `updated`/
+            // `stillPending` -- `stillPending` only accumulates ids deferred by books actually
+            // processed *this* iteration of the loop, not the full resume set. The true resume
+            // point is `state.pendingMediaIds` (= stillPending + the not-yet-processed remainder,
+            // see the `state = state.copy(...)` assignment above), and `state` is exactly what was
+            // just persisted via saveBulkBackfillState, so it's also the correct thing to report.
             logger.info(TAG) {
-                "Backfill run cancelled: $updated updated, " +
-                    "${stillPending.size} left for the next run"
+                "Backfill run cancelled: ${state.updated} updated, " +
+                    "${state.pendingMediaIds.size} left for the next run"
             }
             throw e
         }

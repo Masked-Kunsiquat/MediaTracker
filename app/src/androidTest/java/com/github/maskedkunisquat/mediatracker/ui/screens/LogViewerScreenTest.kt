@@ -119,6 +119,10 @@ class LogViewerScreenTest {
         // "no entries recorded yet" message.
         setContent(uiState = LogViewerUiState(entries = emptyList(), isLoading = false))
 
+        // Positive control: prove the screen actually rendered its empty state before trusting the
+        // hint's absence -- otherwise a blank screen (or a crash into nothing) would pass this test
+        // too, since it also fails to show "Oldest first".
+        composeRule.onNodeWithText("No log entries recorded yet.").assertIsDisplayed()
         composeRule.onNodeWithText("Oldest first", substring = true).assertDoesNotExist()
     }
 

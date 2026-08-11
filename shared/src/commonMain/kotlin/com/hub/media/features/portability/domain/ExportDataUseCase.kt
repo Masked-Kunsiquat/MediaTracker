@@ -79,15 +79,18 @@ public class ExportDataUseCase(
             .groupBy { it.mediaId }
         val sessions = readingSessionRepository.observeAllSessions().first()
 
+        // Build the bundle BEFORE logging completion, deliberately -- a completion entry must
+        // never be written before the thing it claims completed. If either exporter throws, this
+        // ordering ensures the catch block below logs "Export failed" instead of this having
+        // already logged "Export completed" moments earlier.
+        val bundle = CsvExportBundle(
+            libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
+            readingLogsCsv = ReadingLogCsvExporter.export(sessions),
+        )
         logger.info(TAG) {
             "Export completed: ${books.size} book(s), ${sessions.size} session(s)"
         }
-        Resource.Success(
-            CsvExportBundle(
-                libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
-                readingLogsCsv = ReadingLogCsvExporter.export(sessions),
-            ),
-        )
+        Resource.Success(bundle)
     } catch (e: CancellationException) {
         // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
         // swallowing it would break structured concurrency and log a cancelled screen as a failure.

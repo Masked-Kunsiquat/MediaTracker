@@ -12,8 +12,10 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -145,5 +147,23 @@ class OpenLibraryClientTest {
         val result = client.fetchByIsbn("1234567890")
 
         assertTrue(result is Resource.Error, "expected Error, got $result")
+    }
+
+    @Test
+    fun cancellation_duringLookup_propagatesInsteadOfBeingLoggedAsFailure() = runTest {
+        val engine = MockEngine { throw CancellationException("scope cancelled") }
+        val recorder = RecordingLogger()
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
+
+        // ROADMAP Task 15 Phase C: on JVM, CancellationException *is* an Exception, so a bare
+        // catch (e: Exception) here would both convert a cancelled screen into a bogus
+        // Resource.Error and log it as a provider failure it never was.
+        assertFailsWith<CancellationException> {
+            client.fetchByIsbn("9780547928227")
+        }
+        assertTrue(
+            recorder.entries.none { it.level == LogLevel.WARN },
+            "cancellation must not be logged as a lookup failure",
+        )
     }
 }

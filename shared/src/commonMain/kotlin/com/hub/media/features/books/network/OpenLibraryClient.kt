@@ -12,6 +12,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
 
 private const val OPEN_LIBRARY_BASE_URL = "https://openlibrary.org"
 private const val OPEN_LIBRARY_COVERS_BASE_URL = "https://covers.openlibrary.org/b"
@@ -56,6 +57,10 @@ public class OpenLibraryClient(
 
             val dto = try {
                 response.body<OpenLibraryEditionDto>()
+            } catch (e: CancellationException) {
+                // Same rethrow as the outer catch below -- a cancelled deserialization is not a
+                // malformed-JSON failure.
+                throw e
             } catch (e: Exception) {
                 logger.warn(TAG, e) { "Open Library returned malformed JSON for isbn=$isbn" }
                 return Resource.Error("Open Library returned malformed JSON for ISBN $isbn", e)
@@ -83,6 +88,11 @@ public class OpenLibraryClient(
                     externalId = dto.key,
                 ),
             )
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception,
+            // so swallowing it here would both break structured concurrency and log a spurious WARN
+            // every time a screen is closed mid-lookup.
+            throw e
         } catch (e: Exception) {
             // WARN, not ERROR: an offline device is the ordinary case here, and a failed lookup
             // that the app recovers from by falling back to Google Books is not a fault to shout
@@ -119,6 +129,11 @@ public class OpenLibraryClient(
                 return null
             }
             response.body<OpenLibraryAuthorDto>().name?.takeIf { it.isNotBlank() }
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch below: this method already returns null for an
+            // unresolved author, so a swallowed cancellation would look identical to "no such
+            // author" instead of propagating like every other cancellation in this file.
+            throw e
         } catch (e: Exception) {
             // Was a silent drop -- the one swallow in this file that discarded its cause entirely,
             // returning null with nothing recorded anywhere. It is also the one a user actually

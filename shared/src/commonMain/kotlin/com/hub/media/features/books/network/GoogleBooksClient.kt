@@ -12,6 +12,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
 
 private const val GOOGLE_BOOKS_VOLUMES_URL = "https://www.googleapis.com/books/v1/volumes"
 
@@ -40,6 +41,10 @@ public class GoogleBooksClient(
 
             val dto = try {
                 response.body<GoogleBooksResponseDto>()
+            } catch (e: CancellationException) {
+                // Same rethrow as the outer catch below -- a cancelled deserialization is not a
+                // malformed-JSON failure.
+                throw e
             } catch (e: Exception) {
                 logger.warn(TAG, e) { "Google Books returned malformed JSON for isbn=$isbn" }
                 return Resource.Error("Google Books returned malformed JSON for ISBN $isbn", e)
@@ -70,6 +75,11 @@ public class GoogleBooksClient(
                     externalId = item.id,
                 ),
             )
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception,
+            // so swallowing it here would both break structured concurrency and log a spurious WARN
+            // every time a screen is closed mid-lookup.
+            throw e
         } catch (e: Exception) {
             // The fallback provider: when this one fails too, the add/backfill genuinely has no
             // metadata to offer, so this is the entry that explains an empty result.

@@ -37,6 +37,23 @@ class LogVerbosityTest {
     }
 
     @Test
+    fun getLogVerbosity_afterSettingANonDefaultLevel_bothAccessorsReturnTheExplicitChoice() = runTest {
+        // Companion to the never-set test above, kept separate because it asserts the opposite
+        // fact: this proves an explicit choice actually overrides the default, rather than the
+        // default winning regardless of what was persisted. WARN is deliberately non-default here
+        // (DEFAULT_LOG_VERBOSITY is INFO) so a bug that always returns the default would be caught
+        // rather than coincidentally matching.
+        val db = testAppDatabase()
+        val repo = SettingsRepository(db.appSettingsDao())
+
+        repo.setLogVerbosity(LogLevel.WARN)
+
+        assertEquals(LogLevel.WARN, repo.getLogVerbosity())
+        assertEquals(LogLevel.WARN, repo.observeLogVerbosity().first())
+        db.close()
+    }
+
+    @Test
     fun observeLogVerbosityOrNull_neverSet_isNullSoTheBuildTypeDefaultSurvives() = runTest {
         val db = testAppDatabase()
         val repo = SettingsRepository(db.appSettingsDao())

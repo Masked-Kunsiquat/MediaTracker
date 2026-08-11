@@ -8,6 +8,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Downloads raw cover image bytes from a [BookMetadata.coverImageUrl]. The resulting bytes are
@@ -42,6 +43,11 @@ public class CoverImageDownloader(
             }
 
             Resource.Success(bytes)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious WARN every
+            // time a screen is closed mid-download.
+            throw e
         } catch (e: Exception) {
             // The url is a provider cover endpoint, not library content -- the same category as the
             // isbn it is usually built from.

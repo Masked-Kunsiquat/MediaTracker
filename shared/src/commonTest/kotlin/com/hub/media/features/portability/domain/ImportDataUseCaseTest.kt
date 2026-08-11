@@ -149,6 +149,43 @@ class ImportDataUseCaseTest {
     }
 
     @Test
+    fun execute_withMoreRejectedRowsThanTheLoggedCap_summarisesTheOverflowCorrectly() = runTest {
+        // MAX_LOGGED_REJECTED_ROWS (20) caps how many row references the rejection-summary WARN
+        // names, so a badly-formed export with thousands of rejects can't crowd everything else
+        // out of a capped log file. Nothing before this test exercised that bound. Every row here
+        // fails on an unparseable release_year -- a non-sensitive field -- so what's under test is
+        // the summary's shape (total count, the first 20 named, the rest counted as "N more"), not
+        // the identifier-redaction rule the test above already covers.
+        val recorder = RecordingLogger()
+        val useCase = ImportDataUseCase(
+            bookRepository, sessionRepository, ImportWriteRepository(db), logger = recorder,
+        )
+        val rejectedRowCount = 25
+        val csv = libraryCsvWithInvalidReleaseYears(rejectedRowCount)
+
+        val result = useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(rejectedRowCount, result.data.rejections.size, "every bad row is still reported to the user in full")
+        val warning = recorder.entries.single { it.level == LogLevel.WARN }
+        assertTrue(
+            warning.message.contains("$rejectedRowCount row(s) rejected"),
+            "the true total must be reported even though only some rows are named individually: ${warning.message}",
+        )
+        // Data rows are CSV rows #2..#26 (row 1 is the header); the first 20 of those (#2..#21)
+        // are within MAX_LOGGED_REJECTED_ROWS and must each be named.
+        for (row in 2..21) {
+            assertTrue(warning.message.contains("BOOK#$row"), "row #$row is within the logged cap and must be named: ${warning.message}")
+        }
+        // Row #26 is the 25th (last) data row -- beyond the 20-row cap -- and must NOT be named.
+        assertFalse(
+            warning.message.contains("BOOK#26"),
+            "a row beyond the logged cap must not be named individually: ${warning.message}",
+        )
+        assertTrue(warning.message.contains("and 5 more"), "the omitted count must be reported: ${warning.message}")
+    }
+
+    @Test
     fun execute_withNoRejections_logsNoRejectionWarning() = runTest {
         // Positive control for the test above: proves the warning is absent because nothing was
         // rejected, not because the summary never fires.
@@ -224,6 +261,30 @@ class ImportDataUseCaseTest {
         )
         assertIs<Resource.Success<String>>(result)
         return result.data
+    }
+
+    /**
+     * Builds a `library_export.csv` with [count] data rows that each fail validation the same,
+     * safe way -- an unparseable `release_year` -- so [execute_withMoreRejectedRowsThanTheLoggedCap_summarisesTheOverflowCorrectly]
+     * can exercise [ImportDataUseCase]'s `MAX_LOGGED_REJECTED_ROWS` boundary without any row
+     * carrying content that rule forbids logging (title, reason). Built as a `List<String>` of
+     * lines joined with `"\n"` rather than a literal multi-line string, to keep the embedded
+     * newline unambiguous.
+     */
+    private fun libraryCsvWithInvalidReleaseYears(count: Int): String {
+        val header = "csv_schema_version,media_id,type,title,authors,release_year,purchase_price," +
+            "created_at,cover_image_hash,isbn,format,total_pages,status,finished_at,tracking_mode," +
+            "external_identifiers"
+        val rows = (1..count).map { i ->
+            // Distinct, valid-shaped UUID per row -- media_id itself isn't validated as UUID-shaped
+            // (see LibraryCsvImporter's KDoc on COL_MEDIA_ID), but each row still needs its own id.
+            val mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-" + i.toString().padStart(12, '0')
+            listOf(
+                "2", mediaId, "BOOK", "Fine Book", "An Author", "invalid-year-$i", "",
+                "2026-01-05T09:15:00Z", "", "", "PAPERBACK", "304", "TO_READ", "", "PAGES", "",
+            ).joinToString(",")
+        }
+        return (listOf(header) + rows).joinToString(separator = "\n")
     }
 
     private suspend fun exportCurrentSourceDb(): Pair<String, String> {
