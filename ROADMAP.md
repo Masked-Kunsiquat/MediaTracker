@@ -423,6 +423,32 @@ obviously pointless without an author to search stored anywhere first.
     reading-status `FilterChip` row as an **intersection (AND)**: both narrow the same list
     together, e.g. "Reading" + a query shows only currently-reading books matching that query,
     never the union of either filter alone.
+**Phase plan for what remains (decided, not yet started).** The four outstanding pieces below are
+sequenced deliberately rather than taken in the order they happen to be listed:
+
+- **Phase B — title/author type-ahead.** First, because it is the one that actually retires this
+  task's stated bottleneck: today a book can only be added with its ISBN in hand. Split in two, so
+  the half that can be proven by tests is not entangled with the half that cannot:
+  - **B1 (shared module):** a `searchByTitleOrAuthor` provider method over Open Library's keyless
+    search API, plus the use case and DTOs, with an in-memory LRU cache for repeated prefixes.
+    Entirely `commonTest`-able with `MockEngine`, exactly as the ISBN clients are. Note the
+    cancellation rule now applies from the start here (Task 15 Phase C): a superseded keystroke
+    cancels its request, and a cancelled search must not be logged as a provider failure.
+  - **B2 (app module):** the type-ahead UI — ~300ms debounce, a 2-3 character minimum,
+    cancel-previous-on-keystroke, and typed result styling. Needs device verification, not just
+    instrumented tests: debounce and cancellation are exactly the kind of behaviour that passes a
+    test and still feels wrong in the hand.
+- **Phase C — manual entry and paste-to-add.** Second because it is cheap and fully local: no
+  network, no permissions, no new dependency. Both are the same underlying path — create a book
+  from fields the user supplies rather than from a provider — and `BookMetadataValidation` plus the
+  Edit Book screen already carry most of it. This is also the honest fallback for a book no
+  provider knows about, which type-ahead cannot fix.
+- **Phase D — barcode scanning.** Last, and **blocked on a decision that is the user's to make, not
+  mine**: Google Code Scanner needs no CAMERA permission but hard-depends on Play Services (awkward
+  against the local-first ethos, and rules out de-Googled devices and F-Droid), while bundled ML Kit
+  + CameraX avoids Play Services at the cost of the CAMERA permission, a preview implementation and
+  ~2.2MB. Both are recorded in full below. Sequenced last so the other three are not held up by it.
+
 - Title/author type-ahead search of external providers when adding a book (not yet done): Open
   Library's search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
   minimum before querying, cancel-previous-request-on-new-keystroke, and an in-memory LRU
