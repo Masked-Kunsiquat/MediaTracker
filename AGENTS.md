@@ -158,7 +158,16 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 * **Scheme:** Semantic Versioning `0.y.z` pre-1.0. Minor bump per feature milestone, patch for fixes. `1.0.0` when the app is daily-drivable.
 * **Single Source of Truth:** The app version lives ONLY in `[versions] app` in `gradle/libs.versions.toml`. `app/build.gradle.kts` reads `versionName` from it and derives `versionCode` as `major*10000 + minor*100 + patch`. NEVER hand-edit `versionCode` or duplicate the version string elsewhere.
 * **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase.
-* **Release Ritual:** (1) move `[Unreleased]` content into a dated `## [x.y.z] - YYYY-MM-DD` section, (2) bump `[versions] app`, (3) commit as `Release vX.Y.Z`, (4) `git tag vX.Y.Z`.
+* **Release Ritual — a release is its own change, never a passenger on a feature PR.**
+  1. Branch from `main` as `release/vX.Y.Z`. Nothing else rides along: the branch contains the two edits below and nothing more.
+  2. Move `[Unreleased]` content into a dated `## [x.y.z] - YYYY-MM-DD` section.
+  3. Bump `[versions] app` (see Single Source of Truth above — that file only).
+  4. Commit as `Release vX.Y.Z`, open a PR, and merge it once CI is green. The squash commit on `main` reads `Release vX.Y.Z (#N)`.
+  5. `git tag vX.Y.Z` on that squash commit, push the tag, and publish a GitHub release whose notes are the changelog section from step 2.
+
+  **Why the separate branch, and not a bump folded into the phase PR:** it keeps `main`'s history answering "what shipped in this version?" by inspection instead of by archaeology, and it keeps the release reviewable on its own — the changelog is the one artefact written for the user rather than the reviewer, and it is the last chance to catch a version bump of the wrong size. `v0.11.0` was cut the wrong way (the bump rode along inside the Task 15 Phase C PR, so `main` records `Task 15 Phase C ... (#37)` where it should say `Release v0.11.0`); the tag and release are correct, only the history's shape is wrong. Steps 1 and 4 exist because that happened.
+
+  **The version bump is the release's job, not the feature's.** A phase PR adds to `[Unreleased]` (see Changelog Discipline above) and stops there. It must never touch `[versions] app`.
 * **Room Schema Freeze Rule:** Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration (`Migration` object + migration test). In-place edits of the current schema version are permitted ONLY for schema versions that have never been part of a tagged release.
 * **Frozen schema ledger.** Every version below shipped in a tag and is therefore immutable. **Append a row here in the same commit that bumps `APP_DATABASE_VERSION`** — this table is the rule's only record, and a version missing from it is a version nobody can tell is frozen.
 
