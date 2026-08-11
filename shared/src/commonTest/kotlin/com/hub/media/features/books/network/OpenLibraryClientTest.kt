@@ -3,6 +3,8 @@ package com.hub.media.features.books.network
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
@@ -116,13 +118,23 @@ class OpenLibraryClientTest {
                 else -> respondError(HttpStatusCode.NotFound)
             }
         }
-        val client = OpenLibraryClient(createHttpClient(engine))
+        val recorder = RecordingLogger()
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
 
         val result = client.fetchByIsbn("9780547928227")
 
         assertTrue(result is Resource.Success, "expected Success, got $result")
         val metadata = (result as Resource.Success).data
         assertTrue(metadata.authors.isEmpty())
+
+        // ROADMAP Task 15 Phase C: dropping the author is still the right behaviour -- one
+        // unreachable author must not fail the whole lookup -- but it used to happen with nothing
+        // recorded anywhere, which made "why has this book got no author?" unanswerable. The name
+        // itself stays out of the log; the catalogue key and the status code do not.
+        val warning = recorder.entries.single { it.level == LogLevel.WARN }
+        assertEquals("OpenLibraryClient", warning.tag)
+        assertTrue(warning.message.contains("/authors/OL26320A"), "the key is what makes it diagnosable")
+        assertTrue(warning.message.contains("500"), "the status is what says why")
     }
 
     @Test

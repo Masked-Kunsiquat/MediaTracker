@@ -4,6 +4,9 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.dto.GoogleBooksImageLinksDto
 import com.hub.media.features.books.network.dto.GoogleBooksResponseDto
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -16,7 +19,13 @@ private const val GOOGLE_BOOKS_VOLUMES_URL = "https://www.googleapis.com/books/v
  * [BookMetadataProvider] backed by the keyless Google Books volumes search API
  * (`GET /volumes?q=isbn:{isbn}`), the fallback book metadata source per AGENTS.md §4.
  */
-public class GoogleBooksClient(private val client: HttpClient) : BookMetadataProvider {
+/** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "GoogleBooksClient"
+
+public class GoogleBooksClient(
+    private val client: HttpClient,
+    private val logger: Logger = AppLogger,
+) : BookMetadataProvider {
 
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         return try {
@@ -32,6 +41,7 @@ public class GoogleBooksClient(private val client: HttpClient) : BookMetadataPro
             val dto = try {
                 response.body<GoogleBooksResponseDto>()
             } catch (e: Exception) {
+                logger.warn(TAG, e) { "Google Books returned malformed JSON for isbn=$isbn" }
                 return Resource.Error("Google Books returned malformed JSON for ISBN $isbn", e)
             }
 
@@ -61,6 +71,9 @@ public class GoogleBooksClient(private val client: HttpClient) : BookMetadataPro
                 ),
             )
         } catch (e: Exception) {
+            // The fallback provider: when this one fails too, the add/backfill genuinely has no
+            // metadata to offer, so this is the entry that explains an empty result.
+            logger.warn(TAG, e) { "Google Books lookup failed for isbn=$isbn" }
             Resource.Error("Google Books lookup failed for ISBN $isbn: ${e.message}", e)
         }
     }
