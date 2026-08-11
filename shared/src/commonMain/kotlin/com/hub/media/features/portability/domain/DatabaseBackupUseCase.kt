@@ -3,11 +3,18 @@ package com.hub.media.features.portability.domain
 import androidx.room.useWriterConnection
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.deleteFileIfExists
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+
+/** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "DatabaseBackupUseCase"
 
 /**
  * Abstraction over "produce a whole-database backup snapshot" so
@@ -101,6 +108,7 @@ public data class BackupResult(
 public class DefaultDatabaseBackupUseCase(
     private val database: AppDatabase,
     private val databaseFilePath: String,
+    private val logger: Logger = AppLogger,
 ) : DatabaseBackupUseCase {
 
     override suspend fun execute(): Resource<BackupResult> {
@@ -116,7 +124,12 @@ public class DefaultDatabaseBackupUseCase(
                 }
             }
             Resource.Success(BackupResult(stagedFilePath = stagingPath, suggestedFileName = suggestedBackupFileName()))
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Database backup failed" }
             deleteFileIfExists(stagingPath)
             Resource.Error("Backup failed: ${e.message ?: "Unknown error"}", e)
         }

@@ -22,9 +22,12 @@ import com.hub.media.features.portability.goodreads.GoodreadsColumns
 import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -62,6 +65,53 @@ class ImportDataUseCaseTest {
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
         useCase = ImportDataUseCase(bookRepository, sessionRepository, ImportWriteRepository(db))
+    }
+
+    // ---- Logging adoption (ROADMAP Task 15 Phase C) ------------------------------------------
+
+    @Test
+    fun execute_withAMalformedHeader_recordsWhyTheImportWasRefused() = runTest {
+        // A refused import is the single most likely thing to be asked about, and before this the
+        // log said nothing at all -- the reason existed only in a message the UI showed once and
+        // then discarded. WARN, not ERROR: a malformed file is the user's to fix, not a fault.
+        val recorder = RecordingLogger()
+        val useCase = ImportDataUseCase(
+            bookRepository, sessionRepository, ImportWriteRepository(db), logger = recorder,
+        )
+
+        val result = useCase.execute(
+            libraryCsv = """
+                not,a,valid,header
+                1,2,3,4
+            """.trimIndent(),
+            readingLogsCsv = null,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+        )
+
+        assertIs<Resource.Error>(result)
+        val warnings = recorder.entries.filter { it.level == LogLevel.WARN }
+        assertEquals(1, warnings.size, "the refusal must be recorded exactly once")
+        assertEquals("ImportDataUseCase", warnings.single().tag)
+        assertTrue(
+            warnings.single().message.contains("library_export.csv"),
+            "the entry must name which file was rejected",
+        )
+    }
+
+    @Test
+    fun execute_withNoFileSelected_recordsTheRefusalWithoutAnError() = runTest {
+        val recorder = RecordingLogger()
+        val useCase = ImportDataUseCase(
+            bookRepository, sessionRepository, ImportWriteRepository(db), logger = recorder,
+        )
+
+        useCase.execute(libraryCsv = null, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+
+        assertEquals(1, recorder.entries.count { it.level == LogLevel.WARN })
+        assertFalse(
+            recorder.entries.any { it.level == LogLevel.ERROR },
+            "nothing failed here -- selecting no file is not an app error",
+        )
     }
 
     @AfterTest
