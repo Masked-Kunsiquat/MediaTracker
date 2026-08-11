@@ -12,12 +12,13 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+1. **Task 9 — Search & discovery** ← next. *Partially done*: Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
-   manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
-   providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
-   rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
-   retroactively for books added before it.
+   manual entry, and paste-to-add. It was paused in favour of Task 14, and that dependency has
+   since been paid off — Task 14's backfill re-queries providers for `BookMetadata`, which carries
+   **both** the cover URL and the authors, so the one rate-limited crawl that repaired the covers
+   also filled the authors Phase A could not add retroactively for books predating it. Nothing
+   blocks the remaining phases now.
 2. Task 10 — Re-read modeling (ratings land here)
 3. Task 11 — Analytics & stats revamp
 4. Task 12 — Genre tracking
@@ -710,9 +711,6 @@ section in Settings.
 a hand-rolled parser for the Keep a Changelog subset this file actually uses, and the three-level
 fold decided below.
 
-**C (done):** adoption across the remaining error sites and `INFO` lifecycle tracing, with the
-default verbosity moved to `INFO` — see that phase's section for what the sweep uncovered. Task 15
-is complete.
 Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
 but logcat is unreachable for a normal user on a release build — a facility they cannot read does
 not serve a personal, local-first app whose whole support model is the user themselves. Phase B
@@ -907,6 +905,10 @@ for the same reasons.
 The signing half can be pulled forward independently of the CI and update-check work, and there is
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
+
+**C (done):** adoption across the remaining error sites and `INFO` lifecycle tracing, with the
+default verbosity moved to `INFO` — see that phase's section for what the sweep uncovered. Task 15
+is complete.
 
 ### Phase C — Adoption coverage and lifecycle tracing (done)
 
