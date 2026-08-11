@@ -114,6 +114,59 @@ class ImportDataUseCaseTest {
         )
     }
 
+    @Test
+    fun execute_withRejectedRows_summarisesThemWithoutLeakingTheirContents() = runTest {
+        // Rejection reasons embed the raw cell that failed -- reject("$field ... : '$raw'") -- so
+        // logging them would put arbitrary column values, titles included, into a file that
+        // outlives the import. This asserts the summary counts the rows and names their positions
+        // while carrying neither the reason nor the title.
+        val recorder = RecordingLogger()
+        val useCase = ImportDataUseCase(
+            bookRepository, sessionRepository, ImportWriteRepository(db), logger = recorder,
+        )
+        val csv = """
+            csv_schema_version,media_id,type,title,authors,release_year,purchase_price,created_at,cover_image_hash,isbn,format,total_pages,status,finished_at,tracking_mode,external_identifiers
+            2,11111111-1111-4111-8111-111111111111,BOOK,Fine Book,An Author,1969,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
+            2,22222222-2222-4222-8222-222222222222,BOOK,A Title That Must Never Reach The Log,An Author,SECRET_CELL_VALUE,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
+        """.trimIndent()
+
+        val result = useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(1, result.data.rejections.size, "the bad row is still reported to the user in full")
+        val warning = recorder.entries.single { it.level == LogLevel.WARN }
+        assertEquals("ImportDataUseCase", warning.tag)
+        assertTrue(warning.message.contains("1 row(s) rejected"), "the count is the point: ${warning.message}")
+        assertTrue(warning.message.contains("#3"), "the row position is what makes it actionable")
+        assertFalse(
+            warning.message.contains("SECRET_CELL_VALUE"),
+            "the reason embeds the raw cell and must not be logged",
+        )
+        assertFalse(
+            warning.message.contains("A Title That Must Never Reach The Log"),
+            "a book title must never be persisted to the log",
+        )
+    }
+
+    @Test
+    fun execute_withNoRejections_logsNoRejectionWarning() = runTest {
+        // Positive control for the test above: proves the warning is absent because nothing was
+        // rejected, not because the summary never fires.
+        val recorder = RecordingLogger()
+        val useCase = ImportDataUseCase(
+            bookRepository, sessionRepository, ImportWriteRepository(db), logger = recorder,
+        )
+        val csv = """
+            csv_schema_version,media_id,type,title,authors,release_year,purchase_price,created_at,cover_image_hash,isbn,format,total_pages,status,finished_at,tracking_mode,external_identifiers
+            2,33333333-3333-4333-8333-333333333333,BOOK,Fine Book,An Author,1969,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
+        """.trimIndent()
+
+        val result = useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+
+        assertIs<Resource.Success<ImportSummary>>(result)
+        assertEquals(emptyList(), recorder.entries.filter { it.level == LogLevel.WARN })
+    }
+
     @AfterTest
     fun tearDown() {
         sourceDb.close()

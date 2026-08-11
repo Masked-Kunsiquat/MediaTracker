@@ -200,6 +200,13 @@ public interface ImportUseCase {
 /** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "ImportDataUseCase"
 
+/**
+ * Row references carried by a single rejection-summary entry. Bounded because the log file is
+ * capped: an import of a badly-formed export can reject thousands of rows, and one entry long
+ * enough to push everything else out of the file is its own kind of data loss.
+ */
+private const val MAX_LOGGED_REJECTED_ROWS = 20
+
 public class ImportDataUseCase(
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
@@ -218,6 +225,31 @@ public class ImportDataUseCase(
     private fun <T> refuse(message: String): Resource<T> {
         logger.warn(TAG) { "Import refused before writing: $message" }
         return Resource.Error(message)
+    }
+
+    /**
+     * Records the outcome of a completed import.
+     *
+     * Rejections are summarised by **count and row number, never by reason**. The reasons are
+     * genuinely the useful part for diagnosis, and they are deliberately left out anyway: they are
+     * built by `reject("$field is not a valid integer: '$raw'")` and friends, so they embed the raw
+     * cell that failed -- which for a title column is book content, straight into a file that
+     * outlives the import. Row numbers point at the same rows without carrying any of them, and the
+     * full reasons are already in front of the user in the import summary, where they belong.
+     *
+     * A per-row entry was the obvious alternative and is worse: one malformed export turns into
+     * hundreds of entries and buries everything else in a capped log.
+     */
+    private fun logRejectionSummary(pipeline: String, rejections: List<ImportRejection>) {
+        if (rejections.isEmpty()) return
+        val rows = rejections.take(MAX_LOGGED_REJECTED_ROWS).joinToString(", ") {
+            "${it.source}#${it.rowNumber}"
+        }
+        val more = (rejections.size - MAX_LOGGED_REJECTED_ROWS).coerceAtLeast(0)
+        logger.warn(TAG) {
+            "$pipeline: ${rejections.size} row(s) rejected" +
+                " [$rows${if (more > 0) ", and $more more" else ""}]"
+        }
     }
 
     public override suspend fun execute(
@@ -324,6 +356,7 @@ public class ImportDataUseCase(
             )
             if (writeResult is Resource.Error) return writeResult
 
+            logRejectionSummary("CSV import", rejections)
             Resource.Success(
                 ImportSummary(
                     booksImported = bookResolution.imported,
@@ -398,6 +431,7 @@ public class ImportDataUseCase(
             )
             if (writeResult is Resource.Error) return writeResult
 
+            logRejectionSummary("Goodreads import", bookResolution.rejections)
             Resource.Success(
                 ImportSummary(
                     booksImported = bookResolution.imported,
