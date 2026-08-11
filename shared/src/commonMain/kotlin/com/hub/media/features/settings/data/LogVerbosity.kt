@@ -76,13 +76,21 @@ public suspend fun SettingsRepository.setLogVerbosity(value: LogLevel) {
 }
 
 /**
- * The level used when the user has never chosen one -- see [observeLogVerbosity]'s "Default"
- * section for why it is deliberately not chatty. Note this is the default for *the setting*, which
- * is not the same thing as the level an unconfigured process runs at: see
- * [observeLogVerbosityOrNull] for how the never-set case defers to the build-type bootstrap
- * instead of overwriting it.
+ * The level used when the user has never chosen one.
+ *
+ * [LogLevel.INFO] since ROADMAP Task 15 Phase C. It was [LogLevel.WARN], chosen when nothing in the
+ * codebase emitted below WARN -- which meant a healthy app wrote nothing at all, and a log viewer
+ * showing an empty list was read as a broken feature rather than as good news. Now that lifecycle
+ * tracing exists, INFO is what makes the log answer "what was happening before this went wrong?"
+ * instead of only "what fell over". The entries are counts and identifiers, never library content
+ * (see [com.hub.media.core.util.Logger]'s identifier rule), and the file is capped and rotated, so
+ * the cost of the extra level is bounded.
+ *
+ * Note this is the default for *the setting*, which is not the same thing as the level an
+ * unconfigured process runs at: see [observeLogVerbosityOrNull] for how the never-set case defers
+ * to the build-type bootstrap instead of overwriting it.
  */
-public val DEFAULT_LOG_VERBOSITY: LogLevel = LogLevel.WARN
+public val DEFAULT_LOG_VERBOSITY: LogLevel = LogLevel.INFO
 
 private fun String?.toLogLevelOrNull(): LogLevel? =
     this?.let { stored -> LogLevel.entries.firstOrNull { entry -> entry.name == stored } }

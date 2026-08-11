@@ -21,13 +21,18 @@ import kotlinx.coroutines.test.runTest
 class LogVerbosityTest {
 
     @Test
-    fun getLogVerbosity_neverSet_fallsBackToTheNonChattyDefault() = runTest {
+    fun getLogVerbosity_neverSet_fallsBackToTheLifecycleTracingDefault() = runTest {
         val db = testAppDatabase()
         val repo = SettingsRepository(db.appSettingsDao())
 
         assertEquals(DEFAULT_LOG_VERBOSITY, repo.getLogVerbosity())
         assertEquals(DEFAULT_LOG_VERBOSITY, repo.observeLogVerbosity().first())
-        assertEquals(LogLevel.WARN, DEFAULT_LOG_VERBOSITY, "a chatty default would blow the size cap")
+        // INFO since ROADMAP Task 15 Phase C. WARN was right while nothing emitted below it -- but
+        // it meant a healthy app wrote nothing at all, and an empty log viewer was read as broken
+        // rather than as good news. Pinned rather than merely derived, because widening this
+        // default is exactly the kind of change that should require saying so out loud: it decides
+        // what the app writes to disk unprompted.
+        assertEquals(LogLevel.INFO, DEFAULT_LOG_VERBOSITY)
         db.close()
     }
 
