@@ -826,6 +826,63 @@ makes logging always-on (not debug-build-gated) and gives the user a way to see 
   ultimately sees them. Phase A's "never log the library as data" rule is the stronger guarantee —
   you cannot leak what was never written. Revisit only if a concrete threat model demands it.
 
+**C (done):** adoption across the remaining error sites and `INFO` lifecycle tracing, with the
+default verbosity moved to `INFO` — see that phase's section for what the sweep uncovered. Task 15
+is complete.
+
+### Phase C — Adoption coverage and lifecycle tracing (done)
+
+Phase A adopted logging at exactly three sites and stopped, which was right for the problem it
+solved and left most of the codebase folding its causes into a message string and dropping them.
+Phase C closed that, and added the `INFO` tracing that makes the log worth reading *before*
+something breaks.
+
+Measured on `shared/src/commonMain`, before and after:
+
+| | Before | After |
+| :--- | ---: | ---: |
+| Log calls | 14 | 43 |
+| Files that log at all | 7 of 113 | 20 of 113 |
+| `INFO`/`DEBUG` call sites | 0 | 6 |
+
+Adopted at `BookRepository` (6), `ReadingSessionRepository` (3), the whole portability layer
+(import, export, backup, import-write), and the ingestion clients (Open Library, Google Books,
+cover download). `INFO` lifecycle tracing at app start, import/export completion, and backfill
+start/finish.
+
+**What the sweep actually turned up, none of which was the mechanical work it was scoped as:**
+
+- **`BackfillViewModel.init` could crash the app.** It launched an unguarded suspend DB read into
+  `viewModelScope`, where an uncaught exception takes the whole scope down — a crash on opening
+  Settings, from a read whose only job is to restore a progress bar. This was the intermittent CI
+  failure on the `v0.10.1` branch, misread at first as test-lifecycle noise.
+- **Two silent drops that map to real user questions.**
+  `OpenLibraryClient.fetchAuthorName` swallowed every failure and returned `null` — the exact "why
+  has this book got no author?" symptom — and it swallowed along *two* paths, the `catch` and a
+  non-2xx return that never throws, the latter being the likelier one. `saveImage(...).getOrNull()`
+  in ingestion and backfill did the same for "why has this book got no cover?".
+- **Cancellation was being logged as failure.** None of the adopted catches rethrew
+  `CancellationException`, which on JVM *is* an `Exception` — so adoption alone would have written
+  a spurious ERROR every time a screen closed mid-write, making the log worse as it got wider.
+  Every adopted site now rethrows first.
+- **Rejection reasons embed raw cell values.** `reject("$field ... : '$raw'")` means logging them
+  would put arbitrary column contents, titles included, into a file that outlives the import. Import
+  rejections are therefore summarised by count and row number, one bounded entry per run rather
+  than one per row.
+
+**The default moved to `INFO`, and `Debug` left the picker.** Adding `INFO` sites alone would not
+have fixed the empty-log complaint: the never-set case resolves to the build-type bootstrap in
+`MediaTrackerApplication`, not to `DEFAULT_LOG_VERBOSITY`, so both had to move. `DEBUG` is no longer
+offered because there is still not one `DEBUG` call site — it promised detail identical to
+`Detailed`. A value already persisted as `DEBUG` is left working rather than rewritten. Restore it
+to the picker the moment anything logs at that level.
+
+**Deliberately still unlogged**, so a future sweep does not read these as misses: `FileLogSink` and
+`LogFileStore` (the logging facility itself — logging from it recurses), and the row-level CSV
+parsers, which return `Rejected(reason)` as a value rather than discarding it and are covered by the
+summary above.
+
+
 ## Task 16 — Signing & distribution
 
 Not scheduled out of ambition — this exists because the app is sideloaded, has no update path, and
@@ -905,62 +962,6 @@ for the same reasons.
 The signing half can be pulled forward independently of the CI and update-check work, and there is
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
-
-**C (done):** adoption across the remaining error sites and `INFO` lifecycle tracing, with the
-default verbosity moved to `INFO` — see that phase's section for what the sweep uncovered. Task 15
-is complete.
-
-### Phase C — Adoption coverage and lifecycle tracing (done)
-
-Phase A adopted logging at exactly three sites and stopped, which was right for the problem it
-solved and left most of the codebase folding its causes into a message string and dropping them.
-Phase C closed that, and added the `INFO` tracing that makes the log worth reading *before*
-something breaks.
-
-Measured on `shared/src/commonMain`, before and after:
-
-| | Before | After |
-| :--- | ---: | ---: |
-| Log calls | 14 | 43 |
-| Files that log at all | 7 of 113 | 20 of 113 |
-| `INFO`/`DEBUG` call sites | 0 | 6 |
-
-Adopted at `BookRepository` (6), `ReadingSessionRepository` (3), the whole portability layer
-(import, export, backup, import-write), and the ingestion clients (Open Library, Google Books,
-cover download). `INFO` lifecycle tracing at app start, import/export completion, and backfill
-start/finish.
-
-**What the sweep actually turned up, none of which was the mechanical work it was scoped as:**
-
-- **`BackfillViewModel.init` could crash the app.** It launched an unguarded suspend DB read into
-  `viewModelScope`, where an uncaught exception takes the whole scope down — a crash on opening
-  Settings, from a read whose only job is to restore a progress bar. This was the intermittent CI
-  failure on the `v0.10.1` branch, misread at first as test-lifecycle noise.
-- **Two silent drops that map to real user questions.**
-  `OpenLibraryClient.fetchAuthorName` swallowed every failure and returned `null` — the exact "why
-  has this book got no author?" symptom — and it swallowed along *two* paths, the `catch` and a
-  non-2xx return that never throws, the latter being the likelier one. `saveImage(...).getOrNull()`
-  in ingestion and backfill did the same for "why has this book got no cover?".
-- **Cancellation was being logged as failure.** None of the adopted catches rethrew
-  `CancellationException`, which on JVM *is* an `Exception` — so adoption alone would have written
-  a spurious ERROR every time a screen closed mid-write, making the log worse as it got wider.
-  Every adopted site now rethrows first.
-- **Rejection reasons embed raw cell values.** `reject("$field ... : '$raw'")` means logging them
-  would put arbitrary column contents, titles included, into a file that outlives the import. Import
-  rejections are therefore summarised by count and row number, one bounded entry per run rather
-  than one per row.
-
-**The default moved to `INFO`, and `Debug` left the picker.** Adding `INFO` sites alone would not
-have fixed the empty-log complaint: the never-set case resolves to the build-type bootstrap in
-`MediaTrackerApplication`, not to `DEFAULT_LOG_VERBOSITY`, so both had to move. `DEBUG` is no longer
-offered because there is still not one `DEBUG` call site — it promised detail identical to
-`Detailed`. A value already persisted as `DEBUG` is left working rather than rewritten. Restore it
-to the picker the moment anything logs at that level.
-
-**Deliberately still unlogged**, so a future sweep does not read these as misses: `FileLogSink` and
-`LogFileStore` (the logging facility itself — logging from it recurses), and the row-level CSV
-parsers, which return `Rejected(reason)` as a value rather than discarding it and are covered by the
-summary above.
 
 ## Blocked on external changes
 
