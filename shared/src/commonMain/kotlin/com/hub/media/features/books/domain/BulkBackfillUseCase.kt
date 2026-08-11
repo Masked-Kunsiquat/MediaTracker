@@ -1,5 +1,8 @@
 package com.hub.media.features.books.domain
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.info
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
@@ -129,6 +132,9 @@ public data class BulkBackfillProgress(
  * @param settingsRepository Backing store for [BulkBackfillState] (see that class's KDoc for why
  *   `app_settings` -- no schema change -- is where resume state lives).
  */
+/** Log tag for this use case's lifecycle tracing (ROADMAP Task 15 Phase C). */
+private const val TAG = "BulkBackfillUseCase"
+
 public class BulkBackfillUseCase(
     private val metadataProvider: BookMetadataProvider,
     private val isbnCoverProbe: OpenLibraryIsbnCoverProbe,
@@ -136,6 +142,7 @@ public class BulkBackfillUseCase(
     private val imageStorage: LocalImageStorageManager,
     private val bookRepository: BookRepository,
     private val settingsRepository: SettingsRepository,
+    private val logger: Logger = AppLogger,
 ) {
 
     /**
@@ -162,6 +169,10 @@ public class BulkBackfillUseCase(
         }
 
         val toProcess = state.pendingMediaIds
+        // Lifecycle tracing: counts only. A backfill is the longest-running thing this app does and
+        // the likeliest to be interrupted, so "it started, over this many books" is the context that
+        // makes any later failure readable. No mediaIds -- one entry per run, not per book.
+        logger.info(TAG) { "Backfill run starting: ${toProcess.size} book(s) pending" }
         val stillPending = mutableListOf<String>()
         var updated = state.updated
         var noProviderData = state.noProviderData
@@ -198,6 +209,10 @@ public class BulkBackfillUseCase(
 
         if (state.pendingMediaIds.isEmpty()) {
             settingsRepository.clearBulkBackfillState()
+        }
+        logger.info(TAG) {
+            "Backfill run finished: $updated updated, $noProviderData without provider data, " +
+                "${state.pendingMediaIds.size} still pending"
         }
         return state.toProgress(
             isPaused = quotaExhausted && state.pendingMediaIds.isNotEmpty(),

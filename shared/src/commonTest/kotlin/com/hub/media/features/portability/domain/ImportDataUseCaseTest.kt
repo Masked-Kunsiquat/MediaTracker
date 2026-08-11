@@ -167,6 +167,32 @@ class ImportDataUseCaseTest {
         assertEquals(emptyList(), recorder.entries.filter { it.level == LogLevel.WARN })
     }
 
+    @Test
+    fun execute_onCompletion_tracesTheOutcomeAtInfoWithoutLibraryContent() = runTest {
+        // The half of Phase C that changes what the log *is*: before this, nothing in the codebase
+        // emitted below WARN, so the file stayed empty until something broke -- which reads as a
+        // broken feature rather than a healthy one. A completed import is the context that explains
+        // whatever fails next.
+        val recorder = RecordingLogger()
+        val useCase = ImportDataUseCase(
+            bookRepository, sessionRepository, ImportWriteRepository(db), logger = recorder,
+        )
+        val csv = """
+            csv_schema_version,media_id,type,title,authors,release_year,purchase_price,created_at,cover_image_hash,isbn,format,total_pages,status,finished_at,tracking_mode,external_identifiers
+            2,44444444-4444-4444-8444-444444444444,BOOK,A Title That Must Never Reach The Log,An Author,1969,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
+        """.trimIndent()
+
+        useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+
+        val info = recorder.entries.single { it.level == LogLevel.INFO }
+        assertEquals("ImportDataUseCase", info.tag)
+        assertTrue(info.message.contains("1 imported"), "the counts are the trace: ${info.message}")
+        assertFalse(
+            info.message.contains("A Title That Must Never Reach The Log"),
+            "lifecycle tracing is still bound by the identifier rule",
+        )
+    }
+
     @AfterTest
     fun tearDown() {
         sourceDb.close()

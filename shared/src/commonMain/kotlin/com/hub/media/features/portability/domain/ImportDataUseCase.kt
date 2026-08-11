@@ -11,6 +11,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
+import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.BookWithDetails
@@ -356,6 +357,11 @@ public class ImportDataUseCase(
             )
             if (writeResult is Resource.Error) return writeResult
 
+            logger.info(TAG) {
+                "CSV import completed: ${bookResolution.imported} imported, " +
+                    "${bookResolution.skipped} skipped, ${bookResolution.merged} merged, " +
+                    "${bookResolution.replaced} replaced, $sessionsImported session(s) imported"
+            }
             logRejectionSummary("CSV import", rejections)
             Resource.Success(
                 ImportSummary(
@@ -431,6 +437,11 @@ public class ImportDataUseCase(
             )
             if (writeResult is Resource.Error) return writeResult
 
+            logger.info(TAG) {
+                "Goodreads import completed: ${bookResolution.imported} imported, " +
+                    "${bookResolution.skipped} skipped, ${bookResolution.merged} merged, " +
+                    "${bookResolution.replaced} replaced"
+            }
             logRejectionSummary("Goodreads import", bookResolution.rejections)
             Resource.Success(
                 ImportSummary(

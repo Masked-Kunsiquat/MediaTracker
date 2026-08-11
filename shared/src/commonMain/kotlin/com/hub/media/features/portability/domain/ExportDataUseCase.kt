@@ -4,6 +4,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
+import com.hub.media.core.util.info
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.portability.csv.LibraryCsvExporter
@@ -78,6 +79,9 @@ public class ExportDataUseCase(
             .groupBy { it.mediaId }
         val sessions = readingSessionRepository.observeAllSessions().first()
 
+        logger.info(TAG) {
+            "Export completed: ${books.size} book(s), ${sessions.size} session(s)"
+        }
         Resource.Success(
             CsvExportBundle(
                 libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
