@@ -3,6 +3,7 @@ package com.hub.media.features.books.domain
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
@@ -318,7 +319,9 @@ public class BulkBackfillUseCase(
         if (needsCover && coverUrl != null) {
             val downloadResult = coverDownloader.download(coverUrl)
             if (downloadResult is Resource.Success) {
-                coverHashToWrite = imageStorage.saveImage(downloadResult.data).getOrNull()
+                coverHashToWrite = imageStorage.saveImage(downloadResult.data)
+                    .onFailure { logger.warn(TAG, it) { "Cover save failed for mediaId=$mediaId" } }
+                    .getOrNull()
                 if (coverHashToWrite == null) coverDeferred = true // save failed -- transient, retry later
             } else {
                 coverDeferred = true // download failed -- transient, retry later

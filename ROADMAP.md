@@ -12,20 +12,17 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 15 Phase C — logging adoption coverage and lifecycle tracing** ← next. Small and
-   mechanical, but it is what turns a log that is empty until something breaks into one that
-   explains what led there. See that task's section for the measured numbers.
-2. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
+1. Task 9 — Search & discovery — *partially done*, paused. Phase A (authors + local library
    search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
    manual entry, and paste-to-add. Paused in favour of Task 14 because the backfill re-queries
    providers for `BookMetadata`, which carries **both** the cover URL and the authors — so one
    rate-limited crawl repairs the covers *and* the authors that Phase A cannot fill
    retroactively for books added before it.
-3. Task 10 — Re-read modeling (ratings land here)
-4. Task 11 — Analytics & stats revamp
-5. Task 12 — Genre tracking
-6. Task 13 — Movies & TV
-7. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
+2. Task 10 — Re-read modeling (ratings land here)
+3. Task 11 — Analytics & stats revamp
+4. Task 12 — Genre tracking
+5. Task 13 — Movies & TV
+6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
 ## Done
@@ -50,7 +47,9 @@ single list below and reordering is a one-line edit there.
   Android Auto Backup carve-out that scoping it uncovered — cloud backup had been sweeping the
   whole app-private directory to Google Drive since the first commit (Phase B1); an in-app log
   viewer on a snapshot/refresh model with a sequence-anchored divider, and a user-adjustable
-  verbosity setting (Phase B2a); and an in-app changelog viewer with a three-level fold (Phase B2b).
+  verbosity setting (Phase B2a); an in-app changelog viewer with a three-level fold (Phase B2b);
+  and adoption across the remaining error sites plus `INFO` lifecycle tracing, which moved the
+  default verbosity to `INFO` and retired the `Debug` picker option (Phase C).
 
 - **Task 1 — Data foundation** (`v0.1.0`): KMP `shared` module, Room KMP schema v1
   (MediaItems + BookDetails + ExternalIdentifiers + ReadingSessions), content-addressed
@@ -709,7 +708,11 @@ section in Settings.
 
 **B2b (done):** the companion changelog viewer — a build-time copy of `CHANGELOG.md` into assets,
 a hand-rolled parser for the Keep a Changelog subset this file actually uses, and the three-level
-fold decided below. Task 15 is complete.
+fold decided below.
+
+**C (done):** adoption across the remaining error sites and `INFO` lifecycle tracing, with the
+default verbosity moved to `INFO` — see that phase's section for what the sweep uncovered. Task 15
+is complete.
 Phase A's facility is enough to make a failure diagnosable *while a debugger/logcat is attached*,
 but logcat is unreachable for a normal user on a release build — a facility they cannot read does
 not serve a personal, local-first app whose whole support model is the user themselves. Phase B
@@ -905,46 +908,57 @@ The signing half can be pulled forward independently of the CI and update-check 
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
 
-### Phase C — Adoption coverage and lifecycle tracing (not started)
+### Phase C — Adoption coverage and lifecycle tracing (done)
 
-**The plumbing is sound and now proven end to end; the adoption is thin.** Phase A deliberately
-adopted logging at exactly three sites — the ones that had been actively painful — and stopped.
-That was the right call for the task it was solving ("we can't tell you why it failed"), but it
-leaves most of the codebase silent. Measured on `shared/src/commonMain` at the close of Task 14
-Phase B:
+Phase A adopted logging at exactly three sites and stopped, which was right for the problem it
+solved and left most of the codebase folding its causes into a message string and dropping them.
+Phase C closed that, and added the `INFO` tracing that makes the log worth reading *before*
+something breaks.
 
-| | Count |
-| :--- | ---: |
-| `Resource.Error(...)` construction sites | 61 |
-| `catch` blocks | 46 |
-| Log calls | 12 |
-| Files that log at all | 6 (of ~90) |
+Measured on `shared/src/commonMain`, before and after:
 
-So roughly **49 places construct an error that nothing records**. `BookRepository`, the whole CSV
-import/export layer, and every ingestion failure still fold their cause into a message string and
-drop it — exactly the situation Phase A was created to fix, just at the sites Phase A did not reach.
-Recorded with numbers because they are far more persuasive measured than asserted, and because they
-will be stale within a month; re-measure before acting rather than trusting this table.
+| | Before | After |
+| :--- | ---: | ---: |
+| Log calls | 14 | 43 |
+| Files that log at all | 7 of 113 | 20 of 113 |
+| `INFO`/`DEBUG` call sites | 0 | 6 |
 
-- **Adopt at the remaining error sites.** Mechanical and low-risk. A failure that currently reaches
-  the user as "Failed to import data" would gain a recorded cause. The identifier rule from Phase A
-  applies unchanged at every new site, and `RecordingLogger` makes each one testable the same way
-  the original three are.
-- **Add lifecycle tracing at `INFO`, which matters more than it sounds.** Nothing in this codebase
-  logs below `WARN` — there is not a single `DEBUG` or `INFO` call site. Two consequences, both
-  observed rather than theorised:
-  - **The log is empty until something breaks**, which reads as a broken feature. It is not: it is
-    a log containing only failures, and it was mistaken for broken by the one person using it.
-  - **The "Log detail" setting offers four options where only two behave differently.** `DEBUG` and
-    `INFO` are currently identical to `Warnings`, because nothing emits at those levels. The setting
-    overstates what it does.
-  A handful of `INFO` entries at real lifecycle points — app start, backfill start/finish,
-  import/export/restore completion — fixes both. And it is what makes a log worth reading at all:
-  when something does break, the entries *before* the failure are the context that explains it. A
-  log containing only the error tells you what fell over, never what led there.
-- **Decide whether the level list should shrink instead.** Adding `INFO` sites is the better answer,
-  but if it is not taken, the honest alternative is reducing the Settings picker to the levels that
-  actually differ, rather than continuing to offer a choice that changes nothing.
+Adopted at `BookRepository` (6), `ReadingSessionRepository` (3), the whole portability layer
+(import, export, backup, import-write), and the ingestion clients (Open Library, Google Books,
+cover download). `INFO` lifecycle tracing at app start, import/export completion, and backfill
+start/finish.
+
+**What the sweep actually turned up, none of which was the mechanical work it was scoped as:**
+
+- **`BackfillViewModel.init` could crash the app.** It launched an unguarded suspend DB read into
+  `viewModelScope`, where an uncaught exception takes the whole scope down — a crash on opening
+  Settings, from a read whose only job is to restore a progress bar. This was the intermittent CI
+  failure on the `v0.10.1` branch, misread at first as test-lifecycle noise.
+- **Two silent drops that map to real user questions.**
+  `OpenLibraryClient.fetchAuthorName` swallowed every failure and returned `null` — the exact "why
+  has this book got no author?" symptom — and it swallowed along *two* paths, the `catch` and a
+  non-2xx return that never throws, the latter being the likelier one. `saveImage(...).getOrNull()`
+  in ingestion and backfill did the same for "why has this book got no cover?".
+- **Cancellation was being logged as failure.** None of the adopted catches rethrew
+  `CancellationException`, which on JVM *is* an `Exception` — so adoption alone would have written
+  a spurious ERROR every time a screen closed mid-write, making the log worse as it got wider.
+  Every adopted site now rethrows first.
+- **Rejection reasons embed raw cell values.** `reject("$field ... : '$raw'")` means logging them
+  would put arbitrary column contents, titles included, into a file that outlives the import. Import
+  rejections are therefore summarised by count and row number, one bounded entry per run rather
+  than one per row.
+
+**The default moved to `INFO`, and `Debug` left the picker.** Adding `INFO` sites alone would not
+have fixed the empty-log complaint: the never-set case resolves to the build-type bootstrap in
+`MediaTrackerApplication`, not to `DEFAULT_LOG_VERBOSITY`, so both had to move. `DEBUG` is no longer
+offered because there is still not one `DEBUG` call site — it promised detail identical to
+`Detailed`. A value already persisted as `DEBUG` is left working rather than rewritten. Restore it
+to the picker the moment anything logs at that level.
+
+**Deliberately still unlogged**, so a future sweep does not read these as misses: `FileLogSink` and
+`LogFileStore` (the logging facility itself — logging from it recurses), and the row-level CSV
+parsers, which return `Rejected(reason)` as a value rather than discarding it and are covered by the
+summary above.
 
 ## Blocked on external changes
 
