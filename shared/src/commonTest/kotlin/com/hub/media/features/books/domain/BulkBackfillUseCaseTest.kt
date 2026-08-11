@@ -1,5 +1,9 @@
 package com.hub.media.features.books.domain
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
@@ -135,6 +139,7 @@ class BulkBackfillUseCaseTest {
         downloadEngine: MockEngine = downloadEngine(),
         rateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
         imageStorage: LocalImageStorageManager = LocalImageStorageManager(tempDir),
+        logger: Logger = AppLogger,
     ): BulkBackfillUseCase = BulkBackfillUseCase(
         metadataProvider = metadataProvider,
         isbnCoverProbe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine), rateLimiter),
@@ -142,7 +147,31 @@ class BulkBackfillUseCaseTest {
         imageStorage = imageStorage,
         bookRepository = bookRepository,
         settingsRepository = settingsRepository,
+        logger = logger,
     )
+
+    @Test
+    fun execute_withNothingPending_stillTracesThatTheRunHappened() = runTest {
+        // Found on a device, not here: running a backfill with nothing to do returned before any
+        // tracing, so the log was unchanged and a no-op was indistinguishable from a button that
+        // did nothing. That is the case that needs the entry *most* -- when work happens, the
+        // library visibly changes; when none does, the log is the only evidence the run occurred.
+        //
+        // The existing tests all seed a book first, which is exactly why they covered the loop and
+        // said nothing about this path.
+        val recorder = RecordingLogger()
+        val useCase = useCase(
+            metadataProvider = FakeMetadataProvider(emptyMap()),
+            probeEngine = MockEngine { respondError(HttpStatusCode.NotFound) },
+            logger = recorder,
+        )
+
+        useCase.execute()
+
+        val info = recorder.entries.single { it.level == LogLevel.INFO }
+        assertEquals("BulkBackfillUseCase", info.tag)
+        assertTrue(info.message.contains("nothing pending"), "got: ${info.message}")
+    }
 
     @Test
     fun bookNeedingBothCoverAndAuthors_resolvesBothInOnePass_andClearsResumeState() = runTest {

@@ -1,5 +1,6 @@
 package com.hub.media.features.books.domain
 
+import kotlin.coroutines.cancellation.CancellationException
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.info
@@ -165,6 +166,11 @@ public class BulkBackfillUseCase(
         var state = settingsRepository.getBulkBackfillState() ?: seedState()
 
         if (state.pendingMediaIds.isEmpty()) {
+            // Traced too, and this is the case that most needs it: a run with nothing to do returns
+            // here without touching a single book, so without an entry the user presses "backfill",
+            // sees the log unchanged, and cannot tell a no-op apart from a button that did nothing.
+            // Found on a device -- the tests covered the loop and said nothing about this path.
+            logger.info(TAG) { "Backfill run: nothing pending, no books to update" }
             settingsRepository.clearBulkBackfillState()
             return state.toProgress(isPaused = false, retryAfter = null)
         }
@@ -180,6 +186,7 @@ public class BulkBackfillUseCase(
         var quotaExhausted = false
         var retryAfterSeen: Duration? = null
 
+        try {
         for (index in toProcess.indices) {
             // Cooperative cancellation between books: a caller (e.g. the Settings screen's "cancel
             // backfill" action) cancelling this coroutine stops the loop here rather than mid-book,
@@ -206,6 +213,18 @@ public class BulkBackfillUseCase(
             )
             settingsRepository.saveBulkBackfillState(state)
             onProgress?.invoke(state.toProgress(isPaused = quotaExhausted, retryAfter = retryAfterSeen))
+        }
+
+        } catch (e: CancellationException) {
+            // Cancelling is normal -- the Settings screen offers it -- but without this the run
+            // logs "starting, 168 pending" and then nothing at all, which reads as a hang or a
+            // crash rather than as the user's own choice. Logged before rethrowing, never instead
+            // of it: the cancellation still has to propagate.
+            logger.info(TAG) {
+                "Backfill run cancelled: $updated updated, " +
+                    "${stillPending.size} left for the next run"
+            }
+            throw e
         }
 
         if (state.pendingMediaIds.isEmpty()) {

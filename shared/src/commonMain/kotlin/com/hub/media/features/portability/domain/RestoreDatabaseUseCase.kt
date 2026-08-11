@@ -15,6 +15,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
+import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 
 /** [Logger] tag for every log call [DefaultRestoreDatabaseUseCase] makes. */
@@ -361,6 +362,11 @@ public class DefaultRestoreDatabaseUseCase(
                 )
             }
 
+            // The most consequential thing this app can do -- it replaces the whole database -- and
+            // until now only its *failures* were recorded, so a successful restore left no trace
+            // that the library had been swapped out at all. ROADMAP Task 15 Phase C listed restore
+            // completion in scope; adding import and export and not this was an oversight.
+            logger.info(TAG) { "Restore completed: database replaced from a staged backup" }
             Resource.Success(Unit)
         } catch (e: Exception) {
             logger.error(TAG, e) { "restore failed with an unexpected exception during the swap" }
