@@ -1,5 +1,7 @@
 package com.hub.media.features.books.data
 
+import androidx.room.execSQL
+import androidx.room.useWriterConnection
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
@@ -10,6 +12,9 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertIs
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -33,6 +38,33 @@ class ReadingSessionRepositoryTest {
             val mediaItem = sampleMediaItem(id = mediaId, type = MediaType.BOOK)
             db.mediaItemDao().insert(mediaItem)
         }
+    }
+
+    // ---- Logging adoption (ROADMAP Task 15 Phase C) ------------------------------------------
+
+    @Test
+    fun logSession_whenTheWriteFails_recordsTheCauseAgainstTheOpaqueId() = runTest {
+        // Dropping the table rather than closing the database: Room answers a closed database with
+        // CancellationException, which this catch now rethrows, so it would exercise the wrong
+        // branch entirely.
+        val recorder = RecordingLogger()
+        val repo = ReadingSessionRepository(db, logger = recorder)
+        db.useWriterConnection { connection -> connection.execSQL("DROP TABLE reading_sessions") }
+
+        val result = repo.logSession(
+            mediaId = mediaId,
+            timestampStart = Instant.fromEpochMilliseconds(0),
+            timestampEnd = Instant.fromEpochMilliseconds(1_000),
+            durationSeconds = 1,
+            startUnit = 0.0,
+            endUnit = 1.0,
+        )
+
+        assertIs<Resource.Error>(result)
+        val error = recorder.entries.single { it.level == LogLevel.ERROR }
+        assertEquals("ReadingSessionRepository", error.tag)
+        assertTrue(error.throwable != null, "the cause must be attached, not just a message")
+        assertTrue(error.message.contains(mediaId), "the opaque id is what makes the entry actionable")
     }
 
     @AfterTest

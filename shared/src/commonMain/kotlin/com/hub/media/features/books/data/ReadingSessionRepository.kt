@@ -2,9 +2,13 @@ package com.hub.media.features.books.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.ReadingSessionValidation
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 
@@ -14,7 +18,13 @@ import kotlinx.coroutines.flow.Flow
  *
  * All write operations are wrapped in [Resource] to handle failures gracefully (AGENTS.md §5).
  */
-public class ReadingSessionRepository(private val db: AppDatabase) {
+/** Log tag for this repository's adoption sites (ROADMAP Task 15 Phase C). */
+private const val TAG = "ReadingSessionRepository"
+
+public class ReadingSessionRepository(
+    private val db: AppDatabase,
+    private val logger: Logger = AppLogger,
+) {
 
     /**
      * Observes all reading sessions for a specific media (book) as a reactive stream,
@@ -85,7 +95,12 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
 
             db.readingSessionDao().insert(session)
             Resource.Success(sessionId)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to log reading session: mediaId=$mediaId" }
             Resource.Error(
                 message = "Failed to log reading session: ${e.message ?: "Unknown error"}",
                 cause = e,
@@ -160,7 +175,12 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
                 return Resource.Error("Reading session not found: $sessionId")
             }
             Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
         } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to update reading session: sessionId=$sessionId" }
             Resource.Error(
                 message = "Failed to update reading session: ${e.message ?: "Unknown error"}",
                 cause = e,
@@ -177,7 +197,12 @@ public class ReadingSessionRepository(private val db: AppDatabase) {
     public suspend fun deleteSession(id: String): Resource<Unit> = try {
         db.readingSessionDao().deleteById(id)
         Resource.Success(Unit)
+    } catch (e: CancellationException) {
+        // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+        // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+        throw e
     } catch (e: Exception) {
+        logger.error(TAG, e) { "Failed to delete reading session: sessionId=$id" }
         Resource.Error(
             message = "Failed to delete reading session: ${e.message ?: "Unknown error"}",
             cause = e,
