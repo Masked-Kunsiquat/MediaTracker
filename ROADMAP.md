@@ -423,6 +423,42 @@ obviously pointless without an author to search stored anywhere first.
     reading-status `FilterChip` row as an **intersection (AND)**: both narrow the same list
     together, e.g. "Reading" + a query shows only currently-reading books matching that query,
     never the union of either filter alone.
+
+**Phase plan for what remains (decided, not yet started).** The four outstanding pieces below are
+sequenced deliberately rather than taken in the order they happen to be listed:
+
+- **Phase B — title/author type-ahead.** First, because it is the one that actually retires this
+  task's stated bottleneck: today a book can only be added with its ISBN in hand. Split in two, so
+  the half that can be proven by tests is not entangled with the half that cannot:
+  - **B1 (shared module):** a `searchByTitleOrAuthor` provider method over Open Library's keyless
+    search API, plus the use case and DTOs, with an in-memory LRU cache for repeated prefixes.
+    Entirely `commonTest`-able with `MockEngine`, exactly as the ISBN clients are. Note the
+    cancellation rule now applies from the start here (Task 15 Phase C): a superseded keystroke
+    cancels its request, and a cancelled search must not be logged as a provider failure.
+  - **B2 (app module):** the type-ahead UI — ~300ms debounce, a 2-3 character minimum,
+    cancel-previous-on-keystroke, and typed result styling. Needs device verification, not just
+    instrumented tests: debounce and cancellation are exactly the kind of behaviour that passes a
+    test and still feels wrong in the hand.
+- **Phase C — manual entry and paste-to-add.** Second because it needs no permissions and no new
+  dependency, and because the Edit Book screen and `BookMetadataValidation` already carry most of
+  the form work. The two flows are **not** the same path underneath, though they are easy to
+  describe as if they were:
+  - **Manual entry** is the genuinely provider-independent one: a create-book form writing
+    straight through `BookRepository.addBook` (which already runs `BookMetadataValidation` on the
+    way in), with no lookup and no network call at all. This is the honest fallback for a book no
+    provider knows about, which type-ahead cannot fix.
+  - **Paste-to-add** is local only in its *extraction* step. A regex pulls an ISBN out of the
+    pasted blob; from there it hands off to `AddBookByIsbnUseCase.execute`, which owns
+    normalization, checksum validation, the provider lookup, the best-effort cover fetch, and
+    persistence. So it needs the network exactly as much as typing an ISBN does — it only spares
+    the user the typing. **No offline variant is intended**; a paste with no reachable provider
+    fails the same way ISBN entry does, and manual entry is the answer in that case.
+- **Phase D — barcode scanning.** Last, and **blocked on a decision that is the user's to make, not
+  mine**: Google Code Scanner needs no CAMERA permission but hard-depends on Play Services (awkward
+  against the local-first ethos, and rules out de-Googled devices and F-Droid), while bundled ML Kit
+  + CameraX avoids Play Services at the cost of the CAMERA permission, a preview implementation and
+  ~2.2MB. Both are recorded in full below. Sequenced last so the other three are not held up by it.
+
 - Title/author type-ahead search of external providers when adding a book (not yet done): Open
   Library's search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
   minimum before querying, cancel-previous-request-on-new-keystroke, and an in-memory LRU
@@ -480,8 +516,11 @@ individual session histories per read-through."
 
 - Group reading sessions into numbered read-throughs, each with its own completion state and
   finish date; the Book Detail reading-history view separates them.
-- **Room schema v5** (read-through table or session grouping column + tested `Migration_4_5`),
-  with the migration assigning every existing session to read-through #1 so no history is lost.
+- **A Room schema bump** (read-through table or session grouping column + a tested migration per
+  AGENTS.md §8), with the migration assigning every existing session to read-through #1 so no
+  history is lost. This entry used to read "schema v5 / `Migration_4_5`" — v5 was spent on Task 9
+  Phase A's `authors` column instead, so the number was already wrong. See the note under Task 13:
+  absolute versions are no longer pinned to unscheduled tasks.
 - Per-read stats become possible (duration per read, pages/day per read) and feed Task 11.
 - **Ratings belong here, per read-through** (user decision), not as a standalone book column.
   The model has no rating field today and Goodreads exports one, so it is tempting to add
@@ -518,7 +557,7 @@ and never implemented: there is no genre column, table, or UI anywhere today.
 
 - Genres table plus a many-to-many join table (a title holds several genres), user-defined
   taxonomies, a hex color per genre, a management UI, and library filtering by genre.
-- **Room schema v6** (+ tested `Migration_5_6`).
+- **A Room schema bump** (+ a tested migration per AGENTS.md §8).
 - Open question when scheduled: whether to seed suggestions from provider metadata (Open
   Library `subjects` are numerous and messy; Google Books `categories` are cleaner but coarse) or
   keep the taxonomy purely user-authored.
@@ -527,9 +566,17 @@ and never implemented: there is no genre column, table, or UI anywhere today.
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
-- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → next Room schema bump (v7, assuming
-  v4 tracking mode, v5 read-throughs, and v6 genres land first) under the §8 schema-freeze rule
-  (version bump + tested `Migration`).
+- `MovieDetails` / `TVDetails` child tables + `WatchLogs` → a Room schema bump under the §8
+  schema-freeze rule (version bump + tested `Migration`).
+  - **Absolute schema versions are deliberately not pinned to unscheduled tasks anymore.** This
+    bullet used to claim v7 "assuming v4 tracking mode, v5 read-throughs, and v6 genres land
+    first" — but v5 went to Task 9 Phase A's `authors` column, and every downstream number was
+    silently off by one from that moment. Whichever of read-throughs (Task 10), genres (Task 12)
+    and this one lands last takes the highest number; the live version is
+    `APP_DATABASE_VERSION` in `AppDatabase.kt`, which is the only place worth trusting — read it
+    there rather than copying it here, or this note goes stale the same way the numbers it
+    replaces did. Same failure mode as the stale task numbers called out at the top of this file,
+    on a different axis.
 - Note this has now slid from Task 6 to Task 13 as book-domain work kept taking priority. That
   reflects a real preference — the book side is what's in daily use — but it is worth an explicit
   decision rather than continued drift if multi-media matters sooner.
