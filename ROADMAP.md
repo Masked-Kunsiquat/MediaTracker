@@ -430,15 +430,32 @@ sequenced deliberately rather than taken in the order they happen to be listed:
 - **Phase B — title/author type-ahead.** First, because it is the one that actually retires this
   task's stated bottleneck: today a book can only be added with its ISBN in hand. Split in two, so
   the half that can be proven by tests is not entangled with the half that cannot:
-  - **B1 (shared module):** a `searchByTitleOrAuthor` provider method over Open Library's keyless
-    search API, plus the use case and DTOs, with an in-memory LRU cache for repeated prefixes.
-    Entirely `commonTest`-able with `MockEngine`, exactly as the ISBN clients are. Note the
-    cancellation rule now applies from the start here (Task 15 Phase C): a superseded keystroke
-    cancels its request, and a cancelled search must not be logged as a provider failure.
-  - **B2 (app module):** the type-ahead UI — ~300ms debounce, a 2-3 character minimum,
-    cancel-previous-on-keystroke, and typed result styling. Needs device verification, not just
-    instrumented tests: debounce and cancellation are exactly the kind of behaviour that passes a
-    test and still feels wrong in the hand.
+  - **B1 (shared module — done).** `BookSearchProvider.searchByTitleOrAuthor` over Open Library's
+    keyless search API (`OpenLibrarySearchClient`), `BookSearchResult`, `SearchBooksUseCase` with
+    an in-memory `LruCache`, and `AppContainer` wiring. Entirely `commonTest`-able with
+    `MockEngine`, exactly as the ISBN clients are. The cancellation rule applied from the start
+    (Task 15 Phase C) and is verified by mutation: deleting the rethrow fails exactly one test.
+    Three things reading the live API changed versus the plan:
+    - **Every request now identifies the app** (`USER_AGENT` in `HttpClientFactory`, AGENTS.md §4).
+      Open Library rate-limits unidentified traffic at **1 req/s** and identified at **3 req/s**,
+      and we had been sending Ktor's default all along — so Task 14's bulk backfill has been
+      crawling in the 1 req/s bucket since it shipped. The contact is the repo URL, never a
+      personal email: a `User-Agent` is broadcast to and logged by every host the app contacts.
+    - **The `fields` whitelist is load-bearing, not an optimization.** Omitting it returns every
+      indexed field including an `isbn` array of *hundreds* of entries per work — the live
+      response for "tolkien hobbit" was kilobytes of ISBNs per document. A test fails if `isbn` is
+      ever added to the whitelist.
+    - **Search results are works, not editions**, so a hit carries no ISBN. `BookSearchResult`
+      therefore isn't `BookMetadata` (which would have meant an always-null `isbn` and a
+      `pageCount` that silently means "median across editions"). Resolving a selected work to a
+      concrete ISBN via `cover_edition_key` is **B2's job** — B1 alone cannot add a book.
+  - **B2 (app module):** the type-ahead UI — ~300ms debounce, cancel-previous-on-keystroke, and
+    typed result styling. Needs device verification, not just instrumented tests: debounce and
+    cancellation are exactly the kind of behaviour that passes a test and still feels wrong in the
+    hand. Also owns **selection → ISBN → `AddBookByIsbnUseCase`**, which B1 stops short of. The
+    minimum query length already lives in `SearchBooksUseCase.MIN_SEARCH_QUERY_LENGTH` (3), with
+    `isQueryLongEnough` exposed so the UI can say "keep typing" rather than "no matches" without
+    re-deriving the normalization rules.
 - **Phase C — manual entry and paste-to-add.** Second because it needs no permissions and no new
   dependency, and because the Edit Book screen and `BookMetadataValidation` already carry most of
   the form work. The two flows are **not** the same path underneath, though they are easy to
@@ -566,6 +583,21 @@ and never implemented: there is no genre column, table, or UI anywhere today.
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
+  - **Build that key-entry setting as shared plumbing, not a TMDB-only field, and let Google Books
+    be its second consumer.** Google's docs state that public-data requests *require* an API key;
+    this app has always called it keyless, which works in practice but is undocumented tolerance,
+    and 429s have already been observed against it (Task 9). A key would put the Google Books
+    fallback on a documented quota instead of a favour. It is not scheduled on its own because
+    this task has to build the identical UI, storage and validation anyway — riding along here
+    costs almost nothing, whereas a settings screen built for one optional key does not pay for
+    itself.
+  - **Open Library is explicitly not part of this**, and the question comes up often enough to
+    answer once: Open Library issues no API keys, tokens or paid tiers of any kind. The only lever
+    is the `User-Agent` identification already in `HttpClientFactory` (1 → 3 req/s, AGENTS.md §4),
+    and the app is at that ceiling. Nor would a key help the Task 9 type-ahead even in principle:
+    rate limits govern throughput, not latency — a single query is no faster under a bigger budget
+    — and the type-ahead is Open Library only by design. The burst that actually strains the quota
+    is Task 14's bulk backfill, not typing.
 - `MovieDetails` / `TVDetails` child tables + `WatchLogs` → a Room schema bump under the §8
   schema-freeze rule (version bump + tested `Migration`).
   - **Absolute schema versions are deliberately not pinned to unscheduled tasks anymore.** This

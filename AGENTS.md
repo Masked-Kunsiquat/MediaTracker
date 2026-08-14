@@ -46,6 +46,15 @@ So: **update this file in the same commit as the change that invalidates it.** C
 
 * **Books API:** Primary: Open Library API. Secondary Fallback: Google Books API.
 * **Movies & TV API:** Primary: TMDB API (The Movie Database).
+* **Every outbound request is identified.** `createHttpClient` installs Ktor's `UserAgent` plugin
+  with the `USER_AGENT` constant in `core/network/HttpClientFactory.kt`. This is not cosmetic:
+  [Open Library's API guidelines](https://openlibrary.org/developers/api) rate-limit **unidentified
+  traffic at 1 request/second and identified traffic at 3/second**, so dropping the header
+  third-times the budget for every ISBN lookup, cover probe and bulk-backfill crawl at once. The
+  contact in it is the **repository URL, never a personal email** — a `User-Agent` is broadcast to
+  and logged by every host the app contacts. Their guidelines also say to *cache responses whenever
+  possible* and not to *make hundreds of single-book requests*, which is why rate limiting and
+  caching live in the client layer rather than being left to callers.
 * **Cover/Poster Storage Protocol:**
     1. Download image bytes via Ktor.
     2. Compute SHA-256 hash of the raw `ByteArray`.
