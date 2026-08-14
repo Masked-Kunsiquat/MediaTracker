@@ -12,6 +12,8 @@ import com.hub.media.features.books.domain.BulkBackfillUseCase
 import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
+import com.hub.media.features.books.domain.SearchBooksUseCase
+import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
@@ -148,6 +150,23 @@ public class AppContainer(
         imageStorage = imageStorage,
         bookRepository = bookRepository,
         coverRateLimiter = coverRateLimiter,
+    )
+
+    /**
+     * Title/author type-ahead search (ROADMAP Task 9 Phase B1).
+     *
+     * A single instance on purpose: the LRU inside it is the cache, so a per-screen instance would
+     * throw the results away every time the Add Book screen closed and re-request them on the next
+     * visit. Open Library only — Google Books is consulted on selection or as a fallback, never
+     * per keystroke, since its keyless per-IP quota is limited and 429s have already been observed
+     * against it.
+     *
+     * Not wired through [coverRateLimiter]: that limiter tracks the ISBN-keyed *cover* quota, a
+     * different endpoint with a different budget. Search is throttled by the debounce and minimum
+     * query length in [SearchBooksUseCase] and its caller instead.
+     */
+    public val searchBooksUseCase: SearchBooksUseCase = SearchBooksUseCase(
+        OpenLibrarySearchClient(httpClient),
     )
 
     /**
