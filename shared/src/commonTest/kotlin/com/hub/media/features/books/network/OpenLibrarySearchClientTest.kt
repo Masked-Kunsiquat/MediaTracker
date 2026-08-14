@@ -9,6 +9,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -17,6 +18,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -230,6 +232,48 @@ class OpenLibrarySearchClientTest {
 
         assertTrue(result is Resource.Error, "expected Error, got $result")
         assertEquals(LogLevel.WARN, logger.entries.single().level)
+    }
+
+    @Test
+    fun failure_logsTheExceptionTypeAndNeverTheSearchQuery() = runTest {
+        // The identifier rule, at the one call site in the codebase where passing the throwable
+        // through would break it. A search query IS a title or an author name, it travels in the
+        // query string, and Ktor puts the whole URL in its exception message -- so a plain
+        // `logger.warn(TAG, e)` writes what the user is reading into the on-device log file.
+        val logger = RecordingLogger()
+        val leakyUrl = "https://openlibrary.org/search.json?q=the+bell+jar&fields=key&limit=10"
+        val engine = MockEngine { throw HttpRequestTimeoutException(leakyUrl, 15_000L) }
+        val client = OpenLibrarySearchClient(createHttpClient(engine), logger)
+
+        val result = client.searchByTitleOrAuthor("the bell jar", limit = 10)
+
+        val logged = logger.entries.single()
+        assertEquals(LogLevel.WARN, logged.level)
+        assertTrue(
+            "HttpRequestTimeoutException" in logged.message,
+            "the exception type is the diagnostic that replaces the message: ${logged.message}",
+        )
+        // Three doors the query could walk through: the message, the attached throwable, and the
+        // Resource.Error a caller might log from the other end. All three stay shut.
+        assertFalse("bell" in logged.message, "query leaked into the log message: ${logged.message}")
+        assertNull(logged.throwable, "the throwable carries the query-bearing URL and must not be attached")
+        result as Resource.Error
+        assertFalse("bell" in result.message, "query leaked into the error message: ${result.message}")
+        assertNull(result.cause, "a caller logging the cause would reintroduce the leak")
+    }
+
+    @Test
+    fun malformedJsonFailure_alsoWithholdsTheQuery() = runTest {
+        val logger = RecordingLogger()
+        val engine = MockEngine { jsonResponse("{ this is not json") }
+        val client = OpenLibrarySearchClient(createHttpClient(engine), logger)
+
+        val result = client.searchByTitleOrAuthor("the bell jar", limit = 10)
+
+        val logged = logger.entries.single()
+        assertFalse("bell" in logged.message, "query leaked: ${logged.message}")
+        assertNull(logged.throwable, "the parse exception can quote the payload it choked on")
+        assertNull((result as Resource.Error).cause)
     }
 
     @Test

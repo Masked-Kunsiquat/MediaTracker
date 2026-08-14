@@ -43,7 +43,10 @@ private const val SEARCH_CACHE_SIZE = 32
  *
  * @param provider Where results come from. Open Library only, by design: Google Books is consulted
  *   on selection or as a fallback, never per keystroke (ROADMAP Task 9).
- * @param limit Maximum hits per search.
+ * @param limit Maximum hits per search. Fixed per instance rather than per call, and it needs to
+ *   stay that way: the cache is keyed on the normalized query alone, so a varying limit would let a
+ *   cached 5-result list answer a 20-result request. Keeping it a constructor argument makes that
+ *   unreachable, which is cheaper than composing it into every cache key.
  */
 public class SearchBooksUseCase(
     private val provider: BookSearchProvider,
@@ -70,6 +73,10 @@ public class SearchBooksUseCase(
             return Resource.Success(emptyList())
         }
 
+        // Two identical queries in flight at once would both miss here and both hit the network.
+        // Deliberately not deduplicated: Phase B2 cancels the previous search on every keystroke,
+        // so only one is ever running. That is the caller holding an invariant this class does not
+        // enforce -- worth revisiting only if a second, non-type-ahead caller ever appears.
         cache.get(normalized)?.let { return Resource.Success(it) }
 
         return when (val result = provider.searchByTitleOrAuthor(normalized, limit)) {

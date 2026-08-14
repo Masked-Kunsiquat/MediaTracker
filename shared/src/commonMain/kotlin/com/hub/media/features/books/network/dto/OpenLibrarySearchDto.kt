@@ -37,7 +37,6 @@ internal data class OpenLibrarySearchDocDto(
     val type: String? = null,
     val title: String? = null,
     @SerialName("author_name") val authorName: List<String>? = null,
-    @SerialName("author_key") val authorKey: List<String>? = null,
     @SerialName("first_publish_year") val firstPublishYear: Int? = null,
     @SerialName("cover_i") val coverId: Int? = null,
     @SerialName("cover_edition_key") val coverEditionKey: String? = null,

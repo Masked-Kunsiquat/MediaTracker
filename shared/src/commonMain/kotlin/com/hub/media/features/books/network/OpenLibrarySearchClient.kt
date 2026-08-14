@@ -29,10 +29,13 @@ private const val OPEN_LIBRARY_COVERS_BASE_URL = "https://covers.openlibrary.org
  */
 private val SEARCH_FIELDS = listOf(
     "key",
+    // Requested ahead of its consumer, and the only field here that is: Phase B2's typed result
+    // styling (author vs. title vs. collection) is driven by it. `author_key` used to sit alongside
+    // it with no consumer at all, which quietly contradicted the argument this whole whitelist
+    // rests on -- if the payload is worth trimming, it is worth trimming of our own dead fields too.
     "type",
     "title",
     "author_name",
-    "author_key",
     "first_publish_year",
     "cover_i",
     "cover_edition_key",
@@ -42,6 +45,27 @@ private val SEARCH_FIELDS = listOf(
 
 /** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "OpenLibrarySearchClient"
+
+/**
+ * The exception's type name, which is the *only* part of a failure this file is allowed to log.
+ *
+ * **This is the one place in the codebase where a `Throwable` must not be handed to the logger.**
+ * Every other adoption site passes the exception through, on the stated grounds (see [Logger]'s
+ * identifier rule) that "exception text from this codebase's own network/DB/file-I/O layers never
+ * embeds book content". That held while every URL this app built carried an ISBN. It does not hold
+ * here: a search query *is* a title or an author name, it travels in the query string, and Ktor
+ * puts the full URL in its exception messages —
+ *
+ *     Request timeout has expired [url=https://openlibrary.org/search.json?q=the+bell+jar&...]
+ *
+ * — so `logger.warn(TAG, e)` would write what the user is reading straight into the on-device log
+ * file. Observed, not theorised. The type name plus the HTTP status is enough to tell an offline
+ * device from a 429 from a parse failure, which is the entire diagnostic value the message had.
+ *
+ * The same reasoning is why the [Resource.Error]s in this file carry no `cause`: a caller that
+ * logged one would reintroduce the leak from the other end.
+ */
+private fun Throwable.typeName(): String = this::class.simpleName ?: "unknown"
 
 /**
  * [BookSearchProvider] backed by Open Library's keyless search API
@@ -98,8 +122,9 @@ public class OpenLibrarySearchClient(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn(TAG, e) { "Open Library returned malformed JSON for a search" }
-                return Resource.Error("Open Library returned a malformed search response", e)
+                // Exception type only, and no `throwable` argument -- see typeName().
+                logger.warn(TAG) { "Open Library returned malformed JSON for a search (${e.typeName()})" }
+                return Resource.Error("Open Library returned a malformed search response")
             }
 
             // An empty docs list is a successful search that found nothing, not a failure: the
@@ -114,9 +139,9 @@ public class OpenLibrarySearchClient(
         } catch (e: Exception) {
             // WARN, not ERROR, for the same reason as OpenLibraryClient.fetchByIsbn: an offline
             // device is the ordinary case, and the UI recovers by showing nothing rather than
-            // crashing.
-            logger.warn(TAG, e) { "Open Library search failed" }
-            Resource.Error("Open Library search failed: ${e.message}", e)
+            // crashing. Exception type only, and no `throwable` argument -- see typeName().
+            logger.warn(TAG) { "Open Library search failed (${e.typeName()})" }
+            Resource.Error("Open Library search failed")
         }
     }
 }

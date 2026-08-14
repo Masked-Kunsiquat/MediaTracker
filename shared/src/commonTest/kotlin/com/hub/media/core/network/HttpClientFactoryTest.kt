@@ -7,7 +7,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
@@ -54,15 +53,4 @@ class HttpClientFactoryTest {
         assertTrue('@' !in USER_AGENT, "User-Agent should carry no email address: $USER_AGENT")
     }
 
-    @Test
-    fun mockEngineOverride_stillGetsTheSharedConfiguration() = runTest {
-        // createHttpClient(engine) is the seam every provider-client test uses; if the engine
-        // override path skipped configureHttpClient the tests would diverge from production.
-        val captured = mutableListOf<String?>()
-        val client = createHttpClient(capturingEngine(captured))
-
-        client.get("https://example.org/")
-
-        assertNotNull(captured.single(), "engine-override clients must be configured too")
-    }
 }

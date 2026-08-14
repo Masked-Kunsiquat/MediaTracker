@@ -53,10 +53,20 @@ import kotlin.concurrent.Volatile
  *   already shown to the user in-app (e.g. a restore failure's backup path) are likewise fine.
  * - Never fine to log: a book/media title, an author name, reading-session notes, or any other field
  *   that is the user's actual library content -- log **what failed and why**, never **what the user
- *   is reading**. A [Throwable]'s own `message`/stack trace is logged as-is (via the `throwable`
- *   parameter every [log] call accepts) since exception text from this codebase's own network/DB/
- *   file-I/O layers never embeds book content -- but a call site must never *additionally*
- *   interpolate a title/author/note into the lazy `message` string alongside it.
+ *   is reading**. A call site must never interpolate a title/author/note into the lazy `message`
+ *   string.
+ *
+ * **The `throwable` parameter is only as safe as the URLs the failing layer builds, and that is a
+ * per-call-site judgement rather than a blanket permission.** This rule used to say a [Throwable]'s
+ * `message`/stack trace could always be passed through, "since exception text from this codebase's
+ * own network/DB/file-I/O layers never embeds book content". That was true for as long as every URL
+ * the app constructed was keyed by ISBN. ROADMAP Task 9 Phase B1 broke it: a *search* query is a
+ * title or an author name, it travels in the query string, and Ktor embeds the full URL in its
+ * exception messages (`Request timeout has expired [url=...?q=the+bell+jar...]`), so passing the
+ * exception through would write library content to the log file. Before adding a `throwable`
+ * argument at a new site, ask what goes into that layer's URLs, paths or SQL; if any of it is user
+ * content, log the exception's type instead --
+ * [com.hub.media.features.books.network.OpenLibrarySearchClient] is the worked example.
  */
 public enum class LogLevel { DEBUG, INFO, WARN, ERROR }
 
