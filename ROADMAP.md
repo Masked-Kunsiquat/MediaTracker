@@ -583,6 +583,21 @@ and never implemented: there is no genre column, table, or UI anywhere today.
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
+  - **Build that key-entry setting as shared plumbing, not a TMDB-only field, and let Google Books
+    be its second consumer.** Google's docs state that public-data requests *require* an API key;
+    this app has always called it keyless, which works in practice but is undocumented tolerance,
+    and 429s have already been observed against it (Task 9). A key would put the Google Books
+    fallback on a documented quota instead of a favour. It is not scheduled on its own because
+    this task has to build the identical UI, storage and validation anyway — riding along here
+    costs almost nothing, whereas a settings screen built for one optional key does not pay for
+    itself.
+  - **Open Library is explicitly not part of this**, and the question comes up often enough to
+    answer once: Open Library issues no API keys, tokens or paid tiers of any kind. The only lever
+    is the `User-Agent` identification already in `HttpClientFactory` (1 → 3 req/s, AGENTS.md §4),
+    and the app is at that ceiling. Nor would a key help the Task 9 type-ahead even in principle:
+    rate limits govern throughput, not latency — a single query is no faster under a bigger budget
+    — and the type-ahead is Open Library only by design. The burst that actually strains the quota
+    is Task 14's bulk backfill, not typing.
 - `MovieDetails` / `TVDetails` child tables + `WatchLogs` → a Room schema bump under the §8
   schema-freeze rule (version bump + tested `Migration`).
   - **Absolute schema versions are deliberately not pinned to unscheduled tasks anymore.** This
