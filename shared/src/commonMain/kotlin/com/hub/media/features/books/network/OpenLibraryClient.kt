@@ -5,6 +5,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorDto
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorRefDto
 import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
+import com.hub.media.features.books.network.dto.OpenLibraryWorkDto
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.warn
@@ -74,7 +75,8 @@ public class OpenLibraryClient(
             val coverId = dto.covers?.firstOrNull()
             val coverImageUrl = coverId?.let { "$OPEN_LIBRARY_COVERS_BASE_URL/id/$it-L.jpg" }
             val releaseYear = dto.publishDate?.let { parseYear(it) }
-            val authors = resolveAuthorNames(dto.authors.orEmpty())
+            val workKey = dto.works?.firstOrNull()?.key
+            val authors = resolveAuthors(dto.authors.orEmpty(), workKey)
 
             Resource.Success(
                 BookMetadata(
@@ -86,6 +88,7 @@ public class OpenLibraryClient(
                     coverImageUrl = coverImageUrl,
                     provider = IdentifierProvider.OPEN_LIBRARY,
                     externalId = dto.key,
+                    workKey = workKey,
                 ),
             )
         } catch (e: CancellationException) {
@@ -99,6 +102,55 @@ public class OpenLibraryClient(
             // about. Same level, and the same isbn= identifier, as OpenLibraryIsbnCoverProbe.
             logger.warn(TAG, e) { "Open Library lookup failed for isbn=$isbn" }
             Resource.Error("Open Library lookup failed for ISBN $isbn: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Resolves author display names, falling back to the **work** when the edition record has no
+     * author references of its own.
+     *
+     * Open Library models authorship on the work, not the printing —
+     * ["Work fields / Edition fields"](https://openlibrary.org/about/work_edition) puts
+     * author/creator at work level and leaves editions carrying printing-specific contributors
+     * (editors, illustrators). Plenty of edition records omit `authors` outright: the Mariner 75th
+     * Anniversary Hobbit (`9780547928227`) has no `authors` key at all, while its work
+     * `/works/OL27482W` names J.R.R. Tolkien. Reading only the edition made every such book land
+     * with no author and, because nothing actually *failed*, nothing was logged either — an
+     * absence is not an error, so Task 15 Phase C's adoption had nothing to report.
+     *
+     * Edition authors still win when present: they are the more specific record, and preferring
+     * them preserves the behaviour every already-ingested book was added with. The work is
+     * consulted only to fill a gap, which also keeps the extra round-trip off the common path.
+     */
+    private suspend fun resolveAuthors(
+        editionRefs: List<OpenLibraryAuthorRefDto>,
+        workKey: String?,
+    ): List<String> {
+        val fromEdition = resolveAuthorNames(editionRefs)
+        if (fromEdition.isNotEmpty() || workKey == null) return fromEdition
+        return resolveAuthorNames(fetchWorkAuthorRefs(workKey))
+    }
+
+    /**
+     * Fetches a work's author references. Returns empty on any failure — a missing author is not
+     * worth failing an otherwise good book lookup over, exactly as [fetchAuthorName] treats one.
+     */
+    private suspend fun fetchWorkAuthorRefs(workKey: String): List<OpenLibraryAuthorRefDto> {
+        return try {
+            val response = client.get("$OPEN_LIBRARY_BASE_URL$workKey.json")
+            if (!response.status.isSuccess()) {
+                logger.warn(TAG) {
+                    "Open Library work lookup returned ${response.status.value} for key=$workKey"
+                }
+                return emptyList()
+            }
+            // A work nests its refs one level deeper than an edition does -- see OpenLibraryWorkDto.
+            response.body<OpenLibraryWorkDto>().authors.orEmpty().mapNotNull { it.author }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG, e) { "Open Library work lookup failed for key=$workKey" }
+            emptyList()
         }
     }
 

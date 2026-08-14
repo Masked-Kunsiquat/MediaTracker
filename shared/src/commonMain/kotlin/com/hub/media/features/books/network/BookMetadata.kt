@@ -19,8 +19,16 @@ import com.hub.media.core.database.entities.IdentifierProvider
  * @property isbn The ISBN the lookup was performed with (echoed back for convenience).
  * @property coverImageUrl A remote URL to fetch the cover image bytes from, if known.
  * @property provider Which catalog this metadata came from.
- * @property externalId The provider-native identifier (e.g. an Open Library edition/work key,
- *   or a Google Books volume id), if the response exposed one.
+ * @property externalId The provider-native identifier — for Open Library specifically, the
+ *   **edition** key (e.g. `/books/OL33891995M`), since an ISBN identifies a printing. A Google
+ *   Books volume id otherwise.
+ * @property workKey The provider's **work** key (e.g. `/works/OL27482W`) — the abstract book that
+ *   this edition is one printing of, when the provider models the distinction and the response
+ *   exposed it. Null for providers that don't (Google Books has no work concept).
+ *
+ *   Nothing reads this yet; it is captured at ingestion because it cannot be recovered afterwards
+ *   without another rate-limited crawl over the library. See
+ *   [IdentifierProvider.OPEN_LIBRARY_WORK] for what it unlocks.
  */
 public data class BookMetadata(
     val title: String,
@@ -31,4 +39,5 @@ public data class BookMetadata(
     val coverImageUrl: String? = null,
     val provider: IdentifierProvider,
     val externalId: String? = null,
+    val workKey: String? = null,
 )

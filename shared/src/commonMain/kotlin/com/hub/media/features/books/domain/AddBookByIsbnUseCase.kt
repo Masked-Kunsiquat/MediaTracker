@@ -137,9 +137,15 @@ public class AddBookByIsbnUseCase(
     }
 
     /**
-     * Builds the external identifier rows for [metadata]: the provider-native id, plus the
-     * normalized ISBN — deduped to a single row if [BookMetadata.provider] is already
-     * [IdentifierProvider.ISBN].
+     * Builds the external identifier rows for [metadata]: the provider-native id, the work key
+     * where the provider has one, plus the normalized ISBN — deduped to a single row if
+     * [BookMetadata.provider] is already [IdentifierProvider.ISBN].
+     *
+     * The work key is written even though no feature reads it yet. That is deliberate and is the
+     * cheap half of a decision that is expensive to reverse: it costs one row at ingestion, while
+     * backfilling it onto books already added costs another rate-limited crawl over the whole
+     * library — the exact hole ROADMAP Task 14 existed to dig covers and authors out of. See
+     * [IdentifierProvider.OPEN_LIBRARY_WORK].
      */
     private fun buildExternalIdentifiers(
         metadata: BookMetadata,
@@ -148,6 +154,10 @@ public class AddBookByIsbnUseCase(
         if (metadata.provider != IdentifierProvider.ISBN && metadata.externalId != null) {
             add(metadata.provider to metadata.externalId)
         }
+        // Its own provider slot rather than overwriting the edition key: the table's primary key is
+        // (mediaId, provider), so the two coexist and a later reader can tell a printing from the
+        // book it is a printing of.
+        metadata.workKey?.let { add(IdentifierProvider.OPEN_LIBRARY_WORK to it) }
         add(IdentifierProvider.ISBN to normalizedIsbn)
     }
 }

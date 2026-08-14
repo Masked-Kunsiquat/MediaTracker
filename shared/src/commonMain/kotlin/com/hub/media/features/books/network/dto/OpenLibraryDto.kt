@@ -16,12 +16,44 @@ internal data class OpenLibraryEditionDto(
     val authors: List<OpenLibraryAuthorRefDto>? = null,
     val covers: List<Int>? = null,
     val key: String? = null,
+    /**
+     * The work(s) this edition is a printing of, e.g. `[{"key": "/works/OL27482W"}]`. Open
+     * Library's model hangs authorship off the *work*, so this is the only route to an author for
+     * the many editions whose own record omits `authors` entirely — see
+     * [com.hub.media.features.books.network.OpenLibraryClient].
+     */
+    val works: List<OpenLibraryWorkRefDto>? = null,
 )
 
 /** An author reference embedded in an edition response, e.g. `{"key": "/authors/OL26320A"}`. */
 @Serializable
 internal data class OpenLibraryAuthorRefDto(
     val key: String? = null,
+)
+
+/** A work reference embedded in an edition response, e.g. `{"key": "/works/OL27482W"}`. */
+@Serializable
+internal data class OpenLibraryWorkRefDto(
+    val key: String? = null,
+)
+
+/**
+ * Response shape of `GET https://openlibrary.org/works/{key}.json`.
+ *
+ * Note the author references are nested **one level deeper than the edition's** — a work says
+ * `[{"author": {"key": "/authors/OL26320A"}, "type": {...}}]` where an edition says
+ * `[{"key": "/authors/OL26320A"}]`. Verified against the live API; modelling it with the
+ * edition's flat [OpenLibraryAuthorRefDto] silently parses every key as null.
+ */
+@Serializable
+internal data class OpenLibraryWorkDto(
+    val authors: List<OpenLibraryWorkAuthorRefDto>? = null,
+)
+
+/** One entry of a work's `authors` array — see [OpenLibraryWorkDto] for the nesting. */
+@Serializable
+internal data class OpenLibraryWorkAuthorRefDto(
+    val author: OpenLibraryAuthorRefDto? = null,
 )
 
 /** Response shape of `GET https://openlibrary.org/authors/{key}.json`. */
