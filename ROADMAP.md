@@ -573,8 +573,9 @@ and never implemented: there is no genre column, table, or UI anywhere today.
     first" — but v5 went to Task 9 Phase A's `authors` column, and every downstream number was
     silently off by one from that moment. Whichever of read-throughs (Task 10), genres (Task 12)
     and this one lands last takes the highest number; the live version is
-    `APP_DATABASE_VERSION` in `AppDatabase.kt` (currently **5**), which is the only place worth
-    trusting. Same failure mode as the stale task numbers called out at the top of this file,
+    `APP_DATABASE_VERSION` in `AppDatabase.kt`, which is the only place worth trusting — read it
+    there rather than copying it here, or this note goes stale the same way the numbers it
+    replaces did. Same failure mode as the stale task numbers called out at the top of this file,
     on a different axis.
 - Note this has now slid from Task 6 to Task 13 as book-domain work kept taking priority. That
   reflects a real preference — the book side is what's in daily use — but it is worth an explicit
