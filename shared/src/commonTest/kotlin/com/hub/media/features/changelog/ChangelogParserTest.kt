@@ -202,6 +202,88 @@ class ChangelogParserTest {
 
         assertEquals("a preamble that was wrapped in source.", doc.versions[0].preamble)
     }
+
+    // --- `### Internal` is written for the repository, not the reader of the app ----------------
+
+    @Test
+    fun parseChangelog_internalSection_isOmittedWhileOthersSurvive() {
+        val doc =
+            parseChangelog(
+                """
+                ## [1.0.0]
+
+                ### Added
+
+                - **A real feature** — the user can see this.
+
+                ### Internal
+
+                - **Secret scanning (CI)** — gitleaks runs on every pull request.
+
+                ### Fixed
+
+                - **A real fix** — the user can see this too.
+                """.trimIndent(),
+            )
+
+        val sections = doc.versions.single().sections
+        assertEquals(listOf("Added", "Fixed"), sections.map { it.title })
+        // The positive half matters as much as the negative: a parser that dropped everything would
+        // also satisfy "Internal is absent".
+        val headings = sections.flatMap { section -> section.entries.map { it.heading } }
+        assertEquals(listOf("A real feature", "A real fix"), headings)
+    }
+
+    @Test
+    fun parseChangelog_internalSectionEntries_doNotLeakIntoTheNeighbouringSection() {
+        // The bullets under Internal are still parsed and then discarded. If the discard happened at
+        // the wrong moment they would be flushed into whichever section closed next, which is the
+        // failure this pins -- and it would look like a working feature, just with a stray entry.
+        val doc =
+            parseChangelog(
+                "## [1.0.0]\n\n### Internal\n\n- **Tooling** — invisible.\n\n### Added\n\n- **Visible** — yes.",
+            )
+
+        val version = doc.versions.single()
+        val added = version.sections.single()
+        assertEquals("Added", added.title)
+        assertEquals(listOf("Visible"), added.entries.map { it.heading })
+    }
+
+    @Test
+    fun parseChangelog_internalSectionTitle_isMatchedCaseInsensitively() {
+        // Failing open would put build detail in front of a user, so a stray lower-case heading is
+        // still hidden. See INTERNAL_SECTION's KDoc on why the two directions are not symmetric.
+        val doc = parseChangelog("## [1.0.0]\n\n### internal\n\n- **Tooling** — invisible.")
+
+        assertTrue(doc.versions.isEmpty())
+    }
+
+    @Test
+    fun parseChangelog_versionLeftEmptyByOmission_isDroppedRatherThanShownAsABareHeading() {
+        val doc =
+            parseChangelog(
+                "## [1.0.0]\n\n### Internal\n\n- **Only tooling** — nothing for a reader.\n\n" +
+                    "## [0.9.0]\n\n### Added\n\n- **Something real** — visible.",
+            )
+
+        assertEquals(listOf("0.9.0"), doc.versions.map { it.version })
+    }
+
+    @Test
+    fun parseChangelog_versionWithPreambleButOnlyInternalSections_keepsItsPreamble() {
+        // Dropping on "no sections" alone would silently discard a release whose story lives in its
+        // preamble -- which is exactly how [0.8.0] is written.
+        val doc =
+            parseChangelog(
+                "## [1.0.0]\n\nThe release prose that carries the story.\n\n" +
+                    "### Internal\n\n- **Tooling** — invisible.",
+            )
+
+        val version = doc.versions.single()
+        assertEquals("The release prose that carries the story.", version.preamble)
+        assertTrue(version.sections.isEmpty())
+    }
 }
 
 /**
