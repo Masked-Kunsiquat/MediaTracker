@@ -18,3 +18,12 @@ local.properties
 # Build-time copies of docs/sample-data/*.csv, used by the instrumented seeding test. Same reasoning
 # as the changelog copy above: docs/sample-data stays the single source of truth.
 /app/src/androidTest/assets/
+
+# Credential file types, ignored so they cannot be committed by an over-broad `git add`. This is
+# leak prevention only -- it configures nothing and presumes nothing about how signing will work.
+# It is here because gitleaks cannot cover these: a keystore is opaque binary with no pattern to
+# match, so not committing it is the only defence available.
+*.jks
+*.keystore
+*.p12
+keystore.properties

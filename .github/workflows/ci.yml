@@ -108,6 +108,166 @@ jobs:
             fi
           done
 
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history, deliberately -- not just this PR's commits. A secret is compromised from
+          # the moment it is pushed; rebasing the branch or squashing on merge does not unpublish
+          # it, and a diff-scoped scan would miss one that arrived via a rebase or came in from
+          # another branch. The whole history of this repository scans in about two seconds, so
+          # there is nothing to buy by narrowing it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # `fetch-depth: 0` is full *depth*, not full *breadth*: checkout still fetches only the ref
+      # under review and its base. The first run of this job scanned 110 commits where the whole
+      # repository holds more, so a secret pushed to any other branch would have sat unscanned until
+      # that branch happened to open a PR. On a public repository that gap is the whole risk -- the
+      # value is readable the moment it is pushed, not when it is reviewed.
+      #
+      # gitleaks reads refs/remotes/* as well as refs/heads/*, verified: a secret reachable only
+      # from a remote-tracking ref is still reported. So fetching every head and tag is enough to
+      # make the scan below cover the repository rather than the branch.
+      #
+      # Unauthenticated, because persist-credentials is false above and this repository is public.
+      # Were it ever made private this step would fail rather than silently narrow, and the
+      # tooling-failure message at the end makes clear that a failure here is not a leak report.
+      - name: Fetch every branch and tag
+        run: git fetch --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+      # Pinned release binary rather than gitleaks-action, for two reasons. The action requires a
+      # licence key for organisation-owned repositories, which is a dependency on this repository
+      # staying personally owned. More importantly it is third-party code executing in the
+      # workflow: this job exists to find credentials, so it is the last one that should run
+      # something unpinned. The checksum is the 8.30.1 release's published digest -- if the asset
+      # ever changes underneath the tag, this step fails rather than executing it.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -sSL --fail -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          chmod +x "$RUNNER_TEMP/gitleaks"
+
+      # A clean scan and a broken scanner produce the same green tick, which is the failure mode
+      # AGENTS.md §7 exists to prevent: a check that cannot fail is worse than no check. So prove
+      # detection still works against a known token before trusting the real result below.
+      #
+      # This is not hypothetical. The first version of this control was written with
+      # AKIAIOSFODNN7EXAMPLE, which is AWS's own documentation key and is allowlisted by gitleaks --
+      # it reported "no leaks found" and proved nothing. Stopwords do the same to anything built
+      # from "test" or "example", both verified silently undetected.
+      - name: Prove the scanner still detects
+        run: |
+          set -euo pipefail
+          FIXTURE="$RUNNER_TEMP/gitleaks-selftest"
+          rm -rf "$FIXTURE" && mkdir -p "$FIXTURE" && cd "$FIXTURE"
+          git init -q -b main .
+
+          # Derived at runtime, because no secret-shaped literal can live in this file: the real
+          # scan below reads this file's own history. Splitting a token across two fragments is not
+          # enough either -- that evades the github-pat rule but `TOKEN="..."` then trips
+          # generic-api-key on the assignment shape, which is how the first attempt at this failed.
+          # A hash of a fixed phrase is deterministic (no flaky check) and looks like nothing.
+          SUFFIX=$(printf 'mediatracker-gitleaks-selftest' | sha256sum | tr -dc 'a-f0-9' | cut -c1-36)
+          printf 'token = "ghp_%s"\n' "$SUFFIX" > fixture.txt
+          git add -A
+          git -c user.email=ci@example.invalid -c user.name=ci commit -q -m 'self-test fixture'
+
+          if "$RUNNER_TEMP/gitleaks" git . --redact --no-banner \
+               --report-format json --report-path out.json; then
+            echo "::error::gitleaks called a fixture containing a known token clean."
+            echo "Detection is broken, so a green result from the real scan would mean nothing."
+            exit 1
+          fi
+          grep -q '"RuleID"' out.json
+          grep -q 'github-pat' out.json
+          # --redact is load-bearing on a public repository (see the real scan below), so assert it
+          # rather than assuming the flag still behaves as it did.
+          if grep -q "ghp_$SUFFIX" out.json; then
+            echo "::error::--redact failed: the fixture token appears verbatim in the report."
+            exit 1
+          fi
+          echo "Detection, reporting and redaction all confirmed working."
+
+      # .gitignore only stops an accidental `git add` of a file that is not yet tracked, and gitleaks
+      # cannot help here either -- a keystore is opaque binary with no pattern to match. Neither
+      # notices a credential file that is already tracked, so check the history by name.
+      - name: Verify no credential files have ever been committed
+        run: |
+          set -euo pipefail
+          # Every path any commit ever touched, deliberately unfiltered by change type. An earlier
+          # version restricted this to --diff-filter=A and missed the case that matters most: git
+          # records a rename as R, not A, so a keystore committed as `app.bin` and renamed to
+          # `release.jks` never appears as an addition under the name being matched. Verified.
+          COMMITTED=$(git log --all --pretty=format: --name-only \
+            | sort -u \
+            | grep -E '\.(jks|keystore|p12)$|(^|/)keystore\.properties$' || true)
+          if [ -n "$COMMITTED" ]; then
+            echo "::error::A credential file has been committed at some point in this history."
+            echo "$COMMITTED"
+            echo "Deleting it now does not help -- it stays in the history. An app signing key in"
+            echo "particular cannot be rotated: treat it as compromised and generate a new one."
+            exit 1
+          fi
+
+      # --redact is not optional here. This repository is public, so its Actions logs are public:
+      # without it, a detected secret gets printed in full to a world-readable log, and the scan
+      # meant to catch the leak becomes a second, more visible copy of it.
+      #
+      # JSON rather than SARIF: gitleaks' SARIF carries partialFingerprints.commitSha but not the
+      # `commit:file:rule-id:start-line` fingerprint that .gitleaksignore actually takes, so it
+      # cannot answer the one question a reader has at that point. The JSON report has it whole, in
+      # a Fingerprint field, ready to paste.
+      - name: Scan git history for secrets
+        id: scan
+        run: |
+          "$RUNNER_TEMP/gitleaks" git . \
+            --redact \
+            --no-banner \
+            --report-format json \
+            --report-path gitleaks-findings.json
+
+      # Gated on the scan specifically, not on the job: an earlier step failing means there is no
+      # report to upload. A bare `if: failure()` here would try regardless.
+      - name: Upload findings
+        if: failure() && steps.scan.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-findings
+          path: gitleaks-findings.json
+          retention-days: 7
+
+      # A hit is not a "fix the file and move on" situation, so say so at the point of failure
+      # rather than leaving it to be worked out from a red X.
+      - name: Explain a credential finding
+        if: failure() && steps.scan.outcome == 'failure'
+        run: |
+          echo "::error::gitleaks found a credential in the repository's history."
+          echo "Removing it in a new commit is NOT sufficient -- the value stays in the history and"
+          echo "must be treated as compromised. Rotate the credential first, then decide whether the"
+          echo "history needs rewriting."
+          echo "If it is a false positive: each finding in the uploaded gitleaks-findings.json has a"
+          echo "Fingerprint field, formatted commit:file:rule-id:start-line. Paste that whole value"
+          echo "into .gitleaksignore, one per line, with a comment saying why the match is safe."
+
+      # Distinct from the message above, and deliberately so: telling someone a credential leaked
+      # when the download merely 404'd sends them rotating keys for no reason.
+      - name: Explain a tooling failure
+        if: failure() && steps.scan.outcome != 'failure'
+        run: |
+          echo "::error::The secret scan did not complete. This is NOT a report of a leak."
+          echo "Something before the scan failed -- the download, the checksum check, the detection"
+          echo "self-test, or the credential-filename check. Read the failing step above. Nothing"
+          echo "here says anything either way about whether this repository contains a secret."
+
   test:
     name: Unit tests and debug build
     runs-on: ubuntu-latest
