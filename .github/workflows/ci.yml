@@ -57,6 +57,57 @@ jobs:
             exit 1
           fi
 
+  room-schema:
+    name: Room schema check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Room schema version consistency
+        run: |
+          SCHEMA_DIR="shared/schemas/com.hub.media.core.database.AppDatabase"
+          DATABASE_FILE="shared/src/commonMain/kotlin/com/hub/media/core/database/AppDatabase.kt"
+          
+          # Extract version from AppDatabase.kt
+          CODE_VERSION=$(grep "public const val APP_DATABASE_VERSION: Int =" "$DATABASE_FILE" | sed 's/.*= //')
+          echo "APP_DATABASE_VERSION in code: $CODE_VERSION"
+          
+          # Find max version in schemas directory
+          MAX_SCHEMA_VERSION=$(ls "$SCHEMA_DIR" | grep -E '^[0-9]+\.json$' | sed 's/\.json//' | sort -n | tail -1)
+          echo "Max schema version in $SCHEMA_DIR: $MAX_SCHEMA_VERSION"
+          
+          if [ "$CODE_VERSION" != "$MAX_SCHEMA_VERSION" ]; then
+            echo "::error::APP_DATABASE_VERSION ($CODE_VERSION) does not match the latest exported schema ($MAX_SCHEMA_VERSION.json)."
+            echo "If you changed the schema, you must bump APP_DATABASE_VERSION and ensure the new schema is exported to $SCHEMA_DIR."
+            exit 1
+          fi
+
+      - name: Verify frozen schemas are untouched
+        if: github.event_name == 'pull_request'
+        run: |
+          SCHEMA_DIR="shared/schemas/com.hub.media.core.database.AppDatabase"
+          
+          # Fetch the base branch
+          git fetch origin ${{ github.base_ref }} --depth=1
+          
+          # Get list of schema files in the base branch
+          FROZEN_SCHEMAS=$(git ls-tree -r --name-only origin/${{ github.base_ref }} "$SCHEMA_DIR" | grep -E '\/[0-9]+\.json$')
+          
+          # Check if any of these were modified in the PR
+          MODIFIED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          
+          for schema in $FROZEN_SCHEMAS; do
+            if echo "$MODIFIED_FILES" | grep -q "^$schema$"; then
+              echo "::error::Frozen Room schema file modified: $schema"
+              echo "AGENTS.md §8: 'Once a release is tagged, the database schema shipped in it is FROZEN.'"
+              echo "Existing schema JSONs must never be modified. If you need a schema change, bump APP_DATABASE_VERSION instead."
+              exit 1
+            fi
+          done
+
   test:
     name: Unit tests and debug build
     runs-on: ubuntu-latest
