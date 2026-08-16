@@ -22,6 +22,41 @@ permissions:
   contents: read
 
 jobs:
+  changelog:
+    name: Changelog check
+    runs-on: ubuntu-latest
+    # Only run on PRs. Pushes to main (like release tags) are already verified or follow 
+    # the release ritual which includes a changelog update.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # fetch-depth: 0 is required to compare against the base branch
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify CHANGELOG.md update
+        run: |
+          # Fetch the base branch so we can diff against it
+          git fetch origin ${{ github.base_ref }} --depth=1
+
+          # Get the list of files changed in this PR compared to the target branch
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          
+          # Check if code in shared/ or app/src/main/ was touched
+          CODE_TOUCHED=$(echo "$CHANGED_FILES" | grep -E '^(shared/|app/src/main/)' || true)
+          
+          # Check if CHANGELOG.md was touched
+          CHANGELOG_TOUCHED=$(echo "$CHANGED_FILES" | grep -q '^CHANGELOG.md$' && echo "true" || echo "false")
+          
+          if [ -n "$CODE_TOUCHED" ] && [ "$CHANGELOG_TOUCHED" = "false" ]; then
+            echo "::error::Code changes detected in shared/ or app/src/main/ but CHANGELOG.md was not updated."
+            echo "AGENTS.md §8 requires an [Unreleased] entry for every completed task or phase."
+            echo "Modified code files:"
+            echo "$CODE_TOUCHED"
+            exit 1
+          fi
+
   test:
     name: Unit tests and debug build
     runs-on: ubuntu-latest

@@ -188,7 +188,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 
 * **Scheme:** Semantic Versioning `0.y.z` pre-1.0. Minor bump per feature milestone, patch for fixes. `1.0.0` when the app is daily-drivable.
 * **Single Source of Truth:** The app version lives ONLY in `[versions] app` in `gradle/libs.versions.toml`. `app/build.gradle.kts` reads `versionName` from it and derives `versionCode` as `major*10000 + minor*100 + patch`. NEVER hand-edit `versionCode` or duplicate the version string elsewhere.
-* **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase.
+* **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase. **CI enforces this:** Pull Requests touching `shared/` or `app/src/main/` will fail if `CHANGELOG.md` is not also modified.
 * **Release Ritual — a release is its own change, never a passenger on a feature PR.**
   1. Branch from `main` as `release/vX.Y.Z`. Nothing else rides along: the branch contains the two edits below and nothing more.
   2. Move `[Unreleased]` content into a dated `## [x.y.z] - YYYY-MM-DD` section.
