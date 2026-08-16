@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Automated changelog enforcement (CI)** — The CI pipeline now verifies that every pull request modifying core code (`shared/` or `app/src/main/`) also includes an update to `CHANGELOG.md`. This ensures architectural and user-visible changes are documented as they happen, maintaining the project's "Keep a Changelog" discipline (AGENTS.md §8).
+- **Room schema protection (CI)** — CI now enforces that changes to Room entities are accompanied by updated schema export files, preventing silent schema drift and ensuring that migrations are always verified against the expected state.
+
+### Changed
+- **Expanded CI workflow** — `.github/workflows/ci.yml` now includes the enforcement checks for changelog updates and schema integrity, integrated into the standard PR verification suite.
+- **Updated `AGENTS.md`** to formalize these automated rules within the project's development guidelines.
+
 ## [0.11.1] - 2026-08-16
 
 Books were quietly losing their authors. Open Library keeps authorship against the book itself
