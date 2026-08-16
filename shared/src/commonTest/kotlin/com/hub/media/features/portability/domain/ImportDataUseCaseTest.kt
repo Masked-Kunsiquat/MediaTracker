@@ -625,8 +625,10 @@ class ImportDataUseCaseTest {
                 mapOf(
                     mediaId to
                         listOf(
-                            sampleExternalIdentifier(mediaId, IdentifierProvider.ISBN, "9789999999999"), // must NOT overwrite
-                            sampleExternalIdentifier(mediaId, IdentifierProvider.OPEN_LIBRARY, "OL999M"), // must be added
+                            // must NOT overwrite
+                            sampleExternalIdentifier(mediaId, IdentifierProvider.ISBN, "9789999999999"),
+                            // must be added
+                            sampleExternalIdentifier(mediaId, IdentifierProvider.OPEN_LIBRARY, "OL999M"),
                         ),
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingBooks, incomingIdentifiers)

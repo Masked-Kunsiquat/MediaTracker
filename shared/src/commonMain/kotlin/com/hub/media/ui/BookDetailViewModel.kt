@@ -29,7 +29,7 @@ import kotlin.time.Instant
  *
  * ### Reactive [uiState]
  * [BookRepository.observeBookDetail] and [ReadingSessionRepository.observeSessionsForMedia] are
- * both DB-backed reactive Flows; a third, purely in-memory [MutableStateFlow] ([_local]) tracks
+ * both DB-backed reactive Flows; a third, purely in-memory [MutableStateFlow] ([localState]) tracks
  * UI-only state that has no DB representation ([BookDetailUiState.Ready.pendingSession] and
  * [BookDetailUiState.Ready.errorMessage]). All three are `combine`d into [uiState] so a fresh DB
  * emission (e.g. a new session appearing after [saveSession] persists it) never clobbers an
@@ -85,7 +85,7 @@ public class BookDetailViewModel(
         val isRefetchingCover: Boolean = false,
     )
 
-    private val _local = MutableStateFlow(LocalState())
+    private val localState = MutableStateFlow(LocalState())
 
     /**
      * In-flight guard shared by [saveSession] and [logManualSession]: set synchronously (before
@@ -102,7 +102,7 @@ public class BookDetailViewModel(
         combine(
             bookRepository.observeBookDetail(bookId),
             readingSessionRepository.observeSessionsForMedia(bookId),
-            _local,
+            localState,
         ) { bookDetail, sessions, local ->
             if (bookDetail == null) {
                 BookDetailUiState.NotFound
@@ -159,7 +159,7 @@ public class BookDetailViewModel(
         val current = timer.state.value
         if (current !is ReadingTimerState.Running && current !is ReadingTimerState.Paused) return
         val result = timer.stop()
-        _local.update { it.copy(pendingSession = result, errorMessage = null) }
+        localState.update { it.copy(pendingSession = result, errorMessage = null) }
     }
 
     /**
@@ -180,7 +180,7 @@ public class BookDetailViewModel(
      * Applying `A`'s outcome unconditionally at that point would silently wipe `B` (on
      * [Resource.Success], via the unconditional `LocalState()` reset) or mislabel it with `A`'s
      * error (on [Resource.Error]). Both branches below therefore compare
-     * `_local.value.pendingSession` against the locally-captured [pending] (the exact session
+     * `localState.value.pendingSession` against the locally-captured [pending] (the exact session
      * this coroutine was launched for) with **referential equality (`===`)**, not `==`: even
      * though [ReadingTimerResult] is a data class, two independently-timed runs can be
      * structurally equal (e.g. two 0-second sessions started/stopped in the same clock
@@ -211,7 +211,7 @@ public class BookDetailViewModel(
         deltaPages: Int? = null,
         notes: String? = null,
     ) {
-        val pending = _local.value.pendingSession ?: return
+        val pending = localState.value.pendingSession ?: return
         if (saveInFlight) return
         saveInFlight = true
         viewModelScope.launch {
@@ -228,11 +228,11 @@ public class BookDetailViewModel(
                         )
                 ) {
                     is Resource.Success ->
-                        _local.update {
+                        localState.update {
                             if (it.pendingSession === pending) LocalState() else it
                         }
                     is Resource.Error ->
-                        _local.update {
+                        localState.update {
                             if (it.pendingSession === pending) it.copy(errorMessage = result.message) else it
                         }
                 }
@@ -281,8 +281,8 @@ public class BookDetailViewModel(
                             notes = notes,
                         )
                 ) {
-                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
-                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                    is Resource.Success -> localState.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
                 }
             } finally {
                 saveInFlight = false
@@ -336,8 +336,8 @@ public class BookDetailViewModel(
                             notes = notes,
                         )
                 ) {
-                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
-                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                    is Resource.Success -> localState.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
                 }
             } finally {
                 saveInFlight = false
@@ -358,7 +358,7 @@ public class BookDetailViewModel(
      * becomes afterward.
      */
     public fun discardPendingSession() {
-        _local.update { LocalState() }
+        localState.update { LocalState() }
     }
 
     /**
@@ -374,7 +374,7 @@ public class BookDetailViewModel(
         viewModelScope.launch {
             when (val result = readingSessionRepository.deleteSession(sessionId)) {
                 is Resource.Success -> Unit
-                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
             }
         }
     }
@@ -394,7 +394,7 @@ public class BookDetailViewModel(
         viewModelScope.launch {
             when (val result = bookRepository.deleteBook(bookId)) {
                 is Resource.Success -> Unit
-                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
             }
         }
     }
@@ -414,7 +414,7 @@ public class BookDetailViewModel(
         viewModelScope.launch {
             when (val result = bookRepository.updateReadingStatus(bookId, status)) {
                 is Resource.Success -> Unit
-                is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
             }
         }
     }
@@ -439,16 +439,16 @@ public class BookDetailViewModel(
      * permanently "in flight" (spinner stuck forever, [refetchCover] permanently no-op'ing).
      */
     public fun refetchCover() {
-        if (_local.value.isRefetchingCover) return
-        _local.update { it.copy(isRefetchingCover = true, errorMessage = null) }
+        if (localState.value.isRefetchingCover) return
+        localState.update { it.copy(isRefetchingCover = true, errorMessage = null) }
         viewModelScope.launch {
             try {
                 when (val result = refetchCoverUseCase.execute(bookId)) {
-                    is Resource.Success -> _local.update { it.copy(errorMessage = null) }
-                    is Resource.Error -> _local.update { it.copy(errorMessage = result.message) }
+                    is Resource.Success -> localState.update { it.copy(errorMessage = null) }
+                    is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
                 }
             } finally {
-                _local.update { it.copy(isRefetchingCover = false) }
+                localState.update { it.copy(isRefetchingCover = false) }
             }
         }
     }

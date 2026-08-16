@@ -78,8 +78,10 @@ public val MIGRATION_1_2: Migration =
                 )
                 connection.execSQL(
                     "INSERT INTO `reading_sessions_new` " +
-                        "(`id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes`) " +
-                        "SELECT `id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes` " +
+                        "(`id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, " +
+                        "`startUnit`, `endUnit`, `deltaPages`, `notes`) " +
+                        "SELECT `id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, " +
+                        "`startUnit`, `endUnit`, `deltaPages`, `notes` " +
                         "FROM `reading_sessions`",
                 )
                 connection.execSQL("DROP TABLE `reading_sessions`")

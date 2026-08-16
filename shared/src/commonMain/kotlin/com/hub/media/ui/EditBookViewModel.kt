@@ -35,7 +35,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * ### Reactive [uiState], and why it can settle into [EditBookUiState.Saved] for good
  * [uiState] combines [BookRepository.observeBookDetail] (the DB-backed current metadata) with an
- * in-memory [_local] (errorMessage/isSaving/saved — no DB representation), matching
+ * in-memory [localState] (errorMessage/isSaving/saved — no DB representation), matching
  * [BookDetailViewModel]'s combine-based shape. `local.saved` is checked first in the `combine`
  * lambda: once [save] succeeds, every subsequent emission (even a later, unrelated
  * [BookRepository.observeBookDetail] re-emission) still maps to [EditBookUiState.Saved] rather
@@ -57,7 +57,7 @@ public class EditBookViewModel(
         val saved: Boolean = false,
     )
 
-    private val _local = MutableStateFlow(LocalState())
+    private val localState = MutableStateFlow(LocalState())
 
     /**
      * In-flight guard for [save], mirroring [BookDetailViewModel.saveSession]'s rationale: a
@@ -72,7 +72,7 @@ public class EditBookViewModel(
     public val uiState: StateFlow<EditBookUiState> =
         combine(
             bookRepository.observeBookDetail(bookId),
-            _local,
+            localState,
         ) { bookDetail, local ->
             when {
                 local.saved -> EditBookUiState.Saved
@@ -117,7 +117,7 @@ public class EditBookViewModel(
     ) {
         if (saveInFlight) return
         saveInFlight = true
-        _local.update { it.copy(isSaving = true, errorMessage = null) }
+        localState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
             try {
                 when (
@@ -133,9 +133,9 @@ public class EditBookViewModel(
                             trackingMode = trackingMode,
                         )
                 ) {
-                    is Resource.Success -> _local.update { it.copy(isSaving = false, saved = true) }
+                    is Resource.Success -> localState.update { it.copy(isSaving = false, saved = true) }
                     is Resource.Error ->
-                        _local.update {
+                        localState.update {
                             it.copy(isSaving = false, errorMessage = result.message)
                         }
                 }

@@ -297,7 +297,8 @@ class RestoreDatabaseUseCaseTest {
         runTest {
             migrationHelper.createDatabase(2).use { db ->
                 db.execSQL(
-                    "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "INSERT INTO media_items (id, type, title, releaseYear, " +
+                        "purchasePrice, createdAt, coverImageHash) " +
                         "VALUES ('media-1', 'BOOK', 'Old Backup Book', 2015, 4.99, 1600000000000, NULL)",
                 )
             }
@@ -322,7 +323,8 @@ class RestoreDatabaseUseCaseTest {
             // genuinely old backup would be.
             migrationHelper.createDatabase(2).use { db ->
                 db.execSQL(
-                    "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "INSERT INTO media_items (id, type, title, releaseYear, " +
+                        "purchasePrice, createdAt, coverImageHash) " +
                         "VALUES ('media-1', 'BOOK', 'Migrated Restore Book', 2015, 4.99, 1600000000000, NULL)",
                 )
                 db.execSQL(
@@ -331,7 +333,8 @@ class RestoreDatabaseUseCaseTest {
                 )
                 db.execSQL(
                     "INSERT INTO reading_sessions " +
-                        "(id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes) " +
+                        "(id, mediaId, timestampStart, timestampEnd, durationSeconds, " +
+                        "startUnit, endUnit, deltaPages, notes) " +
                         "VALUES ('session-1', 'media-1', 1700000000000, 1700000600000, 600, 0.0, 42.0, 42, NULL)",
                 )
             }

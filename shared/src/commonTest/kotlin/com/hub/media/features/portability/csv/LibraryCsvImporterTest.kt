@@ -22,9 +22,9 @@ import kotlin.test.assertTrue
  * [LibraryCsvImporter.parseRow]'s `media_id` handling for why), but these fixtures should still
  * model what well-formed data actually looks like rather than implying a non-UUID id is the norm.
  */
-class LibraryCsvImporterTest {
-    private val SAMPLE_MEDIA_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+private const val SAMPLE_MEDIA_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
+class LibraryCsvImporterTest {
     private fun validRow(
         mediaId: String = SAMPLE_MEDIA_ID,
         type: String = "BOOK",

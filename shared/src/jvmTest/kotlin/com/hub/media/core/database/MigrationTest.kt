@@ -99,14 +99,16 @@ class MigrationTest {
             // A real-duration session -- the common case.
             db.execSQL(
                 "INSERT INTO reading_sessions " +
-                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes) " +
+                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, " +
+                    "startUnit, endUnit, deltaPages, notes) " +
                     "VALUES ('session-real', 'media-1', 1700000000000, 1700000600000, 600, 10.0, 25.0, 15, 'Good progress')",
             )
             // A legitimate 0-second session -- must remain distinguishable from "unknown" (null)
             // after the migration; see ReadingSessionEntity's KDoc.
             db.execSQL(
                 "INSERT INTO reading_sessions " +
-                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes) " +
+                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, " +
+                    "startUnit, endUnit, deltaPages, notes) " +
                     "VALUES ('session-zero', 'media-1', 1700000700000, 1700000700000, 0, 10.0, 10.0, 0, NULL)",
             )
         }
@@ -150,7 +152,8 @@ class MigrationTest {
         helper.runMigrationsAndValidate(2, listOf(MIGRATION_1_2)).use { db ->
             db.execSQL(
                 "INSERT INTO reading_sessions " +
-                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes) " +
+                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, " +
+                    "startUnit, endUnit, deltaPages, notes) " +
                     "VALUES ('session-null', 'media-1', 1700001000000, 1700001000000, NULL, 5.0, 5.0, NULL, NULL)",
             )
 
@@ -216,7 +219,8 @@ class MigrationTest {
             )
             db.execSQL(
                 "INSERT INTO reading_sessions " +
-                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes) " +
+                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, " +
+                    "startUnit, endUnit, deltaPages, notes) " +
                     "VALUES ('session-1', 'media-with-sessions', 1700000000000, 1700000600000, 600, 10.0, 25.0, 15, NULL)",
             )
             db.execSQL(

@@ -210,13 +210,17 @@ class LogEntryCodecTest {
 
     @Test
     fun decodeLogEntry_trailingUnescapedBackslash_returnsNull() {
-        val line = "1${FIELD_DELIMITER}1000${FIELD_DELIMITER}INFO${FIELD_DELIMITER}tag${FIELD_DELIMITER}message ending in backslash\\"
+        val line =
+            "1${FIELD_DELIMITER}1000${FIELD_DELIMITER}INFO${FIELD_DELIMITER}tag${FIELD_DELIMITER}" +
+                "message ending in backslash\\"
         assertNull(decodeLogEntry(line))
     }
 
     @Test
     fun decodeLogEntry_unrecognizedEscapeCode_returnsNull() {
-        val line = "1${FIELD_DELIMITER}1000${FIELD_DELIMITER}INFO${FIELD_DELIMITER}tag${FIELD_DELIMITER}bad escape \\q here"
+        val line =
+            "1${FIELD_DELIMITER}1000${FIELD_DELIMITER}INFO${FIELD_DELIMITER}tag${FIELD_DELIMITER}" +
+                "bad escape \\q here"
         assertNull(decodeLogEntry(line))
     }
 
