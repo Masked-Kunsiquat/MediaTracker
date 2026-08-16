@@ -1084,6 +1084,20 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
 
+- **The in-app changelog shows tooling entries written for a developer.** `app/build.gradle.kts`
+  copies the root `CHANGELOG.md` into the app's assets verbatim, and `ChangelogParser` treats
+  `[Unreleased]` as an ordinary renderable section — so "Automated changelog enforcement (CI)" and
+  "Secret scanning (CI)" are already on the What's New screen, and will ship inside the next
+  version's dated section. Next to `v0.11.1`'s opening line ("Books were quietly losing their
+  authors") the register is plainly wrong for the audience.
+  - **Decided approach:** keep one file, split by section. Tooling entries go under an `### Internal`
+    heading and the viewer skips that heading when rendering. The parser already keys on `###`
+    blocks, so this is contained. Rejected: trimming entries by hand at release time (relies on
+    remembering) and dropping them from the changelog entirely (they are wanted in the file, just
+    not on that screen).
+  - Not urgent — nothing ships until the next release is cut, and no CI work is a release on its
+    own. Worth doing before whatever release finally carries these entries out to the app.
+
 - **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
   viewer state and viewer rendering are all covered, but the composition that connects them is not:
   `MediaTrackerApplication.onCreate`'s `AppLogger.configure(minLevel, FileLogSink(store)
