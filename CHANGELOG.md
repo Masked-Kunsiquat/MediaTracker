@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-16
+
+Books were quietly losing their authors. Open Library keeps authorship against the book itself
+rather than against each individual printing, and a great many printings list no author of their
+own — so anything you added by ISBN could arrive with the author field simply blank, with nothing
+anywhere to say why. Nothing had failed, so nothing was reported. That is fixed, and the backfill
+will repair the books it already happened to.
+
 ### Fixed
 
 - **Books added by ISBN now get their author far more often.** Open Library records authorship
