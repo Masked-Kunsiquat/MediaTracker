@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Books added by ISBN now get their author far more often.** Open Library records authorship
+  against the book rather than against each individual printing, and a great many printings list no
+  author of their own — the 75th Anniversary edition of *The Hobbit* is one. Those books were
+  arriving with the author field simply blank, and because nothing had actually failed, nothing was
+  logged to say so either. The author is now read from the book when the printing doesn't carry one.
+
 ## [0.11.0] - 2026-08-11
 
 The log now tells you what the app was doing, not just what broke. Until now nothing was recorded
