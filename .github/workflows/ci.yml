@@ -153,6 +153,47 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug
 
+  lint:
+    name: Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Kotlin linting (ktlint) for both shared and app modules.
+      - name: Run ktlint
+        run: ./gradlew ktlintCheck
+
+      # Android Lint for the app module.
+      - name: Run Android Lint
+        run: ./gradlew :app:lintDebug
+
+      - name: Upload lint reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            **/build/reports/ktlint/
+            app/build/reports/lint-results-debug.xml
+            app/build/reports/lint-results-debug.html
+          retention-days: 7
+
       # Only on failure -- a green run's reports are noise, but a red one is very hard to diagnose
       # from log output alone.
       - name: Upload test reports
