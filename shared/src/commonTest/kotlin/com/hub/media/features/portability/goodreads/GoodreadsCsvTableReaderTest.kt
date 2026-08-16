@@ -12,7 +12,6 @@ import kotlin.test.assertTrue
  * column order, unknown extra columns, or missing optional columns, with only `Title` required.
  */
 class GoodreadsCsvTableReaderTest {
-
     @Test
     fun read_completelyEmptyFile_fails() {
         val result = GoodreadsCsvTableReader.read("")
@@ -22,8 +21,9 @@ class GoodreadsCsvTableReaderTest {
 
     @Test
     fun read_missingTitleColumn_fails() {
-        val csv = CsvUtil.buildLine(listOf(GoodreadsColumns.ISBN, GoodreadsColumns.BINDING)) +
-            CsvUtil.buildLine(listOf("9780000000001", "Hardcover"))
+        val csv =
+            CsvUtil.buildLine(listOf(GoodreadsColumns.ISBN, GoodreadsColumns.BINDING)) +
+                CsvUtil.buildLine(listOf("9780000000001", "Hardcover"))
         val result = GoodreadsCsvTableReader.read(csv)
         assertIs<GoodreadsCsvTableResult.Failure>(result)
         assertTrue(result.message.contains("Title"))
@@ -69,7 +69,9 @@ class GoodreadsCsvTableReaderTest {
         // "Book Id"/"Author"/"Publisher" etc. aren't in GoodreadsColumns at all -- must not break
         // structural validation, just be ignored.
         val header = listOf("Book Id", GoodreadsColumns.TITLE, "Author", "Publisher", "Owned Copies")
-        val csv = CsvUtil.buildLine(header) + CsvUtil.buildLine(listOf("123", "Some Title", "Some Author", "Some Publisher", "1"))
+        val csv =
+            CsvUtil.buildLine(header) +
+                CsvUtil.buildLine(listOf("123", "Some Title", "Some Author", "Some Publisher", "1"))
         val result = GoodreadsCsvTableReader.read(csv)
         assertIs<GoodreadsCsvTableResult.Success>(result)
         assertEquals(1, result.columnIndex[GoodreadsColumns.TITLE])
@@ -95,9 +97,10 @@ class GoodreadsCsvTableReaderTest {
     @Test
     fun read_multiRowFile_succeedsWithHeaderStripped() {
         val header = listOf(GoodreadsColumns.TITLE, GoodreadsColumns.EXCLUSIVE_SHELF)
-        val csv = CsvUtil.buildLine(header) +
-            CsvUtil.buildLine(listOf("Book One", "read")) +
-            CsvUtil.buildLine(listOf("Book Two", "to-read"))
+        val csv =
+            CsvUtil.buildLine(header) +
+                CsvUtil.buildLine(listOf("Book One", "read")) +
+                CsvUtil.buildLine(listOf("Book Two", "to-read"))
         val result = GoodreadsCsvTableReader.read(csv)
         assertIs<GoodreadsCsvTableResult.Success>(result)
         assertEquals(2, result.rows.size)

@@ -29,5 +29,8 @@ public data class ChangelogUiState(
  * unique (several releases have a "**Fixed**"-style repeat), and two entries sharing an expand
  * state would toggle together for no visible reason.
  */
-public fun entryKey(version: String, sectionTitle: String, index: Int): String =
-    "$version/$sectionTitle/$index"
+public fun entryKey(
+    version: String,
+    sectionTitle: String,
+    index: Int,
+): String = "$version/$sectionTitle/$index"

@@ -116,10 +116,10 @@ import com.hub.media.features.books.timer.ReadingTimerState
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailUiState
 import com.hub.media.ui.BookDetailViewModel
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
-import kotlinx.coroutines.launch
 
 /**
  * Route-level composable for the book detail screen (ROADMAP Task4 Phase C).
@@ -144,9 +144,10 @@ fun BookDetailScreenRoute(
     onNavigateBack: () -> Unit,
     onNavigateToEditBook: () -> Unit,
 ) {
-    val viewModel: BookDetailViewModel = viewModel(
-        factory = BookDetailViewModelFactory(appContainer, bookId),
-    )
+    val viewModel: BookDetailViewModel =
+        viewModel(
+            factory = BookDetailViewModelFactory(appContainer, bookId),
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
     val elapsedSeconds by viewModel.elapsedSeconds.collectAsStateWithLifecycle()
@@ -375,9 +376,10 @@ fun BookDetailScreen(
         },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             when (uiState) {
                 is BookDetailUiState.Loading -> {
@@ -549,30 +551,38 @@ private fun BookDetailContent(
         }
 
         when (selectedTabIndex) {
-            0 -> DetailsTab(
-                book = state.book,
-                details = state.details,
-                currentProgress = state.currentProgress,
-                coverStorageDir = coverStorageDir,
-                isRefetchingCover = state.isRefetchingCover,
-                timerState = timerState,
-                elapsedSeconds = elapsedSeconds,
-                onStartReading = onStartReading,
-                onPauseReading = onPauseReading,
-                onResumeReading = onResumeReading,
-                onStopReading = onStopReading,
-                onStatusChange = onStatusChange,
-                onCopyIsbn = onCopyIsbn,
-                onRefetchCover = onRefetchCover,
-                modifier = Modifier.weight(1f),
-            )
-            1 -> ReadingHistoryTab(
-                sessions = state.sessions,
-                onLogManuallyClick = { sessionToEdit = null; showManualEntry = true },
-                onEditSessionClick = { session -> sessionToEdit = session; showManualEntry = true },
-                onDeleteSessionClick = { session -> sessionToDelete = session },
-                modifier = Modifier.weight(1f),
-            )
+            0 ->
+                DetailsTab(
+                    book = state.book,
+                    details = state.details,
+                    currentProgress = state.currentProgress,
+                    coverStorageDir = coverStorageDir,
+                    isRefetchingCover = state.isRefetchingCover,
+                    timerState = timerState,
+                    elapsedSeconds = elapsedSeconds,
+                    onStartReading = onStartReading,
+                    onPauseReading = onPauseReading,
+                    onResumeReading = onResumeReading,
+                    onStopReading = onStopReading,
+                    onStatusChange = onStatusChange,
+                    onCopyIsbn = onCopyIsbn,
+                    onRefetchCover = onRefetchCover,
+                    modifier = Modifier.weight(1f),
+                )
+            1 ->
+                ReadingHistoryTab(
+                    sessions = state.sessions,
+                    onLogManuallyClick = {
+                        sessionToEdit = null
+                        showManualEntry = true
+                    },
+                    onEditSessionClick = { session ->
+                        sessionToEdit = session
+                        showManualEntry = true
+                    },
+                    onDeleteSessionClick = { session -> sessionToDelete = session },
+                    modifier = Modifier.weight(1f),
+                )
         }
     }
 
@@ -603,7 +613,10 @@ private fun BookDetailContent(
                 showManualEntry = false
                 sessionToEdit = null
             },
-            onDismiss = { showManualEntry = false; sessionToEdit = null },
+            onDismiss = {
+                showManualEntry = false
+                sessionToEdit = null
+            },
         )
     }
 
@@ -661,10 +674,11 @@ private fun DetailsTab(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SelectionContainer {
@@ -760,25 +774,27 @@ private fun ReadingHistoryTab(
                 val showTopLine = index > 0
                 val showBottomLine = index < entries.lastIndex
                 when (entry) {
-                    is TimelineEntry.DateHeader -> TimelineRow(
-                        showTopLine = showTopLine,
-                        showBottomLine = showBottomLine,
-                        showDot = false,
-                    ) {
-                        TimelineDateHeader(date = entry.date, today = today)
-                    }
-                    is TimelineEntry.SessionEntry -> TimelineRow(
-                        showTopLine = showTopLine,
-                        showBottomLine = showBottomLine,
-                        showDot = true,
-                    ) {
-                        SessionEventCard(
-                            session = entry.session,
-                            onEditClick = { onEditSessionClick(entry.session) },
-                            onDeleteClick = { onDeleteSessionClick(entry.session) },
-                            modifier = Modifier.padding(bottom = 12.dp),
-                        )
-                    }
+                    is TimelineEntry.DateHeader ->
+                        TimelineRow(
+                            showTopLine = showTopLine,
+                            showBottomLine = showBottomLine,
+                            showDot = false,
+                        ) {
+                            TimelineDateHeader(date = entry.date, today = today)
+                        }
+                    is TimelineEntry.SessionEntry ->
+                        TimelineRow(
+                            showTopLine = showTopLine,
+                            showBottomLine = showBottomLine,
+                            showDot = true,
+                        ) {
+                            SessionEventCard(
+                                session = entry.session,
+                                onEditClick = { onEditSessionClick(entry.session) },
+                                onDeleteClick = { onDeleteSessionClick(entry.session) },
+                                modifier = Modifier.padding(bottom = 12.dp),
+                            )
+                        }
                 }
             }
         }
@@ -883,9 +899,10 @@ private fun ProgressSection(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -913,10 +930,11 @@ private fun ProgressSection(
                 if (fraction != null) {
                     LinearProgressIndicator(
                         progress = { fraction },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
@@ -937,12 +955,16 @@ private fun ProgressSection(
  * to have.
  */
 @Composable
-private fun MetadataCard(details: BookDetailsEntity, onCopyIsbn: (String) -> Unit) {
+private fun MetadataCard(
+    details: BookDetailsEntity,
+    onCopyIsbn: (String) -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             val authors = details.authors
@@ -995,7 +1017,10 @@ private fun MetadataCard(details: BookDetailsEntity, onCopyIsbn: (String) -> Uni
 
 /** One label/value row of [MetadataCard]'s key/value grid; [value] renders the row's right side. */
 @Composable
-private fun MetadataRow(label: String, value: @Composable () -> Unit) {
+private fun MetadataRow(
+    label: String,
+    value: @Composable () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1062,15 +1087,16 @@ private fun InteractiveCoverBox(
     val refetchingDescription = stringResource(R.string.refetch_cover_in_progress)
 
     Box(
-        modifier = Modifier
-            .width(120.dp)
-            .aspectRatio(BOOK_COVER_ASPECT_RATIO)
-            .combinedClickable(
-                onClickLabel = viewCoverLabel,
-                onClick = { showEnlargedCover = true },
-                onLongClickLabel = coverOptionsLabel,
-                onLongClick = { showCoverMenu = true },
-            ),
+        modifier =
+            Modifier
+                .width(120.dp)
+                .aspectRatio(BOOK_COVER_ASPECT_RATIO)
+                .combinedClickable(
+                    onClickLabel = viewCoverLabel,
+                    onClick = { showEnlargedCover = true },
+                    onLongClickLabel = coverOptionsLabel,
+                    onLongClick = { showCoverMenu = true },
+                ),
     ) {
         CoverImage(
             coverDir = coverStorageDir,
@@ -1081,10 +1107,11 @@ private fun InteractiveCoverBox(
 
         if (isRefetchingCover) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.35f))
-                    .semantics { contentDescription = refetchingDescription },
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .semantics { contentDescription = refetchingDescription },
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(
@@ -1099,11 +1126,12 @@ private fun InteractiveCoverBox(
             DropdownMenuItem(
                 text = {
                     Text(
-                        text = when {
-                            !hasIsbn -> stringResource(R.string.refetch_cover_no_isbn)
-                            isRefetchingCover -> stringResource(R.string.refetch_cover_in_progress)
-                            else -> stringResource(R.string.refetch_cover_button)
-                        },
+                        text =
+                            when {
+                                !hasIsbn -> stringResource(R.string.refetch_cover_no_isbn)
+                                isRefetchingCover -> stringResource(R.string.refetch_cover_in_progress)
+                                else -> stringResource(R.string.refetch_cover_button)
+                            },
                     )
                 },
                 onClick = {
@@ -1145,10 +1173,11 @@ private fun EnlargedCoverDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .aspectRatio(BOOK_COVER_ASPECT_RATIO)
-                .clickable(onClick = onDismiss),
+            modifier =
+                Modifier
+                    .fillMaxWidth(0.9f)
+                    .aspectRatio(BOOK_COVER_ASPECT_RATIO)
+                    .clickable(onClick = onDismiss),
         ) {
             CoverImage(
                 coverDir = coverStorageDir,
@@ -1168,7 +1197,10 @@ private fun EnlargedCoverDialog(
  * own "re-saving the same FINISHED status preserves finishedAt" behavior).
  */
 @Composable
-private fun StatusChip(status: ReadingStatus, onStatusChange: (ReadingStatus) -> Unit) {
+private fun StatusChip(
+    status: ReadingStatus,
+    onStatusChange: (ReadingStatus) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         AssistChip(
@@ -1211,15 +1243,17 @@ private fun TimerCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -1309,11 +1343,12 @@ private fun SessionDialogFrame(
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = dismissOnBackPress,
-            dismissOnClickOutside = dismissOnClickOutside,
-        ),
+        properties =
+            DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = dismissOnBackPress,
+                dismissOnClickOutside = dismissOnClickOutside,
+            ),
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
@@ -1335,10 +1370,11 @@ private fun SessionDialogFrame(
             ) { innerPadding ->
                 Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                     Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                         content = content,
                     )
@@ -1370,9 +1406,10 @@ private fun SessionFormSection(
         )
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 content = content,
             )
@@ -1430,9 +1467,10 @@ private fun SessionDialogBottomBar(
 ) {
     Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedButton(onClick = onSecondary, modifier = Modifier.weight(1f)) {
@@ -1523,28 +1561,33 @@ private fun PendingSessionDialog(
 
     // Page-mode: deltaPages is fully determined by the positions the user already entered, so it
     // needs no separate manual input -- see ManualSessionDialog's KDoc.
-    val derivedDeltaPages = if (isPageMode && startUnitIsValid && endUnitIsValid) {
-        (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
-    } else {
-        null
-    }
+    val derivedDeltaPages =
+        if (isPageMode && startUnitIsValid && endUnitIsValid) {
+            (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
+        } else {
+            null
+        }
 
     val parsedDeltaPages = deltaPagesText.toIntOrNull()
     val deltaPagesIsValid = deltaPagesText.isBlank() || parsedDeltaPages != null
     val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
 
-    val canSave = startUnitText.isNotBlank() && startUnitIsValid &&
-        endUnitText.isNotBlank() && endUnitIsValid &&
-        (isPageMode || deltaPagesIsValid)
+    val canSave =
+        startUnitText.isNotBlank() &&
+            startUnitIsValid &&
+            endUnitText.isNotBlank() &&
+            endUnitIsValid &&
+            (isPageMode || deltaPagesIsValid)
 
     // Percent-mode position fields get a "%" suffix (ROADMAP Task 7 Phase E) -- page-mode positions
     // are raw page numbers with no fixed unit, so no suffix is shown for them (matches
     // ManualSessionDialog's identical treatment below).
-    val positionSuffix: (@Composable () -> Unit)? = if (isPageMode) {
-        null
-    } else {
-        { Text(stringResource(R.string.position_percent_suffix)) }
-    }
+    val positionSuffix: (@Composable () -> Unit)? =
+        if (isPageMode) {
+            null
+        } else {
+            { Text(stringResource(R.string.position_percent_suffix)) }
+        }
 
     SessionDialogFrame(
         title = stringResource(R.string.save_reading_session_title),
@@ -1580,16 +1623,18 @@ private fun PendingSessionDialog(
         },
     ) {
         Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1614,11 +1659,12 @@ private fun PendingSessionDialog(
                 singleLine = true,
                 isError = startUnitShowsError,
                 suffix = positionSuffix,
-                supportingText = if (startUnitShowsError) {
-                    { Text(stringResource(R.string.position_invalid_error)) }
-                } else {
-                    null
-                },
+                supportingText =
+                    if (startUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
@@ -1629,19 +1675,21 @@ private fun PendingSessionDialog(
                 singleLine = true,
                 isError = endUnitShowsError,
                 suffix = positionSuffix,
-                supportingText = if (endUnitShowsError) {
-                    { Text(stringResource(R.string.position_invalid_error)) }
-                } else {
-                    null
-                },
+                supportingText =
+                    if (endUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                 modifier = Modifier.fillMaxWidth(),
             )
             if (isPageMode) {
                 Text(
-                    text = stringResource(
-                        R.string.pages_read_derived_label,
-                        derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
-                    ),
+                    text =
+                        stringResource(
+                            R.string.pages_read_derived_label,
+                            derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
+                        ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1653,11 +1701,12 @@ private fun PendingSessionDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     isError = deltaPagesShowsError,
-                    supportingText = if (deltaPagesShowsError) {
-                        { Text(stringResource(R.string.pages_read_invalid_error)) }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (deltaPagesShowsError) {
+                            { Text(stringResource(R.string.pages_read_invalid_error)) }
+                        } else {
+                            null
+                        },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -1857,11 +1906,15 @@ private fun ManualSessionDialog(
     // field" from "user edited it, then happened to retype the same digits" -- both leave
     // `durationText == prefilledDurationText`, and both are legitimately treated as "unchanged"
     // (retyping the identical value is, semantically, still not a change).
-    val prefilledDurationText = remember {
-        sessionToEdit?.durationSeconds?.let { seconds ->
-            kotlin.math.round(seconds / 60.0).toLong().toString()
-        } ?: ""
-    }
+    val prefilledDurationText =
+        remember {
+            sessionToEdit?.durationSeconds?.let { seconds ->
+                kotlin.math
+                    .round(seconds / 60.0)
+                    .toLong()
+                    .toString()
+            } ?: ""
+        }
     var durationText by remember { mutableStateOf(prefilledDurationText) }
     var startUnitText by remember {
         mutableStateOf(
@@ -1882,8 +1935,9 @@ private fun ManualSessionDialog(
     // those two `null` causes (and gates the Save button below); `validatedDurationMinutes` feeds
     // `effectiveDurationSeconds` below, which is the value that actually reaches [onSave].
     val parsedDurationMinutes = durationText.toLongOrNull()
-    val durationIsValid = durationText.isBlank() ||
-        (parsedDurationMinutes != null && parsedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
+    val durationIsValid =
+        durationText.isBlank() ||
+            (parsedDurationMinutes != null && parsedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
     val validatedDurationMinutes = if (durationText.isBlank()) null else parsedDurationMinutes
 
     // The value that actually reaches [onSave] -- see the "Duration precision is preserved when
@@ -1894,11 +1948,12 @@ private fun ManualSessionDialog(
     // currently on screen. Every other case -- a genuine edit, a blank field, or no original value
     // to fall back on (create mode, or a session whose duration was itself unknown) -- falls back
     // to the entered minutes converted to seconds (`null` when blank), exactly as before this fix.
-    val effectiveDurationSeconds = if (durationText == prefilledDurationText && originalDurationSeconds != null) {
-        originalDurationSeconds
-    } else {
-        validatedDurationMinutes?.let { it * 60 }
-    }
+    val effectiveDurationSeconds =
+        if (durationText == prefilledDurationText && originalDurationSeconds != null) {
+            originalDurationSeconds
+        } else {
+            validatedDurationMinutes?.let { it * 60 }
+        }
 
     val parsedStartUnit = startUnitText.toDoubleOrNull()
     val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
@@ -1910,11 +1965,12 @@ private fun ManualSessionDialog(
 
     // Page-mode: deltaPages is fully determined by the positions already entered -- see the "Page
     // vs. percent mode" section of this function's KDoc.
-    val derivedDeltaPages = if (isPageMode && startUnitIsValid && endUnitIsValid) {
-        (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
-    } else {
-        null
-    }
+    val derivedDeltaPages =
+        if (isPageMode && startUnitIsValid && endUnitIsValid) {
+            (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
+        } else {
+            null
+        }
 
     val parsedDeltaPages = deltaPagesText.toIntOrNull()
     val deltaPagesIsValid = deltaPagesText.isBlank() || parsedDeltaPages != null
@@ -1927,48 +1983,60 @@ private fun ManualSessionDialog(
     // ever reused across rows without being torn down) would re-seed correctly; in practice each
     // dialog invocation is backed by a fresh `if (showManualEntry)` composition in
     // [BookDetailContent], so this is a defensive `remember` key rather than a load-bearing one.
-    val initialDateTime = remember(sessionToEdit) {
-        sessionToEdit?.timestampEnd?.let(::instantToLocalDateTime) ?: java.time.LocalDateTime.now()
-    }
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(initialDateTime.toLocalDate()) },
-    )
+    val initialDateTime =
+        remember(sessionToEdit) {
+            sessionToEdit?.timestampEnd?.let(::instantToLocalDateTime) ?: java.time.LocalDateTime.now()
+        }
+    val datePickerState =
+        rememberDatePickerState(
+            initialSelectedDateMillis = remember { localDateToUtcMidnightMillis(initialDateTime.toLocalDate()) },
+        )
     var showDatePicker by remember { mutableStateOf(false) }
     // Snapshot of datePickerState.selectedDateMillis taken when the picker is opened, so a
     // picked-then-Cancelled date can be reverted rather than sticking (OK leaves the in-dialog
     // selection unchanged; only Cancel restores this).
     var dateBeforePickerOpen by remember { mutableStateOf<Long?>(null) }
 
-    val is24Hour = remember { android.text.format.DateFormat.is24HourFormat(context) }
-    val timePickerState = rememberTimePickerState(
-        initialHour = initialDateTime.hour,
-        initialMinute = initialDateTime.minute,
-        is24Hour = is24Hour,
-    )
+    val is24Hour =
+        remember {
+            android.text.format.DateFormat
+                .is24HourFormat(context)
+        }
+    val timePickerState =
+        rememberTimePickerState(
+            initialHour = initialDateTime.hour,
+            initialMinute = initialDateTime.minute,
+            is24Hour = is24Hour,
+        )
     var showTimePicker by remember { mutableStateOf(false) }
     // Snapshot of the selected hour/minute taken when the picker is opened, so a
     // picked-then-Cancelled time can be reverted rather than sticking (OK leaves the in-dialog
     // selection unchanged; only Cancel restores this) -- mirrors dateBeforePickerOpen above.
     var timeBeforePickerOpen by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
-    val canSave = startUnitText.isNotBlank() && startUnitIsValid &&
-        endUnitText.isNotBlank() && endUnitIsValid &&
-        durationIsValid &&
-        (isPageMode || deltaPagesIsValid)
+    val canSave =
+        startUnitText.isNotBlank() &&
+            startUnitIsValid &&
+            endUnitText.isNotBlank() &&
+            endUnitIsValid &&
+            durationIsValid &&
+            (isPageMode || deltaPagesIsValid)
 
     // Percent-mode position fields get a "%" suffix (ROADMAP Task 7 Phase E) -- page-mode positions
     // are raw page numbers with no fixed unit, so no suffix is shown for them (matches
     // PendingSessionDialog's identical treatment).
-    val positionSuffix: (@Composable () -> Unit)? = if (isPageMode) {
-        null
-    } else {
-        { Text(stringResource(R.string.position_percent_suffix)) }
-    }
+    val positionSuffix: (@Composable () -> Unit)? =
+        if (isPageMode) {
+            null
+        } else {
+            { Text(stringResource(R.string.position_percent_suffix)) }
+        }
 
     SessionDialogFrame(
-        title = stringResource(
-            if (sessionToEdit != null) R.string.edit_session_title else R.string.log_session_manually,
-        ),
+        title =
+            stringResource(
+                if (sessionToEdit != null) R.string.edit_session_title else R.string.log_session_manually,
+            ),
         onDismissRequest = onDismiss,
         showCloseIcon = true,
         bottomBar = {
@@ -1990,8 +2058,9 @@ private fun ManualSessionDialog(
                         // KDoc.
                         effectiveDurationSeconds,
                         deriveTimestampEnd(
-                            dateUtcMidnightMillis = datePickerState.selectedDateMillis
-                                ?: localDateToUtcMidnightMillis(initialDateTime.toLocalDate()),
+                            dateUtcMidnightMillis =
+                                datePickerState.selectedDateMillis
+                                    ?: localDateToUtcMidnightMillis(initialDateTime.toLocalDate()),
                             hour = timePickerState.hour,
                             minute = timePickerState.minute,
                         ),
@@ -2045,11 +2114,12 @@ private fun ManualSessionDialog(
                 suffix = { Text(stringResource(R.string.duration_minutes_suffix)) },
                 singleLine = true,
                 isError = !durationIsValid,
-                supportingText = if (!durationIsValid) {
-                    { Text(stringResource(R.string.duration_minutes_invalid, MAX_MANUAL_DURATION_MINUTES)) }
-                } else {
-                    null
-                },
+                supportingText =
+                    if (!durationIsValid) {
+                        { Text(stringResource(R.string.duration_minutes_invalid, MAX_MANUAL_DURATION_MINUTES)) }
+                    } else {
+                        null
+                    },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -2063,11 +2133,12 @@ private fun ManualSessionDialog(
                 singleLine = true,
                 isError = startUnitShowsError,
                 suffix = positionSuffix,
-                supportingText = if (startUnitShowsError) {
-                    { Text(stringResource(R.string.position_invalid_error)) }
-                } else {
-                    null
-                },
+                supportingText =
+                    if (startUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
@@ -2078,19 +2149,21 @@ private fun ManualSessionDialog(
                 singleLine = true,
                 isError = endUnitShowsError,
                 suffix = positionSuffix,
-                supportingText = if (endUnitShowsError) {
-                    { Text(stringResource(R.string.position_invalid_error)) }
-                } else {
-                    null
-                },
+                supportingText =
+                    if (endUnitShowsError) {
+                        { Text(stringResource(R.string.position_invalid_error)) }
+                    } else {
+                        null
+                    },
                 modifier = Modifier.fillMaxWidth(),
             )
             if (isPageMode) {
                 Text(
-                    text = stringResource(
-                        R.string.pages_read_derived_label,
-                        derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
-                    ),
+                    text =
+                        stringResource(
+                            R.string.pages_read_derived_label,
+                            derivedDeltaPages?.toString() ?: stringResource(R.string.pages_read_derived_placeholder),
+                        ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2102,11 +2175,12 @@ private fun ManualSessionDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     isError = deltaPagesShowsError,
-                    supportingText = if (deltaPagesShowsError) {
-                        { Text(stringResource(R.string.pages_read_invalid_error)) }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (deltaPagesShowsError) {
+                            { Text(stringResource(R.string.pages_read_invalid_error)) }
+                        } else {
+                            null
+                        },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -2174,12 +2248,16 @@ private sealed class TimelineEntry {
     abstract val key: String
 
     /** A calendar-day separator, inserted whenever consecutive sessions fall on different days. */
-    data class DateHeader(val date: java.time.LocalDate) : TimelineEntry() {
+    data class DateHeader(
+        val date: java.time.LocalDate,
+    ) : TimelineEntry() {
         override val key: String = "date-$date"
     }
 
     /** A single reading session, rendered by [SessionEventCard]. */
-    data class SessionEntry(val session: ReadingSessionEntity) : TimelineEntry() {
+    data class SessionEntry(
+        val session: ReadingSessionEntity,
+    ) : TimelineEntry() {
         override val key: String = session.id
     }
 }
@@ -2233,14 +2311,16 @@ private fun TimelineRow(
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     val dotColor = MaterialTheme.colorScheme.primary
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
     ) {
         Canvas(
-            modifier = Modifier
-                .width(24.dp)
-                .fillMaxHeight(),
+            modifier =
+                Modifier
+                    .width(24.dp)
+                    .fillMaxHeight(),
         ) {
             val centerX = size.width / 2f
             val centerY = size.height / 2f
@@ -2276,12 +2356,16 @@ private fun TimelineRow(
  * date convenience), the full `MMM d, yyyy` date otherwise via the existing [DATE_ONLY_FORMATTER].
  */
 @Composable
-private fun TimelineDateHeader(date: java.time.LocalDate, today: java.time.LocalDate) {
-    val label = when (date) {
-        today -> stringResource(R.string.timeline_today)
-        today.minusDays(1) -> stringResource(R.string.timeline_yesterday)
-        else -> DATE_ONLY_FORMATTER.format(date)
-    }
+private fun TimelineDateHeader(
+    date: java.time.LocalDate,
+    today: java.time.LocalDate,
+) {
+    val label =
+        when (date) {
+            today -> stringResource(R.string.timeline_today)
+            today.minusDays(1) -> stringResource(R.string.timeline_yesterday)
+            else -> DATE_ONLY_FORMATTER.format(date)
+        }
     Text(
         text = label,
         style = MaterialTheme.typography.labelLarge,
@@ -2324,9 +2408,10 @@ private fun SessionEventCard(
 
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
@@ -2358,28 +2443,31 @@ private fun SessionEventCard(
             }
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 val durationSeconds = session.durationSeconds
                 StatBadge(
                     label = stringResource(R.string.session_stat_duration_label),
-                    value = if (durationSeconds != null) {
-                        formatElapsed(durationSeconds)
-                    } else {
-                        stringResource(R.string.session_duration_unknown)
-                    },
+                    value =
+                        if (durationSeconds != null) {
+                            formatElapsed(durationSeconds)
+                        } else {
+                            stringResource(R.string.session_duration_unknown)
+                        },
                     muted = durationSeconds == null,
                 )
                 StatBadge(
                     label = stringResource(R.string.session_stat_progress_label),
-                    value = stringResource(
-                        R.string.session_position_range,
-                        formatUnit(session.startUnit),
-                        formatUnit(session.endUnit),
-                    ),
+                    value =
+                        stringResource(
+                            R.string.session_position_range,
+                            formatUnit(session.startUnit),
+                            formatUnit(session.endUnit),
+                        ),
                 )
                 val deltaPages = session.deltaPages
                 if (deltaPages != null) {
@@ -2410,7 +2498,11 @@ private fun SessionEventCard(
  * case so it reads as "we don't know" rather than a normal value.
  */
 @Composable
-private fun StatBadge(label: String, value: String, muted: Boolean = false) {
+private fun StatBadge(
+    label: String,
+    value: String,
+    muted: Boolean = false,
+) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -2425,11 +2517,12 @@ private fun StatBadge(label: String, value: String, muted: Boolean = false) {
                 text = value,
                 style = MaterialTheme.typography.titleSmall,
                 fontStyle = if (muted) FontStyle.Italic else FontStyle.Normal,
-                color = if (muted) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
+                color =
+                    if (muted) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
             )
         }
     }
@@ -2492,7 +2585,11 @@ private fun formatElapsed(totalSeconds: Long): String {
  * from resources rather than using hardcoded string literals.
  */
 @Composable
-private fun formatProgress(currentProgress: Double?, totalPages: Int?, trackingMode: TrackingMode?): String? {
+private fun formatProgress(
+    currentProgress: Double?,
+    totalPages: Int?,
+    trackingMode: TrackingMode?,
+): String? {
     if (currentProgress == null) return null
     return when {
         trackingMode == TrackingMode.PAGES && totalPages != null ->
@@ -2516,14 +2613,19 @@ private fun formatProgress(currentProgress: Double?, totalPages: Int?, trackingM
  * Clamped to `0f..1f` since a session's `endUnit` is user-entered and not validated against
  * `totalPages` at save time (a typo could otherwise overshoot the bar past 100%).
  */
-private fun progressFraction(currentProgress: Double?, totalPages: Int?, trackingMode: TrackingMode?): Float? {
+private fun progressFraction(
+    currentProgress: Double?,
+    totalPages: Int?,
+    trackingMode: TrackingMode?,
+): Float? {
     if (currentProgress == null) return null
-    val fraction = when {
-        trackingMode == TrackingMode.PAGES && totalPages != null && totalPages > 0 ->
-            currentProgress / totalPages
-        trackingMode == TrackingMode.PAGES -> return null
-        else -> currentProgress / 100.0
-    }
+    val fraction =
+        when {
+            trackingMode == TrackingMode.PAGES && totalPages != null && totalPages > 0 ->
+                currentProgress / totalPages
+            trackingMode == TrackingMode.PAGES -> return null
+            else -> currentProgress / 100.0
+        }
     return fraction.toFloat().coerceIn(0f, 1f)
 }
 
@@ -2542,12 +2644,19 @@ internal fun formatUnit(value: Double): String =
  * `is24Hour` at the call site. The wrapping date value is irrelevant; only the time-of-day is
  * ever read back out via the formatter.
  */
-private fun formatTimeOfDay(context: android.content.Context, hour: Int, minute: Int): String {
-    val calendar = java.util.Calendar.getInstance().apply {
-        set(java.util.Calendar.HOUR_OF_DAY, hour)
-        set(java.util.Calendar.MINUTE, minute)
-    }
-    return android.text.format.DateFormat.getTimeFormat(context).format(calendar.time)
+private fun formatTimeOfDay(
+    context: android.content.Context,
+    hour: Int,
+    minute: Int,
+): String {
+    val calendar =
+        java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, hour)
+            set(java.util.Calendar.MINUTE, minute)
+        }
+    return android.text.format.DateFormat
+        .getTimeFormat(context)
+        .format(calendar.time)
 }
 
 /**
@@ -2569,15 +2678,18 @@ private fun formatSessionDate(instant: Instant): String {
  * string.
  */
 private fun instantToLocalDateTime(instant: Instant): java.time.LocalDateTime =
-    java.time.Instant.ofEpochMilli(instant.toEpochMilliseconds())
+    java.time.Instant
+        .ofEpochMilli(instant.toEpochMilliseconds())
         .atZone(java.time.ZoneId.systemDefault())
         .toLocalDateTime()
 
 private val SESSION_DATE_FORMATTER: java.time.format.DateTimeFormatter =
-    java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
+    java.time.format.DateTimeFormatter
+        .ofPattern("MMM d, yyyy HH:mm")
 
 private val DATE_ONLY_FORMATTER: java.time.format.DateTimeFormatter =
-    java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")
+    java.time.format.DateTimeFormatter
+        .ofPattern("MMM d, yyyy")
 
 /**
  * Converts a [java.time.LocalDate] to the UTC-midnight epoch millis that Material 3's
@@ -2590,9 +2702,11 @@ private fun localDateToUtcMidnightMillis(date: java.time.LocalDate): Long =
 /** Formats a `DatePickerState.selectedDateMillis`-style UTC-midnight millis value for display. */
 private fun formatUtcMidnightMillis(utcMidnightMillis: Long?): String {
     if (utcMidnightMillis == null) return "-"
-    val localDate = java.time.Instant.ofEpochMilli(utcMidnightMillis)
-        .atZone(java.time.ZoneOffset.UTC)
-        .toLocalDate()
+    val localDate =
+        java.time.Instant
+            .ofEpochMilli(utcMidnightMillis)
+            .atZone(java.time.ZoneOffset.UTC)
+            .toLocalDate()
     return DATE_ONLY_FORMATTER.format(localDate)
 }
 
@@ -2602,13 +2716,20 @@ private fun formatUtcMidnightMillis(utcMidnightMillis: Long?): String {
  * (same conversion approach as [formatSessionDate], just inverted). [hour]/[minute] are clamped
  * to valid ranges so out-of-range typed input (e.g. "99") can't throw.
  */
-private fun deriveTimestampEnd(dateUtcMidnightMillis: Long, hour: Int, minute: Int): Instant {
-    val localDate = java.time.Instant.ofEpochMilli(dateUtcMidnightMillis)
-        .atZone(java.time.ZoneOffset.UTC)
-        .toLocalDate()
-    val zonedDateTime = localDate
-        .atTime(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
-        .atZone(java.time.ZoneId.systemDefault())
+private fun deriveTimestampEnd(
+    dateUtcMidnightMillis: Long,
+    hour: Int,
+    minute: Int,
+): Instant {
+    val localDate =
+        java.time.Instant
+            .ofEpochMilli(dateUtcMidnightMillis)
+            .atZone(java.time.ZoneOffset.UTC)
+            .toLocalDate()
+    val zonedDateTime =
+        localDate
+            .atTime(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
+            .atZone(java.time.ZoneId.systemDefault())
     return Instant.fromEpochMilliseconds(zonedDateTime.toInstant().toEpochMilli())
 }
 
@@ -2638,47 +2759,50 @@ internal fun String.filterDecimalInput(): String {
  */
 internal fun String.filterIntegerInput(): String = filter { it.isDigit() }
 
-private val PREVIEW_BOOK = MediaItemEntity(
-    id = "book-1",
-    type = MediaType.BOOK,
-    title = "The Great Gatsby",
-    releaseYear = 1925,
-    purchasePrice = 9.99,
-    createdAt = Instant.fromEpochMilliseconds(0),
-    coverImageHash = null,
-)
+private val PREVIEW_BOOK =
+    MediaItemEntity(
+        id = "book-1",
+        type = MediaType.BOOK,
+        title = "The Great Gatsby",
+        releaseYear = 1925,
+        purchasePrice = 9.99,
+        createdAt = Instant.fromEpochMilliseconds(0),
+        coverImageHash = null,
+    )
 
-private val PREVIEW_DETAILS = BookDetailsEntity(
-    mediaId = "book-1",
-    isbn = "9780743273565",
-    format = BookFormat.PHYSICAL,
-    totalPages = 180,
-)
+private val PREVIEW_DETAILS =
+    BookDetailsEntity(
+        mediaId = "book-1",
+        isbn = "9780743273565",
+        format = BookFormat.PHYSICAL,
+        totalPages = 180,
+    )
 
-private val PREVIEW_SESSIONS = listOf(
-    ReadingSessionEntity(
-        id = "session-2",
-        mediaId = "book-1",
-        timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000),
-        timestampEnd = Instant.fromEpochMilliseconds(1_700_001_800_000),
-        durationSeconds = 1_800,
-        startUnit = 42.0,
-        endUnit = 78.0,
-        deltaPages = 36,
-        notes = "Great chapter on the green light.",
-    ),
-    ReadingSessionEntity(
-        id = "session-1",
-        mediaId = "book-1",
-        timestampStart = Instant.fromEpochMilliseconds(1_699_900_000_000),
-        timestampEnd = Instant.fromEpochMilliseconds(1_699_901_500_000),
-        durationSeconds = 1_500,
-        startUnit = 0.0,
-        endUnit = 42.0,
-        deltaPages = 42,
-        notes = null,
-    ),
-)
+private val PREVIEW_SESSIONS =
+    listOf(
+        ReadingSessionEntity(
+            id = "session-2",
+            mediaId = "book-1",
+            timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000),
+            timestampEnd = Instant.fromEpochMilliseconds(1_700_001_800_000),
+            durationSeconds = 1_800,
+            startUnit = 42.0,
+            endUnit = 78.0,
+            deltaPages = 36,
+            notes = "Great chapter on the green light.",
+        ),
+        ReadingSessionEntity(
+            id = "session-1",
+            mediaId = "book-1",
+            timestampStart = Instant.fromEpochMilliseconds(1_699_900_000_000),
+            timestampEnd = Instant.fromEpochMilliseconds(1_699_901_500_000),
+            durationSeconds = 1_500,
+            startUnit = 0.0,
+            endUnit = 42.0,
+            deltaPages = 42,
+            notes = null,
+        ),
+    )
 
 /**
  * Preview session history that additionally includes a null-[ReadingSessionEntity.durationSeconds]
@@ -2686,17 +2810,19 @@ private val PREVIEW_SESSIONS = listOf(
  * the timeline's "Duration unknown" [StatBadge] path is covered by a preview -- see
  * [ReadingHistoryTabUnknownDurationPreview].
  */
-private val PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION = PREVIEW_SESSIONS + ReadingSessionEntity(
-    id = "session-0",
-    mediaId = "book-1",
-    timestampStart = Instant.fromEpochMilliseconds(1_699_800_000_000),
-    timestampEnd = Instant.fromEpochMilliseconds(1_699_800_000_000),
-    durationSeconds = null,
-    startUnit = 0.0,
-    endUnit = 0.0,
-    deltaPages = null,
-    notes = null,
-)
+private val PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION =
+    PREVIEW_SESSIONS +
+        ReadingSessionEntity(
+            id = "session-0",
+            mediaId = "book-1",
+            timestampStart = Instant.fromEpochMilliseconds(1_699_800_000_000),
+            timestampEnd = Instant.fromEpochMilliseconds(1_699_800_000_000),
+            durationSeconds = null,
+            startUnit = 0.0,
+            endUnit = 0.0,
+            deltaPages = null,
+            notes = null,
+        )
 
 /** Preview of the book detail screen with an established session history. */
 @Preview(showBackground = true)
@@ -2704,11 +2830,12 @@ private val PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION = PREVIEW_SESSIONS + ReadingS
 private fun BookDetailScreenReadyPreview() {
     MediaTrackerTheme {
         BookDetailScreen(
-            uiState = BookDetailUiState.Ready(
-                book = PREVIEW_BOOK,
-                details = PREVIEW_DETAILS,
-                sessions = PREVIEW_SESSIONS,
-            ),
+            uiState =
+                BookDetailUiState.Ready(
+                    book = PREVIEW_BOOK,
+                    details = PREVIEW_DETAILS,
+                    sessions = PREVIEW_SESSIONS,
+                ),
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
             coverStorageDir = "/fake/path",
@@ -2736,16 +2863,18 @@ private fun BookDetailScreenReadyPreview() {
 private fun BookDetailScreenPendingSessionPreview() {
     MediaTrackerTheme {
         BookDetailScreen(
-            uiState = BookDetailUiState.Ready(
-                book = PREVIEW_BOOK,
-                details = PREVIEW_DETAILS,
-                sessions = PREVIEW_SESSIONS,
-                pendingSession = ReadingTimerResult(
-                    timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
-                    timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
-                    durationSeconds = 1_200,
+            uiState =
+                BookDetailUiState.Ready(
+                    book = PREVIEW_BOOK,
+                    details = PREVIEW_DETAILS,
+                    sessions = PREVIEW_SESSIONS,
+                    pendingSession =
+                        ReadingTimerResult(
+                            timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                            timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                            durationSeconds = 1_200,
+                        ),
                 ),
-            ),
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
             coverStorageDir = "/fake/path",
@@ -2859,10 +2988,12 @@ private fun DetailsTabDarkPreview() {
 private fun DetailsTabLongTitleUnknownTotalPagesPreview() {
     MediaTrackerTheme {
         DetailsTab(
-            book = PREVIEW_BOOK.copy(
-                title = "The Extraordinarily Long and Overly Descriptive Title of a Book That " +
-                    "Simply Refuses to Fit on a Single Line, Volume One",
-            ),
+            book =
+                PREVIEW_BOOK.copy(
+                    title =
+                        "The Extraordinarily Long and Overly Descriptive Title of a Book That " +
+                            "Simply Refuses to Fit on a Single Line, Volume One",
+                ),
             details = PREVIEW_DETAILS.copy(totalPages = null, trackingMode = TrackingMode.PAGES),
             currentProgress = 142.0,
             coverStorageDir = "/fake/path",
@@ -3066,11 +3197,12 @@ private fun ManualSessionDialogValidationErrorPreview() {
 private fun PendingSessionDialogPreview() {
     MediaTrackerTheme {
         PendingSessionDialog(
-            pendingSession = ReadingTimerResult(
-                timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
-                timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
-                durationSeconds = 1_200,
-            ),
+            pendingSession =
+                ReadingTimerResult(
+                    timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                    timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                    durationSeconds = 1_200,
+                ),
             errorMessage = null,
             currentProgress = 42.0,
             trackingMode = TrackingMode.PAGES,
@@ -3086,11 +3218,12 @@ private fun PendingSessionDialogPreview() {
 private fun PendingSessionDialogDarkPreview() {
     MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
         PendingSessionDialog(
-            pendingSession = ReadingTimerResult(
-                timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
-                timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
-                durationSeconds = 1_200,
-            ),
+            pendingSession =
+                ReadingTimerResult(
+                    timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                    timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                    durationSeconds = 1_200,
+                ),
             errorMessage = null,
             currentProgress = 42.0,
             trackingMode = TrackingMode.PAGES,
@@ -3110,11 +3243,12 @@ private fun PendingSessionDialogDarkPreview() {
 private fun PendingSessionDialogErrorPreview() {
     MediaTrackerTheme {
         PendingSessionDialog(
-            pendingSession = ReadingTimerResult(
-                timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
-                timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
-                durationSeconds = 1_200,
-            ),
+            pendingSession =
+                ReadingTimerResult(
+                    timestampStart = Instant.fromEpochMilliseconds(1_700_100_000_000),
+                    timestampEnd = Instant.fromEpochMilliseconds(1_700_101_200_000),
+                    durationSeconds = 1_200,
+                ),
             errorMessage = "Failed to save session. Please try again.",
             currentProgress = 42.0,
             trackingMode = TrackingMode.PERCENT,

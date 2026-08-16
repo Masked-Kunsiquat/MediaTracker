@@ -22,7 +22,9 @@ import kotlinx.datetime.isoDayNumber
  *   it to compute how many days to walk backward from "today" to reach the start of its containing
  *   week, for either start-day convention uniformly.
  */
-public enum class WeekStartDay(public val isoDayNumber: Int) {
+public enum class WeekStartDay(
+    public val isoDayNumber: Int,
+) {
     MONDAY(DayOfWeek.MONDAY.isoDayNumber),
     SUNDAY(DayOfWeek.SUNDAY.isoDayNumber),
 }

@@ -19,10 +19,11 @@ import kotlin.time.Instant
  * existing callers observe identical [com.hub.media.core.util.Resource.Error] text.
  */
 public object ReadingSessionValidation {
-
     /** [timestampEnd] must be `>= timestampStart` -- time cannot run backward. */
-    public fun validateTimestamps(timestampStart: Instant, timestampEnd: Instant): String? =
-        if (timestampEnd < timestampStart) "timestampEnd must be >= timestampStart" else null
+    public fun validateTimestamps(
+        timestampStart: Instant,
+        timestampEnd: Instant,
+    ): String? = if (timestampEnd < timestampStart) "timestampEnd must be >= timestampStart" else null
 
     /** A known [durationSeconds] must be `>= 0`; `null` ("unknown") always passes. */
     public fun validateDuration(durationSeconds: Long?): String? =
@@ -34,7 +35,10 @@ public object ReadingSessionValidation {
      * *allowed* (re-reading backward is a legitimate position, not an error) while non-finite or
      * negative values are not.
      */
-    public fun validatePositions(startUnit: Double, endUnit: Double): String? {
+    public fun validatePositions(
+        startUnit: Double,
+        endUnit: Double,
+    ): String? {
         if (!startUnit.isFinite() || startUnit < 0.0) {
             return "startUnit must be finite and >= 0 (was $startUnit)"
         }

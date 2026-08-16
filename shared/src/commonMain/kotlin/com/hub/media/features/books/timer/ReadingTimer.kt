@@ -1,9 +1,5 @@
 package com.hub.media.features.books.timer
 
-import kotlin.time.Clock
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,6 +8,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Lifecycle states of a [ReadingTimer], exposed for UI (e.g. gating which of start/pause/
@@ -119,7 +119,6 @@ public class ReadingTimer(
     private val scope: CoroutineScope,
     private val tickInterval: Duration = 1.seconds,
 ) {
-
     private val _state = MutableStateFlow<ReadingTimerState>(ReadingTimerState.Idle)
 
     /** Current lifecycle state, for UI to gate which action buttons are enabled. */
@@ -193,9 +192,10 @@ public class ReadingTimer(
             "ReadingTimer.stop() requires Running or Paused state, was $current"
         }
         stopTicking()
-        val start = checkNotNull(timestampStart) {
-            "ReadingTimer invariant violated: $current state with no recorded start"
-        }
+        val start =
+            checkNotNull(timestampStart) {
+                "ReadingTimer invariant violated: $current state with no recorded start"
+            }
         val end = clock.now()
         val duration = _elapsedSeconds.value
 
@@ -211,12 +211,13 @@ public class ReadingTimer(
         // while a tick job is running, but cancelling any leftover job first is free and rules out
         // an accidental duplicate ticker if that invariant is ever loosened.
         tickJob?.cancel()
-        tickJob = scope.launch {
-            while (isActive) {
-                delay(tickInterval)
-                _elapsedSeconds.value += 1
+        tickJob =
+            scope.launch {
+                while (isActive) {
+                    delay(tickInterval)
+                    _elapsedSeconds.value += 1
+                }
             }
-        }
     }
 
     private fun stopTicking() {

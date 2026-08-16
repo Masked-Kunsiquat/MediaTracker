@@ -48,9 +48,10 @@ fun StatsScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
 ) {
-    val viewModel: StatsViewModel = viewModel(
-        factory = StatsViewModelFactory(appContainer),
-    )
+    val viewModel: StatsViewModel =
+        viewModel(
+            factory = StatsViewModelFactory(appContainer),
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     StatsScreen(
@@ -97,9 +98,10 @@ fun StatsScreen(
         },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             if (uiState.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -144,17 +146,19 @@ private fun PeriodCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(text = title, style = MaterialTheme.typography.titleMedium)
             Text(
-                text = stringResource(
-                    R.string.stats_time_read_label,
-                    formatTimeReadOrUnknown(period.timeReadSeconds),
-                ),
+                text =
+                    stringResource(
+                        R.string.stats_time_read_label,
+                        formatTimeReadOrUnknown(period.timeReadSeconds),
+                    ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
@@ -162,10 +166,11 @@ private fun PeriodCard(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = stringResource(
-                    R.string.stats_pages_read_label,
-                    formatCountOrUnknown(period.pagesRead),
-                ),
+                text =
+                    stringResource(
+                        R.string.stats_pages_read_label,
+                        formatCountOrUnknown(period.pagesRead),
+                    ),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
@@ -188,12 +193,16 @@ private fun PeriodCard(
 private fun LifetimeBooksFinishedCard(count: Int) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(text = stringResource(R.string.stats_books_finished_lifetime_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(R.string.stats_books_finished_lifetime_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
             Text(text = count.toString(), style = MaterialTheme.typography.headlineMedium)
         }
     }
@@ -209,17 +218,19 @@ private fun LifetimeBooksFinishedCard(count: Int) {
 private fun StreakCard(streakDays: Int) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = if (streakDays > 0) {
-                    pluralStringResource(R.plurals.stats_streak_days, streakDays, streakDays)
-                } else {
-                    stringResource(R.string.stats_no_streak)
-                },
+                text =
+                    if (streakDays > 0) {
+                        pluralStringResource(R.plurals.stats_streak_days, streakDays, streakDays)
+                    } else {
+                        stringResource(R.string.stats_no_streak)
+                    },
                 style = MaterialTheme.typography.titleMedium,
             )
         }
@@ -267,12 +278,13 @@ private fun StatsScreenLoadingPreview() {
 private fun StatsScreenPopulatedPreview() {
     MediaTrackerTheme {
         StatsScreen(
-            uiState = StatsUiState(
-                isLoading = false,
-                week = StatsUiState.Period(timeReadSeconds = 5_400, sessionCount = 4, pagesRead = 120),
-                month = StatsUiState.Period(timeReadSeconds = 27_000, sessionCount = 15, pagesRead = 640),
-                currentStreakDays = 5,
-            ),
+            uiState =
+                StatsUiState(
+                    isLoading = false,
+                    week = StatsUiState.Period(timeReadSeconds = 5_400, sessionCount = 4, pagesRead = 120),
+                    month = StatsUiState.Period(timeReadSeconds = 27_000, sessionCount = 15, pagesRead = 640),
+                    currentStreakDays = 5,
+                ),
             onNavigateBack = {},
         )
     }
@@ -287,12 +299,13 @@ private fun StatsScreenPopulatedPreview() {
 private fun StatsScreenEmptyPreview() {
     MediaTrackerTheme {
         StatsScreen(
-            uiState = StatsUiState(
-                isLoading = false,
-                week = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
-                month = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
-                currentStreakDays = 0,
-            ),
+            uiState =
+                StatsUiState(
+                    isLoading = false,
+                    week = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
+                    month = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
+                    currentStreakDays = 0,
+                ),
             onNavigateBack = {},
         )
     }

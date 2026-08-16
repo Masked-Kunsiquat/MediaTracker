@@ -7,7 +7,6 @@ import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Drives the edit-book-metadata screen (ROADMAP Task 6 Phase A): lets the user correct
@@ -50,7 +50,6 @@ public class EditBookViewModel(
     private val bookId: String,
     private val bookRepository: BookRepository,
 ) : ViewModel() {
-
     /** UI-only state with no DB representation; see class KDoc. */
     private data class LocalState(
         val errorMessage: String? = null,
@@ -70,30 +69,32 @@ public class EditBookViewModel(
      */
     private var saveInFlight: Boolean = false
 
-    public val uiState: StateFlow<EditBookUiState> = combine(
-        bookRepository.observeBookDetail(bookId),
-        _local,
-    ) { bookDetail, local ->
-        when {
-            local.saved -> EditBookUiState.Saved
-            bookDetail == null -> EditBookUiState.NotFound
-            else -> EditBookUiState.Ready(
-                title = bookDetail.mediaItem.title,
-                releaseYear = bookDetail.mediaItem.releaseYear,
-                purchasePrice = bookDetail.mediaItem.purchasePrice,
-                totalPages = bookDetail.details?.totalPages,
-                format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
-                status = bookDetail.details?.status ?: ReadingStatus.TO_READ,
-                trackingMode = bookDetail.details?.trackingMode ?: TrackingMode.PAGES,
-                errorMessage = local.errorMessage,
-                isSaving = local.isSaving,
-            )
-        }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5.seconds),
-        initialValue = EditBookUiState.Loading,
-    )
+    public val uiState: StateFlow<EditBookUiState> =
+        combine(
+            bookRepository.observeBookDetail(bookId),
+            _local,
+        ) { bookDetail, local ->
+            when {
+                local.saved -> EditBookUiState.Saved
+                bookDetail == null -> EditBookUiState.NotFound
+                else ->
+                    EditBookUiState.Ready(
+                        title = bookDetail.mediaItem.title,
+                        releaseYear = bookDetail.mediaItem.releaseYear,
+                        purchasePrice = bookDetail.mediaItem.purchasePrice,
+                        totalPages = bookDetail.details?.totalPages,
+                        format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
+                        status = bookDetail.details?.status ?: ReadingStatus.TO_READ,
+                        trackingMode = bookDetail.details?.trackingMode ?: TrackingMode.PAGES,
+                        errorMessage = local.errorMessage,
+                        isSaving = local.isSaving,
+                    )
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5.seconds),
+            initialValue = EditBookUiState.Loading,
+        )
 
     /**
      * Persists edited metadata via [BookRepository.updateBookMetadata]. No-ops (does not throw or
@@ -120,21 +121,23 @@ public class EditBookViewModel(
         viewModelScope.launch {
             try {
                 when (
-                    val result = bookRepository.updateBookMetadata(
-                        mediaId = bookId,
-                        title = title,
-                        releaseYear = releaseYear,
-                        purchasePrice = purchasePrice,
-                        totalPages = totalPages,
-                        format = format,
-                        status = status,
-                        trackingMode = trackingMode,
-                    )
+                    val result =
+                        bookRepository.updateBookMetadata(
+                            mediaId = bookId,
+                            title = title,
+                            releaseYear = releaseYear,
+                            purchasePrice = purchasePrice,
+                            totalPages = totalPages,
+                            format = format,
+                            status = status,
+                            trackingMode = trackingMode,
+                        )
                 ) {
                     is Resource.Success -> _local.update { it.copy(isSaving = false, saved = true) }
-                    is Resource.Error -> _local.update {
-                        it.copy(isSaving = false, errorMessage = result.message)
-                    }
+                    is Resource.Error ->
+                        _local.update {
+                            it.copy(isSaving = false, errorMessage = result.message)
+                        }
                 }
             } finally {
                 saveInFlight = false

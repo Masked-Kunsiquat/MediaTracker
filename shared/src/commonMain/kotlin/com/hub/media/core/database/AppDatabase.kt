@@ -80,12 +80,19 @@ public const val APP_DATABASE_VERSION: Int = 5
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun mediaItemDao(): MediaItemDao
+
     abstract fun bookDetailsDao(): BookDetailsDao
+
     abstract fun externalIdentifierDao(): ExternalIdentifierDao
+
     abstract fun readingSessionDao(): ReadingSessionDao
+
     abstract fun bookWriteDao(): BookWriteDao
+
     abstract fun statsDao(): StatsDao
+
     abstract fun appSettingsDao(): AppSettingsDao
+
     abstract fun importWriteDao(): ImportWriteDao
 }
 

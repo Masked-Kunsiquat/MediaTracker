@@ -9,7 +9,12 @@ package com.hub.media.core.util
 internal actual fun platformLogger(): Logger = JvmLogger
 
 private object JvmLogger : Logger {
-    override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
+    override fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: () -> String,
+    ) {
         val stream = if (level == LogLevel.WARN || level == LogLevel.ERROR) System.err else System.out
         stream.println("${level.name} [$tag] ${message()}")
         throwable?.printStackTrace(stream)

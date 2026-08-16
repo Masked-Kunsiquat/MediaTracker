@@ -8,12 +8,12 @@ import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Clock
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
 
 /** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "DatabaseBackupUseCase"
@@ -112,7 +112,6 @@ public class DefaultDatabaseBackupUseCase(
     private val databaseFilePath: String,
     private val logger: Logger = AppLogger,
 ) : DatabaseBackupUseCase {
-
     override suspend fun execute(): Resource<BackupResult> {
         // A fresh, collision-free name every call (rather than a fixed name this use case would
         // otherwise need to delete-if-exists first) -- VACUUM INTO fails if its destination
@@ -155,6 +154,7 @@ public fun suggestedBackupFileName(
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
 ): String {
     val now = clock.now().toLocalDateTime(timeZone)
+
     fun pad(value: Int) = value.toString().padStart(2, '0')
     return "media_tracker_backup_${now.year}${pad(now.monthNumber)}${pad(now.dayOfMonth)}_" +
         "${pad(now.hour)}${pad(now.minute)}${pad(now.second)}.db"

@@ -10,7 +10,6 @@ import com.hub.media.features.books.domain.BulkBackfillProgress
  * sequence.
  */
 public sealed class BackfillUiState {
-
     /**
      * Nothing to resume and no run is in flight -- either a backfill has never been started,
      * [BackfillViewModel]'s init check found no persisted resume state (nothing left to do from a
@@ -25,7 +24,9 @@ public sealed class BackfillUiState {
      * is called and before the first book of this run has been checkpointed; every progress
      * callback thereafter replaces it with the latest snapshot.
      */
-    public data class Running(val progress: BulkBackfillProgress?) : BackfillUiState()
+    public data class Running(
+        val progress: BulkBackfillProgress?,
+    ) : BackfillUiState()
 
     /**
      * A run isn't currently in flight, but [progress] describes where things stand -- either it
@@ -35,7 +36,9 @@ public sealed class BackfillUiState {
      * way, [BackfillViewModel.start] resumes from exactly this point if [BulkBackfillProgress.remaining]
      * is non-zero.
      */
-    public data class Stopped(val progress: BulkBackfillProgress) : BackfillUiState()
+    public data class Stopped(
+        val progress: BulkBackfillProgress,
+    ) : BackfillUiState()
 
     /**
      * [BackfillViewModel.start]'s coroutine stopped because of an unexpected, non-cancellation
@@ -47,5 +50,7 @@ public sealed class BackfillUiState {
      * run actually reported -- same convention as [Stopped.progress] -- or `null` if nothing was
      * checkpointed before the failure.
      */
-    public data class Failed(val progress: BulkBackfillProgress?) : BackfillUiState()
+    public data class Failed(
+        val progress: BulkBackfillProgress?,
+    ) : BackfillUiState()
 }

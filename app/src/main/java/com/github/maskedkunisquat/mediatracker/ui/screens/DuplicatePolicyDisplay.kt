@@ -12,8 +12,9 @@ import com.hub.media.features.portability.domain.DuplicatePolicy
  * here until a label is added.
  */
 @Composable
-internal fun DuplicatePolicy.displayLabel(): String = when (this) {
-    DuplicatePolicy.SKIP -> stringResource(R.string.duplicate_policy_skip)
-    DuplicatePolicy.REPLACE -> stringResource(R.string.duplicate_policy_replace)
-    DuplicatePolicy.MERGE -> stringResource(R.string.duplicate_policy_merge)
-}
+internal fun DuplicatePolicy.displayLabel(): String =
+    when (this) {
+        DuplicatePolicy.SKIP -> stringResource(R.string.duplicate_policy_skip)
+        DuplicatePolicy.REPLACE -> stringResource(R.string.duplicate_policy_replace)
+        DuplicatePolicy.MERGE -> stringResource(R.string.duplicate_policy_merge)
+    }

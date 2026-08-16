@@ -60,7 +60,6 @@ public data class ImportBookUpdate(
  */
 @Dao
 public interface ImportWriteDao {
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertMediaItem(item: MediaItemEntity)
 

@@ -6,19 +6,18 @@ import com.hub.media.core.storage.LogFileStore
 import com.hub.media.core.storage.createLogFileStore
 import com.hub.media.core.storage.logStorageDirectory
 import com.hub.media.core.util.AppLogger
-import com.hub.media.core.util.info
 import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.info
 import com.hub.media.core.util.withPlatformLogger
 import com.hub.media.features.settings.data.observeLogVerbosityOrNull
+import com.hub.media.ui.AppContainer
+import com.hub.media.ui.createAppContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import com.hub.media.ui.AppContainer
-import com.hub.media.ui.createAppContainer
 import kotlinx.coroutines.runBlocking
-
 
 /** Log tag for this class's lifecycle tracing (ROADMAP Task 15 Phase C). */
 private const val TAG = "MediaTrackerApplication"
@@ -33,7 +32,6 @@ private const val TAG = "MediaTrackerApplication"
  * Read by [MainActivity] via `(application as MediaTrackerApplication).appContainer`.
  */
 class MediaTrackerApplication : Application() {
-
     /**
      * ROADMAP Task 15 Phase B: the persistent, capped log-file store, built directly from this
      * `Application`'s own `Context` -- deliberately **not** read off [appContainer] -- so it

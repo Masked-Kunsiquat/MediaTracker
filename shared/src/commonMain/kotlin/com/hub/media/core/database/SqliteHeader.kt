@@ -5,9 +5,25 @@ package com.hub.media.core.database
  * followed by a `NUL` terminator (https://www.sqlite.org/fileformat.html#the_database_header) --
  * stable since SQLite 3.0 and never changed since.
  */
-private val SQLITE_MAGIC: ByteArray = byteArrayOf(
-    0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
-)
+private val SQLITE_MAGIC: ByteArray =
+    byteArrayOf(
+        0x53,
+        0x51,
+        0x4c,
+        0x69,
+        0x74,
+        0x65,
+        0x20,
+        0x66,
+        0x6f,
+        0x72,
+        0x6d,
+        0x61,
+        0x74,
+        0x20,
+        0x33,
+        0x00,
+    )
 
 /**
  * SQLite's fixed database header size in bytes. Every valid SQLite file is at least this long
@@ -30,7 +46,9 @@ private const val USER_VERSION_OFFSET = 60
  * @property userVersion The schema version Room stamped into the file via `PRAGMA user_version`
  *   at the time it was written (or `0` for a SQLite file Room has never touched).
  */
-public data class SqliteHeaderInfo(public val userVersion: Int)
+public data class SqliteHeaderInfo(
+    public val userVersion: Int,
+)
 
 /**
  * Parses the first [SQLITE_HEADER_SIZE] bytes of a candidate `.sqlite`/`.db` file (ROADMAP Task 8
@@ -57,9 +75,10 @@ public fun parseSqliteHeader(bytes: ByteArray): SqliteHeaderInfo? {
     for (i in SQLITE_MAGIC.indices) {
         if (bytes[i] != SQLITE_MAGIC[i]) return null
     }
-    val userVersion = ((bytes[USER_VERSION_OFFSET].toInt() and 0xFF) shl 24) or
-        ((bytes[USER_VERSION_OFFSET + 1].toInt() and 0xFF) shl 16) or
-        ((bytes[USER_VERSION_OFFSET + 2].toInt() and 0xFF) shl 8) or
-        (bytes[USER_VERSION_OFFSET + 3].toInt() and 0xFF)
+    val userVersion =
+        ((bytes[USER_VERSION_OFFSET].toInt() and 0xFF) shl 24) or
+            ((bytes[USER_VERSION_OFFSET + 1].toInt() and 0xFF) shl 16) or
+            ((bytes[USER_VERSION_OFFSET + 2].toInt() and 0xFF) shl 8) or
+            (bytes[USER_VERSION_OFFSET + 3].toInt() and 0xFF)
     return SqliteHeaderInfo(userVersion)
 }

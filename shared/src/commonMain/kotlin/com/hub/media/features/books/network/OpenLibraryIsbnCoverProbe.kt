@@ -10,11 +10,11 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.fromHttpToGmtDate
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
-import kotlinx.coroutines.CancellationException
 
 private const val OPEN_LIBRARY_COVERS_ISBN_URL = "https://covers.openlibrary.org/b/isbn"
 
@@ -37,7 +37,9 @@ private val DEFAULT_RETRY_AFTER: Duration = OPEN_LIBRARY_COVER_QUOTA_WINDOW
  */
 public sealed class CoverProbeResult {
     /** A real cover exists; [url] is the probed, directly-fetchable image URL. */
-    public data class Found(public val url: String) : CoverProbeResult()
+    public data class Found(
+        public val url: String,
+    ) : CoverProbeResult()
 
     /**
      * The provider affirmatively confirmed no cover exists for this ISBN (a real 404, thanks to
@@ -56,7 +58,9 @@ public sealed class CoverProbeResult {
      * treat this the same as [NotFound] when it can act on the difference (i.e. pause and retry
      * later rather than writing off the book as coverless).
      */
-    public data class RateLimited(public val retryAfter: Duration) : CoverProbeResult()
+    public data class RateLimited(
+        public val retryAfter: Duration,
+    ) : CoverProbeResult()
 }
 
 /**
@@ -212,7 +216,10 @@ public class OpenLibraryIsbnCoverProbe(
  * An unparsable (neither form) or absent header returns `null`, and the call site falls back to
  * [DEFAULT_RETRY_AFTER] rather than this function guessing.
  */
-private fun parseRetryAfter(response: HttpResponse, clock: Clock): Duration? {
+private fun parseRetryAfter(
+    response: HttpResponse,
+    clock: Clock,
+): Duration? {
     val header = response.headers[HttpHeaders.RetryAfter]?.trim() ?: return null
 
     header.toLongOrNull()?.let { delaySeconds -> return delaySeconds.takeIf { it >= 0 }?.seconds }

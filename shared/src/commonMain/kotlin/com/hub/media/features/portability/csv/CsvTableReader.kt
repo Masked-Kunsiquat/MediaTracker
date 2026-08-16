@@ -2,12 +2,16 @@ package com.hub.media.features.portability.csv
 
 /** Structurally-validated CSV table, or a description of why the file was rejected outright. */
 public sealed class CsvTableResult {
-
     /** [header] is exactly the expected header; every entry in [rows] has [header].size fields. */
-    public data class Success(public val header: List<String>, public val rows: List<List<String>>) : CsvTableResult()
+    public data class Success(
+        public val header: List<String>,
+        public val rows: List<List<String>>,
+    ) : CsvTableResult()
 
     /** The file was rejected wholesale -- see [CsvTableReader]'s KDoc for what triggers this. */
-    public data class Failure(public val message: String) : CsvTableResult()
+    public data class Failure(
+        public val message: String,
+    ) : CsvTableResult()
 }
 
 /**
@@ -56,17 +60,17 @@ public sealed class CsvTableResult {
  *   here today since that file's column set hasn't changed since `v1`.
  */
 public object CsvTableReader {
-
     public fun read(
         text: String,
         expectedHeader: List<String>,
         legacyHeaders: Map<List<String>, (List<String>) -> List<String>> = emptyMap(),
     ): CsvTableResult {
         val parsed = CsvReader.parse(text)
-        val rows = when (parsed) {
-            is CsvParseResult.Failure -> return CsvTableResult.Failure(parsed.message)
-            is CsvParseResult.Success -> parsed.rows
-        }
+        val rows =
+            when (parsed) {
+                is CsvParseResult.Failure -> return CsvTableResult.Failure(parsed.message)
+                is CsvParseResult.Success -> parsed.rows
+            }
 
         if (rows.isEmpty()) {
             return CsvTableResult.Failure("The file is empty -- no header row was found.")
@@ -98,10 +102,11 @@ public object CsvTableReader {
         if (dataRows.isNotEmpty()) {
             val versionColumnIndex = header.indexOf(CSV_SCHEMA_VERSION_COLUMN)
             val rawVersion = dataRows.first()[versionColumnIndex]
-            val fileVersion = rawVersion.toIntOrNull()
-                ?: return CsvTableResult.Failure(
-                    "Row 2's $CSV_SCHEMA_VERSION_COLUMN ('$rawVersion') is not a valid integer.",
-                )
+            val fileVersion =
+                rawVersion.toIntOrNull()
+                    ?: return CsvTableResult.Failure(
+                        "Row 2's $CSV_SCHEMA_VERSION_COLUMN ('$rawVersion') is not a valid integer.",
+                    )
             if (fileVersion > CSV_SCHEMA_VERSION) {
                 return CsvTableResult.Failure(
                     "This file was exported by a newer version of MediaTracker " +

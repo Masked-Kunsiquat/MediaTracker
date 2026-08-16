@@ -19,7 +19,6 @@ import kotlin.time.Instant
  * (no real titles/people/ISBNs beyond made-up placeholders) per this phase's "no PII" constraint.
  */
 class LibraryCsvExporterTest {
-
     // Fixed, well-known epoch millis (avoids depending on any Instant string-parsing API existing
     // on this Kotlin version) -- ISO-8601-ness of the exported form is verified structurally via
     // ISO_INSTANT_REGEX below, and exact-value equality is checked against createdAt.toString()
@@ -51,34 +50,38 @@ class LibraryCsvExporterTest {
 
     @Test
     fun export_fullyPopulatedBook_includesEveryFieldInOrder() {
-        val mediaItem = MediaItemEntity(
-            id = "media-1",
-            type = MediaType.BOOK,
-            title = "A Sample Title",
-            releaseYear = 2019,
-            purchasePrice = 14.99,
-            createdAt = createdAt,
-            coverImageHash = "deadbeef.jpg",
-        )
-        val details = BookDetailsEntity(
-            mediaId = "media-1",
-            isbn = "9780000000001",
-            format = BookFormat.HARDCOVER,
-            totalPages = 342,
-            status = ReadingStatus.FINISHED,
-            finishedAt = finishedAt,
-            trackingMode = TrackingMode.PAGES,
-            authors = "Ann Sample Author",
-        )
-        val identifiers = listOf(
-            ExternalIdentifierEntity("media-1", IdentifierProvider.ISBN, "9780000000001"),
-            ExternalIdentifierEntity("media-1", IdentifierProvider.OPEN_LIBRARY, "OL999999M"),
-        )
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-1",
+                type = MediaType.BOOK,
+                title = "A Sample Title",
+                releaseYear = 2019,
+                purchasePrice = 14.99,
+                createdAt = createdAt,
+                coverImageHash = "deadbeef.jpg",
+            )
+        val details =
+            BookDetailsEntity(
+                mediaId = "media-1",
+                isbn = "9780000000001",
+                format = BookFormat.HARDCOVER,
+                totalPages = 342,
+                status = ReadingStatus.FINISHED,
+                finishedAt = finishedAt,
+                trackingMode = TrackingMode.PAGES,
+                authors = "Ann Sample Author",
+            )
+        val identifiers =
+            listOf(
+                ExternalIdentifierEntity("media-1", IdentifierProvider.ISBN, "9780000000001"),
+                ExternalIdentifierEntity("media-1", IdentifierProvider.OPEN_LIBRARY, "OL999999M"),
+            )
 
-        val csv = LibraryCsvExporter.export(
-            books = listOf(BookWithDetails(mediaItem, details)),
-            identifiersByMediaId = mapOf("media-1" to identifiers),
-        )
+        val csv =
+            LibraryCsvExporter.export(
+                books = listOf(BookWithDetails(mediaItem, details)),
+                identifiersByMediaId = mapOf("media-1" to identifiers),
+            )
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
 
@@ -104,24 +107,26 @@ class LibraryCsvExporterTest {
 
     @Test
     fun export_minimalBook_nullableFieldsExportAsEmpty() {
-        val mediaItem = MediaItemEntity(
-            id = "media-2",
-            type = MediaType.BOOK,
-            title = "Minimal Book",
-            releaseYear = null,
-            purchasePrice = null,
-            createdAt = createdAt,
-            coverImageHash = null,
-        )
-        val details = BookDetailsEntity(
-            mediaId = "media-2",
-            isbn = null,
-            format = BookFormat.EBOOK,
-            totalPages = null,
-            status = ReadingStatus.TO_READ,
-            finishedAt = null,
-            trackingMode = TrackingMode.PERCENT,
-        )
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-2",
+                type = MediaType.BOOK,
+                title = "Minimal Book",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+        val details =
+            BookDetailsEntity(
+                mediaId = "media-2",
+                isbn = null,
+                format = BookFormat.EBOOK,
+                totalPages = null,
+                status = ReadingStatus.TO_READ,
+                finishedAt = null,
+                trackingMode = TrackingMode.PERCENT,
+            )
 
         val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details)), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
@@ -141,15 +146,16 @@ class LibraryCsvExporterTest {
     fun export_missingBookDetailsRow_leavesBookDetailsColumnsEmptyWithoutCrashing() {
         // Data-integrity edge case documented on BookRepository.observeBookDetail: a MediaItemEntity
         // can (in theory) have no BookDetailsEntity row.
-        val mediaItem = MediaItemEntity(
-            id = "media-3",
-            type = MediaType.BOOK,
-            title = "Orphaned Media Item",
-            releaseYear = null,
-            purchasePrice = null,
-            createdAt = createdAt,
-            coverImageHash = null,
-        )
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-3",
+                type = MediaType.BOOK,
+                title = "Orphaned Media Item",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
         val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details = null)), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
@@ -165,16 +171,18 @@ class LibraryCsvExporterTest {
 
     @Test
     fun export_titleContainingCommaAndQuotes_isEscapedAndStillParsesAsOneField() {
-        val mediaItem = MediaItemEntity(
-            id = "media-4",
-            type = MediaType.BOOK,
-            title = "The \"Best\" Book, Ever",
-            releaseYear = null,
-            purchasePrice = null,
-            createdAt = createdAt,
-            coverImageHash = null,
-        )
-        val details = BookDetailsEntity(mediaId = "media-4", isbn = null, format = BookFormat.PHYSICAL, totalPages = null)
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-4",
+                type = MediaType.BOOK,
+                title = "The \"Best\" Book, Ever",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+        val details =
+            BookDetailsEntity(mediaId = "media-4", isbn = null, format = BookFormat.PHYSICAL, totalPages = null)
 
         val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details)), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
@@ -192,12 +200,13 @@ class LibraryCsvExporterTest {
 
     @Test
     fun export_enumFields_exportByName() {
-        val book = bookWithDetails(
-            mediaId = "media-6",
-            format = BookFormat.PAPERBACK,
-            status = ReadingStatus.DNF,
-            trackingMode = TrackingMode.PERCENT,
-        )
+        val book =
+            bookWithDetails(
+                mediaId = "media-6",
+                format = BookFormat.PAPERBACK,
+                status = ReadingStatus.DNF,
+                trackingMode = TrackingMode.PERCENT,
+            )
         val csv = LibraryCsvExporter.export(listOf(book), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
@@ -212,25 +221,28 @@ class LibraryCsvExporterTest {
         format: BookFormat = BookFormat.PHYSICAL,
         status: ReadingStatus = ReadingStatus.TO_READ,
         trackingMode: TrackingMode = TrackingMode.PAGES,
-    ): BookWithDetails = BookWithDetails(
-        mediaItem = MediaItemEntity(
-            id = mediaId,
-            type = MediaType.BOOK,
-            title = "Sample Title $mediaId",
-            releaseYear = 2020,
-            purchasePrice = 9.99,
-            createdAt = createdAt,
-            coverImageHash = null,
-        ),
-        details = BookDetailsEntity(
-            mediaId = mediaId,
-            isbn = "9780000000000",
-            format = format,
-            totalPages = 200,
-            status = status,
-            trackingMode = trackingMode,
-        ),
-    )
+    ): BookWithDetails =
+        BookWithDetails(
+            mediaItem =
+                MediaItemEntity(
+                    id = mediaId,
+                    type = MediaType.BOOK,
+                    title = "Sample Title $mediaId",
+                    releaseYear = 2020,
+                    purchasePrice = 9.99,
+                    createdAt = createdAt,
+                    coverImageHash = null,
+                ),
+            details =
+                BookDetailsEntity(
+                    mediaId = mediaId,
+                    isbn = "9780000000000",
+                    format = format,
+                    totalPages = 200,
+                    status = status,
+                    trackingMode = trackingMode,
+                ),
+        )
 
     private companion object {
         /** Structural check for ISO-8601 UTC ("extended" form, kotlin.time.Instant.toString()'s shape). */

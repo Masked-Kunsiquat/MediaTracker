@@ -17,7 +17,11 @@ import com.hub.media.core.util.error
  * diagnosable. Logs the schema-version transition only (see [Logger][com.hub.media.core.util.Logger]'s
  * identifier rule) -- never any row data a migration happened to be touching when it failed.
  */
-private inline fun loggedMigration(fromVersion: Int, toVersion: Int, body: () -> Unit) {
+private inline fun loggedMigration(
+    fromVersion: Int,
+    toVersion: Int,
+    body: () -> Unit,
+) {
     try {
         body()
     } catch (e: Exception) {
@@ -54,35 +58,37 @@ private inline fun loggedMigration(fromVersion: Int, toVersion: Int, body: () ->
  * (including a real duration and a `0`-duration edge case), runs this migration, and asserts both
  * rows still exist afterward with their values intact.
  */
-public val MIGRATION_1_2: Migration = object : Migration(1, 2) {
-    override fun migrate(connection: SQLiteConnection) = loggedMigration(1, 2) {
-        connection.execSQL(
-            "CREATE TABLE IF NOT EXISTS `reading_sessions_new` (" +
-                "`id` TEXT NOT NULL, " +
-                "`mediaId` TEXT NOT NULL, " +
-                "`timestampStart` INTEGER NOT NULL, " +
-                "`timestampEnd` INTEGER NOT NULL, " +
-                "`durationSeconds` INTEGER, " +
-                "`startUnit` REAL NOT NULL, " +
-                "`endUnit` REAL NOT NULL, " +
-                "`deltaPages` INTEGER, " +
-                "`notes` TEXT, " +
-                "PRIMARY KEY(`id`), " +
-                "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
-        )
-        connection.execSQL(
-            "INSERT INTO `reading_sessions_new` " +
-                "(`id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes`) " +
-                "SELECT `id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes` " +
-                "FROM `reading_sessions`",
-        )
-        connection.execSQL("DROP TABLE `reading_sessions`")
-        connection.execSQL("ALTER TABLE `reading_sessions_new` RENAME TO `reading_sessions`")
-        connection.execSQL(
-            "CREATE INDEX IF NOT EXISTS `index_reading_sessions_mediaId` ON `reading_sessions` (`mediaId`)",
-        )
+public val MIGRATION_1_2: Migration =
+    object : Migration(1, 2) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(1, 2) {
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reading_sessions_new` (" +
+                        "`id` TEXT NOT NULL, " +
+                        "`mediaId` TEXT NOT NULL, " +
+                        "`timestampStart` INTEGER NOT NULL, " +
+                        "`timestampEnd` INTEGER NOT NULL, " +
+                        "`durationSeconds` INTEGER, " +
+                        "`startUnit` REAL NOT NULL, " +
+                        "`endUnit` REAL NOT NULL, " +
+                        "`deltaPages` INTEGER, " +
+                        "`notes` TEXT, " +
+                        "PRIMARY KEY(`id`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `reading_sessions_new` " +
+                        "(`id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes`) " +
+                        "SELECT `id`, `mediaId`, `timestampStart`, `timestampEnd`, `durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes` " +
+                        "FROM `reading_sessions`",
+                )
+                connection.execSQL("DROP TABLE `reading_sessions`")
+                connection.execSQL("ALTER TABLE `reading_sessions_new` RENAME TO `reading_sessions`")
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_reading_sessions_mediaId` ON `reading_sessions` (`mediaId`)",
+                )
+            }
     }
-}
 
 /**
  * Schema v2 -> v3 (ROADMAP Task 6 Phase C): adds
@@ -136,20 +142,22 @@ public val MIGRATION_1_2: Migration = object : Migration(1, 2) {
  * `'READING'` and the latter on `'TO_READ'`, both with `finishedAt` null and every pre-existing
  * column value intact.
  */
-public val MIGRATION_2_3: Migration = object : Migration(2, 3) {
-    override fun migrate(connection: SQLiteConnection) = loggedMigration(2, 3) {
-        connection.execSQL(
-            "ALTER TABLE `book_details` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'TO_READ'",
-        )
-        connection.execSQL(
-            "ALTER TABLE `book_details` ADD COLUMN `finishedAt` INTEGER DEFAULT NULL",
-        )
-        connection.execSQL(
-            "UPDATE `book_details` SET `status` = 'READING' " +
-                "WHERE EXISTS (SELECT 1 FROM `reading_sessions` WHERE `reading_sessions`.`mediaId` = `book_details`.`mediaId`)",
-        )
+public val MIGRATION_2_3: Migration =
+    object : Migration(2, 3) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(2, 3) {
+                connection.execSQL(
+                    "ALTER TABLE `book_details` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'TO_READ'",
+                )
+                connection.execSQL(
+                    "ALTER TABLE `book_details` ADD COLUMN `finishedAt` INTEGER DEFAULT NULL",
+                )
+                connection.execSQL(
+                    "UPDATE `book_details` SET `status` = 'READING' " +
+                        "WHERE EXISTS (SELECT 1 FROM `reading_sessions` WHERE `reading_sessions`.`mediaId` = `book_details`.`mediaId`)",
+                )
+            }
     }
-}
 
 /**
  * Schema v3 -> v4 (ROADMAP Task 7 Phase A): bundles two independent schema changes into one
@@ -203,20 +211,22 @@ public val MIGRATION_2_3: Migration = object : Migration(2, 3) {
  * `trackingMode = 'PAGES'` and the latter on `'PERCENT'`, with every pre-existing column intact and
  * `app_settings` present and insertable.
  */
-public val MIGRATION_3_4: Migration = object : Migration(3, 4) {
-    override fun migrate(connection: SQLiteConnection) = loggedMigration(3, 4) {
-        connection.execSQL(
-            "ALTER TABLE `book_details` ADD COLUMN `trackingMode` TEXT NOT NULL DEFAULT 'PAGES'",
-        )
-        connection.execSQL(
-            "UPDATE `book_details` SET `trackingMode` = 'PERCENT' WHERE `totalPages` IS NULL",
-        )
-        connection.execSQL(
-            "CREATE TABLE IF NOT EXISTS `app_settings` (" +
-                "`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
-        )
+public val MIGRATION_3_4: Migration =
+    object : Migration(3, 4) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(3, 4) {
+                connection.execSQL(
+                    "ALTER TABLE `book_details` ADD COLUMN `trackingMode` TEXT NOT NULL DEFAULT 'PAGES'",
+                )
+                connection.execSQL(
+                    "UPDATE `book_details` SET `trackingMode` = 'PERCENT' WHERE `totalPages` IS NULL",
+                )
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `app_settings` (" +
+                        "`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+                )
+            }
     }
-}
 
 /**
  * Schema v4 -> v5 (ROADMAP Task 9 Phase A): adds
@@ -250,10 +260,12 @@ public val MIGRATION_3_4: Migration = object : Migration(3, 4) {
  * `authors` column landing `NULL`, plus a "new capability" test proving the relaxed schema accepts
  * a real `authors` value going forward.
  */
-public val MIGRATION_4_5: Migration = object : Migration(4, 5) {
-    override fun migrate(connection: SQLiteConnection) = loggedMigration(4, 5) {
-        connection.execSQL(
-            "ALTER TABLE `book_details` ADD COLUMN `authors` TEXT DEFAULT NULL",
-        )
+public val MIGRATION_4_5: Migration =
+    object : Migration(4, 5) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(4, 5) {
+                connection.execSQL(
+                    "ALTER TABLE `book_details` ADD COLUMN `authors` TEXT DEFAULT NULL",
+                )
+            }
     }
-}

@@ -26,7 +26,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class DebugApplicationIdTest {
-
     @Test
     fun debugBuild_installsUnderItsOwnApplicationId() {
         val packageName = InstrumentationRegistry.getInstrumentation().targetContext.packageName

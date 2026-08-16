@@ -15,10 +15,8 @@ import com.hub.media.features.books.data.BookRepository
  * callers observe identical [com.hub.media.core.util.Resource.Error] text.
  */
 public object BookMetadataValidation {
-
     /** A title must not be blank -- used for both a manual edit and an imported CSV row. */
-    public fun validateTitle(title: String): String? =
-        if (title.isBlank()) "Title must not be blank" else null
+    public fun validateTitle(title: String): String? = if (title.isBlank()) "Title must not be blank" else null
 
     /**
      * A known [purchasePrice] must be finite and `>= 0`; `null` ("unknown") always passes.
@@ -35,12 +33,13 @@ public object BookMetadataValidation {
      * `Double.POSITIVE_INFINITY` (`"Infinity"` typed into the field). This check is what actually
      * stops that value from being persisted, regardless of what the UI layer's own gate lets through.
      */
-    public fun validatePurchasePrice(purchasePrice: Double?): String? = when {
-        purchasePrice == null -> null
-        !purchasePrice.isFinite() -> "Purchase price must be a finite number"
-        purchasePrice < 0.0 -> "Purchase price must not be negative"
-        else -> null
-    }
+    public fun validatePurchasePrice(purchasePrice: Double?): String? =
+        when {
+            purchasePrice == null -> null
+            !purchasePrice.isFinite() -> "Purchase price must be a finite number"
+            purchasePrice < 0.0 -> "Purchase price must not be negative"
+            else -> null
+        }
 
     /** A known [totalPages] must be `> 0`; `null` ("unknown") always passes. */
     public fun validateTotalPages(totalPages: Int?): String? =

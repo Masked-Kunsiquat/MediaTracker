@@ -7,7 +7,6 @@ import com.hub.media.features.books.timer.ReadingTimerResult
 
 /** UI state for the book detail screen (ROADMAP Task 4 Phase B). */
 public sealed class BookDetailUiState {
-
     /** Initial state before the first book/session emission arrives. */
     public data object Loading : BookDetailUiState()
 
@@ -52,7 +51,6 @@ public sealed class BookDetailUiState {
         val errorMessage: String? = null,
         val isRefetchingCover: Boolean = false,
     ) : BookDetailUiState() {
-
         /**
          * Current reading progress: the [ReadingSessionEntity.endUnit] of the most recent session
          * (`sessions` is already most-recent-first, so this is simply `sessions.firstOrNull()`),

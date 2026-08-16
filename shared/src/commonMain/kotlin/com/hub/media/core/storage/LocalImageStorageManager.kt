@@ -12,8 +12,9 @@ package com.hub.media.core.storage
  * @param baseDirectoryPath Absolute or relative path to the storage directory.
  *   Created if it does not exist.
  */
-public class LocalImageStorageManager(internal val baseDirectoryPath: String) {
-
+public class LocalImageStorageManager(
+    internal val baseDirectoryPath: String,
+) {
     /**
      * Saves an image byte array with content-addressing (SHA-256 hash).
      *
@@ -24,7 +25,9 @@ public class LocalImageStorageManager(internal val baseDirectoryPath: String) {
     public suspend fun saveImage(bytes: ByteArray): Result<String> {
         return try {
             if (bytes.isEmpty()) {
-                return Result.failure(IllegalArgumentException("Image bytes cannot be empty (corrupt image byte array per AGENTS.md §7)"))
+                return Result.failure(
+                    IllegalArgumentException("Image bytes cannot be empty (corrupt image byte array per AGENTS.md §7)"),
+                )
             }
 
             val hash = sha256Hex(bytes)
@@ -42,6 +45,7 @@ public class LocalImageStorageManager(internal val baseDirectoryPath: String) {
  * Computes SHA-256 hash as lowercase hex string.
  * Platform-specific implementation required due to java.security.MessageDigest.
  */
+
 /**
  * Removes the stored image named [fileName] from this manager's directory, if it is there.
  *
@@ -58,7 +62,10 @@ public class LocalImageStorageManager(internal val baseDirectoryPath: String) {
 public suspend fun LocalImageStorageManager.deleteImage(fileName: String): Boolean =
     deleteImageFile(baseDirectoryPath, fileName)
 
-internal expect suspend fun deleteImageFile(directoryPath: String, fileName: String): Boolean
+internal expect suspend fun deleteImageFile(
+    directoryPath: String,
+    fileName: String,
+): Boolean
 
 internal expect suspend fun sha256Hex(bytes: ByteArray): String
 

@@ -85,24 +85,41 @@ public interface Logger {
      * Logs [message] at [level] under [tag], optionally attaching [throwable]. See [Logger]'s KDoc
      * for the identifier rule [message] must follow.
      */
-    public fun log(level: LogLevel, tag: String, throwable: Throwable? = null, message: () -> String)
+    public fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable? = null,
+        message: () -> String,
+    )
 }
 
 /** [Logger.log] at [LogLevel.DEBUG]. See [Logger.log]. */
-public fun Logger.debug(tag: String, throwable: Throwable? = null, message: () -> String): Unit =
-    log(LogLevel.DEBUG, tag, throwable, message)
+public fun Logger.debug(
+    tag: String,
+    throwable: Throwable? = null,
+    message: () -> String,
+): Unit = log(LogLevel.DEBUG, tag, throwable, message)
 
 /** [Logger.log] at [LogLevel.INFO]. See [Logger.log]. */
-public fun Logger.info(tag: String, throwable: Throwable? = null, message: () -> String): Unit =
-    log(LogLevel.INFO, tag, throwable, message)
+public fun Logger.info(
+    tag: String,
+    throwable: Throwable? = null,
+    message: () -> String,
+): Unit = log(LogLevel.INFO, tag, throwable, message)
 
 /** [Logger.log] at [LogLevel.WARN]. See [Logger.log]. */
-public fun Logger.warn(tag: String, throwable: Throwable? = null, message: () -> String): Unit =
-    log(LogLevel.WARN, tag, throwable, message)
+public fun Logger.warn(
+    tag: String,
+    throwable: Throwable? = null,
+    message: () -> String,
+): Unit = log(LogLevel.WARN, tag, throwable, message)
 
 /** [Logger.log] at [LogLevel.ERROR]. See [Logger.log]. */
-public fun Logger.error(tag: String, throwable: Throwable? = null, message: () -> String): Unit =
-    log(LogLevel.ERROR, tag, throwable, message)
+public fun Logger.error(
+    tag: String,
+    throwable: Throwable? = null,
+    message: () -> String,
+): Unit = log(LogLevel.ERROR, tag, throwable, message)
 
 /**
  * The production [Logger] every adoption site in `shared/` defaults to (mirroring how
@@ -160,7 +177,10 @@ public object AppLogger : Logger {
      * @param delegate Where accepted log calls are routed. Defaults to a fresh [platformLogger] (the
      *   real android.util.Log/stdout sink) -- tests override this with a [RecordingLogger].
      */
-    public fun configure(minLevel: LogLevel, delegate: Logger = platformLogger()) {
+    public fun configure(
+        minLevel: LogLevel,
+        delegate: Logger = platformLogger(),
+    ) {
         this.minLevel = minLevel
         this.delegate = delegate
     }
@@ -206,7 +226,12 @@ public object AppLogger : Logger {
         this.minLevel = minLevel
     }
 
-    override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
+    override fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: () -> String,
+    ) {
         if (level < minLevel) return
         delegate.log(level, tag, throwable, message)
     }

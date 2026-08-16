@@ -15,15 +15,18 @@ import kotlin.test.assertNull
  *     and [decodeLogEntries] skips such a line without hiding the well-formed records around it.
  */
 class LogEntryCodecTest {
-
-    private fun roundTrip(message: String, tag: String = "Tag"): LogEntry {
-        val original = LogEntry(
-            seq = 1L,
-            timestampMillis = 1_700_000_000_000L,
-            level = LogLevel.INFO,
-            tag = tag,
-            message = message,
-        )
+    private fun roundTrip(
+        message: String,
+        tag: String = "Tag",
+    ): LogEntry {
+        val original =
+            LogEntry(
+                seq = 1L,
+                timestampMillis = 1_700_000_000_000L,
+                level = LogLevel.INFO,
+                tag = tag,
+                message = message,
+            )
         val encoded = encodeLogEntry(original)
         return decodeLogEntry(encoded) ?: error("expected a successful decode of: $encoded")
     }
@@ -125,11 +128,12 @@ class LogEntryCodecTest {
         // encodeLogEntries/decodeLogEntries pair is what LogFileStore actually calls on every
         // flush/read -- this proves it preserves both content and order across several entries,
         // not just a single one.
-        val entries = listOf(
-            LogEntry(1L, 1_000L, LogLevel.INFO, "T1", "first"),
-            LogEntry(2L, 2_000L, LogLevel.WARN, "T2", "second"),
-            LogEntry(3L, 3_000L, LogLevel.ERROR, "T3", "third, with a\nnewline\\and a backslash"),
-        )
+        val entries =
+            listOf(
+                LogEntry(1L, 1_000L, LogLevel.INFO, "T1", "first"),
+                LogEntry(2L, 2_000L, LogLevel.WARN, "T2", "second"),
+                LogEntry(3L, 3_000L, LogLevel.ERROR, "T3", "third, with a\nnewline\\and a backslash"),
+            )
 
         val decoded = decodeLogEntries(encodeLogEntries(entries))
 
@@ -144,12 +148,13 @@ class LogEntryCodecTest {
         // file's KDoc) -- nothing else in this suite exercises that branch of the mapNotNull.
         val first = LogEntry(1L, 1_000L, LogLevel.INFO, "T", "first, well-formed")
         val second = LogEntry(2L, 2_000L, LogLevel.WARN, "T", "second, well-formed")
-        val bytes = (
-            "\n" +
-                encodeLogEntry(first) + "\n" +
+        val bytes =
+            (
                 "\n" +
-                encodeLogEntry(second) + "\n" +
-                "\n"
+                    encodeLogEntry(first) + "\n" +
+                    "\n" +
+                    encodeLogEntry(second) + "\n" +
+                    "\n"
             ).encodeToByteArray()
 
         val decoded = decodeLogEntries(bytes)
@@ -161,10 +166,11 @@ class LogEntryCodecTest {
     fun decodeLogEntries_garbageLineInMiddle_doesNotHideEntriesBeforeOrAfterIt() {
         val before = LogEntry(1L, 1_000L, LogLevel.INFO, "T", "first, well-formed")
         val after = LogEntry(2L, 2_000L, LogLevel.WARN, "T", "second, well-formed")
-        val bytes = (
-            encodeLogEntry(before) + "\n" +
-                "this line is not delimited log data at all" + "\n" +
-                encodeLogEntry(after) + "\n"
+        val bytes =
+            (
+                encodeLogEntry(before) + "\n" +
+                    "this line is not delimited log data at all" + "\n" +
+                    encodeLogEntry(after) + "\n"
             ).encodeToByteArray()
 
         val decoded = decodeLogEntries(bytes)
@@ -179,9 +185,10 @@ class LogEntryCodecTest {
         // read-modify-write"): the first record landed in full, including its trailing newline;
         // the process died while writing the second record, leaving an incomplete final "line"
         // (fewer than the required 5 fields) with no trailing newline at all.
-        val bytes = (
-            encodeLogEntry(complete) + "\n" +
-                "2${FIELD_DELIMITER}2000${FIELD_DELIMITER}ERROR${FIELD_DELIMITER}T"
+        val bytes =
+            (
+                encodeLogEntry(complete) + "\n" +
+                    "2${FIELD_DELIMITER}2000${FIELD_DELIMITER}ERROR${FIELD_DELIMITER}T"
             ).encodeToByteArray()
 
         val decoded = decodeLogEntries(bytes)

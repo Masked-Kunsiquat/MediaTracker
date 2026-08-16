@@ -1,14 +1,14 @@
 package com.hub.media.features.books.domain
 
-import com.hub.media.core.util.AppLogger
-import com.hub.media.core.util.Logger
-import com.hub.media.core.util.info
-import com.hub.media.core.util.warn
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.network.BookMetadata
 import com.hub.media.features.books.network.BookMetadataProvider
@@ -56,7 +56,6 @@ public class AddBookByIsbnUseCase(
     private val bookRepository: BookRepository,
     private val logger: Logger = AppLogger,
 ) : BookIngestionUseCase {
-
     /**
      * Runs the full ingestion flow for [isbn]:
      * 1. Normalizes and validates [isbn] (strips hyphens/spaces; requires 10 or 13 digits, with
@@ -143,7 +142,8 @@ public class AddBookByIsbnUseCase(
         // getOrNull() drops the cause on the floor. Not failing ingestion over a cover is right
         // (see execute's KDoc), but doing it silently leaves "why has this book got no cover?"
         // unanswerable -- the same silent-drop shape as OpenLibraryClient.fetchAuthorName.
-        return imageStorage.saveImage(downloadResult.data)
+        return imageStorage
+            .saveImage(downloadResult.data)
             .onFailure { logger.warn(TAG, it) { "Cover save failed during ingestion" } }
             .getOrNull()
     }
@@ -162,21 +162,21 @@ public class AddBookByIsbnUseCase(
     private fun buildExternalIdentifiers(
         metadata: BookMetadata,
         normalizedIsbn: String,
-    ): List<Pair<IdentifierProvider, String>> = buildList {
-        if (metadata.provider != IdentifierProvider.ISBN && metadata.externalId != null) {
-            add(metadata.provider to metadata.externalId)
+    ): List<Pair<IdentifierProvider, String>> =
+        buildList {
+            if (metadata.provider != IdentifierProvider.ISBN && metadata.externalId != null) {
+                add(metadata.provider to metadata.externalId)
+            }
+            // Its own provider slot rather than overwriting the edition key: the table's primary key is
+            // (mediaId, provider), so the two coexist and a later reader can tell a printing from the
+            // book it is a printing of.
+            metadata.workKey?.let { add(IdentifierProvider.OPEN_LIBRARY_WORK to it) }
+            add(IdentifierProvider.ISBN to normalizedIsbn)
         }
-        // Its own provider slot rather than overwriting the edition key: the table's primary key is
-        // (mediaId, provider), so the two coexist and a later reader can tell a printing from the
-        // book it is a printing of.
-        metadata.workKey?.let { add(IdentifierProvider.OPEN_LIBRARY_WORK to it) }
-        add(IdentifierProvider.ISBN to normalizedIsbn)
-    }
 }
 
 /** Strips hyphens and whitespace and upper-cases any trailing ISBN-10 check digit. */
-internal fun normalizeIsbn(rawIsbn: String): String =
-    rawIsbn.filterNot { it == '-' || it.isWhitespace() }.uppercase()
+internal fun normalizeIsbn(rawIsbn: String): String = rawIsbn.filterNot { it == '-' || it.isWhitespace() }.uppercase()
 
 /** True if [normalizedIsbn] is a well-formed 10- or 13-digit ISBN (post [normalizeIsbn]). */
 internal fun isValidIsbn(normalizedIsbn: String): Boolean =
@@ -203,9 +203,10 @@ public fun createDefaultAddBookByIsbnUseCase(
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
-): AddBookByIsbnUseCase = AddBookByIsbnUseCase(
-    metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
-    coverDownloader = CoverImageDownloader(httpClient),
-    imageStorage = imageStorage,
-    bookRepository = bookRepository,
-)
+): AddBookByIsbnUseCase =
+    AddBookByIsbnUseCase(
+        metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
+        coverDownloader = CoverImageDownloader(httpClient),
+        imageStorage = imageStorage,
+        bookRepository = bookRepository,
+    )

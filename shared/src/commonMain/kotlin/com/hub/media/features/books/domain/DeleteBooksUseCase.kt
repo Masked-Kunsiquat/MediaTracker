@@ -5,9 +5,9 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.deleteImage
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
-import kotlin.coroutines.cancellation.CancellationException
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Outcome of a bulk delete.
@@ -102,7 +102,6 @@ public class DeleteBooksUseCase(
     private val imageStorage: LocalImageStorageManager,
     private val logger: Logger = AppLogger,
 ) : BulkDeleteUseCase {
-
     /**
      * Deletes the books identified by [ids] and removes any cover file left unreferenced.
      *
@@ -117,7 +116,6 @@ public class DeleteBooksUseCase(
     public override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> {
         if (ids.isEmpty()) return Resource.Success(DeleteBooksSummary(0, 0, 0))
         return try {
-
             val dao = database.mediaItemDao()
             // Read the candidate hashes before the rows go: afterwards there is nothing left to ask.
             val candidateHashes = dao.getCoverHashesForIds(ids)

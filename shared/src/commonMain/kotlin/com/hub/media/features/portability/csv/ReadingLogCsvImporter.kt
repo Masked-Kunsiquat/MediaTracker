@@ -18,8 +18,13 @@ public data class ParsedSessionRow(
 
 /** Outcome of parsing one `reading_logs_export.csv` data row. */
 public sealed class SessionRowParseResult {
-    public data class Parsed(public val row: ParsedSessionRow) : SessionRowParseResult()
-    public data class Rejected(public val reason: String) : SessionRowParseResult()
+    public data class Parsed(
+        public val row: ParsedSessionRow,
+    ) : SessionRowParseResult()
+
+    public data class Rejected(
+        public val reason: String,
+    ) : SessionRowParseResult()
 }
 
 /**
@@ -36,12 +41,12 @@ public sealed class SessionRowParseResult {
  * `ImportDataUseCase`'s job (orphan-session detection), not a per-row parsing concern.
  */
 public object ReadingLogCsvImporter {
-
-    public fun parseRow(row: List<String>): SessionRowParseResult = try {
-        SessionRowParseResult.Parsed(buildRow(row))
-    } catch (e: RowRejectedException) {
-        SessionRowParseResult.Rejected(e.message ?: "Invalid row")
-    }
+    public fun parseRow(row: List<String>): SessionRowParseResult =
+        try {
+            SessionRowParseResult.Parsed(buildRow(row))
+        } catch (e: RowRejectedException) {
+            SessionRowParseResult.Rejected(e.message ?: "Invalid row")
+        }
 
     private fun buildRow(row: List<String>): ParsedSessionRow {
         val sessionId = row[COL_SESSION_ID].ifBlank { reject("session_id is required") }

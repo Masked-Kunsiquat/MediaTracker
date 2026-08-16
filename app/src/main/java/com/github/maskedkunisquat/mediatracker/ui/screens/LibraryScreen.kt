@@ -2,10 +2,6 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,25 +13,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -45,13 +32,25 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -69,8 +68,8 @@ import com.hub.media.features.books.data.BookWithDetails
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.LibraryUiState
 import com.hub.media.ui.LibraryViewModel
-import kotlin.time.Instant
 import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * Route-level composable for the library screen.
@@ -95,9 +94,10 @@ fun LibraryScreenRoute(
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
-    val viewModel: LibraryViewModel = viewModel(
-        factory = LibraryViewModelFactory(appContainer),
-    )
+    val viewModel: LibraryViewModel =
+        viewModel(
+            factory = LibraryViewModelFactory(appContainer),
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LibraryScreen(
@@ -216,16 +216,18 @@ fun LibraryScreen(
             )
         }
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             if (uiState.isEmpty) {
                 // Empty state
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -256,9 +258,10 @@ fun LibraryScreen(
                         // (uiState.isEmpty). One shared message covers both filters (and their
                         // combination) rather than trying to distinguish which one is responsible.
                         Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
@@ -270,9 +273,10 @@ fun LibraryScreen(
                         }
                     } else {
                         LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(
@@ -314,6 +318,7 @@ fun LibraryScreen(
  * it to the visible subset made the number change as filters changed, which read as the selection
  * being silently lost -- see [com.hub.media.ui.LibraryUiState.selectedBooks].
  */
+
 /**
  * Confirmation for a bulk delete (ROADMAP Task 14 Phase B), naming the books it will remove.
  *
@@ -353,10 +358,11 @@ private fun BulkDeleteConfirmationDialog(
                 }
                 if (titles.size > MAX_LISTED_TITLES) {
                     Text(
-                        text = stringResource(
-                            R.string.library_bulk_delete_more,
-                            titles.size - MAX_LISTED_TITLES,
-                        ),
+                        text =
+                            stringResource(
+                                R.string.library_bulk_delete_more,
+                                titles.size - MAX_LISTED_TITLES,
+                            ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -408,9 +414,10 @@ private fun SelectionTopBar(
                 )
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
+        colors =
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
     )
 }
 
@@ -422,9 +429,10 @@ private fun LibrarySearchField(
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
         placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
         leadingIcon = {
             Icon(
@@ -459,9 +467,10 @@ private fun StatusFilterRow(
     onSelectedChange: (ReadingStatus?) -> Unit,
 ) {
     LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
@@ -506,17 +515,16 @@ private fun BookCard(
 ) {
     val mediaItem = book.mediaItem
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-            )
-            .combinedClickable(
-                onClick = { if (selectionMode) onToggleSelection() else onClick() },
-                onLongClick = onToggleSelection,
-            )
-            .semantics { if (selected) this.selected = true }
-            .padding(8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                ).combinedClickable(
+                    onClick = { if (selectionMode) onToggleSelection() else onClick() },
+                    onLongClick = onToggleSelection,
+                ).semantics { if (selected) this.selected = true }
+                .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -526,10 +534,11 @@ private fun BookCard(
         // footprint -- Crop is kept (not Fit) since a uniform card-grid look is the goal here,
         // unlike the detail screen header (see BookHeader) where nothing should be cropped.
         Box(
-            modifier = Modifier
-                .fillMaxWidth(0.2f)
-                .padding(4.dp)
-                .aspectRatio(BOOK_COVER_ASPECT_RATIO),
+            modifier =
+                Modifier
+                    .fillMaxWidth(0.2f)
+                    .padding(4.dp)
+                    .aspectRatio(BOOK_COVER_ASPECT_RATIO),
         ) {
             CoverImage(
                 coverDir = coverStorageDir,
@@ -540,9 +549,10 @@ private fun BookCard(
 
         // Book info (title, year, status)
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(8.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
@@ -593,35 +603,39 @@ private fun BookCard(
 private fun LibraryScreenPreview() {
     MediaTrackerTheme {
         LibraryScreen(
-            uiState = LibraryUiState(
-                books = listOf(
-                    BookWithDetails(
-                        mediaItem = MediaItemEntity(
-                            id = "1",
-                            type = MediaType.BOOK,
-                            title = "The Great Gatsby",
-                            releaseYear = 1925,
-                            purchasePrice = 9.99,
-                            createdAt = Instant.fromEpochMilliseconds(0),
-                            coverImageHash = null,
+            uiState =
+                LibraryUiState(
+                    books =
+                        listOf(
+                            BookWithDetails(
+                                mediaItem =
+                                    MediaItemEntity(
+                                        id = "1",
+                                        type = MediaType.BOOK,
+                                        title = "The Great Gatsby",
+                                        releaseYear = 1925,
+                                        purchasePrice = 9.99,
+                                        createdAt = Instant.fromEpochMilliseconds(0),
+                                        coverImageHash = null,
+                                    ),
+                                details = null,
+                            ),
+                            BookWithDetails(
+                                mediaItem =
+                                    MediaItemEntity(
+                                        id = "2",
+                                        type = MediaType.BOOK,
+                                        title = "To Kill a Mockingbird",
+                                        releaseYear = 1960,
+                                        purchasePrice = 10.99,
+                                        createdAt = Instant.fromEpochMilliseconds(0),
+                                        coverImageHash = null,
+                                    ),
+                                details = null,
+                            ),
                         ),
-                        details = null,
-                    ),
-                    BookWithDetails(
-                        mediaItem = MediaItemEntity(
-                            id = "2",
-                            type = MediaType.BOOK,
-                            title = "To Kill a Mockingbird",
-                            releaseYear = 1960,
-                            purchasePrice = 10.99,
-                            createdAt = Instant.fromEpochMilliseconds(0),
-                            coverImageHash = null,
-                        ),
-                        details = null,
-                    ),
+                    isEmpty = false,
                 ),
-                isEmpty = false,
-            ),
             coverStorageDir = "/fake/path",
             onNavigateToAddBook = {},
             onBookClick = {},

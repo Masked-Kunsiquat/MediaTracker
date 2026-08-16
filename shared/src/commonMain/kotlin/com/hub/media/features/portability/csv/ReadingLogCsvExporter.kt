@@ -32,20 +32,20 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  *     [CsvUtil.escapeField]).
  */
 public object ReadingLogCsvExporter {
-
     /** Header row, in column order -- see class KDoc for what each column holds. */
-    public val HEADER: List<String> = listOf(
-        CSV_SCHEMA_VERSION_COLUMN,
-        "session_id",
-        "media_id",
-        "timestamp_start",
-        "timestamp_end",
-        "duration_seconds",
-        "start_unit",
-        "end_unit",
-        "delta_pages",
-        "notes",
-    )
+    public val HEADER: List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION_COLUMN,
+            "session_id",
+            "media_id",
+            "timestamp_start",
+            "timestamp_end",
+            "duration_seconds",
+            "start_unit",
+            "end_unit",
+            "delta_pages",
+            "notes",
+        )
 
     /**
      * Builds the complete CSV text for [sessions], including the header row.
@@ -55,24 +55,26 @@ public object ReadingLogCsvExporter {
      *   carries no semantic meaning here, since every row is fully self-identified by
      *   `session_id`/`media_id`).
      */
-    public fun export(sessions: List<ReadingSessionEntity>): String = buildString {
-        append(CsvUtil.buildLine(HEADER))
-        for (session in sessions) {
-            append(CsvUtil.buildLine(rowFor(session)))
+    public fun export(sessions: List<ReadingSessionEntity>): String =
+        buildString {
+            append(CsvUtil.buildLine(HEADER))
+            for (session in sessions) {
+                append(CsvUtil.buildLine(rowFor(session)))
+            }
         }
-    }
 
-    private fun rowFor(session: ReadingSessionEntity): List<String> = listOf(
-        CSV_SCHEMA_VERSION.toString(),
-        session.id,
-        session.mediaId,
-        session.timestampStart.toString(),
-        session.timestampEnd.toString(),
-        // Deliberately NOT `?: 0` -- see class KDoc point 6. `null` must stay the empty field.
-        session.durationSeconds?.toString().orEmpty(),
-        session.startUnit.toString(),
-        session.endUnit.toString(),
-        session.deltaPages?.toString().orEmpty(),
-        session.notes.orEmpty(),
-    )
+    private fun rowFor(session: ReadingSessionEntity): List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION.toString(),
+            session.id,
+            session.mediaId,
+            session.timestampStart.toString(),
+            session.timestampEnd.toString(),
+            // Deliberately NOT `?: 0` -- see class KDoc point 6. `null` must stay the empty field.
+            session.durationSeconds?.toString().orEmpty(),
+            session.startUnit.toString(),
+            session.endUnit.toString(),
+            session.deltaPages?.toString().orEmpty(),
+            session.notes.orEmpty(),
+        )
 }

@@ -12,10 +12,11 @@ import com.hub.media.core.database.entities.BookFormat
  * [BookFormat], so adding a future enum constant is a compile error here until a label is added.
  */
 @Composable
-internal fun BookFormat.displayLabel(): String = when (this) {
-    BookFormat.PHYSICAL -> stringResource(R.string.book_format_physical)
-    BookFormat.EBOOK -> stringResource(R.string.book_format_ebook)
-    BookFormat.AUDIOBOOK -> stringResource(R.string.book_format_audiobook)
-    BookFormat.PAPERBACK -> stringResource(R.string.book_format_paperback)
-    BookFormat.HARDCOVER -> stringResource(R.string.book_format_hardcover)
-}
+internal fun BookFormat.displayLabel(): String =
+    when (this) {
+        BookFormat.PHYSICAL -> stringResource(R.string.book_format_physical)
+        BookFormat.EBOOK -> stringResource(R.string.book_format_ebook)
+        BookFormat.AUDIOBOOK -> stringResource(R.string.book_format_audiobook)
+        BookFormat.PAPERBACK -> stringResource(R.string.book_format_paperback)
+        BookFormat.HARDCOVER -> stringResource(R.string.book_format_hardcover)
+    }

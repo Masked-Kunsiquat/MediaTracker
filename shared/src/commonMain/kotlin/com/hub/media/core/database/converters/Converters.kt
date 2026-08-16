@@ -16,7 +16,6 @@ import kotlin.time.Instant
  * milliseconds ([Long]), since SQLite has no native temporal type.
  */
 object Converters {
-
     @TypeConverter
     fun instantToEpochMillis(value: Instant?): Long? = value?.toEpochMilliseconds()
 

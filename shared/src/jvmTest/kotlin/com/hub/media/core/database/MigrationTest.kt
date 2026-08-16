@@ -7,6 +7,7 @@ import androidx.sqlite.execSQL
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
+import org.junit.Rule
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.deleteExisting
@@ -16,7 +17,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
-import org.junit.Rule
 
 /**
  * Validates every registered [androidx.room.migration.Migration] against the real exported schemas
@@ -54,18 +54,18 @@ import org.junit.Rule
  * than any DAO/entity from the current codebase.
  */
 class MigrationTest {
-
     private val testDbDir: Path = Files.createTempDirectory("migration-test")
     private val testDbPath: Path = testDbDir.resolve("test.db")
 
     @get:Rule
-    val helper: MigrationTestHelper = MigrationTestHelper(
-        schemaDirectoryPath = Path.of("schemas"),
-        databasePath = testDbPath,
-        driver = BundledSQLiteDriver(),
-        databaseClass = AppDatabase::class,
-        databaseFactory = { AppDatabaseConstructor.initialize() },
-    )
+    val helper: MigrationTestHelper =
+        MigrationTestHelper(
+            schemaDirectoryPath = Path.of("schemas"),
+            databasePath = testDbPath,
+            driver = BundledSQLiteDriver(),
+            databaseClass = AppDatabase::class,
+            databaseFactory = { AppDatabaseConstructor.initialize() },
+        )
 
     @AfterTest
     fun tearDown() {
@@ -114,17 +114,18 @@ class MigrationTest {
         helper.runMigrationsAndValidate(2, listOf(MIGRATION_1_2)).use { db ->
             val rows = mutableMapOf<String, LongArray>()
             val durations = mutableMapOf<String, Long?>()
-            db.prepare(
-                "SELECT id, durationSeconds, startUnit, endUnit, deltaPages FROM reading_sessions ORDER BY id",
-            ).use { stmt ->
-                while (stmt.step()) {
-                    val id = stmt.getText(0)
-                    durations[id] = if (stmt.isNull(1)) null else stmt.getLong(1)
-                    assertEquals(10.0, stmt.getDouble(2), "startUnit for $id")
-                    assertEquals(if (id == "session-real") 25.0 else 10.0, stmt.getDouble(3), "endUnit for $id")
-                    assertEquals(if (id == "session-real") 15 else 0, stmt.getInt(4), "deltaPages for $id")
+            db
+                .prepare(
+                    "SELECT id, durationSeconds, startUnit, endUnit, deltaPages FROM reading_sessions ORDER BY id",
+                ).use { stmt ->
+                    while (stmt.step()) {
+                        val id = stmt.getText(0)
+                        durations[id] = if (stmt.isNull(1)) null else stmt.getLong(1)
+                        assertEquals(10.0, stmt.getDouble(2), "startUnit for $id")
+                        assertEquals(if (id == "session-real") 25.0 else 10.0, stmt.getDouble(3), "endUnit for $id")
+                        assertEquals(if (id == "session-real") 15 else 0, stmt.getInt(4), "deltaPages for $id")
+                    }
                 }
-            }
 
             assertEquals(setOf("session-real", "session-zero"), durations.keys, "both v1 rows must survive")
             assertEquals(600L, durations.getValue("session-real"), "real duration must be preserved exactly")
@@ -171,11 +172,12 @@ class MigrationTest {
         }
 
         helper.runMigrationsAndValidate(2, listOf(MIGRATION_1_2)).use { db ->
-            db.prepare(
-                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_reading_sessions_mediaId'",
-            ).use { stmt ->
-                assertTrue(stmt.step(), "index_reading_sessions_mediaId must exist after migration")
-            }
+            db
+                .prepare(
+                    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_reading_sessions_mediaId'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "index_reading_sessions_mediaId must exist after migration")
+                }
         }
     }
 
@@ -229,8 +231,10 @@ class MigrationTest {
 
         helper.runMigrationsAndValidate(3, listOf(MIGRATION_2_3)).use { db ->
             val results = mutableMapOf<String, Pair<String, Boolean>>()
-            db.prepare("SELECT mediaId, status, finishedAt, isbn, format, totalPages FROM book_details ORDER BY mediaId")
-                .use { stmt ->
+            db
+                .prepare(
+                    "SELECT mediaId, status, finishedAt, isbn, format, totalPages FROM book_details ORDER BY mediaId",
+                ).use { stmt ->
                     while (stmt.step()) {
                         val mediaId = stmt.getText(0)
                         results[mediaId] = stmt.getText(1) to stmt.isNull(2)
@@ -358,25 +362,26 @@ class MigrationTest {
 
         helper.runMigrationsAndValidate(4, listOf(MIGRATION_3_4)).use { db ->
             val results = mutableMapOf<String, Pair<String, Boolean>>()
-            db.prepare(
-                "SELECT mediaId, trackingMode, totalPages, isbn, format, status " +
-                    "FROM book_details ORDER BY mediaId",
-            ).use { stmt ->
-                while (stmt.step()) {
-                    val mediaId = stmt.getText(0)
-                    results[mediaId] = stmt.getText(1) to stmt.isNull(2)
-                    // Pre-existing columns must survive untouched.
-                    if (mediaId == "media-with-total-pages") {
-                        assertEquals("9780000000000", stmt.getText(3))
-                        assertEquals("PHYSICAL", stmt.getText(4))
-                        assertEquals("READING", stmt.getText(5))
-                    } else {
-                        assertEquals("9780000000001", stmt.getText(3))
-                        assertEquals("EBOOK", stmt.getText(4))
-                        assertEquals("TO_READ", stmt.getText(5))
+            db
+                .prepare(
+                    "SELECT mediaId, trackingMode, totalPages, isbn, format, status " +
+                        "FROM book_details ORDER BY mediaId",
+                ).use { stmt ->
+                    while (stmt.step()) {
+                        val mediaId = stmt.getText(0)
+                        results[mediaId] = stmt.getText(1) to stmt.isNull(2)
+                        // Pre-existing columns must survive untouched.
+                        if (mediaId == "media-with-total-pages") {
+                            assertEquals("9780000000000", stmt.getText(3))
+                            assertEquals("PHYSICAL", stmt.getText(4))
+                            assertEquals("READING", stmt.getText(5))
+                        } else {
+                            assertEquals("9780000000001", stmt.getText(3))
+                            assertEquals("EBOOK", stmt.getText(4))
+                            assertEquals("TO_READ", stmt.getText(5))
+                        }
                     }
                 }
-            }
 
             assertEquals(
                 setOf("media-with-total-pages", "media-no-total-pages"),
@@ -520,19 +525,23 @@ class MigrationTest {
         }
 
         helper.runMigrationsAndValidate(5, listOf(MIGRATION_4_5)).use { db ->
-            db.prepare(
-                "SELECT authors, isbn, format, totalPages, status, finishedAt, trackingMode " +
-                    "FROM book_details WHERE mediaId = 'media-1'",
-            ).use { stmt ->
-                assertTrue(stmt.step(), "the pre-existing book_details row must survive")
-                assertTrue(stmt.isNull(0), "authors must land NULL for a pre-existing row -- no signal to derive it from")
-                assertEquals("9780000000000", stmt.getText(1))
-                assertEquals("PHYSICAL", stmt.getText(2))
-                assertEquals(300, stmt.getInt(3))
-                assertEquals("READING", stmt.getText(4))
-                assertTrue(stmt.isNull(5))
-                assertEquals("PAGES", stmt.getText(6))
-            }
+            db
+                .prepare(
+                    "SELECT authors, isbn, format, totalPages, status, finishedAt, trackingMode " +
+                        "FROM book_details WHERE mediaId = 'media-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the pre-existing book_details row must survive")
+                    assertTrue(
+                        stmt.isNull(0),
+                        "authors must land NULL for a pre-existing row -- no signal to derive it from",
+                    )
+                    assertEquals("9780000000000", stmt.getText(1))
+                    assertEquals("PHYSICAL", stmt.getText(2))
+                    assertEquals(300, stmt.getInt(3))
+                    assertEquals("READING", stmt.getText(4))
+                    assertTrue(stmt.isNull(5))
+                    assertEquals("PAGES", stmt.getText(6))
+                }
         }
     }
 

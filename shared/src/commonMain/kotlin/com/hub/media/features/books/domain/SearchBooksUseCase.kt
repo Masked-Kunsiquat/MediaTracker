@@ -53,7 +53,6 @@ public class SearchBooksUseCase(
     private val limit: Int = DEFAULT_SEARCH_LIMIT,
     cacheSize: Int = SEARCH_CACHE_SIZE,
 ) {
-
     private val cache = LruCache<String, List<BookSearchResult>>(cacheSize)
 
     /**
@@ -95,16 +94,14 @@ public class SearchBooksUseCase(
      * Whether [query] is long enough to search at all, using the same normalization [execute] does.
      * Exposed so the UI can prompt "keep typing" without duplicating the rules.
      */
-    public fun isQueryLongEnough(query: String): Boolean =
-        normalize(query).length >= MIN_SEARCH_QUERY_LENGTH
+    public fun isQueryLongEnough(query: String): Boolean = normalize(query).length >= MIN_SEARCH_QUERY_LENGTH
 
     /**
      * Collapses queries that differ only in whitespace or case onto one cache key, so "The Hobbit",
      * "the hobbit" and "the  hobbit" are one entry and one request rather than three. Lowercasing
      * is safe to do before sending because Open Library's search is case-insensitive anyway.
      */
-    private fun normalize(query: String): String =
-        query.trim().replace(WHITESPACE_RUN, " ").lowercase()
+    private fun normalize(query: String): String = query.trim().replace(WHITESPACE_RUN, " ").lowercase()
 
     private companion object {
         private val WHITESPACE_RUN = Regex("\\s+")

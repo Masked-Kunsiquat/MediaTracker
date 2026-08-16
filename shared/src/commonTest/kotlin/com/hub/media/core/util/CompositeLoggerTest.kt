@@ -10,7 +10,6 @@ import kotlin.test.assertEquals
  * [CompositeLogger]'s own caller.
  */
 class CompositeLoggerTest {
-
     @Test
     fun log_withMultipleDelegates_forwardsTheCallToEveryDelegate() {
         val first = RecordingLogger()
@@ -28,18 +27,25 @@ class CompositeLoggerTest {
         var evaluations = 0
         val composite = CompositeLogger(listOf(RecordingLogger(), RecordingLogger(), RecordingLogger()))
 
-        composite.log(LogLevel.INFO, "T", null) { evaluations++; "msg" }
+        composite.log(LogLevel.INFO, "T", null) {
+            evaluations++
+            "msg"
+        }
 
         assertEquals(1, evaluations, "the lambda must be evaluated once up front, not per delegate")
     }
 
     @Test
     fun log_firstDelegateThrows_secondDelegateStillReceivesTheCallAndNoExceptionPropagates() {
-        val throwing = object : Logger {
-            override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
-                throw RuntimeException("delegate exploded")
+        val throwing =
+            object : Logger {
+                override fun log(
+                    level: LogLevel,
+                    tag: String,
+                    throwable: Throwable?,
+                    message: () -> String,
+                ): Unit = throw RuntimeException("delegate exploded")
             }
-        }
         val healthy = RecordingLogger()
         val composite = CompositeLogger(listOf(throwing, healthy))
 
@@ -52,11 +58,15 @@ class CompositeLoggerTest {
     @Test
     fun log_secondDelegateThrows_firstDelegateAlreadyReceivedTheCallAndNoExceptionPropagates() {
         val healthy = RecordingLogger()
-        val throwing = object : Logger {
-            override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
-                throw RuntimeException("delegate exploded")
+        val throwing =
+            object : Logger {
+                override fun log(
+                    level: LogLevel,
+                    tag: String,
+                    throwable: Throwable?,
+                    message: () -> String,
+                ): Unit = throw RuntimeException("delegate exploded")
             }
-        }
         val composite = CompositeLogger(listOf(healthy, throwing))
 
         // Must not throw.

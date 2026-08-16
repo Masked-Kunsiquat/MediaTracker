@@ -25,12 +25,11 @@ public actual class DatabaseFactory {
         File(appDataDir, APP_DATABASE_FILE_NAME)
     }
 
-    public actual fun create(): RoomDatabase.Builder<AppDatabase> {
-        return Room.databaseBuilder<AppDatabase>(
+    public actual fun create(): RoomDatabase.Builder<AppDatabase> =
+        Room.databaseBuilder<AppDatabase>(
             name = dbFile.absolutePath,
             factory = { AppDatabaseConstructor.initialize() },
         )
-    }
 
     public actual fun databaseFilePath(): String = dbFile.absolutePath
 }

@@ -4,18 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.LogLevel
 import com.hub.media.features.settings.data.SettingsRepository
-import com.hub.media.features.settings.data.observeLogVerbosity
-import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.WeekStartDay
+import com.hub.media.features.settings.data.observeLogVerbosity
 import com.hub.media.features.settings.data.observeWeekStartDay
+import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setWeekStartDay
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Drives the Settings screen (ROADMAP Task 7 Phase B).
@@ -42,14 +42,13 @@ import kotlinx.coroutines.launch
 public class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
-
-    public val uiState: StateFlow<SettingsUiState> = combine(
-        settingsRepository.observeWeekStartDay(),
-        settingsRepository.observeLogVerbosity(),
-    ) { weekStartDay, logVerbosity ->
-        SettingsUiState(weekStartDay = weekStartDay, logVerbosity = logVerbosity)
-    }
-        .stateIn(
+    public val uiState: StateFlow<SettingsUiState> =
+        combine(
+            settingsRepository.observeWeekStartDay(),
+            settingsRepository.observeLogVerbosity(),
+        ) { weekStartDay, logVerbosity ->
+            SettingsUiState(weekStartDay = weekStartDay, logVerbosity = logVerbosity)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5.seconds),
             initialValue = SettingsUiState(),

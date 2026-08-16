@@ -17,7 +17,9 @@ internal const val APP_DATABASE_FILE_NAME = "media_tracker.db"
  * @param context Any [Context]; the application context is captured to avoid leaking an
  *   Activity/Service context into the long-lived database instance.
  */
-public actual class DatabaseFactory(private val context: Context) {
+public actual class DatabaseFactory(
+    private val context: Context,
+) {
     // Resolved once and reused by both create() and databaseFilePath() so the two can never
     // disagree about where the live database file lives.
     private val dbFile: File by lazy { context.applicationContext.getDatabasePath(APP_DATABASE_FILE_NAME) }

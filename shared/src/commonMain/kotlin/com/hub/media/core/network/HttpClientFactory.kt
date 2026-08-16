@@ -4,8 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.UserAgent
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -45,11 +45,12 @@ internal const val USER_AGENT = "MediaTracker (+https://github.com/Masked-Kunsiq
  * - `coerceInputValues`: fall back to declared defaults instead of failing when a field is the
  *   wrong type or `null` where not expected — public APIs are inconsistent about field presence.
  */
-public val networkJson: Json = Json {
-    ignoreUnknownKeys = true
-    isLenient = true
-    coerceInputValues = true
-}
+public val networkJson: Json =
+    Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
 /**
  * Builds a configured [HttpClient] shared by all provider clients in this module.
@@ -61,13 +62,12 @@ public val networkJson: Json = Json {
  *   Android/JVM, wired via the `ktor-client-okhttp` dependency) is used. Passing a
  *   `MockEngine` here is what makes offline unit testing of the provider clients possible.
  */
-public fun createHttpClient(engine: HttpClientEngine? = null): HttpClient {
-    return if (engine != null) {
+public fun createHttpClient(engine: HttpClientEngine? = null): HttpClient =
+    if (engine != null) {
         HttpClient(engine) { configureHttpClient() }
     } else {
         HttpClient { configureHttpClient() }
     }
-}
 
 private fun HttpClientConfig<*>.configureHttpClient() {
     // We map status codes manually via Resource.Error rather than letting Ktor throw on

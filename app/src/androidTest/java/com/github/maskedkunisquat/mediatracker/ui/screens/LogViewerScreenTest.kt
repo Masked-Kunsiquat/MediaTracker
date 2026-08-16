@@ -33,11 +33,13 @@ import org.junit.Test
  * covered separately by the navigation test.
  */
 class LogViewerScreenTest {
-
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun entry(seq: Long, message: String) = LogEntry(
+    private fun entry(
+        seq: Long,
+        message: String,
+    ) = LogEntry(
         seq = seq,
         timestampMillis = 1_700_000_000_000L + seq,
         level = LogLevel.WARN,
@@ -139,24 +141,31 @@ class LogViewerScreenTest {
         // still renders, it just lies about which entries are new -- so "it displays" is not enough
         // and the position is asserted against the entry it must precede.
         setContent(
-            uiState = LogViewerUiState(
-                // Message text chosen to collide with nothing else on screen: "fresh" would
-                // have matched the divider's own "New since refresh" and the toolbar's "Refresh".
-                entries = listOf(entry(1, "alpha-entry"), entry(2, "bravo-entry")),
-                newEntryBoundary = 1L,
-            ),
+            uiState =
+                LogViewerUiState(
+                    // Message text chosen to collide with nothing else on screen: "fresh" would
+                    // have matched the divider's own "New since refresh" and the toolbar's "Refresh".
+                    entries = listOf(entry(1, "alpha-entry"), entry(2, "bravo-entry")),
+                    newEntryBoundary = 1L,
+                ),
         )
 
         // useUnmergedTree: the entries live inside a SelectionContainer, which merges its
         // descendants' text into the parent node, so an exact-match lookup finds nothing in the
         // merged tree. The unmerged tree is also what position comparisons need -- merged nodes
         // report the bounds of the whole group, not of the individual Text.
-        val divider = composeRule
-            .onNodeWithText("New since refresh", useUnmergedTree = true).fetchSemanticsNode()
-        val oldEntry = composeRule
-            .onNodeWithText("alpha-entry", substring = true, useUnmergedTree = true).fetchSemanticsNode()
-        val newEntry = composeRule
-            .onNodeWithText("bravo-entry", substring = true, useUnmergedTree = true).fetchSemanticsNode()
+        val divider =
+            composeRule
+                .onNodeWithText("New since refresh", useUnmergedTree = true)
+                .fetchSemanticsNode()
+        val oldEntry =
+            composeRule
+                .onNodeWithText("alpha-entry", substring = true, useUnmergedTree = true)
+                .fetchSemanticsNode()
+        val newEntry =
+            composeRule
+                .onNodeWithText("bravo-entry", substring = true, useUnmergedTree = true)
+                .fetchSemanticsNode()
 
         assertTrue(
             "divider must sit below the old entry",

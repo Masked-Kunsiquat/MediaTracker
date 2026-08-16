@@ -35,7 +35,6 @@ import kotlinx.coroutines.launch
 public class RestoreViewModel(
     private val restoreDatabaseUseCase: RestoreDatabaseUseCase,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow<RestoreUiState>(RestoreUiState.Idle)
     public val uiState: StateFlow<RestoreUiState> = _uiState.asStateFlow()
 
@@ -50,10 +49,11 @@ public class RestoreViewModel(
 
         _uiState.value = RestoreUiState.Validating
         viewModelScope.launch {
-            _uiState.value = when (val result = restoreDatabaseUseCase.stage(incomingFilePath)) {
-                is Resource.Success -> RestoreUiState.AwaitingConfirmation(result.data)
-                is Resource.Error -> RestoreUiState.Error(result.message)
-            }
+            _uiState.value =
+                when (val result = restoreDatabaseUseCase.stage(incomingFilePath)) {
+                    is Resource.Success -> RestoreUiState.AwaitingConfirmation(result.data)
+                    is Resource.Error -> RestoreUiState.Error(result.message)
+                }
         }
     }
 

@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 public interface AppSettingsDao {
-
     /**
      * Inserts or replaces [setting] by its [AppSettingEntity.key] — the only write this table ever
      * needs, since every setting is a single upserted row (no separate insert-then-update distinction

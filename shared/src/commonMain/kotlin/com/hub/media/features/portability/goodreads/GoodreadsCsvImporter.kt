@@ -12,11 +12,11 @@ import com.hub.media.features.portability.csv.ParsedLibraryRow
 import com.hub.media.features.portability.csv.RowRejectedException
 import com.hub.media.features.portability.csv.parseOptionalInt
 import com.hub.media.features.portability.csv.reject
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Maps one `goodreads_library_export.csv` data row into this app's own [ParsedLibraryRow] shape
@@ -103,7 +103,6 @@ import kotlinx.datetime.atStartOfDayIn
  * problem specific to this importer.
  */
 public object GoodreadsCsvImporter {
-
     /**
      * User-facing notice for the three Goodreads columns this importer cannot store anywhere yet
      * (ROADMAP Task 8's Goodreads bullet, and the Phase D user decision built on top of it):
@@ -143,31 +142,40 @@ public object GoodreadsCsvImporter {
         columnIndex: Map<String, Int>,
         row: List<String>,
         clock: Clock = Clock.System,
-    ): LibraryRowParseResult = try {
-        LibraryRowParseResult.Parsed(buildRow(columnIndex, row, clock))
-    } catch (e: RowRejectedException) {
-        LibraryRowParseResult.Rejected(e.message ?: "Invalid row")
-    }
+    ): LibraryRowParseResult =
+        try {
+            LibraryRowParseResult.Parsed(buildRow(columnIndex, row, clock))
+        } catch (e: RowRejectedException) {
+            LibraryRowParseResult.Rejected(e.message ?: "Invalid row")
+        }
 
-    private fun buildRow(columnIndex: Map<String, Int>, row: List<String>, clock: Clock): ParsedLibraryRow {
+    private fun buildRow(
+        columnIndex: Map<String, Int>,
+        row: List<String>,
+        clock: Clock,
+    ): ParsedLibraryRow {
         val title = row.column(columnIndex, GoodreadsColumns.TITLE)
         BookMetadataValidation.validateTitle(title)?.let { reject(it) }
 
         val primaryAuthor = row.column(columnIndex, GoodreadsColumns.AUTHOR)
-        val additionalAuthors = row.column(columnIndex, GoodreadsColumns.ADDITIONAL_AUTHORS)
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        val additionalAuthors =
+            row
+                .column(columnIndex, GoodreadsColumns.ADDITIONAL_AUTHORS)
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
         val authors = joinAuthors(listOf(primaryAuthor) + additionalAuthors)
 
-        val originalYear = parseOptionalInt(
-            row.column(columnIndex, GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR),
-            GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR,
-        )
-        val editionYear = parseOptionalInt(
-            row.column(columnIndex, GoodreadsColumns.YEAR_PUBLISHED),
-            GoodreadsColumns.YEAR_PUBLISHED,
-        )
+        val originalYear =
+            parseOptionalInt(
+                row.column(columnIndex, GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR),
+                GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR,
+            )
+        val editionYear =
+            parseOptionalInt(
+                row.column(columnIndex, GoodreadsColumns.YEAR_PUBLISHED),
+                GoodreadsColumns.YEAR_PUBLISHED,
+            )
         val releaseYear = originalYear ?: editionYear
         BookMetadataValidation.validateReleaseYear(releaseYear)?.let { reject(it) }
 
@@ -177,7 +185,11 @@ public object GoodreadsCsvImporter {
 
         val format = mapBinding(row.column(columnIndex, GoodreadsColumns.BINDING))
 
-        val totalPages = parseOptionalInt(row.column(columnIndex, GoodreadsColumns.NUMBER_OF_PAGES), GoodreadsColumns.NUMBER_OF_PAGES)
+        val totalPages =
+            parseOptionalInt(
+                row.column(columnIndex, GoodreadsColumns.NUMBER_OF_PAGES),
+                GoodreadsColumns.NUMBER_OF_PAGES,
+            )
         BookMetadataValidation.validateTotalPages(totalPages)?.let { reject(it) }
 
         val status = mapExclusiveShelf(row.column(columnIndex, GoodreadsColumns.EXCLUSIVE_SHELF))
@@ -186,11 +198,12 @@ public object GoodreadsCsvImporter {
         // KDoc and BookDetailsEntity.finishedAt's own "when status most recently became FINISHED"
         // invariant; a stray Date Read on a currently-reading/to-read row (a Goodreads re-shelve
         // artifact) must not fabricate a finish date that contradicts the status right next to it.
-        val finishedAt = if (status == ReadingStatus.FINISHED) {
-            parseGoodreadsDate(row.column(columnIndex, GoodreadsColumns.DATE_READ))
-        } else {
-            null
-        }
+        val finishedAt =
+            if (status == ReadingStatus.FINISHED) {
+                parseGoodreadsDate(row.column(columnIndex, GoodreadsColumns.DATE_READ))
+            } else {
+                null
+            }
 
         val createdAt = parseGoodreadsDate(row.column(columnIndex, GoodreadsColumns.DATE_ADDED)) ?: clock.now()
 
@@ -214,8 +227,10 @@ public object GoodreadsCsvImporter {
         )
     }
 
-    private fun List<String>.column(columnIndex: Map<String, Int>, name: String): String =
-        columnIndex[name]?.let { getOrNull(it) }.orEmpty()
+    private fun List<String>.column(
+        columnIndex: Map<String, Int>,
+        name: String,
+    ): String = columnIndex[name]?.let { getOrNull(it) }.orEmpty()
 }
 
 /**
@@ -254,13 +269,14 @@ internal fun stripGoodreadsIsbnArmor(raw: String): String {
  * specific book to a more precise value later via the edit-metadata flow, exactly as that KDoc
  * already documents for the ISBN-ingestion case.
  */
-internal fun mapBinding(raw: String): BookFormat = when (raw.trim().lowercase()) {
-    "hardcover", "library binding", "board book", "leather bound" -> BookFormat.HARDCOVER
-    "paperback", "mass market paperback", "trade paperback", "spiral-bound", "unbound" -> BookFormat.PAPERBACK
-    "kindle edition", "ebook", "e-book", "nook" -> BookFormat.EBOOK
-    "audiobook", "audio cd", "audible audio" -> BookFormat.AUDIOBOOK
-    else -> BookFormat.PHYSICAL // includes blank -- see KDoc above.
-}
+internal fun mapBinding(raw: String): BookFormat =
+    when (raw.trim().lowercase()) {
+        "hardcover", "library binding", "board book", "leather bound" -> BookFormat.HARDCOVER
+        "paperback", "mass market paperback", "trade paperback", "spiral-bound", "unbound" -> BookFormat.PAPERBACK
+        "kindle edition", "ebook", "e-book", "nook" -> BookFormat.EBOOK
+        "audiobook", "audio cd", "audible audio" -> BookFormat.AUDIOBOOK
+        else -> BookFormat.PHYSICAL // includes blank -- see KDoc above.
+    }
 
 /**
  * Maps Goodreads' `Exclusive Shelf` column to [ReadingStatus] (ROADMAP Task 8's Goodreads bullet).
@@ -289,12 +305,13 @@ internal fun mapBinding(raw: String): BookFormat = when (raw.trim().lowercase())
  * never a per-row rejection, since `Exclusive Shelf` is an optional column under this phase's
  * "tolerate ... missing columns" brief.
  */
-internal fun mapExclusiveShelf(raw: String): ReadingStatus = when (raw.trim().lowercase()) {
-    "read" -> ReadingStatus.FINISHED
-    "currently-reading" -> ReadingStatus.READING
-    "to-read" -> ReadingStatus.TO_READ
-    else -> ReadingStatus.TO_READ
-}
+internal fun mapExclusiveShelf(raw: String): ReadingStatus =
+    when (raw.trim().lowercase()) {
+        "read" -> ReadingStatus.FINISHED
+        "currently-reading" -> ReadingStatus.READING
+        "to-read" -> ReadingStatus.TO_READ
+        else -> ReadingStatus.TO_READ
+    }
 
 /**
  * Parses a Goodreads `Date Read`/`Date Added` cell (format `yyyy/MM/dd`, e.g. `2023/05/12` -- the

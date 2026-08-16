@@ -18,8 +18,15 @@ package com.hub.media.core.util
  * [com.hub.media.core.storage.FileLogSink] via [withPlatformLogger] so both receive every entry,
  * rather than the file sink silently replacing the platform one.
  */
-public class CompositeLogger(private val delegates: List<Logger>) : Logger {
-    override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
+public class CompositeLogger(
+    private val delegates: List<Logger>,
+) : Logger {
+    override fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: () -> String,
+    ) {
         val text = message()
         for (delegate in delegates) {
             try {

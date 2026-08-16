@@ -1,11 +1,11 @@
 package com.hub.media.features.books.network
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /** Open Library's stated cover-lookup quota: 100 requests per IP, per rolling 5-minute window. */
 public const val OPEN_LIBRARY_COVER_QUOTA_MAX_REQUESTS: Int = 100
@@ -21,7 +21,9 @@ public sealed class RateLimitOutcome {
     public data object Allowed : RateLimitOutcome()
 
     /** No slots are available right now. [retryAfter] estimates when one will free up. */
-    public data class Denied(public val retryAfter: Duration) : RateLimitOutcome()
+    public data class Denied(
+        public val retryAfter: Duration,
+    ) : RateLimitOutcome()
 }
 
 /**
@@ -72,26 +74,27 @@ public class OpenLibraryCoverRateLimiter(
      * request) if under budget, or [RateLimitOutcome.Denied] with an estimated wait if not — in
      * which case the caller must NOT issue the underlying HTTP request at all.
      */
-    public suspend fun tryAcquire(): RateLimitOutcome = mutex.withLock {
-        val now = clock.now()
+    public suspend fun tryAcquire(): RateLimitOutcome =
+        mutex.withLock {
+            val now = clock.now()
 
-        blockedUntil?.let { until ->
-            if (now < until) return@withLock RateLimitOutcome.Denied(until - now)
-            blockedUntil = null
-        }
+            blockedUntil?.let { until ->
+                if (now < until) return@withLock RateLimitOutcome.Denied(until - now)
+                blockedUntil = null
+            }
 
-        while (requestTimestamps.isNotEmpty() && now - requestTimestamps.first() >= window) {
-            requestTimestamps.removeFirst()
-        }
+            while (requestTimestamps.isNotEmpty() && now - requestTimestamps.first() >= window) {
+                requestTimestamps.removeFirst()
+            }
 
-        return@withLock if (requestTimestamps.size < maxRequestsPerWindow) {
-            requestTimestamps.addLast(now)
-            RateLimitOutcome.Allowed
-        } else {
-            val retryAfter = window - (now - requestTimestamps.first())
-            RateLimitOutcome.Denied(retryAfter)
+            return@withLock if (requestTimestamps.size < maxRequestsPerWindow) {
+                requestTimestamps.addLast(now)
+                RateLimitOutcome.Allowed
+            } else {
+                val retryAfter = window - (now - requestTimestamps.first())
+                RateLimitOutcome.Denied(retryAfter)
+            }
         }
-    }
 
     /**
      * Records that the server itself refused a request with a rate-limit signal (429, or a 5xx
@@ -100,11 +103,12 @@ public class OpenLibraryCoverRateLimiter(
      * confirmed server-side refusal always wins over local (possibly stale/under-counted) tracking.
      * Never shortens an existing, later refusal already in effect.
      */
-    public suspend fun recordServerRefusal(retryAfter: Duration) = mutex.withLock {
-        val candidate = clock.now() + retryAfter
-        val current = blockedUntil
-        if (current == null || candidate > current) {
-            blockedUntil = candidate
+    public suspend fun recordServerRefusal(retryAfter: Duration) =
+        mutex.withLock {
+            val candidate = clock.now() + retryAfter
+            val current = blockedUntil
+            if (current == null || candidate > current) {
+                blockedUntil = candidate
+            }
         }
-    }
 }

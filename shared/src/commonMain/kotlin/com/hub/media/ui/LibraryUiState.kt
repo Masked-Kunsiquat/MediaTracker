@@ -32,6 +32,7 @@ import com.hub.media.features.books.data.BookWithDetails
  *   side indistinguishable from the Delete button being ignored. Cleared once shown, so it reports
  *   an event rather than becoming a state the screen can get stuck in.
  */
+
 /**
  * A delete failure, carried as an event rather than a bare message.
  *
@@ -40,7 +41,10 @@ import com.hub.media.features.books.data.BookWithDetails
  * text, the UI's `LaunchedEffect` would see no change and silently swallow the second, leaving the
  * user with a delete that appears to have quietly succeeded.
  */
-public data class DeleteErrorEvent(public val id: Long, public val message: String)
+public data class DeleteErrorEvent(
+    public val id: Long,
+    public val message: String,
+)
 
 public data class LibraryUiState(
     val books: List<BookWithDetails> = emptyList(),
@@ -50,7 +54,6 @@ public data class LibraryUiState(
     val selectedIds: Set<String> = emptySet(),
     val deleteError: DeleteErrorEvent? = null,
 ) {
-
     /**
      * True when a bulk selection is active, which is what swaps the library's app bar for the
      * contextual one. Derived from [selectedIds] rather than tracked as its own flag so the two
@@ -107,7 +110,14 @@ public data class LibraryUiState(
      */
     public val filteredBooks: List<BookWithDetails>
         get() {
-            val statusFiltered = if (statusFilter == null) books else books.filter { it.details?.status == statusFilter }
+            val statusFiltered =
+                if (statusFilter ==
+                    null
+                ) {
+                    books
+                } else {
+                    books.filter { it.details?.status == statusFilter }
+                }
             val query = searchQuery.trim()
             if (query.isEmpty()) return statusFiltered
             return statusFiltered.filter { book ->

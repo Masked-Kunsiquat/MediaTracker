@@ -35,8 +35,13 @@ public data class ParsedLibraryRow(
 
 /** Outcome of parsing one `library_export.csv` data row. */
 public sealed class LibraryRowParseResult {
-    public data class Parsed(public val row: ParsedLibraryRow) : LibraryRowParseResult()
-    public data class Rejected(public val reason: String) : LibraryRowParseResult()
+    public data class Parsed(
+        public val row: ParsedLibraryRow,
+    ) : LibraryRowParseResult()
+
+    public data class Rejected(
+        public val reason: String,
+    ) : LibraryRowParseResult()
 }
 
 /**
@@ -56,12 +61,12 @@ public sealed class LibraryRowParseResult {
  * so an imported row can never be held to a looser or stricter standard than a hand-typed one.
  */
 public object LibraryCsvImporter {
-
-    public fun parseRow(row: List<String>): LibraryRowParseResult = try {
-        LibraryRowParseResult.Parsed(buildRow(row))
-    } catch (e: RowRejectedException) {
-        LibraryRowParseResult.Rejected(e.message ?: "Invalid row")
-    }
+    public fun parseRow(row: List<String>): LibraryRowParseResult =
+        try {
+            LibraryRowParseResult.Parsed(buildRow(row))
+        } catch (e: RowRejectedException) {
+            LibraryRowParseResult.Rejected(e.message ?: "Invalid row")
+        }
 
     private fun buildRow(row: List<String>): ParsedLibraryRow {
         // media_id is required non-blank, but deliberately NOT validated as UUID-shaped, even
@@ -87,11 +92,12 @@ public object LibraryCsvImporter {
         //    matching tiers above) requires or assumes UUID syntax to function correctly.
         val mediaId = row[COL_MEDIA_ID].ifBlank { reject("media_id is required") }
 
-        val type = try {
-            MediaType.valueOf(row[COL_TYPE])
-        } catch (e: IllegalArgumentException) {
-            reject("Unknown media type '${row[COL_TYPE]}'")
-        }
+        val type =
+            try {
+                MediaType.valueOf(row[COL_TYPE])
+            } catch (e: IllegalArgumentException) {
+                reject("Unknown media type '${row[COL_TYPE]}'")
+            }
         if (type != MediaType.BOOK) {
             // Forward-compatible: a future export may carry MOVIE/TV_SHOW rows once Task 13 lands.
             // This app has no domain to import them into yet, so they're reported, not crashed on.
@@ -113,46 +119,49 @@ public object LibraryCsvImporter {
         val coverImageHash = row[COL_COVER_IMAGE_HASH].ifBlank { null }
         val isbn = row[COL_ISBN].ifBlank { null }
 
-        val format = row[COL_FORMAT].let { raw ->
-            if (raw.isBlank()) {
-                BookFormat.PHYSICAL
-            } else {
-                try {
-                    BookFormat.valueOf(raw)
-                } catch (e: IllegalArgumentException) {
-                    reject("Unknown book format '$raw'")
+        val format =
+            row[COL_FORMAT].let { raw ->
+                if (raw.isBlank()) {
+                    BookFormat.PHYSICAL
+                } else {
+                    try {
+                        BookFormat.valueOf(raw)
+                    } catch (e: IllegalArgumentException) {
+                        reject("Unknown book format '$raw'")
+                    }
                 }
             }
-        }
 
         val totalPages = parseOptionalInt(row[COL_TOTAL_PAGES], "total_pages")
         BookMetadataValidation.validateTotalPages(totalPages)?.let { reject(it) }
 
-        val status = row[COL_STATUS].let { raw ->
-            if (raw.isBlank()) {
-                ReadingStatus.TO_READ
-            } else {
-                try {
-                    ReadingStatus.valueOf(raw)
-                } catch (e: IllegalArgumentException) {
-                    reject("Unknown reading status '$raw'")
+        val status =
+            row[COL_STATUS].let { raw ->
+                if (raw.isBlank()) {
+                    ReadingStatus.TO_READ
+                } else {
+                    try {
+                        ReadingStatus.valueOf(raw)
+                    } catch (e: IllegalArgumentException) {
+                        reject("Unknown reading status '$raw'")
+                    }
                 }
             }
-        }
 
         val finishedAt = parseOptionalInstant(row[COL_FINISHED_AT], "finished_at")
 
-        val trackingMode = row[COL_TRACKING_MODE].let { raw ->
-            if (raw.isBlank()) {
-                if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT
-            } else {
-                try {
-                    TrackingMode.valueOf(raw)
-                } catch (e: IllegalArgumentException) {
-                    reject("Unknown tracking mode '$raw'")
+        val trackingMode =
+            row[COL_TRACKING_MODE].let { raw ->
+                if (raw.isBlank()) {
+                    if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT
+                } else {
+                    try {
+                        TrackingMode.valueOf(raw)
+                    } catch (e: IllegalArgumentException) {
+                        reject("Unknown tracking mode '$raw'")
+                    }
                 }
             }
-        }
 
         val externalIdentifiers = unpackIdentifiers(row[COL_EXTERNAL_IDENTIFIERS])
 
@@ -201,6 +210,5 @@ public object LibraryCsvImporter {
      * blank cell in a genuine `v2` file would (see [ParsedLibraryRow.authors]) -- there is no author
      * to recover from a file that never recorded one.
      */
-    public fun padLegacyV1Row(row: List<String>): List<String> =
-        row.toMutableList().apply { add(COL_AUTHORS, "") }
+    public fun padLegacyV1Row(row: List<String>): List<String> = row.toMutableList().apply { add(COL_AUTHORS, "") }
 }

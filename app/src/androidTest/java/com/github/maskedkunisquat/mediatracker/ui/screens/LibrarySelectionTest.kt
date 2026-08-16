@@ -8,16 +8,15 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
-import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.data.BookWithDetails
 import com.hub.media.ui.LibraryUiState
-import kotlin.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import kotlin.time.Instant
 
 /**
  * Behavioural tests for library multi-select (ROADMAP Task 14 Phase B).
@@ -34,20 +33,23 @@ import org.junit.Test
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
 class LibrarySelectionTest {
-
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun book(id: String, title: String) = BookWithDetails(
-        mediaItem = MediaItemEntity(
-            id = id,
-            type = MediaType.BOOK,
-            title = title,
-            releaseYear = null,
-            purchasePrice = null,
-            createdAt = Instant.fromEpochMilliseconds(0),
-            coverImageHash = null,
-        ),
+    private fun book(
+        id: String,
+        title: String,
+    ) = BookWithDetails(
+        mediaItem =
+            MediaItemEntity(
+                id = id,
+                type = MediaType.BOOK,
+                title = title,
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = Instant.fromEpochMilliseconds(0),
+                coverImageHash = null,
+            ),
         details = null,
     )
 
@@ -189,11 +191,12 @@ class LibrarySelectionTest {
     fun contextualBarCount_reflectsTheWholeSelectionNotJustWhatTheFilterShows() {
         // The behaviour this replaced scoped the count to the visible subset, so it moved as the
         // filter moved and read as the selection being silently lost.
-        val filtered = LibraryUiState(
-            books = books,
-            selectedIds = setOf("id-a", "id-b"),
-            statusFilter = ReadingStatus.READING,
-        )
+        val filtered =
+            LibraryUiState(
+                books = books,
+                selectedIds = setOf("id-a", "id-b"),
+                statusFilter = ReadingStatus.READING,
+            )
         setContent(filtered)
 
         // Neither fake book has details, so neither matches a non-null status filter -- yet both

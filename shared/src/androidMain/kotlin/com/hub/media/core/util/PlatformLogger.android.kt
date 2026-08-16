@@ -11,7 +11,12 @@ import android.util.Log
 internal actual fun platformLogger(): Logger = AndroidLogger
 
 private object AndroidLogger : Logger {
-    override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
+    override fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: () -> String,
+    ) {
         val text = message()
         // A logging call must never itself become a new source of failure for its caller -- swallow
         // whatever android.util.Log throws rather than propagate it. This matters beyond defensive

@@ -16,7 +16,6 @@ import kotlin.test.assertNull
  * precedent this fix follows.
  */
 class CsvRowParsingTest {
-
     // --- parseOptionalDouble ---
 
     @Test

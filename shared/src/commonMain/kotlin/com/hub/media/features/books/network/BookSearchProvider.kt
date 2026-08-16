@@ -14,7 +14,6 @@ import com.hub.media.core.util.Resource
  * answer a question it has no business answering.
  */
 public interface BookSearchProvider {
-
     /**
      * Searches for works matching free-text [query], which may be a title, an author, or both.
      *
@@ -33,5 +32,8 @@ public interface BookSearchProvider {
      * @return [Resource.Success] with zero or more hits — an empty list is a successful search that
      *   found nothing, not an error — or [Resource.Error] describing why the search failed.
      */
-    public suspend fun searchByTitleOrAuthor(query: String, limit: Int): Resource<List<BookSearchResult>>
+    public suspend fun searchByTitleOrAuthor(
+        query: String,
+        limit: Int,
+    ): Resource<List<BookSearchResult>>
 }

@@ -44,7 +44,6 @@ public class RefetchCoverUseCase(
     private val imageStorage: LocalImageStorageManager,
     private val bookRepository: BookRepository,
 ) {
-
     /**
      * Runs the re-fetch flow for [mediaId]:
      * 1. Looks up the book's recorded ISBN via [BookRepository.getBookWithDetails]. No book, or a
@@ -67,8 +66,9 @@ public class RefetchCoverUseCase(
      *   download failed, or the image couldn't be saved to disk. Never throws.
      */
     public suspend fun execute(mediaId: String): Resource<String> {
-        val bookWithDetails = bookRepository.getBookWithDetails(mediaId)
-            ?: return Resource.Error("Book with id=$mediaId not found")
+        val bookWithDetails =
+            bookRepository.getBookWithDetails(mediaId)
+                ?: return Resource.Error("Book with id=$mediaId not found")
         val isbn = bookWithDetails.details?.isbn
         if (isbn.isNullOrBlank()) {
             return Resource.Error("This book has no ISBN on record, so a cover can't be looked up")
@@ -81,8 +81,9 @@ public class RefetchCoverUseCase(
             )
         }
 
-        val coverUrl = metadataResult.data.coverImageUrl
-            ?: return Resource.Error("No cover image is available for this book from any provider")
+        val coverUrl =
+            metadataResult.data.coverImageUrl
+                ?: return Resource.Error("No cover image is available for this book from any provider")
 
         val downloadResult = coverDownloader.download(coverUrl)
         if (downloadResult !is Resource.Success) {
@@ -92,11 +93,12 @@ public class RefetchCoverUseCase(
         }
 
         val saveResult = imageStorage.saveImage(downloadResult.data)
-        val hash = saveResult.getOrNull()
-            ?: return Resource.Error(
-                "Failed to save the downloaded cover image: " +
-                    "${saveResult.exceptionOrNull()?.message ?: "Unknown error"}",
-            )
+        val hash =
+            saveResult.getOrNull()
+                ?: return Resource.Error(
+                    "Failed to save the downloaded cover image: " +
+                        "${saveResult.exceptionOrNull()?.message ?: "Unknown error"}",
+                )
 
         return when (val updateResult = bookRepository.updateCoverImageHash(mediaId, hash)) {
             is Resource.Success -> Resource.Success(hash)
@@ -128,9 +130,10 @@ public fun createDefaultRefetchCoverUseCase(
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
-): RefetchCoverUseCase = RefetchCoverUseCase(
-    metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
-    coverDownloader = CoverImageDownloader(httpClient),
-    imageStorage = imageStorage,
-    bookRepository = bookRepository,
-)
+): RefetchCoverUseCase =
+    RefetchCoverUseCase(
+        metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
+        coverDownloader = CoverImageDownloader(httpClient),
+        imageStorage = imageStorage,
+        bookRepository = bookRepository,
+    )

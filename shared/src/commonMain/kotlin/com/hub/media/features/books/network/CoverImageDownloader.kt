@@ -1,8 +1,8 @@
 package com.hub.media.features.books.network
 
-import com.hub.media.core.util.Resource
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.Resource
 import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -15,6 +15,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * expected to be handed to [com.hub.media.core.storage.LocalImageStorageManager] for
  * content-addressed local storage per AGENTS.md §4.
  */
+
 /** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "CoverImageDownloader"
 
@@ -22,7 +23,6 @@ public class CoverImageDownloader(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
 ) {
-
     /**
      * Downloads the image bytes at [url].
      *

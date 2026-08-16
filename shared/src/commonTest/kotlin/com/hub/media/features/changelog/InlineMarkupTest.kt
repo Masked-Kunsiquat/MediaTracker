@@ -10,7 +10,6 @@ import kotlin.test.assertTrue
  * worse failure than rendering one extra marker.
  */
 class InlineMarkupTest {
-
     private fun render(spans: List<InlineSpan>) = spans.joinToString("") { it.text }
 
     @Test
@@ -64,16 +63,17 @@ class InlineMarkupTest {
     fun parseInlineMarkup_everyInput_preservesEveryNonMarkerCharacter() {
         // The invariant that makes the whole thing safe: whatever the markup, nothing silently
         // disappears except the markers that were genuinely matched.
-        val inputs = listOf(
-            "**bold** and `code`",
-            "***",
-            "``",
-            "`",
-            "**",
-            "a*b",
-            "**a `b` c**",
-            "no markup at all",
-        )
+        val inputs =
+            listOf(
+                "**bold** and `code`",
+                "***",
+                "``",
+                "`",
+                "**",
+                "a*b",
+                "**a `b` c**",
+                "no markup at all",
+            )
         for (input in inputs) {
             val rendered = render(parseInlineMarkup(input))
             val strippedInput = input.replace("**", "").replace("`", "")

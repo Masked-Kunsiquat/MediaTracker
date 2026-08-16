@@ -13,9 +13,10 @@ import com.hub.media.core.database.entities.ReadingStatus
  * exhaustive-`when` pattern exactly.
  */
 @Composable
-internal fun ReadingStatus.displayLabel(): String = when (this) {
-    ReadingStatus.TO_READ -> stringResource(R.string.reading_status_to_read)
-    ReadingStatus.READING -> stringResource(R.string.reading_status_reading)
-    ReadingStatus.FINISHED -> stringResource(R.string.reading_status_finished)
-    ReadingStatus.DNF -> stringResource(R.string.reading_status_dnf)
-}
+internal fun ReadingStatus.displayLabel(): String =
+    when (this) {
+        ReadingStatus.TO_READ -> stringResource(R.string.reading_status_to_read)
+        ReadingStatus.READING -> stringResource(R.string.reading_status_reading)
+        ReadingStatus.FINISHED -> stringResource(R.string.reading_status_finished)
+        ReadingStatus.DNF -> stringResource(R.string.reading_status_dnf)
+    }

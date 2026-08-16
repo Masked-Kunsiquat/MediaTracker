@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ExternalIdentifierDao {
-
     /** Composite PK of (mediaId, provider) — replaces any existing mapping for that pair. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(identifier: ExternalIdentifierEntity)
@@ -20,10 +19,16 @@ interface ExternalIdentifierDao {
     suspend fun delete(identifier: ExternalIdentifierEntity)
 
     @Query("DELETE FROM external_identifiers WHERE mediaId = :mediaId AND provider = :provider")
-    suspend fun deleteByKey(mediaId: String, provider: IdentifierProvider)
+    suspend fun deleteByKey(
+        mediaId: String,
+        provider: IdentifierProvider,
+    )
 
     @Query("SELECT * FROM external_identifiers WHERE mediaId = :mediaId AND provider = :provider")
-    suspend fun getByKey(mediaId: String, provider: IdentifierProvider): ExternalIdentifierEntity?
+    suspend fun getByKey(
+        mediaId: String,
+        provider: IdentifierProvider,
+    ): ExternalIdentifierEntity?
 
     /**
      * Every mediaId that already has an identifier for [provider], for a bulk scan that needs to

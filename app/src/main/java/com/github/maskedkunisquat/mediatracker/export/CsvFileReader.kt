@@ -20,10 +20,14 @@ import java.io.IOException
  *   [uri] at all, or any [IOException] occurred while reading (both surfaced by the caller as a
  *   failure Snackbar rather than a crash, per AGENTS.md §5).
  */
-internal fun readCsvFromUri(context: Context, uri: Uri): String? = try {
-    context.contentResolver.openInputStream(uri)?.use { stream ->
-        stream.readBytes().toString(Charsets.UTF_8)
+internal fun readCsvFromUri(
+    context: Context,
+    uri: Uri,
+): String? =
+    try {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            stream.readBytes().toString(Charsets.UTF_8)
+        }
+    } catch (e: IOException) {
+        null
     }
-} catch (e: IOException) {
-    null
-}

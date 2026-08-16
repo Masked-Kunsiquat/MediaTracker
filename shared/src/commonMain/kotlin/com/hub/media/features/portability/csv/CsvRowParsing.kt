@@ -11,18 +11,24 @@ import kotlin.time.Instant
  * through every field parse) keeps each row-builder function reading top-to-bottom as a flat list
  * of "parse this field, validate it" steps.
  */
-internal class RowRejectedException(message: String) : Exception(message)
+internal class RowRejectedException(
+    message: String,
+) : Exception(message)
 
 /** Aborts the current row build with [message] -- see [RowRejectedException]. */
 internal fun reject(message: String): Nothing = throw RowRejectedException(message)
 
 /** Parses an optional integer field: blank -> `null`; non-blank and unparseable -> rejects. */
-internal fun parseOptionalInt(raw: String, field: String): Int? =
-    if (raw.isBlank()) null else raw.toIntOrNull() ?: reject("$field is not a valid integer: '$raw'")
+internal fun parseOptionalInt(
+    raw: String,
+    field: String,
+): Int? = if (raw.isBlank()) null else raw.toIntOrNull() ?: reject("$field is not a valid integer: '$raw'")
 
 /** Parses an optional long field: blank -> `null`; non-blank and unparseable -> rejects. */
-internal fun parseOptionalLong(raw: String, field: String): Long? =
-    if (raw.isBlank()) null else raw.toLongOrNull() ?: reject("$field is not a valid integer: '$raw'")
+internal fun parseOptionalLong(
+    raw: String,
+    field: String,
+): Long? = if (raw.isBlank()) null else raw.toLongOrNull() ?: reject("$field is not a valid integer: '$raw'")
 
 /**
  * Parses an optional double field: blank -> `null`; non-blank and unparseable -> rejects.
@@ -38,7 +44,10 @@ internal fun parseOptionalLong(raw: String, field: String): Long? =
  * positions (see that function's KDoc) -- [isFinite] rejects `NaN` and both infinities up front, at
  * the parser, before any business-rule check ever sees the value.
  */
-internal fun parseOptionalDouble(raw: String, field: String): Double? {
+internal fun parseOptionalDouble(
+    raw: String,
+    field: String,
+): Double? {
     if (raw.isBlank()) return null
     val value = raw.toDoubleOrNull() ?: reject("$field is not a valid number: '$raw'")
     if (!value.isFinite()) reject("$field is not a valid number: '$raw'")
@@ -49,22 +58,31 @@ internal fun parseOptionalDouble(raw: String, field: String): Double? {
  * Parses a required double field; blank or unparseable both reject. See [parseOptionalDouble]'s
  * KDoc for why `NaN`/`Infinity`/`-Infinity` are rejected here too, not just non-numeric garbage.
  */
-internal fun parseRequiredDouble(raw: String, field: String): Double {
+internal fun parseRequiredDouble(
+    raw: String,
+    field: String,
+): Double {
     val value = raw.toDoubleOrNull() ?: reject("$field is not a valid number: '$raw'")
     if (!value.isFinite()) reject("$field is not a valid number: '$raw'")
     return value
 }
 
 /** Parses a required ISO-8601 instant field (matches [kotlin.time.Instant.toString]'s format). */
-internal fun parseRequiredInstant(raw: String, field: String): Instant = try {
-    Instant.parse(raw)
-} catch (e: IllegalArgumentException) {
-    reject("$field is not a valid timestamp: '$raw'")
-}
+internal fun parseRequiredInstant(
+    raw: String,
+    field: String,
+): Instant =
+    try {
+        Instant.parse(raw)
+    } catch (e: IllegalArgumentException) {
+        reject("$field is not a valid timestamp: '$raw'")
+    }
 
 /** Parses an optional ISO-8601 instant field: blank -> `null`; non-blank and unparseable -> rejects. */
-internal fun parseOptionalInstant(raw: String, field: String): Instant? =
-    if (raw.isBlank()) null else parseRequiredInstant(raw, field)
+internal fun parseOptionalInstant(
+    raw: String,
+    field: String,
+): Instant? = if (raw.isBlank()) null else parseRequiredInstant(raw, field)
 
 /**
  * Unpacks `library_export.csv`'s `external_identifiers` column -- `PROVIDER:id` pairs joined by
@@ -105,11 +123,12 @@ internal fun unpackIdentifiers(raw: String): List<Pair<IdentifierProvider, Strin
         }
         val providerName = segment.substring(0, colonIndex)
         val externalId = segment.substring(colonIndex + 1)
-        val provider = try {
-            IdentifierProvider.valueOf(providerName)
-        } catch (e: IllegalArgumentException) {
-            reject("Unknown identifier provider '$providerName' in external_identifiers")
-        }
+        val provider =
+            try {
+                IdentifierProvider.valueOf(providerName)
+            } catch (e: IllegalArgumentException) {
+                reject("Unknown identifier provider '$providerName' in external_identifiers")
+            }
         if (externalId.isBlank()) {
             reject("external_identifiers segment '$segment' has an empty id")
         }

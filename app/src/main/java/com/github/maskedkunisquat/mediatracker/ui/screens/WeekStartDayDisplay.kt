@@ -12,7 +12,8 @@ import com.hub.media.features.settings.data.WeekStartDay
  * until a label is added.
  */
 @Composable
-internal fun WeekStartDay.displayLabel(): String = when (this) {
-    WeekStartDay.MONDAY -> stringResource(R.string.settings_week_start_day_monday)
-    WeekStartDay.SUNDAY -> stringResource(R.string.settings_week_start_day_sunday)
-}
+internal fun WeekStartDay.displayLabel(): String =
+    when (this) {
+        WeekStartDay.MONDAY -> stringResource(R.string.settings_week_start_day_monday)
+        WeekStartDay.SUNDAY -> stringResource(R.string.settings_week_start_day_sunday)
+    }

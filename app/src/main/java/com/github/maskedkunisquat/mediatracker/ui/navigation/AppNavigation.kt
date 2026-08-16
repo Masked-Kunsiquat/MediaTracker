@@ -8,9 +8,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
-import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
@@ -75,13 +75,15 @@ fun AppNavigation(
 
         composable(
             route = Route.BookDetail.route,
-            arguments = listOf(
-                navArgument(Route.BookDetail.ARG_BOOK_ID) { type = NavType.StringType },
-            ),
+            arguments =
+                listOf(
+                    navArgument(Route.BookDetail.ARG_BOOK_ID) { type = NavType.StringType },
+                ),
         ) { backStackEntry ->
-            val bookId = requireNotNull(backStackEntry.arguments?.getString(Route.BookDetail.ARG_BOOK_ID)) {
-                "Missing required argument: ${Route.BookDetail.ARG_BOOK_ID}"
-            }
+            val bookId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.BookDetail.ARG_BOOK_ID)) {
+                    "Missing required argument: ${Route.BookDetail.ARG_BOOK_ID}"
+                }
             // BookDetailScreenRoute wires the TopAppBar delete action to its own
             // BookDetailViewModel.deleteBook() (shared module), so no destination-scoped
             // LibraryViewModel workaround is needed here anymore.
@@ -100,13 +102,15 @@ fun AppNavigation(
 
         composable(
             route = Route.EditBook.route,
-            arguments = listOf(
-                navArgument(Route.EditBook.ARG_BOOK_ID) { type = NavType.StringType },
-            ),
+            arguments =
+                listOf(
+                    navArgument(Route.EditBook.ARG_BOOK_ID) { type = NavType.StringType },
+                ),
         ) { backStackEntry ->
-            val bookId = requireNotNull(backStackEntry.arguments?.getString(Route.EditBook.ARG_BOOK_ID)) {
-                "Missing required argument: ${Route.EditBook.ARG_BOOK_ID}"
-            }
+            val bookId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.EditBook.ARG_BOOK_ID)) {
+                    "Missing required argument: ${Route.EditBook.ARG_BOOK_ID}"
+                }
             EditBookScreenRoute(
                 appContainer = appContainer,
                 bookId = bookId,

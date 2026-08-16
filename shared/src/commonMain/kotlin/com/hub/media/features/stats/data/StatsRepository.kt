@@ -3,8 +3,6 @@ package com.hub.media.features.stats.data
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.settings.data.WeekStartDay
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.DateTimeUnit
@@ -15,6 +13,8 @@ import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Aggregate reading statistics over `reading_sessions`, wrapping [com.hub.media.core.database.dao.StatsDao]
@@ -59,23 +59,28 @@ import kotlinx.datetime.toLocalDateTime
  * @param db The shared [AppDatabase], matching [com.hub.media.features.books.data.BookRepository]/
  *   [com.hub.media.features.books.data.ReadingSessionRepository]'s constructor shape.
  */
-public class StatsRepository(private val db: AppDatabase) {
-
+public class StatsRepository(
+    private val db: AppDatabase,
+) {
     /**
      * Total known reading time (seconds) for sessions whose `timestampStart` falls in
      * `[from, to)`. `null` means no session in range has a known duration (including an empty
      * range) — never coerced to `0` (see class KDoc, point 1).
      */
-    public fun observeTimeReadInRange(from: Instant, to: Instant): Flow<Long?> =
-        db.statsDao().observeTotalKnownDurationInRange(from, to)
+    public fun observeTimeReadInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Long?> = db.statsDao().observeTotalKnownDurationInRange(from, to)
 
     /**
      * Count of ALL sessions (null-duration sessions included) whose `timestampStart` falls in
      * `[from, to)`. Always a real, non-null count — `0` for an empty range is genuine, not a
      * sentinel.
      */
-    public fun observeSessionCountInRange(from: Instant, to: Instant): Flow<Int> =
-        db.statsDao().observeSessionCountInRange(from, to)
+    public fun observeSessionCountInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Int> = db.statsDao().observeSessionCountInRange(from, to)
 
     /**
      * Total pages read (sum of per-session `deltaPages`) for sessions whose `timestampStart`
@@ -83,16 +88,17 @@ public class StatsRepository(private val db: AppDatabase) {
      * coerced to `0` (see class KDoc, point 1). Never inferred from position continuity between
      * sessions (see class KDoc, point 2).
      */
-    public fun observePagesReadInRange(from: Instant, to: Instant): Flow<Int?> =
-        db.statsDao().observePagesReadInRange(from, to)
+    public fun observePagesReadInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Int?> = db.statsDao().observePagesReadInRange(from, to)
 
     /**
      * Lifetime count of books currently [ReadingStatus.FINISHED] — see class KDoc ("Books-finished
      * stat") for why this coexists with [observeBooksFinishedInRange] instead of one query
      * answering both.
      */
-    public fun observeBooksFinishedTotal(): Flow<Int> =
-        db.statsDao().observeBooksFinishedTotal(ReadingStatus.FINISHED)
+    public fun observeBooksFinishedTotal(): Flow<Int> = db.statsDao().observeBooksFinishedTotal(ReadingStatus.FINISHED)
 
     /**
      * Count of books whose [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt]
@@ -103,8 +109,10 @@ public class StatsRepository(private val db: AppDatabase) {
      * [observeBooksFinishedTotal]'s, rather than relying on that invariant silently). See class
      * KDoc for why this necessarily undercounts relative to any pre-v3 history.
      */
-    public fun observeBooksFinishedInRange(from: Instant, to: Instant): Flow<Int> =
-        db.statsDao().observeBooksFinishedInRange(ReadingStatus.FINISHED, from, to)
+    public fun observeBooksFinishedInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Int> = db.statsDao().observeBooksFinishedInRange(ReadingStatus.FINISHED, from, to)
 
     /**
      * Current reading streak: the number of consecutive calendar days — counting backward from
@@ -158,12 +166,13 @@ public class StatsRepository(private val db: AppDatabase) {
     ): Flow<Int> {
         val today = clock.now().toLocalDateTime(timeZone).date
         val exclusiveEnd = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(timeZone)
-        return db.statsDao().observeSessionStartTimestampsInRange(EPOCH, exclusiveEnd)
+        return db
+            .statsDao()
+            .observeSessionStartTimestampsInRange(EPOCH, exclusiveEnd)
             .map { timestamps -> computeStreak(timestamps, today, timeZone) }
     }
 
     public companion object {
-
         /** Unix epoch — see [observeReadingStreak]'s KDoc for why this is used as its lower bound. */
         private val EPOCH: Instant = Instant.fromEpochMilliseconds(0)
 
@@ -214,7 +223,11 @@ public class StatsRepository(private val db: AppDatabase) {
          * a standalone function (rather than inlined into the `Flow.map`) so it is trivially unit
          * testable independent of any [Flow]/DB plumbing.
          */
-        internal fun computeStreak(timestamps: List<Instant>, today: LocalDate, timeZone: TimeZone): Int {
+        internal fun computeStreak(
+            timestamps: List<Instant>,
+            today: LocalDate,
+            timeZone: TimeZone,
+        ): Int {
             val daysWithSessions = timestamps.mapTo(HashSet()) { it.toLocalDateTime(timeZone).date }
             var cursor = if (today in daysWithSessions) today else today.minus(1, DateTimeUnit.DAY)
             var streak = 0

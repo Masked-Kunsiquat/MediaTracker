@@ -11,7 +11,6 @@ import kotlin.test.assertTrue
  * position rules rather than a divergent copy.
  */
 class ReadingLogCsvImporterTest {
-
     private fun validRow(
         sessionId: String = "session-1",
         mediaId: String = "media-1",
@@ -22,10 +21,19 @@ class ReadingLogCsvImporterTest {
         endUnit: String = "50.0",
         deltaPages: String = "50",
         notes: String = "Good progress",
-    ): List<String> = listOf(
-        CSV_SCHEMA_VERSION.toString(), sessionId, mediaId, timestampStart, timestampEnd,
-        durationSeconds, startUnit, endUnit, deltaPages, notes,
-    )
+    ): List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION.toString(),
+            sessionId,
+            mediaId,
+            timestampStart,
+            timestampEnd,
+            durationSeconds,
+            startUnit,
+            endUnit,
+            deltaPages,
+            notes,
+        )
 
     @Test
     fun parseRow_happyPath_parsesEveryField() {
@@ -57,9 +65,10 @@ class ReadingLogCsvImporterTest {
 
     @Test
     fun parseRow_endBeforeStart_isRejected() {
-        val result = ReadingLogCsvImporter.parseRow(
-            validRow(timestampStart = "2024-01-02T00:00:00Z", timestampEnd = "2024-01-01T00:00:00Z"),
-        )
+        val result =
+            ReadingLogCsvImporter.parseRow(
+                validRow(timestampStart = "2024-01-02T00:00:00Z", timestampEnd = "2024-01-01T00:00:00Z"),
+            )
         assertIs<SessionRowParseResult.Rejected>(result)
         assertTrue(result.reason.contains("timestampEnd"))
     }
@@ -100,9 +109,10 @@ class ReadingLogCsvImporterTest {
 
     @Test
     fun parseRow_blankOptionalFields_parseAsNull() {
-        val result = ReadingLogCsvImporter.parseRow(
-            validRow(durationSeconds = "", deltaPages = "", notes = ""),
-        )
+        val result =
+            ReadingLogCsvImporter.parseRow(
+                validRow(durationSeconds = "", deltaPages = "", notes = ""),
+            )
         assertIs<SessionRowParseResult.Parsed>(result)
         assertEquals(null, result.row.durationSeconds)
         assertEquals(null, result.row.deltaPages)
@@ -111,9 +121,10 @@ class ReadingLogCsvImporterTest {
 
     @Test
     fun parseRow_zeroDurationZeroPositionSession_isAllowed() {
-        val result = ReadingLogCsvImporter.parseRow(
-            validRow(durationSeconds = "0", startUnit = "0.0", endUnit = "0.0", deltaPages = "0"),
-        )
+        val result =
+            ReadingLogCsvImporter.parseRow(
+                validRow(durationSeconds = "0", startUnit = "0.0", endUnit = "0.0", deltaPages = "0"),
+            )
         assertIs<SessionRowParseResult.Parsed>(result)
         assertEquals(0L, result.row.durationSeconds)
     }

@@ -10,10 +10,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -26,18 +26,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.res.stringResource
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AppContainer
-import kotlin.time.ExperimentalTime
 
 /**
  * Route-level composable for the add-book screen.
@@ -57,9 +56,10 @@ fun AddBookScreenRoute(
     onNavigateBack: () -> Unit,
     onNavigateToLibrary: () -> Unit,
 ) {
-    val viewModel: AddBookViewModel = viewModel(
-        factory = AddBookViewModelFactory(appContainer),
-    )
+    val viewModel: AddBookViewModel =
+        viewModel(
+            factory = AddBookViewModelFactory(appContainer),
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     // When the submission succeeds, navigate back to library and reset the ViewModel.
@@ -120,15 +120,17 @@ fun AddBookScreen(
         },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .align(Alignment.TopCenter),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .align(Alignment.TopCenter),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 val isLoading = uiState is AddBookUiState.Loading
@@ -138,9 +140,11 @@ fun AddBookScreen(
                     value = isbnInput,
                     onValueChange = { newValue: String ->
                         // Accept only digits and 'X' (for ISBN-10 checksum)
-                        isbnInput = newValue.filter { char: Char ->
-                            char.isDigit() || char.uppercaseChar() == 'X'
-                        }.take(13)  // ISBN can be max 13 digits
+                        isbnInput =
+                            newValue
+                                .filter { char: Char ->
+                                    char.isDigit() || char.uppercaseChar() == 'X'
+                                }.take(13) // ISBN can be max 13 digits
                     },
                     label = { Text("ISBN") },
                     placeholder = { Text("e.g., 978-0-13-110362-7") },
@@ -160,9 +164,10 @@ fun AddBookScreen(
 
                 if (isLoading) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator()

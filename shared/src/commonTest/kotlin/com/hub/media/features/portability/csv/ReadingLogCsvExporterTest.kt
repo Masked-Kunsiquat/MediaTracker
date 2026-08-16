@@ -12,7 +12,6 @@ import kotlin.time.Instant
  * [ReadingSessionEntity]'s KDoc for why `null` and `0` must never collide.
  */
 class ReadingLogCsvExporterTest {
-
     private val start = Instant.fromEpochMilliseconds(1_700_000_000_000)
     private val end = Instant.fromEpochMilliseconds(1_700_000_600_000)
 
@@ -31,17 +30,18 @@ class ReadingLogCsvExporterTest {
 
     @Test
     fun export_fullyPopulatedSession_includesEveryFieldInOrder() {
-        val session = ReadingSessionEntity(
-            id = "session-1",
-            mediaId = "media-1",
-            timestampStart = start,
-            timestampEnd = end,
-            durationSeconds = 600L,
-            startUnit = 10.0,
-            endUnit = 25.0,
-            deltaPages = 15,
-            notes = "Great chapter",
-        )
+        val session =
+            ReadingSessionEntity(
+                id = "session-1",
+                mediaId = "media-1",
+                timestampStart = start,
+                timestampEnd = end,
+                durationSeconds = 600L,
+                startUnit = 10.0,
+                endUnit = 25.0,
+                deltaPages = 15,
+                notes = "Great chapter",
+            )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
         val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
@@ -65,17 +65,18 @@ class ReadingLogCsvExporterTest {
         // real, valid zero-second session. Silently coalescing null -> 0 here would corrupt any
         // future re-import's time-read stats exactly the way the schema-v2 migration was written
         // to prevent one layer down.
-        val session = ReadingSessionEntity(
-            id = "session-2",
-            mediaId = "media-1",
-            timestampStart = start,
-            timestampEnd = end,
-            durationSeconds = null,
-            startUnit = 0.0,
-            endUnit = 10.0,
-            deltaPages = null,
-            notes = null,
-        )
+        val session =
+            ReadingSessionEntity(
+                id = "session-2",
+                mediaId = "media-1",
+                timestampStart = start,
+                timestampEnd = end,
+                durationSeconds = null,
+                startUnit = 0.0,
+                endUnit = 10.0,
+                deltaPages = null,
+                notes = null,
+            )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
         val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
@@ -89,17 +90,18 @@ class ReadingLogCsvExporterTest {
         // The other half of the same rule: a genuine 0-second session (a real, valid edge case per
         // AGENTS.md §7) must still export as "0", distinguishable from the empty field a null
         // produces above.
-        val session = ReadingSessionEntity(
-            id = "session-3",
-            mediaId = "media-1",
-            timestampStart = start,
-            timestampEnd = start,
-            durationSeconds = 0L,
-            startUnit = 5.0,
-            endUnit = 5.0,
-            deltaPages = 0,
-            notes = null,
-        )
+        val session =
+            ReadingSessionEntity(
+                id = "session-3",
+                mediaId = "media-1",
+                timestampStart = start,
+                timestampEnd = start,
+                durationSeconds = 0L,
+                startUnit = 5.0,
+                endUnit = 5.0,
+                deltaPages = 0,
+                notes = null,
+            )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
         val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
@@ -110,17 +112,18 @@ class ReadingLogCsvExporterTest {
 
     @Test
     fun export_nullOptionalFields_exportAsEmpty() {
-        val session = ReadingSessionEntity(
-            id = "session-4",
-            mediaId = "media-1",
-            timestampStart = start,
-            timestampEnd = end,
-            durationSeconds = null,
-            startUnit = 1.0,
-            endUnit = 2.0,
-            deltaPages = null,
-            notes = null,
-        )
+        val session =
+            ReadingSessionEntity(
+                id = "session-4",
+                mediaId = "media-1",
+                timestampStart = start,
+                timestampEnd = end,
+                durationSeconds = null,
+                startUnit = 1.0,
+                endUnit = 2.0,
+                deltaPages = null,
+                notes = null,
+            )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
         val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
@@ -132,17 +135,18 @@ class ReadingLogCsvExporterTest {
 
     @Test
     fun export_noteContainingEmbeddedNewline_isQuotedAndStaysOneRow() {
-        val session = ReadingSessionEntity(
-            id = "session-5",
-            mediaId = "media-1",
-            timestampStart = start,
-            timestampEnd = end,
-            durationSeconds = 120L,
-            startUnit = 1.0,
-            endUnit = 2.0,
-            deltaPages = 1,
-            notes = "First paragraph.\nSecond paragraph.",
-        )
+        val session =
+            ReadingSessionEntity(
+                id = "session-5",
+                mediaId = "media-1",
+                timestampStart = start,
+                timestampEnd = end,
+                durationSeconds = 120L,
+                startUnit = 1.0,
+                endUnit = 2.0,
+                deltaPages = 1,
+                notes = "First paragraph.\nSecond paragraph.",
+            )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
         // Exactly 3 CRLF-terminated lines: header + one data row (the embedded \n inside the
@@ -154,17 +158,18 @@ class ReadingLogCsvExporterTest {
 
     @Test
     fun export_noteContainingCommaAndQuotes_isEscaped() {
-        val session = ReadingSessionEntity(
-            id = "session-6",
-            mediaId = "media-1",
-            timestampStart = start,
-            timestampEnd = end,
-            durationSeconds = 60L,
-            startUnit = 1.0,
-            endUnit = 2.0,
-            deltaPages = null,
-            notes = "Loved it, especially the \"twist\" ending",
-        )
+        val session =
+            ReadingSessionEntity(
+                id = "session-6",
+                mediaId = "media-1",
+                timestampStart = start,
+                timestampEnd = end,
+                durationSeconds = 60L,
+                startUnit = 1.0,
+                endUnit = 2.0,
+                deltaPages = null,
+                notes = "Loved it, especially the \"twist\" ending",
+            )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
@@ -173,11 +178,12 @@ class ReadingLogCsvExporterTest {
 
     @Test
     fun export_multipleSessions_producesOneRowPerSession() {
-        val sessions = listOf(
-            ReadingSessionEntity("s1", "m1", start, end, 100L, 0.0, 10.0, 10, null),
-            ReadingSessionEntity("s2", "m1", start, end, null, 10.0, 20.0, null, null),
-            ReadingSessionEntity("s3", "m2", start, end, 0L, 0.0, 0.0, 0, null),
-        )
+        val sessions =
+            listOf(
+                ReadingSessionEntity("s1", "m1", start, end, 100L, 0.0, 10.0, 10, null),
+                ReadingSessionEntity("s2", "m1", start, end, null, 10.0, 20.0, null, null),
+                ReadingSessionEntity("s3", "m2", start, end, 0L, 0.0, 0.0, 0, null),
+            )
         val csv = ReadingLogCsvExporter.export(sessions)
         val lines = csv.trimEnd().split(CsvUtil.LINE_ENDING)
         assertEquals(4, lines.size) // header + 3 sessions

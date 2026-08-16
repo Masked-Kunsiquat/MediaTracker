@@ -63,9 +63,10 @@ fun LogViewerScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
 ) {
-    val viewModel: LogViewerViewModel = viewModel(
-        factory = remember(appContainer) { LogViewerViewModelFactory(appContainer) },
-    )
+    val viewModel: LogViewerViewModel =
+        viewModel(
+            factory = remember(appContainer) { LogViewerViewModelFactory(appContainer) },
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -74,21 +75,23 @@ fun LogViewerScreenRoute(
     val exportSuccess = stringResource(R.string.log_viewer_export_success)
     val exportFailed = stringResource(R.string.log_viewer_export_failed)
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain"),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            // Off the main thread: reading every retained entry and writing a whole document via
-            // SAF are both blocking I/O. Mirrors the CSV export path in SettingsScreen, which wraps
-            // its own writeCsvToUri call for exactly this reason. The Snackbar stays on the
-            // original (main) context.
-            val ok = withContext(Dispatchers.IO) {
-                writeCsvToUri(context, uri, viewModel.readFullLogForExport())
+    val exportLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain"),
+        ) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                // Off the main thread: reading every retained entry and writing a whole document via
+                // SAF are both blocking I/O. Mirrors the CSV export path in SettingsScreen, which wraps
+                // its own writeCsvToUri call for exactly this reason. The Snackbar stays on the
+                // original (main) context.
+                val ok =
+                    withContext(Dispatchers.IO) {
+                        writeCsvToUri(context, uri, viewModel.readFullLogForExport())
+                    }
+                snackbarHostState.showSnackbar(if (ok) exportSuccess else exportFailed)
             }
-            snackbarHostState.showSnackbar(if (ok) exportSuccess else exportFailed)
         }
-    }
 
     LogViewerScreen(
         uiState = uiState,
@@ -164,9 +167,10 @@ fun LogViewerScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             when {
                 uiState.isLoading && uiState.entries.isEmpty() -> {
@@ -179,9 +183,10 @@ fun LogViewerScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(32.dp),
+                        modifier =
+                            Modifier
+                                .align(Alignment.Center)
+                                .padding(32.dp),
                     )
                 }
 
@@ -196,17 +201,19 @@ fun LogViewerScreen(
                             text = stringResource(R.string.log_viewer_direction_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                         HorizontalDivider()
                         SelectionContainer(modifier = Modifier.weight(1f)) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(scrollState)
-                                    .padding(16.dp),
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(scrollState)
+                                        .padding(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 // Read once: firstNewEntryIndex scans the list to find the
@@ -260,9 +267,10 @@ private fun NewEntriesDivider() {
 private fun LogEntryRow(entry: LogEntry) {
     Text(
         text = "${entry.level.name} ${entry.tag}\n${entry.message}",
-        style = MaterialTheme.typography.bodySmall.copy(
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-        ),
+        style =
+            MaterialTheme.typography.bodySmall.copy(
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            ),
         modifier = Modifier.fillMaxWidth(),
     )
 }

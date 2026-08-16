@@ -8,12 +8,15 @@ package com.hub.media.features.portability.csv
  * over "guess and proceed."
  */
 public sealed class CsvParseResult {
-
     /** [rows] holds every row (including the header, if present), each a list of raw field text. */
-    public data class Success(public val rows: List<List<String>>) : CsvParseResult()
+    public data class Success(
+        public val rows: List<List<String>>,
+    ) : CsvParseResult()
 
     /** Structural CSV corruption was detected; [message] describes what and, where known, where. */
-    public data class Failure(public val message: String) : CsvParseResult()
+    public data class Failure(
+        public val message: String,
+    ) : CsvParseResult()
 }
 
 /**
@@ -62,7 +65,6 @@ public sealed class CsvParseResult {
  * offset 0); a `U+FEFF` anywhere else in the text is left untouched as ordinary (if unusual) data.
  */
 public object CsvReader {
-
     public fun parse(rawText: String): CsvParseResult {
         val text = rawText.removePrefix(BYTE_ORDER_MARK)
         if (text.isEmpty()) return CsvParseResult.Success(emptyList())

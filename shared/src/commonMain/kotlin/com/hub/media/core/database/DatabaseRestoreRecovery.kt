@@ -22,7 +22,9 @@ public sealed class RestoreMarker {
      *
      * @property message A user-facing/diagnostic description of the failure.
      */
-    public data class Failure(public val message: String) : RestoreMarker()
+    public data class Failure(
+        public val message: String,
+    ) : RestoreMarker()
 }
 
 private const val RESTORE_MARKER_SUFFIX = ".restore-result"
@@ -31,8 +33,7 @@ private const val FAILURE_MARKER_PREFIX = "FAILURE:"
 private const val SUCCESS_MARKER = "SUCCESS"
 
 /** Path of the restore-result marker file for the live database at [liveDatabaseFilePath]. */
-internal fun restoreMarkerPath(liveDatabaseFilePath: String): String =
-    "$liveDatabaseFilePath$RESTORE_MARKER_SUFFIX"
+internal fun restoreMarkerPath(liveDatabaseFilePath: String): String = "$liveDatabaseFilePath$RESTORE_MARKER_SUFFIX"
 
 /**
  * Path of the one-generation-deep safety-net backup [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.commit]
@@ -41,8 +42,7 @@ internal fun restoreMarkerPath(liveDatabaseFilePath: String): String =
  * recent* pre-restore state as a safety net, so a new attempt's backup simply replaces the
  * previous one rather than accumulating one backup file per restore forever.
  */
-internal fun preRestoreBackupPath(liveDatabaseFilePath: String): String =
-    "$liveDatabaseFilePath$RESTORE_BACKUP_SUFFIX"
+internal fun preRestoreBackupPath(liveDatabaseFilePath: String): String = "$liveDatabaseFilePath$RESTORE_BACKUP_SUFFIX"
 
 /**
  * Writes [marker] to the restore-result marker file for [liveDatabaseFilePath], overwriting any
@@ -50,11 +50,15 @@ internal fun preRestoreBackupPath(liveDatabaseFilePath: String): String =
  * [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.commit] regardless of
  * whether the swap succeeded or failed.
  */
-internal suspend fun writeRestoreMarker(liveDatabaseFilePath: String, marker: RestoreMarker) {
-    val content = when (marker) {
-        RestoreMarker.Success -> SUCCESS_MARKER
-        is RestoreMarker.Failure -> "$FAILURE_MARKER_PREFIX${marker.message}"
-    }
+internal suspend fun writeRestoreMarker(
+    liveDatabaseFilePath: String,
+    marker: RestoreMarker,
+) {
+    val content =
+        when (marker) {
+            RestoreMarker.Success -> SUCCESS_MARKER
+            is RestoreMarker.Failure -> "$FAILURE_MARKER_PREFIX${marker.message}"
+        }
     writeFileBytes(restoreMarkerPath(liveDatabaseFilePath), content.encodeToByteArray())
 }
 
