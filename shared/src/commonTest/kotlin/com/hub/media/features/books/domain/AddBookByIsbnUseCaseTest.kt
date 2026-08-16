@@ -118,6 +118,49 @@ class AddBookByIsbnUseCaseTest {
     }
 
     @Test
+    fun workKey_isPersistedAlongsideTheEditionKey() = runTest {
+        // The edition key and the work key are different facts about different things -- one
+        // printing versus the book it is a printing of -- and the (mediaId, provider) primary key
+        // gives each its own row. Nothing reads the work key yet; it is captured now because
+        // backfilling it later means another rate-limited crawl over the whole library.
+        val editionJson = """
+            {
+              "works": [{"key": "/works/OL27482W"}],
+              "title": "The Hobbit",
+              "key": "/books/OL33891995M"
+            }
+        """.trimIndent()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> respond(
+                    content = editionJson,
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+
+        val result = useCase(engine).execute("9780547928227")
+
+        assertIs<Resource.Success<String>>(result)
+        val identifiers = db.externalIdentifierDao().observeForMedia(result.data).first()
+        assertEquals(3, identifiers.size)
+        assertTrue(
+            identifiers.any {
+                it.provider == IdentifierProvider.OPEN_LIBRARY_WORK && it.externalId == "/works/OL27482W"
+            },
+            "expected the work key: $identifiers",
+        )
+        assertTrue(
+            identifiers.any {
+                it.provider == IdentifierProvider.OPEN_LIBRARY && it.externalId == "/books/OL33891995M"
+            },
+            "the edition key must survive alongside it: $identifiers",
+        )
+    }
+
+    @Test
     fun metadataFetchFails_bothProvidersNotFound_returnsErrorWithNoRows() = runTest {
         val engine = MockEngine { respondError(HttpStatusCode.NotFound) }
 

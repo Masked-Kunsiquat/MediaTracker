@@ -46,6 +46,28 @@ So: **update this file in the same commit as the change that invalidates it.** C
 
 * **Books API:** Primary: Open Library API. Secondary Fallback: Google Books API.
 * **Movies & TV API:** Primary: TMDB API (The Movie Database).
+* **Works vs. editions — this schema is edition-shaped, and must stay that way.** Open Library
+  models a [**work**](https://openlibrary.org/about/work_edition) (the abstract book) separately
+  from an **edition** (one printing). An ISBN identifies an *edition*, and every column this app
+  stores about a book — `releaseYear`, `totalPages`, `format`, `isbn`, `coverImageHash` — is an
+  edition property, because the user owns a specific printing. So **work-level fields must never be
+  written into those columns**:
+  * `first_publish_year` ✗ → `releaseYear`. The Hobbit's work says 1937; the Mariner printing on
+    the shelf says 2012. Mixing them makes one column mean two different things.
+  * `number_of_pages_median` ✗ → `totalPages`. It is a median across every edition, so it is wrong
+    *by construction* — and re-creates exactly the wrongness Task 6 Phase A's edit screen was built
+    to correct.
+  * `cover_i` ✗ → the stored cover. It is the work's representative art, not necessarily this
+    printing's.
+  * **`authors` ✓ is the sole exception**, because authorship genuinely does not vary by printing.
+    Open Library hangs it off the work, so `OpenLibraryClient` reads the edition first and falls
+    back to the work — many edition records omit `authors` entirely.
+* **Capture the work key, don't build a work table.** `AddBookByIsbnUseCase` records the work key as
+  `IdentifierProvider.OPEN_LIBRARY_WORK` alongside the edition key. Nothing reads it yet; it is
+  recorded because it costs one row now and a full rate-limited re-crawl later, and because
+  re-reads across printings (Task 10), genre tagging (Task 12), author navigation and import dedup
+  all need it. Same reasoning as the denormalized `authors` column: capture first, normalize only
+  when a feature actually demands it.
 * **Every outbound request is identified.** `createHttpClient` installs Ktor's `UserAgent` plugin
   with the `USER_AGENT` constant in `core/network/HttpClientFactory.kt`. This is not cosmetic:
   [Open Library's API guidelines](https://openlibrary.org/developers/api) rate-limit **unidentified

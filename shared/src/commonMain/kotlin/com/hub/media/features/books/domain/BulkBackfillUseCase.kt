@@ -5,6 +5,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.Resource
@@ -89,8 +90,34 @@ public data class BulkBackfillProgress(
  * [OpenLibraryCoverRateLimiter] instance in production wiring (`AppContainer`), which is what makes
  * the shared-quota requirement below actually hold.
  *
- * ### Only touches books missing data, never refreshes a book that already has both
- * A book with an existing cover/authors is never re-queried, even if a "better" provider match
+ * ### Why the work key rides along
+ * [IdentifierProvider.OPEN_LIBRARY_WORK] is captured at ingestion by [AddBookByIsbnUseCase], but no
+ * book added before that existed has one, and it is not derivable from anything already stored --
+ * only another provider lookup produces it. That is the same shape of hole this backfill was built
+ * to dig covers and authors out of, and the same lookup that resolves those two already carries it
+ * ([com.hub.media.features.books.network.BookMetadata.workKey]), so filling it here costs no extra
+ * request for any book already being visited.
+ *
+ * What it *does* cost is candidates: a library whose covers and authors are already complete has no
+ * backfill candidates today, and gains one per book the moment a missing work key counts as a gap.
+ * That is the intended trade -- the alternative is capturing the key for new books only and leaving
+ * the existing library permanently without it -- but it does mean the first run after this change
+ * walks essentially the whole library. Only the cover probe is quota-limited, and a book that needs
+ * nothing but a work key never reaches it.
+ *
+ * ### What "resolved" does and does not mean
+ * A book leaves [BulkBackfillState.pendingMediaIds] once this pass has nothing further to try for
+ * it, which makes it final for that run *and every resume of that run*. It is not final across a
+ * later fresh run: [seedState] rescans from current database state, so a book whose gap could not
+ * be filled -- no work key because the answering provider has none, or no cover because none
+ * exists anywhere -- still looks like a gap and is queried once more. Closing that would need a
+ * persisted per-book, per-dimension "confirmed unavailable" marker; it is deliberately not built,
+ * because a marker covering only the work key would leave the three dimensions behaving
+ * differently for no principled reason, and the cost being avoided is one lookup per unfillable
+ * book per user-initiated run.
+ *
+ * ### Only touches books missing data, never refreshes a book that already has all three
+ * A book with an existing cover/authors/work key is never re-queried, even if a "better" provider match
  * might exist -- this is a *repair* pass for gaps, not a re-sync, and re-fetching data a user may
  * have manually corrected (once manual cover entry exists, per the ROADMAP backlog) would risk
  * clobbering it. [RefetchCoverUseCase] remains the explicit, opt-in way to force a single book's
@@ -265,16 +292,19 @@ public class BulkBackfillUseCase(
      * [BulkBackfillState.noIsbnSkipped] must stay fixed across a resume chain for the progress
      * numbers to stay meaningful).
      *
-     * A candidate is any book missing a cover and/or missing authors. Candidates with a blank/absent
+     * A candidate is any book missing a cover, missing authors, and/or missing its Open Library
+     * work key ([IdentifierProvider.OPEN_LIBRARY_WORK]). Candidates with a blank/absent
      * ISBN are split out into [BulkBackfillState.noIsbnSkipped] and never placed in
      * [BulkBackfillState.pendingMediaIds] -- ROADMAP Task 14 Phase A: "books with no ISBN can never
      * be backfilled from a provider... report them rather than retrying forever."
      */
     private suspend fun seedState(): BulkBackfillState {
+        val haveWorkKey = bookRepository.getMediaIdsWithIdentifier(IdentifierProvider.OPEN_LIBRARY_WORK)
         val candidates = bookRepository.getAllBooksWithDetails().filter { book ->
             val needsCover = book.mediaItem.coverImageHash == null
             val needsAuthors = book.details?.authors == null
-            needsCover || needsAuthors
+            val needsWorkKey = book.mediaItem.id !in haveWorkKey
+            needsCover || needsAuthors || needsWorkKey
         }
         val (withIsbn, withoutIsbn) = candidates.partition { !it.details?.isbn.isNullOrBlank() }
 
@@ -306,13 +336,24 @@ public class BulkBackfillUseCase(
 
         val needsCover = bookWithDetails.mediaItem.coverImageHash == null
         val needsAuthors = details.authors == null
-        if (!needsCover && !needsAuthors) return StepOutcome.Removed // resolved by other means already
+        val needsWorkKey = !bookRepository.hasIdentifier(mediaId, IdentifierProvider.OPEN_LIBRARY_WORK)
+        if (!needsCover && !needsAuthors && !needsWorkKey) {
+            return StepOutcome.Removed // resolved by other means already
+        }
 
         val metadataResult = metadataProvider.fetchByIsbn(isbn)
         if (metadataResult !is Resource.Success) return StepOutcome.DeferredTransient
         val metadata = metadataResult.data
 
         val authorsToWrite = if (needsAuthors) joinAuthors(metadata.authors) else null
+        // Null whenever the answering provider has no work concept (Google Books). Such a book
+        // resolves as Done with nothing written, so it leaves the pending queue and is not retried
+        // within this run or any resume of it. A later *fresh* run does rescan it, because the key
+        // is still absent and nothing records that it was already asked for -- the same cost a
+        // genuinely-absent cover has always carried. Telling "confirmed unavailable" from "not
+        // fetched yet" needs a persisted negative cache that would have to cover all three
+        // dimensions to be coherent; see this class's KDoc.
+        val workKeyToWrite = if (needsWorkKey) metadata.workKey else null
 
         var coverUrl = metadata.coverImageUrl
         if (needsCover && coverUrl == null) {
@@ -325,7 +366,7 @@ public class BulkBackfillUseCase(
                 // way (a failed authors write just means needsAuthors is still true when this mediaId
                 // is re-read on the next run, so it naturally retries), and neither wroteAnything nor
                 // updated is ever computed from this branch.
-                applyWrite(mediaId, coverHash = null, authors = authorsToWrite)
+                applyWrite(mediaId, coverHash = null, authors = authorsToWrite, workKey = workKeyToWrite)
                 return StepOutcome.DeferredRateLimited(knownRetryAfter ?: OPEN_LIBRARY_COVER_QUOTA_WINDOW)
             }
             when (val probeResult = isbnCoverProbe.probeCoverUrl(isbn)) {
@@ -334,7 +375,7 @@ public class BulkBackfillUseCase(
                 is CoverProbeResult.RateLimited -> {
                     // Same reasoning as the quotaExhausted branch above -- already deferred
                     // regardless of whether this write succeeds.
-                    applyWrite(mediaId, coverHash = null, authors = authorsToWrite)
+                    applyWrite(mediaId, coverHash = null, authors = authorsToWrite, workKey = workKeyToWrite)
                     return StepOutcome.DeferredRateLimited(probeResult.retryAfter)
                 }
             }
@@ -354,7 +395,8 @@ public class BulkBackfillUseCase(
             }
         }
 
-        val writeResult = applyWrite(mediaId, coverHash = coverHashToWrite, authors = authorsToWrite)
+        val writeResult =
+            applyWrite(mediaId, coverHash = coverHashToWrite, authors = authorsToWrite, workKey = workKeyToWrite)
 
         // A failed write (Resource.Error -- mediaId vanished between the read above and this write,
         // or the underlying DB write itself threw, see BookRepository.applyBackfilledMetadata's
@@ -364,13 +406,13 @@ public class BulkBackfillUseCase(
         // as "updated" and dropping it from the pending queue would silently lose it forever.
         if (coverDeferred || writeResult is Resource.Error) return StepOutcome.DeferredTransient
 
-        val wroteAnything = coverHashToWrite != null || authorsToWrite != null
+        val wroteAnything = coverHashToWrite != null || authorsToWrite != null || workKeyToWrite != null
         return StepOutcome.Done(wroteAnything)
     }
 
     /**
-     * Writes whatever of [coverHash]/[authors] this pass resolved for [mediaId], or a no-op
-     * [Resource.Success] if both are `null` (nothing to write is not an error -- see
+     * Writes whatever of [coverHash]/[authors]/[workKey] this pass resolved for [mediaId], or a
+     * no-op [Resource.Success] if all are `null` (nothing to write is not an error -- see
      * [BookRepository.applyBackfilledMetadata]'s KDoc).
      *
      * @return The [Resource] [BookRepository.applyBackfilledMetadata] reported, so every call site
@@ -379,9 +421,14 @@ public class BulkBackfillUseCase(
      *   actually landed in the database) -- see [processOneBook]'s handling of this return value
      *   below.
      */
-    private suspend fun applyWrite(mediaId: String, coverHash: String?, authors: String?): Resource<Unit> {
-        if (coverHash == null && authors == null) return Resource.Success(Unit)
-        return bookRepository.applyBackfilledMetadata(mediaId, coverHash, authors)
+    private suspend fun applyWrite(
+        mediaId: String,
+        coverHash: String?,
+        authors: String?,
+        workKey: String?,
+    ): Resource<Unit> {
+        if (coverHash == null && authors == null && workKey == null) return Resource.Success(Unit)
+        return bookRepository.applyBackfilledMetadata(mediaId, coverHash, authors, workKey)
     }
 
     /** Outcome of resolving a single pending book, driving [execute]'s bookkeeping for that book. */

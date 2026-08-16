@@ -532,6 +532,47 @@ class ImportDataUseCaseTest {
     }
 
     @Test
+    fun roundTrip_openLibraryWorkKeySurvivesExportAndImport() = runTest {
+        // The work key is a new IdentifierProvider, not a new column, so the CSV surface carries it
+        // with no format change -- the exporter packs every ExternalIdentifierEntity and
+        // unpackIdentifiers resolves the provider by name. That is worth *proving* rather than
+        // assuming: a book whose work key is dropped on a CSV round-trip becomes a silent backfill
+        // candidate again on the next device, paying for the same rate-limited lookup twice.
+        val mediaId = "media-with-a-work-key"
+        val incomingBooks = listOf(
+            BookWithDetails(
+                mediaItem = sampleMediaItem(id = mediaId, title = "The Hobbit"),
+                details = sampleBookDetails(mediaId = mediaId, isbn = "9780547928227"),
+            ),
+        )
+        val incomingIdentifiers = mapOf(
+            mediaId to listOf(
+                sampleExternalIdentifier(mediaId, IdentifierProvider.ISBN, "9780547928227"),
+                sampleExternalIdentifier(mediaId, IdentifierProvider.OPEN_LIBRARY, "/books/OL33891995M"),
+                sampleExternalIdentifier(mediaId, IdentifierProvider.OPEN_LIBRARY_WORK, "/works/OL27482W"),
+            ),
+        )
+        val libraryCsv = LibraryCsvExporter.export(incomingBooks, incomingIdentifiers)
+        assertTrue(
+            libraryCsv.contains("OPEN_LIBRARY_WORK:/works/OL27482W"),
+            "the exporter must pack the work key: $libraryCsv",
+        )
+
+        val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+        assertIs<Resource.Success<ImportSummary>>(result)
+
+        val byProvider = bookRepository.observeAllExternalIdentifiers().first()
+            .filter { it.mediaId == mediaId }
+            .associate { it.provider to it.externalId }
+        assertEquals("/works/OL27482W", byProvider[IdentifierProvider.OPEN_LIBRARY_WORK])
+        assertEquals(
+            "/books/OL33891995M",
+            byProvider[IdentifierProvider.OPEN_LIBRARY],
+            "the edition key must round-trip alongside it, not be collapsed into one row",
+        )
+    }
+
+    @Test
     fun execute_duplicateByIsbn_matchesEvenWhenMediaIdDiffers() = runTest {
         val existingMediaId = addBook(title = "Existing", isbn = "9783333333333", repository = bookRepository)
 

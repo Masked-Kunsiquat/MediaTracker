@@ -16,6 +16,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -137,6 +138,209 @@ class OpenLibraryClientTest {
         assertEquals("OpenLibraryClient", warning.tag)
         assertTrue(warning.message.contains("/authors/OL26320A"), "the key is what makes it diagnosable")
         assertTrue(warning.message.contains("500"), "the status is what says why")
+    }
+
+    /**
+     * The real Mariner 75th Anniversary Hobbit payload, trimmed. Its edition record has **no**
+     * `authors` key at all — this is the exact response that shipped a bookless-author into the
+     * library on device, and the reason work-level lookup exists.
+     */
+    private val editionWithoutAuthorsJson = """
+        {
+          "works": [{"key": "/works/OL27482W"}],
+          "title": "The Hobbit",
+          "publish_date": "2012",
+          "key": "/books/OL33891995M",
+          "covers": [12003329],
+          "number_of_pages": 300
+        }
+    """.trimIndent()
+
+    /** A work's author refs nest one level deeper than an edition's — see OpenLibraryWorkDto. */
+    private val workJson = """
+        {
+          "authors": [
+            {"author": {"key": "/authors/OL26320A"}, "type": {"key": "/type/author_role"}}
+          ]
+        }
+    """.trimIndent()
+
+    @Test
+    fun editionWithoutAuthors_fallsBackToTheWorkRecord() = runTest {
+        // The device-found bug. Open Library hangs authorship off the work, and many edition
+        // records omit `authors` entirely; reading only the edition dropped the author silently,
+        // with nothing logged, because an absence is not a failure.
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionWithoutAuthorsJson)
+                request.url.encodedPath.contains("/works/") -> jsonResponse(workJson)
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "J.R.R. Tolkien"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = OpenLibraryClient(createHttpClient(engine))
+
+        val result = client.fetchByIsbn("9780547928227")
+
+        val metadata = (result as Resource.Success).data
+        assertEquals(listOf("J.R.R. Tolkien"), metadata.authors)
+    }
+
+    @Test
+    fun workFallback_isTraced_soASilentRecoveryIsStillVisible() = runTest {
+        // The bug this fix addresses was invisible because nothing failed -- an edition without
+        // authors is not an error, so there was nothing for Task 15's adoption to report and the
+        // book just arrived blank. Tracing the *successful* fallback is what makes the recovery
+        // observable at all; without it the only way to tell the fix is working is to inspect the
+        // database.
+        val recorder = RecordingLogger()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionWithoutAuthorsJson)
+                request.url.encodedPath.contains("/works/") -> jsonResponse(workJson)
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "J.R.R. Tolkien"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
+
+        client.fetchByIsbn("9780547928227")
+
+        val info = recorder.entries.single { it.level == LogLevel.INFO }
+        assertTrue(info.message.contains("/works/OL27482W"), "the key is what makes it diagnosable: ${info.message}")
+        assertFalse(
+            info.message.contains("Tolkien"),
+            "the log is user-viewable and must never carry an author name: ${info.message}",
+        )
+    }
+
+    @Test
+    fun editionWithItsOwnAuthors_tracesNoFallback() = runTest {
+        // Negative control: the test above passes just as well if the client logs that line
+        // unconditionally, which would report a fallback that never happened.
+        val editionJson = """
+            {
+              "works": [{"key": "/works/OL27482W"}],
+              "title": "The Hobbit",
+              "authors": [{"key": "/authors/OL26320A"}]
+            }
+        """.trimIndent()
+        val recorder = RecordingLogger()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionJson)
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "J.R.R. Tolkien"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+
+        OpenLibraryClient(createHttpClient(engine), logger = recorder).fetchByIsbn("9780547928227")
+
+        assertTrue(
+            recorder.entries.none { it.level == LogLevel.INFO },
+            "no fallback happened, so nothing should claim one did: ${recorder.entries}",
+        )
+    }
+
+    @Test
+    fun workKey_isCapturedEvenWhenTheEditionHasItsOwnAuthors() = runTest {
+        // Captured at ingestion regardless of whether it was needed for authors, because it cannot
+        // be recovered later without another rate-limited crawl over the whole library.
+        val editionJson = """
+            {
+              "works": [{"key": "/works/OL27482W"}],
+              "title": "The Hobbit",
+              "authors": [{"key": "/authors/OL26320A"}],
+              "key": "/books/OL33891995M"
+            }
+        """.trimIndent()
+        var workRequests = 0
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionJson)
+                request.url.encodedPath.contains("/works/") -> {
+                    workRequests++
+                    jsonResponse(workJson)
+                }
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "J.R.R. Tolkien"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = OpenLibraryClient(createHttpClient(engine))
+
+        val metadata = (client.fetchByIsbn("9780547928227") as Resource.Success).data
+
+        assertEquals("/works/OL27482W", metadata.workKey)
+        assertEquals("/books/OL33891995M", metadata.externalId, "externalId stays the edition key")
+        assertEquals(listOf("J.R.R. Tolkien"), metadata.authors)
+        assertEquals(0, workRequests, "the edition already had authors; the work fetch is a fallback")
+    }
+
+    @Test
+    fun editionAuthors_winOverTheWorks() = runTest {
+        // The edition is the more specific record, and preferring it preserves the behaviour every
+        // already-ingested book was added with.
+        val editionJson = """
+            {
+              "works": [{"key": "/works/OL27482W"}],
+              "title": "The Hobbit",
+              "authors": [{"key": "/authors/EDITION"}]
+            }
+        """.trimIndent()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionJson)
+                request.url.encodedPath.contains("/works/") -> jsonResponse(workJson)
+                request.url.encodedPath.contains("/authors/EDITION") ->
+                    jsonResponse("""{"name": "Edition Author"}""")
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "Work Author"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = OpenLibraryClient(createHttpClient(engine))
+
+        val metadata = (client.fetchByIsbn("9780547928227") as Resource.Success).data
+
+        assertEquals(listOf("Edition Author"), metadata.authors)
+    }
+
+    @Test
+    fun workLookupFailure_stillReturnsTheBookAndSaysWhyTheAuthorIsMissing() = runTest {
+        val recorder = RecordingLogger()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionWithoutAuthorsJson)
+                request.url.encodedPath.contains("/works/") -> respondError(HttpStatusCode.InternalServerError)
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
+
+        val result = client.fetchByIsbn("9780547928227")
+
+        val metadata = (result as Resource.Success).data
+        assertTrue(metadata.authors.isEmpty(), "a missing author must not fail the book")
+        assertEquals("/works/OL27482W", metadata.workKey, "the key is known even if the fetch failed")
+        val warning = recorder.entries.single { it.level == LogLevel.WARN }
+        assertTrue(warning.message.contains("/works/OL27482W"), "the key makes it diagnosable")
+        assertTrue(warning.message.contains("500"), "the status says why")
+    }
+
+    @Test
+    fun editionWithNoWorkAtAll_returnsSuccessWithNoAuthorAndNoWorkKey() = runTest {
+        val engine = MockEngine { jsonResponse("""{"title": "Orphan Edition"}""") }
+        val client = OpenLibraryClient(createHttpClient(engine))
+
+        val metadata = (client.fetchByIsbn("1234567890") as Resource.Success).data
+
+        assertEquals("Orphan Edition", metadata.title)
+        assertTrue(metadata.authors.isEmpty())
+        assertNull(metadata.workKey)
     }
 
     @Test

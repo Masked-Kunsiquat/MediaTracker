@@ -2,6 +2,7 @@ package com.hub.media.features.books.domain
 
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
@@ -107,6 +108,17 @@ public class AddBookByIsbnUseCase(
 
         val coverImageHash = metadata.coverImageUrl?.let { url -> downloadAndStoreCover(url) }
 
+        // Lifecycle tracing (ROADMAP Task 15 Phase C). Adding a book is the app's most common
+        // deliberate action and traced nothing at all, so an ingestion that silently came back
+        // thin -- no author, no cover, no work key -- left the log with nothing to say about it.
+        // Shapes only, never the title or author: the log is user-viewable and Settings promises
+        // it "never includes your titles, authors, or notes".
+        logger.info(TAG) {
+            "Book lookup resolved via ${metadata.provider}: " +
+                "authors=${metadata.authors.size}, cover=${coverImageHash != null}, " +
+                "workKey=${metadata.workKey != null}, pageCount=${metadata.pageCount != null}"
+        }
+
         return bookRepository.addBook(
             title = metadata.title,
             releaseYear = metadata.releaseYear,
@@ -137,9 +149,15 @@ public class AddBookByIsbnUseCase(
     }
 
     /**
-     * Builds the external identifier rows for [metadata]: the provider-native id, plus the
-     * normalized ISBN — deduped to a single row if [BookMetadata.provider] is already
-     * [IdentifierProvider.ISBN].
+     * Builds the external identifier rows for [metadata]: the provider-native id, the work key
+     * where the provider has one, plus the normalized ISBN — deduped to a single row if
+     * [BookMetadata.provider] is already [IdentifierProvider.ISBN].
+     *
+     * The work key is written even though no feature reads it yet. That is deliberate and is the
+     * cheap half of a decision that is expensive to reverse: it costs one row at ingestion, while
+     * backfilling it onto books already added costs another rate-limited crawl over the whole
+     * library — the exact hole ROADMAP Task 14 existed to dig covers and authors out of. See
+     * [IdentifierProvider.OPEN_LIBRARY_WORK].
      */
     private fun buildExternalIdentifiers(
         metadata: BookMetadata,
@@ -148,6 +166,10 @@ public class AddBookByIsbnUseCase(
         if (metadata.provider != IdentifierProvider.ISBN && metadata.externalId != null) {
             add(metadata.provider to metadata.externalId)
         }
+        // Its own provider slot rather than overwriting the edition key: the table's primary key is
+        // (mediaId, provider), so the two coexist and a later reader can tell a printing from the
+        // book it is a printing of.
+        metadata.workKey?.let { add(IdentifierProvider.OPEN_LIBRARY_WORK to it) }
         add(IdentifierProvider.ISBN to normalizedIsbn)
     }
 }

@@ -8,6 +8,7 @@ import androidx.room.Transaction
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
@@ -32,6 +33,28 @@ interface BookWriteDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertExternalIdentifier(identifier: ExternalIdentifierEntity)
+
+    /**
+     * [OnConflictStrategy.REPLACE] counterpart of [insertExternalIdentifier], for *backfilling* an
+     * identifier onto a book that already exists (ROADMAP Task 14 Phase A's scan, widened to the
+     * Open Library work key). The ABORT strategy above is deliberate for [insertBookAtomically] --
+     * a duplicate there means a genuine bug and must roll the whole insert back -- but a backfill
+     * re-running over a book whose row landed since the candidate list was seeded is ordinary, not
+     * a bug, and throwing would defer that book forever.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertExternalIdentifier(identifier: ExternalIdentifierEntity)
+
+    /**
+     * Whether [mediaId] resolves to a real book, for use *inside* [applyBackfilledMetadata]'s
+     * transaction. The cover/authors writes there detect a missing book from their own
+     * affected-row count, but an identifier *insert* has no such count -- without this check a
+     * work-key-only backfill against a deleted book would report success on the strength of a row
+     * the foreign key is about to reject (or, if FK enforcement is ever off, actually write an
+     * orphan).
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM media_items WHERE id = :mediaId)")
+    suspend fun mediaItemExists(mediaId: String): Boolean
 
     /**
      * Targeted single-row update of [MediaItemEntity]'s user-editable metadata columns only
@@ -173,12 +196,19 @@ interface BookWriteDao {
      * written cover but a stale-untouched author write half-applied (or vice versa) when both were
      * actually resolved this pass.
      *
-     * [coverImageHash] and/or [authors] being `null` means "this pass didn't resolve that field"
-     * (the book already had it, or the provider genuinely had nothing new) -- that column is simply
-     * not touched, exactly like [updateCoverImageHashOnly]/[updateAuthorsOnly] individually. Both
-     * `null` is a caller error the repository layer guards against before ever calling this (see
-     * [com.hub.media.features.books.data.BookRepository.applyBackfilledMetadata]'s KDoc) rather than
-     * something this method needs to special-case.
+     * [coverImageHash], [authors] and/or [workKey] being `null` means "this pass didn't resolve
+     * that field" (the book already had it, or the provider genuinely had nothing new) -- that
+     * column is simply not touched, exactly like [updateCoverImageHashOnly]/[updateAuthorsOnly]
+     * individually. All `null` is a caller error the repository layer guards against before ever
+     * calling this (see [com.hub.media.features.books.data.BookRepository.applyBackfilledMetadata]'s
+     * KDoc) rather than something this method needs to special-case.
+     *
+     * [workKey] is the odd one out in shape though not in purpose: it is an
+     * [IdentifierProvider.OPEN_LIBRARY_WORK] *row* in `external_identifiers`, not a column on an
+     * existing row, so it is written with [upsertExternalIdentifier] rather than a targeted
+     * `UPDATE`. It rides in this same transaction for exactly the reason the other two do -- one
+     * provider lookup resolves all three, and a process death between two separate writes would
+     * leave a book holding some of what that lookup found and not the rest.
      *
      * No self-heal on a missing [BookDetailsEntity] row (unlike [updateBookMetadataAtomically]):
      * there is no format/totalPages/status to construct a replacement row from here, and the
@@ -191,13 +221,28 @@ interface BookWriteDao {
      *   attempted.
      */
     @Transaction
-    suspend fun applyBackfilledMetadata(mediaId: String, coverImageHash: String?, authors: String?): Int {
+    suspend fun applyBackfilledMetadata(
+        mediaId: String,
+        coverImageHash: String?,
+        authors: String?,
+        workKey: String?,
+    ): Int {
         var rowsAffected = 0
         if (coverImageHash != null) {
             rowsAffected += updateCoverImageHashOnly(mediaId, coverImageHash)
         }
         if (authors != null) {
             rowsAffected += updateAuthorsOnly(mediaId, authors)
+        }
+        if (workKey != null && mediaItemExists(mediaId)) {
+            upsertExternalIdentifier(
+                ExternalIdentifierEntity(
+                    mediaId = mediaId,
+                    provider = IdentifierProvider.OPEN_LIBRARY_WORK,
+                    externalId = workKey,
+                ),
+            )
+            rowsAffected++
         }
         return rowsAffected
     }

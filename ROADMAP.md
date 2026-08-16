@@ -654,6 +654,21 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
     into an in-flight resume chain — they're picked up by the next fresh run instead).
   - **Only touches books missing data**, never refreshes a book that already has a cover/authors —
     this is a repair pass for gaps, not a re-sync, and won't fight a future manual-cover-entry edit.
+  - **Widened afterwards to the Open Library work key** (see Task 9's work-level author fix). A
+    missing `IdentifierProvider.OPEN_LIBRARY_WORK` row now counts as a gap in its own right, on the
+    same reasoning that made this a cover-*and*-author pass: one lookup already carries all three,
+    and the key is not derivable from anything stored — only another crawl produces it. The cost is
+    that a library whose covers and authors are complete had *no* candidates and now has one per
+    book, so the first run after that change walks essentially the whole library. Accepted
+    deliberately; the alternative was capturing the key for new books only and leaving the existing
+    library permanently without it. Only the cover probe is quota-limited, and a book needing
+    nothing but a work key never reaches it. A book whose provider has no work concept (Google
+    Books) resolves with nothing written and leaves the pending queue, so it is never retried
+    within a run or its resumes — but a later *fresh* run rescans it, since nothing records that
+    the key was already asked for and found unavailable. That is the pre-existing behaviour of a
+    genuinely-absent cover, kept rather than special-cased: a "confirmed unavailable" marker for
+    the work key alone would leave the three gap dimensions inconsistent, and the cost is one
+    lookup per unfillable book per user-initiated run.
   - **`RefetchCoverUseCase` was left as-is (sibling use case, not generalized/wrapped).** It only
     ever touches the cover column and returns a single-book UX `Resource`; neither shape fits a
     many-book, resumable, cover-*and*-author operation, so `BulkBackfillUseCase` is new and
