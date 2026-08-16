@@ -123,6 +123,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # `fetch-depth: 0` is full *depth*, not full *breadth*: checkout still fetches only the ref
+      # under review and its base. The first run of this job scanned 110 commits where the whole
+      # repository holds more, so a secret pushed to any other branch would have sat unscanned until
+      # that branch happened to open a PR. On a public repository that gap is the whole risk -- the
+      # value is readable the moment it is pushed, not when it is reviewed.
+      #
+      # gitleaks reads refs/remotes/* as well as refs/heads/*, verified: a secret reachable only
+      # from a remote-tracking ref is still reported. So fetching every head and tag is enough to
+      # make the scan below cover the repository rather than the branch.
+      #
+      # Unauthenticated, because persist-credentials is false above and this repository is public.
+      # Were it ever made private this step would fail rather than silently narrow, and the
+      # tooling-failure message at the end makes clear that a failure here is not a leak report.
+      - name: Fetch every branch and tag
+        run: git fetch --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
+
       # Pinned release binary rather than gitleaks-action, for two reasons. The action requires a
       # licence key for organisation-owned repositories, which is a dependency on this repository
       # staying personally owned. More importantly it is third-party code executing in the
