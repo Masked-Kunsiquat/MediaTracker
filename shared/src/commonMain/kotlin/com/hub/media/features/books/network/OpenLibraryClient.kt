@@ -8,6 +8,7 @@ import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
 import com.hub.media.features.books.network.dto.OpenLibraryWorkDto
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -128,6 +129,11 @@ public class OpenLibraryClient(
     ): List<String> {
         val fromEdition = resolveAuthorNames(editionRefs)
         if (fromEdition.isNotEmpty() || workKey == null) return fromEdition
+        // Traced because the original bug was invisible precisely *because* nothing failed: an
+        // edition with no authors is not an error, so the silent path had nothing to report and
+        // the book simply arrived blank. An INFO line here is what makes the fallback observable
+        // when it works, not only when it breaks. Key, not name -- see the log-privacy rule above.
+        logger.info(TAG) { "Edition carries no authors; falling back to work $workKey" }
         return resolveAuthorNames(fetchWorkAuthorRefs(workKey))
     }
 

@@ -16,6 +16,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -184,6 +185,64 @@ class OpenLibraryClientTest {
 
         val metadata = (result as Resource.Success).data
         assertEquals(listOf("J.R.R. Tolkien"), metadata.authors)
+    }
+
+    @Test
+    fun workFallback_isTraced_soASilentRecoveryIsStillVisible() = runTest {
+        // The bug this fix addresses was invisible because nothing failed -- an edition without
+        // authors is not an error, so there was nothing for Task 15's adoption to report and the
+        // book just arrived blank. Tracing the *successful* fallback is what makes the recovery
+        // observable at all; without it the only way to tell the fix is working is to inspect the
+        // database.
+        val recorder = RecordingLogger()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionWithoutAuthorsJson)
+                request.url.encodedPath.contains("/works/") -> jsonResponse(workJson)
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "J.R.R. Tolkien"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+        val client = OpenLibraryClient(createHttpClient(engine), logger = recorder)
+
+        client.fetchByIsbn("9780547928227")
+
+        val info = recorder.entries.single { it.level == LogLevel.INFO }
+        assertTrue(info.message.contains("/works/OL27482W"), "the key is what makes it diagnosable: ${info.message}")
+        assertFalse(
+            info.message.contains("Tolkien"),
+            "the log is user-viewable and must never carry an author name: ${info.message}",
+        )
+    }
+
+    @Test
+    fun editionWithItsOwnAuthors_tracesNoFallback() = runTest {
+        // Negative control: the test above passes just as well if the client logs that line
+        // unconditionally, which would report a fallback that never happened.
+        val editionJson = """
+            {
+              "works": [{"key": "/works/OL27482W"}],
+              "title": "The Hobbit",
+              "authors": [{"key": "/authors/OL26320A"}]
+            }
+        """.trimIndent()
+        val recorder = RecordingLogger()
+        val engine = MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") -> jsonResponse(editionJson)
+                request.url.encodedPath.contains("/authors/") ->
+                    jsonResponse("""{"name": "J.R.R. Tolkien"}""")
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+
+        OpenLibraryClient(createHttpClient(engine), logger = recorder).fetchByIsbn("9780547928227")
+
+        assertTrue(
+            recorder.entries.none { it.level == LogLevel.INFO },
+            "no fallback happened, so nothing should claim one did: ${recorder.entries}",
+        )
     }
 
     @Test
