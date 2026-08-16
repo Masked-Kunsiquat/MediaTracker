@@ -15,11 +15,11 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.BookMetadataValidation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 
 /** Log tag for this repository's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "BookRepository"
@@ -46,20 +46,17 @@ public class BookRepository(
     private val clock: Clock = Clock.System,
     private val logger: Logger = AppLogger,
 ) {
-
     /**
      * Observes all books in the database as a reactive stream, ordered by title.
      * No [Resource] wrapper on Flow-based reads per AGENTS.md §5 conventions.
      */
-    public fun observeAllBooks(): Flow<List<MediaItemEntity>> =
-        db.mediaItemDao().observeByType(MediaType.BOOK)
+    public fun observeAllBooks(): Flow<List<MediaItemEntity>> = db.mediaItemDao().observeByType(MediaType.BOOK)
 
     /**
      * Observes a single book by ID as a reactive stream via an indexed primary-key query.
      * Emits null if the book does not exist (or after it is deleted).
      */
-    public fun observeBook(id: String): Flow<MediaItemEntity?> =
-        db.mediaItemDao().observeById(id)
+    public fun observeBook(id: String): Flow<MediaItemEntity?> = db.mediaItemDao().observeById(id)
 
     /**
      * Observes a single book together with its [BookDetailsEntity] as a reactive stream (ROADMAP
@@ -167,53 +164,57 @@ public class BookRepository(
         status: ReadingStatus = ReadingStatus.TO_READ,
         trackingMode: TrackingMode = if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT,
         authors: String? = null,
-    ): Resource<String> = try {
-        val mediaId = newId()
-        val now = Clock.System.now()
+    ): Resource<String> =
+        try {
+            val mediaId = newId()
+            val now = Clock.System.now()
 
-        val mediaItem = MediaItemEntity(
-            id = mediaId,
-            type = MediaType.BOOK,
-            title = title,
-            releaseYear = releaseYear,
-            purchasePrice = purchasePrice,
-            createdAt = now,
-            coverImageHash = coverImageHash,
-        )
+            val mediaItem =
+                MediaItemEntity(
+                    id = mediaId,
+                    type = MediaType.BOOK,
+                    title = title,
+                    releaseYear = releaseYear,
+                    purchasePrice = purchasePrice,
+                    createdAt = now,
+                    coverImageHash = coverImageHash,
+                )
 
-        val bookDetails = BookDetailsEntity(
-            mediaId = mediaId,
-            isbn = isbn,
-            format = format,
-            totalPages = totalPages,
-            status = status,
-            trackingMode = trackingMode,
-            authors = authors,
-        )
+            val bookDetails =
+                BookDetailsEntity(
+                    mediaId = mediaId,
+                    isbn = isbn,
+                    format = format,
+                    totalPages = totalPages,
+                    status = status,
+                    trackingMode = trackingMode,
+                    authors = authors,
+                )
 
-        val identifierEntities = externalIdentifiers.map { (provider, externalId) ->
-            ExternalIdentifierEntity(
-                mediaId = mediaId,
-                provider = provider,
-                externalId = externalId,
+            val identifierEntities =
+                externalIdentifiers.map { (provider, externalId) ->
+                    ExternalIdentifierEntity(
+                        mediaId = mediaId,
+                        provider = provider,
+                        externalId = externalId,
+                    )
+                }
+
+            db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities)
+
+            Resource.Success(mediaId)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious ERROR every
+            // time a screen is closed mid-write.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to add a book" }
+            Resource.Error(
+                message = "Failed to add book: ${e.message ?: "Unknown error"}",
+                cause = e,
             )
         }
-
-        db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities)
-
-        Resource.Success(mediaId)
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-        // swallowing it here would both break structured concurrency and log a spurious ERROR every
-        // time a screen is closed mid-write.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Failed to add a book" }
-        Resource.Error(
-            message = "Failed to add book: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
 
     /**
      * Deletes a book and all associated data (cascades via FK constraints).
@@ -221,21 +222,22 @@ public class BookRepository(
      * @param id The media ID of the book to delete.
      * @return [Resource.Success] if deleted, or [Resource.Error] on failure.
      */
-    public suspend fun deleteBook(id: String): Resource<Unit> = try {
-        db.mediaItemDao().deleteById(id)
-        Resource.Success(Unit)
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-        // swallowing it here would both break structured concurrency and log a spurious ERROR every
-        // time a screen is closed mid-write.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Failed to delete book: id=$id" }
-        Resource.Error(
-            message = "Failed to delete book: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
+    public suspend fun deleteBook(id: String): Resource<Unit> =
+        try {
+            db.mediaItemDao().deleteById(id)
+            Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious ERROR every
+            // time a screen is closed mid-write.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to delete book: id=$id" }
+            Resource.Error(
+                message = "Failed to delete book: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
 
     /**
      * Atomically corrects an existing book's metadata (ROADMAP Task 6 Phase A): title,
@@ -313,24 +315,26 @@ public class BookRepository(
             // transaction can never cause a concurrent writer's change to some *other* field to be
             // silently reverted (see BookWriteDao.updateBookMetadataAtomically's KDoc).
             val existingDetails = db.bookDetailsDao().getByMediaId(mediaId)
-            val finishedAt = resolveFinishedAt(
-                newStatus = status,
-                oldStatus = existingDetails?.status ?: ReadingStatus.TO_READ,
-                oldFinishedAt = existingDetails?.finishedAt,
-                clock = clock,
-            )
+            val finishedAt =
+                resolveFinishedAt(
+                    newStatus = status,
+                    oldStatus = existingDetails?.status ?: ReadingStatus.TO_READ,
+                    oldFinishedAt = existingDetails?.finishedAt,
+                    clock = clock,
+                )
 
-            val mediaRowsAffected = db.bookWriteDao().updateBookMetadataAtomically(
-                mediaId = mediaId,
-                title = title,
-                releaseYear = releaseYear,
-                purchasePrice = purchasePrice,
-                format = format,
-                totalPages = totalPages,
-                status = status,
-                finishedAt = finishedAt,
-                trackingMode = trackingMode,
-            )
+            val mediaRowsAffected =
+                db.bookWriteDao().updateBookMetadataAtomically(
+                    mediaId = mediaId,
+                    title = title,
+                    releaseYear = releaseYear,
+                    purchasePrice = purchasePrice,
+                    format = format,
+                    totalPages = totalPages,
+                    status = status,
+                    finishedAt = finishedAt,
+                    trackingMode = trackingMode,
+                )
             if (mediaRowsAffected == 0) {
                 return Resource.Error("Book with id=$mediaId not found")
             }
@@ -372,6 +376,7 @@ public class BookRepository(
      * KDoc), backed by [com.hub.media.core.database.dao.MediaItemDao.getAllByType]/
      * [com.hub.media.core.database.dao.BookDetailsDao.getAll].
      */
+
     /**
      * The set of mediaIds that already hold an identifier for [provider] (ROADMAP Task 14 Phase A's
      * candidate seed, widened to the Open Library work key). Returned as a `Set` because the only
@@ -381,8 +386,10 @@ public class BookRepository(
         db.externalIdentifierDao().getMediaIdsForProvider(provider).toSet()
 
     /** Whether [mediaId] already holds an identifier for [provider]. */
-    public suspend fun hasIdentifier(mediaId: String, provider: IdentifierProvider): Boolean =
-        db.externalIdentifierDao().getByKey(mediaId, provider) != null
+    public suspend fun hasIdentifier(
+        mediaId: String,
+        provider: IdentifierProvider,
+    ): Boolean = db.externalIdentifierDao().getByKey(mediaId, provider) != null
 
     public suspend fun getAllBooksWithDetails(): List<BookWithDetails> {
         val mediaItems = db.mediaItemDao().getAllByType(MediaType.BOOK)
@@ -415,25 +422,29 @@ public class BookRepository(
      * affected-row count (`0` vs `1`) is now how "no such book" is detected, since this no longer
      * reads the row first to check.
      */
-    public suspend fun updateCoverImageHash(mediaId: String, coverImageHash: String): Resource<Unit> = try {
-        val rowsAffected = db.mediaItemDao().updateCoverImageHash(mediaId, coverImageHash)
-        if (rowsAffected == 0) {
-            Resource.Error("Book with id=$mediaId not found")
-        } else {
-            Resource.Success(Unit)
+    public suspend fun updateCoverImageHash(
+        mediaId: String,
+        coverImageHash: String,
+    ): Resource<Unit> =
+        try {
+            val rowsAffected = db.mediaItemDao().updateCoverImageHash(mediaId, coverImageHash)
+            if (rowsAffected == 0) {
+                Resource.Error("Book with id=$mediaId not found")
+            } else {
+                Resource.Success(Unit)
+            }
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious ERROR every
+            // time a screen is closed mid-write.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to update the cover hash for book: id=$mediaId" }
+            Resource.Error(
+                message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
         }
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-        // swallowing it here would both break structured concurrency and log a spurious ERROR every
-        // time a screen is closed mid-write.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Failed to update the cover hash for book: id=$mediaId" }
-        Resource.Error(
-            message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
 
     /**
      * Atomically writes the cover and/or authors a single bulk-backfill pass resolved for
@@ -514,33 +525,38 @@ public class BookRepository(
      *   [BookDetailsEntity] row (never expected via [addBook]'s atomic insert; see
      *   [observeBookDetail]'s KDoc for how it can arise anyway).
      */
-    public suspend fun updateReadingStatus(mediaId: String, status: ReadingStatus): Resource<Unit> = try {
-        val existingDetails = db.bookDetailsDao().getByMediaId(mediaId)
-            ?: return Resource.Error("No book details found for id=$mediaId")
+    public suspend fun updateReadingStatus(
+        mediaId: String,
+        status: ReadingStatus,
+    ): Resource<Unit> =
+        try {
+            val existingDetails =
+                db.bookDetailsDao().getByMediaId(mediaId)
+                    ?: return Resource.Error("No book details found for id=$mediaId")
 
-        val finishedAt = resolveFinishedAt(
-            newStatus = status,
-            oldStatus = existingDetails.status,
-            oldFinishedAt = existingDetails.finishedAt,
-            clock = clock,
-        )
-        db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
-        Resource.Success(Unit)
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-        // swallowing it here would both break structured concurrency and log a spurious ERROR every
-        // time a screen is closed mid-write.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Failed to update reading status for book: id=$mediaId" }
-        Resource.Error(
-            message = "Failed to update reading status: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
+            val finishedAt =
+                resolveFinishedAt(
+                    newStatus = status,
+                    oldStatus = existingDetails.status,
+                    oldFinishedAt = existingDetails.finishedAt,
+                    clock = clock,
+                )
+            db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
+            Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
+            // swallowing it here would both break structured concurrency and log a spurious ERROR every
+            // time a screen is closed mid-write.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to update reading status for book: id=$mediaId" }
+            Resource.Error(
+                message = "Failed to update reading status: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
 
     public companion object {
-
         /**
          * Derives the [BookDetailsEntity.finishedAt] value for a [ReadingStatus] transition
          * (ROADMAP Task 6 Phase C), shared by [updateBookMetadata] and [updateReadingStatus] so the
@@ -561,11 +577,12 @@ public class BookRepository(
             oldStatus: ReadingStatus,
             oldFinishedAt: Instant?,
             clock: Clock,
-        ): Instant? = when {
-            newStatus != ReadingStatus.FINISHED -> null
-            oldStatus == ReadingStatus.FINISHED && oldFinishedAt != null -> oldFinishedAt
-            else -> clock.now()
-        }
+        ): Instant? =
+            when {
+                newStatus != ReadingStatus.FINISHED -> null
+                oldStatus == ReadingStatus.FINISHED && oldFinishedAt != null -> oldFinishedAt
+                else -> clock.now()
+            }
 
         /**
          * Lower bound for [updateBookMetadata]'s [BookRepository.updateBookMetadata] `releaseYear`

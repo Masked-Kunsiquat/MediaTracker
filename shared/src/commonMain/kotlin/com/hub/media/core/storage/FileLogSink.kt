@@ -1,7 +1,7 @@
 package com.hub.media.core.storage
 
-import com.hub.media.core.util.Logger
 import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.Logger
 
 /**
  * [Logger] adapter writing into a [LogFileStore] (ROADMAP Task 15 Phase B). Installed as (part of)
@@ -25,14 +25,22 @@ import com.hub.media.core.util.LogLevel
  * itself become a new source of failure for whatever business logic happened to be logging a
  * WARN/ERROR about something else entirely.
  */
-public class FileLogSink(private val store: LogFileStore) : Logger {
-    override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
+public class FileLogSink(
+    private val store: LogFileStore,
+) : Logger {
+    override fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: () -> String,
+    ) {
         try {
-            val text = if (throwable != null) {
-                "${message()}\n${throwable.stackTraceToString()}"
-            } else {
-                message()
-            }
+            val text =
+                if (throwable != null) {
+                    "${message()}\n${throwable.stackTraceToString()}"
+                } else {
+                    message()
+                }
             store.append(level, tag, text)
         } catch (_: Throwable) {
             // See this class's KDoc "Never a new source of failure".

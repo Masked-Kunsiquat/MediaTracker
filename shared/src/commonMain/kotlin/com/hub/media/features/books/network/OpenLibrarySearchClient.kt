@@ -27,21 +27,22 @@ private const val OPEN_LIBRARY_COVERS_BASE_URL = "https://covers.openlibrary.org
  * that is indefensible. Everything listed here is what a dropdown row actually renders, plus the
  * two keys a selection needs to resolve later.
  */
-private val SEARCH_FIELDS = listOf(
-    "key",
-    // Requested ahead of its consumer, and the only field here that is: Phase B2's typed result
-    // styling (author vs. title vs. collection) is driven by it. `author_key` used to sit alongside
-    // it with no consumer at all, which quietly contradicted the argument this whole whitelist
-    // rests on -- if the payload is worth trimming, it is worth trimming of our own dead fields too.
-    "type",
-    "title",
-    "author_name",
-    "first_publish_year",
-    "cover_i",
-    "cover_edition_key",
-    "edition_count",
-    "number_of_pages_median",
-).joinToString(",")
+private val SEARCH_FIELDS =
+    listOf(
+        "key",
+        // Requested ahead of its consumer, and the only field here that is: Phase B2's typed result
+        // styling (author vs. title vs. collection) is driven by it. `author_key` used to sit alongside
+        // it with no consumer at all, which quietly contradicted the argument this whole whitelist
+        // rests on -- if the payload is worth trimming, it is worth trimming of our own dead fields too.
+        "type",
+        "title",
+        "author_name",
+        "first_publish_year",
+        "cover_i",
+        "cover_edition_key",
+        "edition_count",
+        "number_of_pages_median",
+    ).joinToString(",")
 
 /** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "OpenLibrarySearchClient"
@@ -88,7 +89,6 @@ public class OpenLibrarySearchClient(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
 ) : BookSearchProvider {
-
     override suspend fun searchByTitleOrAuthor(
         query: String,
         limit: Int,
@@ -101,13 +101,14 @@ public class OpenLibrarySearchClient(
         }
 
         return try {
-            val response = client.get(OPEN_LIBRARY_SEARCH_URL) {
-                // Ktor URL-encodes these, which matters more here than on the ISBN path: this is
-                // arbitrary user text, so spaces, ampersands and non-Latin scripts all arrive.
-                parameter("q", trimmed)
-                parameter("fields", SEARCH_FIELDS)
-                parameter("limit", limit)
-            }
+            val response =
+                client.get(OPEN_LIBRARY_SEARCH_URL) {
+                    // Ktor URL-encodes these, which matters more here than on the ISBN path: this is
+                    // arbitrary user text, so spaces, ampersands and non-Latin scripts all arrive.
+                    parameter("q", trimmed)
+                    parameter("fields", SEARCH_FIELDS)
+                    parameter("limit", limit)
+                }
 
             if (!response.status.isSuccess()) {
                 // 429 is a genuinely likely status here rather than a theoretical one — a
@@ -117,15 +118,16 @@ public class OpenLibrarySearchClient(
                 return Resource.Error("Open Library search failed with status ${response.status.value}")
             }
 
-            val dto = try {
-                response.body<OpenLibrarySearchResponseDto>()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Exception type only, and no `throwable` argument -- see typeName().
-                logger.warn(TAG) { "Open Library returned malformed JSON for a search (${e.typeName()})" }
-                return Resource.Error("Open Library returned a malformed search response")
-            }
+            val dto =
+                try {
+                    response.body<OpenLibrarySearchResponseDto>()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Exception type only, and no `throwable` argument -- see typeName().
+                    logger.warn(TAG) { "Open Library returned malformed JSON for a search (${e.typeName()})" }
+                    return Resource.Error("Open Library returned a malformed search response")
+                }
 
             // An empty docs list is a successful search that found nothing, not a failure: the
             // distinction is the whole reason the UI can say "no matches" instead of "search

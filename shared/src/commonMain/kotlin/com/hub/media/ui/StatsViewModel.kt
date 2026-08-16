@@ -6,9 +6,6 @@ import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.observeWeekStartDay
 import com.hub.media.features.stats.data.StatsRepository
-import kotlin.time.Clock
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +15,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.TimeZone
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Drives the stats screen (ROADMAP Task 5; the screen itself is Phase C).
@@ -68,22 +68,25 @@ public class StatsViewModel(
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
     clock: Clock = Clock.System,
 ) : ViewModel() {
-
     private val monthBounds: Pair<Instant, Instant> = StatsRepository.thisMonthBounds(timeZone, clock)
 
-    private fun periodFlow(from: Instant, to: Instant): Flow<StatsUiState.Period> = combine(
-        statsRepository.observeTimeReadInRange(from, to),
-        statsRepository.observeSessionCountInRange(from, to),
-        statsRepository.observePagesReadInRange(from, to),
-        statsRepository.observeBooksFinishedInRange(from, to),
-    ) { timeRead, sessionCount, pagesRead, booksFinished ->
-        StatsUiState.Period(
-            timeReadSeconds = timeRead,
-            sessionCount = sessionCount,
-            pagesRead = pagesRead,
-            booksFinished = booksFinished,
-        )
-    }
+    private fun periodFlow(
+        from: Instant,
+        to: Instant,
+    ): Flow<StatsUiState.Period> =
+        combine(
+            statsRepository.observeTimeReadInRange(from, to),
+            statsRepository.observeSessionCountInRange(from, to),
+            statsRepository.observePagesReadInRange(from, to),
+            statsRepository.observeBooksFinishedInRange(from, to),
+        ) { timeRead, sessionCount, pagesRead, booksFinished ->
+            StatsUiState.Period(
+                timeReadSeconds = timeRead,
+                sessionCount = sessionCount,
+                pagesRead = pagesRead,
+                booksFinished = booksFinished,
+            )
+        }
 
     /**
      * "This week"'s period, re-derived (via [flatMapLatest][kotlinx.coroutines.flow.flatMapLatest])
@@ -95,22 +98,23 @@ public class StatsViewModel(
             periodFlow(from, to)
         }
 
-    public val uiState: StateFlow<StatsUiState> = combine(
-        weekPeriodFlow,
-        periodFlow(monthBounds.first, monthBounds.second),
-        statsRepository.observeReadingStreak(timeZone, clock),
-        statsRepository.observeBooksFinishedTotal(),
-    ) { week, month, streak, lifetimeBooksFinished ->
-        StatsUiState(
-            isLoading = false,
-            week = week,
-            month = month,
-            currentStreakDays = streak,
-            lifetimeBooksFinished = lifetimeBooksFinished,
+    public val uiState: StateFlow<StatsUiState> =
+        combine(
+            weekPeriodFlow,
+            periodFlow(monthBounds.first, monthBounds.second),
+            statsRepository.observeReadingStreak(timeZone, clock),
+            statsRepository.observeBooksFinishedTotal(),
+        ) { week, month, streak, lifetimeBooksFinished ->
+            StatsUiState(
+                isLoading = false,
+                week = week,
+                month = month,
+                currentStreakDays = streak,
+                lifetimeBooksFinished = lifetimeBooksFinished,
+            )
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5.seconds),
+            initialValue = StatsUiState(isLoading = true),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5.seconds),
-        initialValue = StatsUiState(isLoading = true),
-    )
 }

@@ -20,7 +20,10 @@ internal expect suspend fun fileExists(path: String): Boolean
  * @return The bytes read (fewer than [byteCount] if the file itself is shorter), or `null` if the
  *   file doesn't exist or can't be read.
  */
-internal expect suspend fun readFileHeaderBytes(path: String, byteCount: Int): ByteArray?
+internal expect suspend fun readFileHeaderBytes(
+    path: String,
+    byteCount: Int,
+): ByteArray?
 
 /**
  * Reads the whole file at [path] as bytes. Only ever used on small files (e.g. the plain-text
@@ -37,7 +40,10 @@ internal expect suspend fun readFileBytes(path: String): ByteArray?
  *
  * @return `true` if the write succeeded.
  */
-internal expect suspend fun writeFileBytes(path: String, bytes: ByteArray): Boolean
+internal expect suspend fun writeFileBytes(
+    path: String,
+    bytes: ByteArray,
+): Boolean
 
 /**
  * Appends [bytes] to the end of the file at [path], creating it (and any missing parent
@@ -58,7 +64,10 @@ internal expect suspend fun writeFileBytes(path: String, bytes: ByteArray): Bool
  *
  * @return `true` if the append succeeded.
  */
-internal expect suspend fun appendFileBytes(path: String, bytes: ByteArray): Boolean
+internal expect suspend fun appendFileBytes(
+    path: String,
+    bytes: ByteArray,
+): Boolean
 
 /**
  * Size of the file at [path] in bytes, or `0` if it does not exist or cannot be read.
@@ -85,7 +94,10 @@ internal expect suspend fun fileSizeBytes(path: String): Long
  * @return The bytes read (the whole file if it is shorter than [byteCount]), or `null` if the file
  *   doesn't exist or can't be read.
  */
-internal expect suspend fun readFileTailBytes(path: String, byteCount: Int): ByteArray?
+internal expect suspend fun readFileTailBytes(
+    path: String,
+    byteCount: Int,
+): ByteArray?
 
 /**
  * Deletes the file at [path] if it exists.
@@ -111,4 +123,7 @@ internal expect suspend fun deleteFileIfExists(path: String): Boolean
  *   reason, including the platform being unable to do an atomic move (nothing at [toPath] is
  *   disturbed in that case).
  */
-internal expect suspend fun renameFile(fromPath: String, toPath: String): Boolean
+internal expect suspend fun renameFile(
+    fromPath: String,
+    toPath: String,
+): Boolean

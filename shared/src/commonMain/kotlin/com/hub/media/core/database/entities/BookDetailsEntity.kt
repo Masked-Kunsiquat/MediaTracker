@@ -149,6 +149,8 @@ data class BookDetailsEntity(
  * non-blank author remains, matching [BookDetailsEntity.authors]' null-means-unknown convention.
  */
 public fun joinAuthors(authors: List<String>): String? =
-    authors.map { it.trim() }.filter { it.isNotEmpty() }
+    authors
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
         .joinToString(BookDetailsEntity.AUTHOR_SEPARATOR)
         .ifEmpty { null }

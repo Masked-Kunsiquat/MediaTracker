@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 public class ExportViewModel(
     private val exportDataUseCase: ExportUseCase,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
     public val uiState: StateFlow<ExportUiState> = _uiState.asStateFlow()
 
@@ -42,10 +41,11 @@ public class ExportViewModel(
 
         _uiState.value = ExportUiState.Loading
         viewModelScope.launch {
-            _uiState.value = when (val result = exportDataUseCase.execute()) {
-                is Resource.Success -> ExportUiState.Success(result.data)
-                is Resource.Error -> ExportUiState.Error(result.message)
-            }
+            _uiState.value =
+                when (val result = exportDataUseCase.execute()) {
+                    is Resource.Success -> ExportUiState.Success(result.data)
+                    is Resource.Error -> ExportUiState.Error(result.message)
+                }
         }
     }
 

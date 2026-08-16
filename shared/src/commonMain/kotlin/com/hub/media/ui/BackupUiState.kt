@@ -4,7 +4,6 @@ import com.hub.media.features.portability.domain.BackupResult
 
 /** UI state for the Settings screen's `.sqlite` backup action (ROADMAP Task 8 Phase C). */
 public sealed class BackupUiState {
-
     /** No backup has been requested yet, or [BackupViewModel.reset] was called. */
     public data object Idle : BackupUiState()
 
@@ -18,12 +17,16 @@ public sealed class BackupUiState {
      * succeeded -- generation succeeding here says nothing about whether the write-to-disk step
      * also succeeds.
      */
-    public data class Success(val result: BackupResult) : BackupUiState()
+    public data class Success(
+        val result: BackupResult,
+    ) : BackupUiState()
 
     /**
      * Backup failed before any snapshot was produced.
      *
      * @property message A user-facing/diagnostic description of the failure.
      */
-    public data class Error(val message: String) : BackupUiState()
+    public data class Error(
+        val message: String,
+    ) : BackupUiState()
 }

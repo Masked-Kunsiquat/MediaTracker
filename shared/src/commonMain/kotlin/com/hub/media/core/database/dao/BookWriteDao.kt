@@ -24,7 +24,6 @@ import kotlin.time.Instant
  */
 @Dao
 interface BookWriteDao {
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMediaItem(item: MediaItemEntity)
 
@@ -171,7 +170,10 @@ interface BookWriteDao {
      * @return The number of rows affected: `1` if [mediaId] exists, `0` otherwise.
      */
     @Query("UPDATE media_items SET coverImageHash = :coverImageHash WHERE id = :mediaId")
-    suspend fun updateCoverImageHashOnly(mediaId: String, coverImageHash: String): Int
+    suspend fun updateCoverImageHashOnly(
+        mediaId: String,
+        coverImageHash: String,
+    ): Int
 
     /**
      * Targeted single-column update of [BookDetailsEntity.authors] only, for use *inside*
@@ -184,7 +186,10 @@ interface BookWriteDao {
      *   see [applyBackfilledMetadata]'s KDoc.
      */
     @Query("UPDATE book_details SET authors = :authors WHERE mediaId = :mediaId")
-    suspend fun updateAuthorsOnly(mediaId: String, authors: String): Int
+    suspend fun updateAuthorsOnly(
+        mediaId: String,
+        authors: String,
+    ): Int
 
     /**
      * Atomically writes the cover and/or authors a bulk backfill pass resolved for [mediaId] in a

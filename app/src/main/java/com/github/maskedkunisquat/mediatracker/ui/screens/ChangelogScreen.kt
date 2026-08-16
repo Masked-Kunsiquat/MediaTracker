@@ -61,18 +61,23 @@ import com.hub.media.ui.entryKey
 @Composable
 fun ChangelogScreenRoute(onNavigateBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val viewModel: ChangelogViewModel = viewModel(
-        factory = remember(context) {
-            ChangelogViewModelFactory(
-                currentVersion = BuildConfig.VERSION_NAME,
-                readChangelog = {
-                    runCatching {
-                        context.assets.open("CHANGELOG.md").bufferedReader().use { it.readText() }
-                    }.getOrNull()
+    val viewModel: ChangelogViewModel =
+        viewModel(
+            factory =
+                remember(context) {
+                    ChangelogViewModelFactory(
+                        currentVersion = BuildConfig.VERSION_NAME,
+                        readChangelog = {
+                            runCatching {
+                                context.assets
+                                    .open("CHANGELOG.md")
+                                    .bufferedReader()
+                                    .use { it.readText() }
+                            }.getOrNull()
+                        },
+                    )
                 },
-            )
-        },
-    )
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     ChangelogScreen(
@@ -124,9 +129,10 @@ fun ChangelogScreen(
         },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             when {
                 uiState.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -137,28 +143,30 @@ fun ChangelogScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(32.dp),
+                        modifier =
+                            Modifier
+                                .align(Alignment.Center)
+                                .padding(32.dp),
                     )
                 }
 
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(uiState.document.versions.size) { index ->
-                        val version = uiState.document.versions[index]
-                        VersionCard(
-                            version = version,
-                            expanded = version.version in uiState.expandedVersions,
-                            expandedEntries = uiState.expandedEntries,
-                            onToggleVersion = { onToggleVersion(version.version) },
-                            onToggleEntry = onToggleEntry,
-                        )
+                else ->
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(uiState.document.versions.size) { index ->
+                            val version = uiState.document.versions[index]
+                            VersionCard(
+                                version = version,
+                                expanded = version.version in uiState.expandedVersions,
+                                expandedEntries = uiState.expandedEntries,
+                                onToggleVersion = { onToggleVersion(version.version) },
+                                onToggleEntry = onToggleEntry,
+                            )
+                        }
                     }
-                }
             }
         }
     }
@@ -174,9 +182,10 @@ private fun VersionCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ExpanderRow(
@@ -252,17 +261,19 @@ private fun ExpanderRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = title, style = titleStyle, modifier = Modifier.weight(1f))
         Icon(
             imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = stringResource(
-                if (expanded) R.string.changelog_collapse else R.string.changelog_expand,
-            ),
+            contentDescription =
+                stringResource(
+                    if (expanded) R.string.changelog_collapse else R.string.changelog_expand,
+                ),
         )
     }
 }
@@ -272,15 +283,17 @@ private fun ExpanderRow(
  * `shared/` and is unit-tested there; this is only the Compose mapping.
  */
 @Composable
-private fun annotated(text: String): AnnotatedString = buildAnnotatedString {
-    parseInlineMarkup(text).forEach { span ->
-        // Built as one SpanStyle rather than nested branches so the flags genuinely compose --
-        // *`code` inside emphasis* occurs in this changelog and would otherwise lose one of them.
-        val style = SpanStyle(
-            fontFamily = if (span.code) FontFamily.Monospace else null,
-            fontWeight = if (span.bold) FontWeight.Bold else null,
-            fontStyle = if (span.italic) FontStyle.Italic else null,
-        )
-        withStyle(style) { append(span.text) }
+private fun annotated(text: String): AnnotatedString =
+    buildAnnotatedString {
+        parseInlineMarkup(text).forEach { span ->
+            // Built as one SpanStyle rather than nested branches so the flags genuinely compose --
+            // *`code` inside emphasis* occurs in this changelog and would otherwise lose one of them.
+            val style =
+                SpanStyle(
+                    fontFamily = if (span.code) FontFamily.Monospace else null,
+                    fontWeight = if (span.bold) FontWeight.Bold else null,
+                    fontStyle = if (span.italic) FontStyle.Italic else null,
+                )
+            withStyle(style) { append(span.text) }
+        }
     }
-}

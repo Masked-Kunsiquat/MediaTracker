@@ -13,7 +13,6 @@ import kotlinx.coroutines.CompletableDeferred
 internal class FakeAddBookByIsbnUseCase(
     private val result: Resource<String> = Resource.Success("fake-media-id"),
 ) : BookIngestionUseCase {
-
     /** Number of times [execute] has been called. */
     var callCount: Int = 0
         private set

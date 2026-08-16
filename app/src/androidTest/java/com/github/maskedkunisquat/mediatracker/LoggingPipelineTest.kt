@@ -41,15 +41,16 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class LoggingPipelineTest {
-
     private companion object {
         const val TAG = "LoggingPipelineTest"
         const val FORBIDDEN_TITLE = "The Left Hand of Darkness"
     }
 
     private val application: MediaTrackerApplication
-        get() = InstrumentationRegistry.getInstrumentation()
-            .targetContext.applicationContext as MediaTrackerApplication
+        get() =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext.applicationContext as MediaTrackerApplication
 
     private val store get() = application.appContainer.logFileStore
 
@@ -67,10 +68,11 @@ class LoggingPipelineTest {
     }
 
     /** Entries this test wrote, newest last, after forcing a flush. */
-    private fun ownEntries(marker: String): List<LogEntry> = runBlocking {
-        store.flush()
-        store.readAll().filter { it.tag == TAG && it.message.contains(marker) }
-    }
+    private fun ownEntries(marker: String): List<LogEntry> =
+        runBlocking {
+            store.flush()
+            store.readAll().filter { it.tag == TAG && it.message.contains(marker) }
+        }
 
     @Test
     fun appLogger_isWiredToTheRealFileStore_soAnEntryReachesDisk() {
@@ -130,41 +132,43 @@ class LoggingPipelineTest {
     }
 
     @Test
-    fun aRealProductionFailurePath_landsInTheStore() = runBlocking {
-        // Not a synthetic AppLogger call: this drives real production code down a real failure
-        // path. Restore validation logs at ERROR when handed a file that does not exist, and it is
-        // local -- no network, no fixtures -- which makes it the cheapest genuine adoption site to
-        // exercise from here.
-        AppLogger.setMinLevel(LogLevel.WARN)
-        store.flush()
-        val before = store.readAll().size
+    fun aRealProductionFailurePath_landsInTheStore() =
+        runBlocking {
+            // Not a synthetic AppLogger call: this drives real production code down a real failure
+            // path. Restore validation logs at ERROR when handed a file that does not exist, and it is
+            // local -- no network, no fixtures -- which makes it the cheapest genuine adoption site to
+            // exercise from here.
+            AppLogger.setMinLevel(LogLevel.WARN)
+            store.flush()
+            val before = store.readAll().size
 
-        application.appContainer.restoreDatabaseUseCase.stage("/definitely/not/a/real/backup.sqlite")
+            application.appContainer.restoreDatabaseUseCase.stage("/definitely/not/a/real/backup.sqlite")
 
-        store.flush()
-        val after = store.readAll()
-        assertTrue(
-            "a failing restore must leave a diagnostic behind; store went from $before to ${after.size}",
-            after.size > before,
-        )
-        assertTrue(
-            "the new entry should be a failure, not incidental chatter",
-            after.takeLast(after.size - before).any { it.level == LogLevel.ERROR || it.level == LogLevel.WARN },
-        )
-    }
+            store.flush()
+            val after = store.readAll()
+            assertTrue(
+                "a failing restore must leave a diagnostic behind; store went from $before to ${after.size}",
+                after.size > before,
+            )
+            assertTrue(
+                "the new entry should be a failure, not incidental chatter",
+                after.takeLast(after.size - before).any { it.level == LogLevel.ERROR || it.level == LogLevel.WARN },
+            )
+        }
 
     @Test
-    fun persistedVerbosity_roundTripsThroughTheRealSettingsStore() = runBlocking {
-        // The user-facing half of the threshold. Note this asserts the value persists, not that the
-        // Application's collector applies it -- that link is still uncovered, see ROADMAP.
-        val settings = application.appContainer.settingsRepository
-        val original = settings.getLogVerbosity()
+    fun persistedVerbosity_roundTripsThroughTheRealSettingsStore() =
+        runBlocking {
+            // The user-facing half of the threshold. Note this asserts the value persists, not that the
+            // Application's collector applies it -- that link is still uncovered, see ROADMAP.
+            val settings = application.appContainer.settingsRepository
+            val original = settings.getLogVerbosity()
 
-        settings.setLogVerbosity(LogLevel.ERROR)
-        assertEquals(LogLevel.ERROR, settings.getLogVerbosity())
+            settings.setLogVerbosity(LogLevel.ERROR)
+            assertEquals(LogLevel.ERROR, settings.getLogVerbosity())
 
-        settings.setLogVerbosity(original)
-    }
+            settings.setLogVerbosity(original)
+        }
 
     @Test
     fun storedEntries_neverContainLibraryContent() {

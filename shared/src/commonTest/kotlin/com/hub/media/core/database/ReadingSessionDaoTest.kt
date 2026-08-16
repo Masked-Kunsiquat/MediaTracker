@@ -1,16 +1,15 @@
 package com.hub.media.core.database
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Instant
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.runTest
 
 class ReadingSessionDaoTest {
-
     private lateinit var db: AppDatabase
 
     @BeforeTest
@@ -24,15 +23,16 @@ class ReadingSessionDaoTest {
     }
 
     @Test
-    fun insertAndObserveSessionsForMedia_returnsSession() = runTest {
-        val media = sampleMediaItem()
-        db.mediaItemDao().insert(media)
-        val session = sampleReadingSession(mediaId = media.id)
+    fun insertAndObserveSessionsForMedia_returnsSession() =
+        runTest {
+            val media = sampleMediaItem()
+            db.mediaItemDao().insert(media)
+            val session = sampleReadingSession(mediaId = media.id)
 
-        db.readingSessionDao().insert(session)
+            db.readingSessionDao().insert(session)
 
-        assertEquals(listOf(session), db.readingSessionDao().observeSessionsForMedia(media.id).first())
-    }
+            assertEquals(listOf(session), db.readingSessionDao().observeSessionsForMedia(media.id).first())
+        }
 
     /**
      * Edge case required by AGENTS.md §7: a 0-second session on a 0-page book (e.g. a DNF
@@ -40,35 +40,44 @@ class ReadingSessionDaoTest {
      * or coerced to null/NaN.
      */
     @Test
-    fun zeroDurationZeroPageSession_isStoredAndReadBackExactly() = runTest {
-        val media = sampleMediaItem()
-        db.mediaItemDao().insert(media)
-        db.bookDetailsDao().insert(sampleBookDetails(mediaId = media.id, totalPages = 0))
+    fun zeroDurationZeroPageSession_isStoredAndReadBackExactly() =
+        runTest {
+            val media = sampleMediaItem()
+            db.mediaItemDao().insert(media)
+            db.bookDetailsDao().insert(sampleBookDetails(mediaId = media.id, totalPages = 0))
 
-        val instant = Instant.fromEpochMilliseconds(1_700_000_000_000)
-        val session = sampleReadingSession(
-            mediaId = media.id,
-            timestampStart = instant,
-            timestampEnd = instant,
-            durationSeconds = 0,
-            startUnit = 0.0,
-            endUnit = 0.0,
-            deltaPages = 0,
-        )
+            val instant = Instant.fromEpochMilliseconds(1_700_000_000_000)
+            val session =
+                sampleReadingSession(
+                    mediaId = media.id,
+                    timestampStart = instant,
+                    timestampEnd = instant,
+                    durationSeconds = 0,
+                    startUnit = 0.0,
+                    endUnit = 0.0,
+                    deltaPages = 0,
+                )
 
-        db.readingSessionDao().insert(session)
+            db.readingSessionDao().insert(session)
 
-        assertEquals(session, db.readingSessionDao().getById(session.id))
-    }
+            assertEquals(session, db.readingSessionDao().getById(session.id))
+        }
 
     @Test
-    fun cascadeDelete_removesSessionsWhenMediaItemDeleted() = runTest {
-        val media = sampleMediaItem()
-        db.mediaItemDao().insert(media)
-        db.readingSessionDao().insert(sampleReadingSession(mediaId = media.id))
+    fun cascadeDelete_removesSessionsWhenMediaItemDeleted() =
+        runTest {
+            val media = sampleMediaItem()
+            db.mediaItemDao().insert(media)
+            db.readingSessionDao().insert(sampleReadingSession(mediaId = media.id))
 
-        db.mediaItemDao().delete(media)
+            db.mediaItemDao().delete(media)
 
-        assertTrue(db.readingSessionDao().observeSessionsForMedia(media.id).first().isEmpty())
-    }
+            assertTrue(
+                db
+                    .readingSessionDao()
+                    .observeSessionsForMedia(media.id)
+                    .first()
+                    .isEmpty(),
+            )
+        }
 }

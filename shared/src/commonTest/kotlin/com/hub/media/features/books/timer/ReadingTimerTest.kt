@@ -1,17 +1,17 @@
 package com.hub.media.features.books.timer
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Virtual-time tests for [ReadingTimer].
@@ -25,182 +25,196 @@ import kotlinx.coroutines.test.runTest
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReadingTimerTest {
-
-    private fun TestScope.testClock(): Clock = object : Clock {
-        override fun now(): Instant = Instant.fromEpochMilliseconds(currentTime)
-    }
-
-    @Test
-    fun elapsedSeconds_ticksOncePerSecondWhileRunning() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-
-        timer.start()
-        assertEquals(0L, timer.elapsedSeconds.value)
-
-        advanceTimeBy(3_500)
-        runCurrent()
-        assertEquals(3L, timer.elapsedSeconds.value)
-
-        advanceTimeBy(1_000)
-        runCurrent()
-        assertEquals(4L, timer.elapsedSeconds.value)
-
-        timer.stop()
-    }
+    private fun TestScope.testClock(): Clock =
+        object : Clock {
+            override fun now(): Instant = Instant.fromEpochMilliseconds(currentTime)
+        }
 
     @Test
-    fun pause_freezesElapsedAndExcludesPausedTimeFromDuration() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+    fun elapsedSeconds_ticksOncePerSecondWhileRunning() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
 
-        timer.start()
-        advanceTimeBy(5_000)
-        runCurrent()
-        assertEquals(5L, timer.elapsedSeconds.value)
+            timer.start()
+            assertEquals(0L, timer.elapsedSeconds.value)
 
-        timer.pause()
-        advanceTimeBy(10_000) // Paused time must not accumulate, no matter how long it lasts.
-        runCurrent()
-        assertEquals(5L, timer.elapsedSeconds.value)
+            advanceTimeBy(3_500)
+            runCurrent()
+            assertEquals(3L, timer.elapsedSeconds.value)
 
-        timer.resume()
-        advanceTimeBy(3_000)
-        runCurrent()
-        assertEquals(8L, timer.elapsedSeconds.value)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(4L, timer.elapsedSeconds.value)
 
-        val result = timer.stop()
-        assertEquals(8L, result.durationSeconds)
-        // Wall-clock span is 18s (5 + 10 paused + 3) but only the 8 active seconds count.
-        assertEquals(18_000L, (result.timestampEnd - result.timestampStart).inWholeMilliseconds)
-    }
+            timer.stop()
+        }
 
     @Test
-    fun resume_continuesTickingFromWherePauseLeftOff() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+    fun pause_freezesElapsedAndExcludesPausedTimeFromDuration() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
 
-        timer.start()
-        advanceTimeBy(2_000)
-        runCurrent()
-        timer.pause()
-        timer.resume()
+            timer.start()
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertEquals(5L, timer.elapsedSeconds.value)
 
-        advanceTimeBy(2_000)
-        runCurrent()
-        assertEquals(4L, timer.elapsedSeconds.value)
-    }
+            timer.pause()
+            advanceTimeBy(10_000) // Paused time must not accumulate, no matter how long it lasts.
+            runCurrent()
+            assertEquals(5L, timer.elapsedSeconds.value)
 
-    @Test
-    fun stop_returnsCorrectStartEndAndDuration() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+            timer.resume()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(8L, timer.elapsedSeconds.value)
 
-        timer.start()
-        val expectedStart = Instant.fromEpochMilliseconds(currentTime)
-
-        advanceTimeBy(2_000)
-        runCurrent()
-
-        val result = timer.stop()
-        assertEquals(expectedStart, result.timestampStart)
-        assertEquals(Instant.fromEpochMilliseconds(currentTime), result.timestampEnd)
-        assertEquals(2L, result.durationSeconds)
-    }
+            val result = timer.stop()
+            assertEquals(8L, result.durationSeconds)
+            // Wall-clock span is 18s (5 + 10 paused + 3) but only the 8 active seconds count.
+            assertEquals(18_000L, (result.timestampEnd - result.timestampStart).inWholeMilliseconds)
+        }
 
     @Test
-    fun stop_immediatelyAfterStart_zeroSecondSessionIsValid() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+    fun resume_continuesTickingFromWherePauseLeftOff() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
 
-        timer.start()
-        val result = timer.stop()
+            timer.start()
+            advanceTimeBy(2_000)
+            runCurrent()
+            timer.pause()
+            timer.resume()
 
-        assertEquals(0L, result.durationSeconds)
-        assertEquals(result.timestampStart, result.timestampEnd)
-    }
-
-    @Test
-    fun start_whenAlreadyRunning_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-        timer.start()
-
-        assertFailsWith<IllegalStateException> { timer.start() }
-    }
+            advanceTimeBy(2_000)
+            runCurrent()
+            assertEquals(4L, timer.elapsedSeconds.value)
+        }
 
     @Test
-    fun start_whenPaused_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-        timer.start()
-        timer.pause()
+    fun stop_returnsCorrectStartEndAndDuration() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
 
-        assertFailsWith<IllegalStateException> { timer.start() }
-    }
+            timer.start()
+            val expectedStart = Instant.fromEpochMilliseconds(currentTime)
 
-    @Test
-    fun stop_whenIdle_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+            advanceTimeBy(2_000)
+            runCurrent()
 
-        assertFailsWith<IllegalStateException> { timer.stop() }
-    }
-
-    @Test
-    fun pause_whenIdle_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-
-        assertFailsWith<IllegalStateException> { timer.pause() }
-    }
+            val result = timer.stop()
+            assertEquals(expectedStart, result.timestampStart)
+            assertEquals(Instant.fromEpochMilliseconds(currentTime), result.timestampEnd)
+            assertEquals(2L, result.durationSeconds)
+        }
 
     @Test
-    fun pause_whenAlreadyPaused_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-        timer.start()
-        timer.pause()
+    fun stop_immediatelyAfterStart_zeroSecondSessionIsValid() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
 
-        assertFailsWith<IllegalStateException> { timer.pause() }
-    }
+            timer.start()
+            val result = timer.stop()
 
-    @Test
-    fun resume_whenRunning_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-        timer.start()
-
-        assertFailsWith<IllegalStateException> { timer.resume() }
-    }
+            assertEquals(0L, result.durationSeconds)
+            assertEquals(result.timestampStart, result.timestampEnd)
+        }
 
     @Test
-    fun resume_whenIdle_throws() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+    fun start_whenAlreadyRunning_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+            timer.start()
 
-        assertFailsWith<IllegalStateException> { timer.resume() }
-    }
-
-    @Test
-    fun state_reflectsLifecycle() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
-
-        assertIs<ReadingTimerState.Idle>(timer.state.value)
-        timer.start()
-        assertIs<ReadingTimerState.Running>(timer.state.value)
-        timer.pause()
-        assertIs<ReadingTimerState.Paused>(timer.state.value)
-        timer.resume()
-        assertIs<ReadingTimerState.Running>(timer.state.value)
-        timer.stop()
-        assertIs<ReadingTimerState.Idle>(timer.state.value)
-    }
+            assertFailsWith<IllegalStateException> { timer.start() }
+        }
 
     @Test
-    fun timerCanBeReusedAfterStop() = runTest {
-        val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+    fun start_whenPaused_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+            timer.start()
+            timer.pause()
 
-        timer.start()
-        advanceTimeBy(2_000)
-        runCurrent()
-        timer.stop()
+            assertFailsWith<IllegalStateException> { timer.start() }
+        }
 
-        timer.start()
-        advanceTimeBy(4_000)
-        runCurrent()
-        val result = timer.stop()
+    @Test
+    fun stop_whenIdle_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
 
-        assertEquals(4L, result.durationSeconds)
-        assertEquals(0L, timer.elapsedSeconds.value)
-        assertIs<ReadingTimerState.Idle>(timer.state.value)
-    }
+            assertFailsWith<IllegalStateException> { timer.stop() }
+        }
+
+    @Test
+    fun pause_whenIdle_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+
+            assertFailsWith<IllegalStateException> { timer.pause() }
+        }
+
+    @Test
+    fun pause_whenAlreadyPaused_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+            timer.start()
+            timer.pause()
+
+            assertFailsWith<IllegalStateException> { timer.pause() }
+        }
+
+    @Test
+    fun resume_whenRunning_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+            timer.start()
+
+            assertFailsWith<IllegalStateException> { timer.resume() }
+        }
+
+    @Test
+    fun resume_whenIdle_throws() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+
+            assertFailsWith<IllegalStateException> { timer.resume() }
+        }
+
+    @Test
+    fun state_reflectsLifecycle() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+
+            assertIs<ReadingTimerState.Idle>(timer.state.value)
+            timer.start()
+            assertIs<ReadingTimerState.Running>(timer.state.value)
+            timer.pause()
+            assertIs<ReadingTimerState.Paused>(timer.state.value)
+            timer.resume()
+            assertIs<ReadingTimerState.Running>(timer.state.value)
+            timer.stop()
+            assertIs<ReadingTimerState.Idle>(timer.state.value)
+        }
+
+    @Test
+    fun timerCanBeReusedAfterStop() =
+        runTest {
+            val timer = ReadingTimer(clock = testClock(), scope = backgroundScope)
+
+            timer.start()
+            advanceTimeBy(2_000)
+            runCurrent()
+            timer.stop()
+
+            timer.start()
+            advanceTimeBy(4_000)
+            runCurrent()
+            val result = timer.stop()
+
+            assertEquals(4L, result.durationSeconds)
+            assertEquals(0L, timer.elapsedSeconds.value)
+            assertIs<ReadingTimerState.Idle>(timer.state.value)
+        }
 }

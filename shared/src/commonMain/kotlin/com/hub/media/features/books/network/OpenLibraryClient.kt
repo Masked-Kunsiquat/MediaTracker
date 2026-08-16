@@ -1,15 +1,15 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorDto
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorRefDto
 import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
 import com.hub.media.features.books.network.dto.OpenLibraryWorkDto
-import com.hub.media.core.util.AppLogger
-import com.hub.media.core.util.Logger
-import com.hub.media.core.util.info
-import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -47,7 +47,6 @@ public class OpenLibraryClient(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
 ) : BookMetadataProvider {
-
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         return try {
             val response = client.get("$OPEN_LIBRARY_BASE_URL/isbn/$isbn.json")
@@ -57,16 +56,17 @@ public class OpenLibraryClient(
                 )
             }
 
-            val dto = try {
-                response.body<OpenLibraryEditionDto>()
-            } catch (e: CancellationException) {
-                // Same rethrow as the outer catch below -- a cancelled deserialization is not a
-                // malformed-JSON failure.
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "Open Library returned malformed JSON for isbn=$isbn" }
-                return Resource.Error("Open Library returned malformed JSON for ISBN $isbn", e)
-            }
+            val dto =
+                try {
+                    response.body<OpenLibraryEditionDto>()
+                } catch (e: CancellationException) {
+                    // Same rethrow as the outer catch below -- a cancelled deserialization is not a
+                    // malformed-JSON failure.
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(TAG, e) { "Open Library returned malformed JSON for isbn=$isbn" }
+                    return Resource.Error("Open Library returned malformed JSON for ISBN $isbn", e)
+                }
 
             val title = dto.title
             if (title.isNullOrBlank()) {
@@ -151,7 +151,11 @@ public class OpenLibraryClient(
                 return emptyList()
             }
             // A work nests its refs one level deeper than an edition does -- see OpenLibraryWorkDto.
-            response.body<OpenLibraryWorkDto>().authors.orEmpty().mapNotNull { it.author }
+            response
+                .body<OpenLibraryWorkDto>()
+                .authors
+                .orEmpty()
+                .mapNotNull { it.author }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

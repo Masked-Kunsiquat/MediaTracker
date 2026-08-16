@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.androidx.room)
+    alias(libs.plugins.ktlint)
 }
 
 kotlin {
@@ -67,6 +68,20 @@ android {
 
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+// Lint only hand-written sources. KSP registers its output directories into the Kotlin source sets,
+// so without this ktlint also reads build/generated -- the Room DAO and database implementations --
+// and reports tens of thousands of violations in machine output nobody can fix by editing.
+//
+// Matched against the absolute path rather than with an `include`/`exclude` pattern pair: those
+// patterns are resolved relative to each source-set root (`src/commonMain/kotlin`, and separately
+// `build/generated/ksp/...`), so a project-relative pattern like `src/**` matches nothing at all
+// and silently filters out either everything or nothing.
+ktlint {
+    filter {
+        exclude { it.file.invariantSeparatorsPath.contains("/build/generated/") }
+    }
 }
 
 dependencies {

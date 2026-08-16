@@ -4,7 +4,6 @@ import com.hub.media.features.portability.domain.StagedRestoreInfo
 
 /** UI state for the Settings screen's `.sqlite` restore action (ROADMAP Task 8 Phase C). */
 public sealed class RestoreUiState {
-
     /** No restore has been requested yet, or [RestoreViewModel.reset] was called. */
     public data object Idle : RestoreUiState()
 
@@ -20,7 +19,9 @@ public sealed class RestoreUiState {
      *   older than this app's current version -- a legitimate case Room will migrate forward on
      *   next open).
      */
-    public data class AwaitingConfirmation(val info: StagedRestoreInfo) : RestoreUiState()
+    public data class AwaitingConfirmation(
+        val info: StagedRestoreInfo,
+    ) : RestoreUiState()
 
     /**
      * The picked file was refused before anything destructive happened (not a SQLite file, or a
@@ -30,5 +31,7 @@ public sealed class RestoreUiState {
      *
      * @property message A user-facing/diagnostic description of the failure.
      */
-    public data class Error(val message: String) : RestoreUiState()
+    public data class Error(
+        val message: String,
+    ) : RestoreUiState()
 }

@@ -9,10 +9,10 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
 
 /**
  * Verifies [FallbackBookMetadataProvider]'s primary-then-secondary semantics, including the
@@ -22,7 +22,6 @@ import kotlinx.coroutines.test.runTest
  * secondary provider is never touched when the primary succeeds *with* a cover.
  */
 class FallbackBookMetadataProviderTest {
-
     // Edition JSON with no authors, so a successful Open Library lookup makes exactly one
     // request (no secondary /authors/ fetch), keeping request counts easy to reason about.
     // Includes a cover id so a fully-successful primary lookup never needs to probe the
@@ -35,17 +34,19 @@ class FallbackBookMetadataProviderTest {
     private val openLibraryEditionJsonNoCover =
         """{"title": "The Hobbit", "number_of_pages": 300}"""
 
-    private val googleBooksJson = """
+    private val googleBooksJson =
+        """
         {
           "totalItems": 1,
           "items": [
             {"id": "wrOQLV6xB-wC", "volumeInfo": {"title": "The Hobbit (Google)"}}
           ]
         }
-    """.trimIndent()
+        """.trimIndent()
 
     // Google Books result with a thumbnail cover, used for the cover-fallback-succeeds case.
-    private val googleBooksJsonWithCover = """
+    private val googleBooksJsonWithCover =
+        """
         {
           "totalItems": 1,
           "items": [
@@ -58,116 +59,129 @@ class FallbackBookMetadataProviderTest {
             }
           ]
         }
-    """.trimIndent()
+        """.trimIndent()
 
-    private fun jsonEngine(json: String) = MockEngine { _ ->
-        respond(
-            content = json,
-            status = HttpStatusCode.OK,
-            headers = headersOf(HttpHeaders.ContentType, "application/json"),
-        )
-    }
+    private fun jsonEngine(json: String) =
+        MockEngine { _ ->
+            respond(
+                content = json,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
 
     private fun notFoundEngine() = MockEngine { _ -> respondError(HttpStatusCode.NotFound) }
 
     @Test
-    fun primarySuccessWithCover_secondaryNeverCalled() = runTest {
-        val primaryEngine = jsonEngine(openLibraryEditionJson)
-        val secondaryEngine = jsonEngine(googleBooksJson)
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary)
+    fun primarySuccessWithCover_secondaryNeverCalled() =
+        runTest {
+            val primaryEngine = jsonEngine(openLibraryEditionJson)
+            val secondaryEngine = jsonEngine(googleBooksJson)
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary)
 
-        val result = fallback.fetchByIsbn("9780547928227")
+            val result = fallback.fetchByIsbn("9780547928227")
 
-        assertTrue(result is Resource.Success, "expected Success, got $result")
-        val metadata = (result as Resource.Success).data
-        assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
-        assertTrue(metadata.coverImageUrl != null, "primary already had a cover")
-        assertEquals(1, primaryEngine.requestHistory.size, "primary should be called exactly once")
-        assertTrue(
-            secondaryEngine.requestHistory.isEmpty(),
-            "secondary must never be called when primary succeeds with a cover",
-        )
-    }
-
-    @Test
-    fun primarySuccessNoCover_secondarySucceedsWithCover_mergesCoverOnly() = runTest {
-        val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
-        val secondaryEngine = jsonEngine(googleBooksJsonWithCover)
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary)
-
-        val result = fallback.fetchByIsbn("9780547928227")
-
-        assertTrue(result is Resource.Success, "expected Success, got $result")
-        val metadata = (result as Resource.Success).data
-        // Primary's fields win everywhere except the cover.
-        assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
-        assertEquals("The Hobbit", metadata.title)
-        assertEquals(300, metadata.pageCount)
-        // Cover comes from the secondary probe.
-        assertEquals("https://books.google.com/cover.jpg", metadata.coverImageUrl)
-        assertEquals(1, primaryEngine.requestHistory.size, "primary should be called exactly once")
-        assertEquals(1, secondaryEngine.requestHistory.size, "secondary should be probed for a cover once")
-    }
+            assertTrue(result is Resource.Success, "expected Success, got $result")
+            val metadata = (result as Resource.Success).data
+            assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
+            assertTrue(metadata.coverImageUrl != null, "primary already had a cover")
+            assertEquals(1, primaryEngine.requestHistory.size, "primary should be called exactly once")
+            assertTrue(
+                secondaryEngine.requestHistory.isEmpty(),
+                "secondary must never be called when primary succeeds with a cover",
+            )
+        }
 
     @Test
-    fun primarySuccessNoCover_secondaryErrors_returnsPrimaryUnchanged() = runTest {
-        val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
-        val secondaryEngine = notFoundEngine()
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary)
+    fun primarySuccessNoCover_secondarySucceedsWithCover_mergesCoverOnly() =
+        runTest {
+            val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
+            val secondaryEngine = jsonEngine(googleBooksJsonWithCover)
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary)
 
-        val result = fallback.fetchByIsbn("9780547928227")
+            val result = fallback.fetchByIsbn("9780547928227")
 
-        assertTrue(result is Resource.Success, "a failed cover probe must not turn a primary success into a failure")
-        val metadata = (result as Resource.Success).data
-        assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
-        assertEquals("The Hobbit", metadata.title)
-        assertEquals(null, metadata.coverImageUrl)
-        assertEquals(1, primaryEngine.requestHistory.size)
-        assertEquals(1, secondaryEngine.requestHistory.size, "secondary should still be probed for a cover")
-    }
-
-    @Test
-    fun primarySuccessNoCover_secondaryAlsoNoCover_returnsPrimaryUnchanged() = runTest {
-        val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
-        val secondaryEngine = jsonEngine(googleBooksJson) // no imageLinks -> no cover
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary)
-
-        val result = fallback.fetchByIsbn("9780547928227")
-
-        assertTrue(result is Resource.Success, "expected Success, got $result")
-        val metadata = (result as Resource.Success).data
-        assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
-        assertEquals("The Hobbit", metadata.title)
-        assertEquals(null, metadata.coverImageUrl)
-        assertEquals(1, primaryEngine.requestHistory.size)
-        assertEquals(1, secondaryEngine.requestHistory.size, "secondary should still be probed for a cover")
-    }
+            assertTrue(result is Resource.Success, "expected Success, got $result")
+            val metadata = (result as Resource.Success).data
+            // Primary's fields win everywhere except the cover.
+            assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
+            assertEquals("The Hobbit", metadata.title)
+            assertEquals(300, metadata.pageCount)
+            // Cover comes from the secondary probe.
+            assertEquals("https://books.google.com/cover.jpg", metadata.coverImageUrl)
+            assertEquals(1, primaryEngine.requestHistory.size, "primary should be called exactly once")
+            assertEquals(1, secondaryEngine.requestHistory.size, "secondary should be probed for a cover once")
+        }
 
     @Test
-    fun primaryFails_secondarySucceeds() = runTest {
-        val primaryEngine = notFoundEngine()
-        val secondaryEngine = jsonEngine(googleBooksJson)
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary)
+    fun primarySuccessNoCover_secondaryErrors_returnsPrimaryUnchanged() =
+        runTest {
+            val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
+            val secondaryEngine = notFoundEngine()
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary)
 
-        val result = fallback.fetchByIsbn("9780547928227")
+            val result = fallback.fetchByIsbn("9780547928227")
 
-        assertTrue(result is Resource.Success, "expected Success, got $result")
-        val metadata = (result as Resource.Success).data
-        assertEquals(IdentifierProvider.GOOGLE_BOOKS, metadata.provider)
-        assertEquals("The Hobbit (Google)", metadata.title)
-        assertEquals(1, primaryEngine.requestHistory.size, "primary should be attempted once")
-        assertEquals(1, secondaryEngine.requestHistory.size, "secondary should be attempted once after primary fails")
-    }
+            assertTrue(
+                result is Resource.Success,
+                "a failed cover probe must not turn a primary success into a failure",
+            )
+            val metadata = (result as Resource.Success).data
+            assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
+            assertEquals("The Hobbit", metadata.title)
+            assertEquals(null, metadata.coverImageUrl)
+            assertEquals(1, primaryEngine.requestHistory.size)
+            assertEquals(1, secondaryEngine.requestHistory.size, "secondary should still be probed for a cover")
+        }
+
+    @Test
+    fun primarySuccessNoCover_secondaryAlsoNoCover_returnsPrimaryUnchanged() =
+        runTest {
+            val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
+            val secondaryEngine = jsonEngine(googleBooksJson) // no imageLinks -> no cover
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary)
+
+            val result = fallback.fetchByIsbn("9780547928227")
+
+            assertTrue(result is Resource.Success, "expected Success, got $result")
+            val metadata = (result as Resource.Success).data
+            assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
+            assertEquals("The Hobbit", metadata.title)
+            assertEquals(null, metadata.coverImageUrl)
+            assertEquals(1, primaryEngine.requestHistory.size)
+            assertEquals(1, secondaryEngine.requestHistory.size, "secondary should still be probed for a cover")
+        }
+
+    @Test
+    fun primaryFails_secondarySucceeds() =
+        runTest {
+            val primaryEngine = notFoundEngine()
+            val secondaryEngine = jsonEngine(googleBooksJson)
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary)
+
+            val result = fallback.fetchByIsbn("9780547928227")
+
+            assertTrue(result is Resource.Success, "expected Success, got $result")
+            val metadata = (result as Resource.Success).data
+            assertEquals(IdentifierProvider.GOOGLE_BOOKS, metadata.provider)
+            assertEquals("The Hobbit (Google)", metadata.title)
+            assertEquals(1, primaryEngine.requestHistory.size, "primary should be attempted once")
+            assertEquals(
+                1,
+                secondaryEngine.requestHistory.size,
+                "secondary should be attempted once after primary fails",
+            )
+        }
 
     /**
      * ROADMAP Task 6 Phase E: when both [primary] and [secondary] have no cover, the optional
@@ -175,86 +189,96 @@ class FallbackBookMetadataProviderTest {
      * same cover-only way [secondary]'s cover is.
      */
     @Test
-    fun bothProvidersCoverless_isbnProbeSucceeds_mergesProbedCoverOnly() = runTest {
-        val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
-        val secondaryEngine = jsonEngine(googleBooksJson) // no imageLinks -> no cover
-        val probeEngine = MockEngine { _ -> respond(content = ByteArray(4), status = HttpStatusCode.OK) }
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary, isbnCoverProbe = probe)
+    fun bothProvidersCoverless_isbnProbeSucceeds_mergesProbedCoverOnly() =
+        runTest {
+            val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
+            val secondaryEngine = jsonEngine(googleBooksJson) // no imageLinks -> no cover
+            val probeEngine = MockEngine { _ -> respond(content = ByteArray(4), status = HttpStatusCode.OK) }
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val probe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary, isbnCoverProbe = probe)
 
-        val result = fallback.fetchByIsbn("9780547928227")
+            val result = fallback.fetchByIsbn("9780547928227")
 
-        assertTrue(result is Resource.Success, "expected Success, got $result")
-        val metadata = (result as Resource.Success).data
-        assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
-        assertEquals("The Hobbit", metadata.title)
-        assertEquals(
-            "https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg?default=false",
-            metadata.coverImageUrl,
-        )
-        assertEquals(1, primaryEngine.requestHistory.size)
-        assertEquals(1, secondaryEngine.requestHistory.size)
-        assertEquals(1, probeEngine.requestHistory.size, "the last-resort probe should be tried exactly once")
-    }
-
-    @Test
-    fun bothProvidersCoverless_isbnProbeAlso404s_returnsPrimaryUnchangedWithNoCover() = runTest {
-        val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
-        val secondaryEngine = jsonEngine(googleBooksJson)
-        val probeEngine = notFoundEngine()
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary, isbnCoverProbe = probe)
-
-        val result = fallback.fetchByIsbn("9780547928227")
-
-        assertTrue(result is Resource.Success, "a 404 from the last-resort probe must not turn a primary success into a failure")
-        val metadata = (result as Resource.Success).data
-        assertEquals("The Hobbit", metadata.title)
-        assertEquals(null, metadata.coverImageUrl)
-        assertEquals(1, probeEngine.requestHistory.size)
-    }
+            assertTrue(result is Resource.Success, "expected Success, got $result")
+            val metadata = (result as Resource.Success).data
+            assertEquals(IdentifierProvider.OPEN_LIBRARY, metadata.provider)
+            assertEquals("The Hobbit", metadata.title)
+            assertEquals(
+                "https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg?default=false",
+                metadata.coverImageUrl,
+            )
+            assertEquals(1, primaryEngine.requestHistory.size)
+            assertEquals(1, secondaryEngine.requestHistory.size)
+            assertEquals(1, probeEngine.requestHistory.size, "the last-resort probe should be tried exactly once")
+        }
 
     @Test
-    fun primarySucceedsWithCover_isbnProbeNeverConsulted() = runTest {
-        // The probe param defaulting to null (disabled) is exercised by every other test in this
-        // file that constructs FallbackBookMetadataProvider with only two arguments; this test
-        // instead proves that even when a probe IS supplied, it's never reached once the primary
-        // already has a cover (the field-level cover fallback -- and this third-level fallback on
-        // top of it -- only ever activate when the primary itself has no cover).
-        val primaryEngine = jsonEngine(openLibraryEditionJson) // has a cover id
-        val secondaryEngine = jsonEngine(googleBooksJson)
-        val probeEngine = MockEngine { _ -> respond(content = ByteArray(4), status = HttpStatusCode.OK) }
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val probe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary, isbnCoverProbe = probe)
+    fun bothProvidersCoverless_isbnProbeAlso404s_returnsPrimaryUnchangedWithNoCover() =
+        runTest {
+            val primaryEngine = jsonEngine(openLibraryEditionJsonNoCover)
+            val secondaryEngine = jsonEngine(googleBooksJson)
+            val probeEngine = notFoundEngine()
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val probe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary, isbnCoverProbe = probe)
 
-        val result = fallback.fetchByIsbn("9780547928227")
+            val result = fallback.fetchByIsbn("9780547928227")
 
-        assertTrue(result is Resource.Success, "expected Success, got $result")
-        assertTrue(secondaryEngine.requestHistory.isEmpty())
-        assertTrue(probeEngine.requestHistory.isEmpty(), "the last-resort probe must never be consulted when primary already has a cover")
-    }
+            assertTrue(
+                result is Resource.Success,
+                "a 404 from the last-resort probe must not turn a primary success into a failure",
+            )
+            val metadata = (result as Resource.Success).data
+            assertEquals("The Hobbit", metadata.title)
+            assertEquals(null, metadata.coverImageUrl)
+            assertEquals(1, probeEngine.requestHistory.size)
+        }
 
     @Test
-    fun bothFail_returnsErrorMentioningBothProviders() = runTest {
-        val primaryEngine = notFoundEngine()
-        val secondaryEngine = notFoundEngine()
-        val primary = OpenLibraryClient(createHttpClient(primaryEngine))
-        val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
-        val fallback = FallbackBookMetadataProvider(primary, secondary)
+    fun primarySucceedsWithCover_isbnProbeNeverConsulted() =
+        runTest {
+            // The probe param defaulting to null (disabled) is exercised by every other test in this
+            // file that constructs FallbackBookMetadataProvider with only two arguments; this test
+            // instead proves that even when a probe IS supplied, it's never reached once the primary
+            // already has a cover (the field-level cover fallback -- and this third-level fallback on
+            // top of it -- only ever activate when the primary itself has no cover).
+            val primaryEngine = jsonEngine(openLibraryEditionJson) // has a cover id
+            val secondaryEngine = jsonEngine(googleBooksJson)
+            val probeEngine = MockEngine { _ -> respond(content = ByteArray(4), status = HttpStatusCode.OK) }
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val probe = OpenLibraryIsbnCoverProbe(createHttpClient(probeEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary, isbnCoverProbe = probe)
 
-        val result = fallback.fetchByIsbn("0000000000")
+            val result = fallback.fetchByIsbn("9780547928227")
 
-        assertTrue(result is Resource.Error, "expected Error, got $result")
-        val message = (result as Resource.Error).message
-        assertTrue(message.contains("Primary"), "message should mention primary failure: $message")
-        assertTrue(message.contains("Secondary"), "message should mention secondary failure: $message")
-        assertEquals(1, primaryEngine.requestHistory.size)
-        assertEquals(1, secondaryEngine.requestHistory.size)
-    }
+            assertTrue(result is Resource.Success, "expected Success, got $result")
+            assertTrue(secondaryEngine.requestHistory.isEmpty())
+            assertTrue(
+                probeEngine.requestHistory.isEmpty(),
+                "the last-resort probe must never be consulted when primary already has a cover",
+            )
+        }
+
+    @Test
+    fun bothFail_returnsErrorMentioningBothProviders() =
+        runTest {
+            val primaryEngine = notFoundEngine()
+            val secondaryEngine = notFoundEngine()
+            val primary = OpenLibraryClient(createHttpClient(primaryEngine))
+            val secondary = GoogleBooksClient(createHttpClient(secondaryEngine))
+            val fallback = FallbackBookMetadataProvider(primary, secondary)
+
+            val result = fallback.fetchByIsbn("0000000000")
+
+            assertTrue(result is Resource.Error, "expected Error, got $result")
+            val message = (result as Resource.Error).message
+            assertTrue(message.contains("Primary"), "message should mention primary failure: $message")
+            assertTrue(message.contains("Secondary"), "message should mention secondary failure: $message")
+            assertEquals(1, primaryEngine.requestHistory.size)
+            assertEquals(1, secondaryEngine.requestHistory.size)
+        }
 }

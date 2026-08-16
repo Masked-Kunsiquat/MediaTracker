@@ -20,7 +20,6 @@ package com.hub.media.features.portability.csv
  * note) is left completely untouched -- it is data, not a row separator, once inside quotes.
  */
 public object CsvUtil {
-
     /** RFC 4180 field delimiter. */
     public const val DELIMITER: Char = ','
 

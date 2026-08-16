@@ -12,7 +12,6 @@ import kotlin.test.assertNull
  * version-check rules `RestoreDatabaseUseCase` builds on top of this.
  */
 class SqliteHeaderTest {
-
     /** Builds a syntactically valid 100-byte SQLite header with [userVersion] at its fixed offset. */
     private fun validHeader(userVersion: Int): ByteArray {
         val bytes = ByteArray(SQLITE_HEADER_SIZE)

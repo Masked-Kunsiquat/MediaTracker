@@ -39,7 +39,6 @@ import kotlin.time.Instant
 public class LogReadingSessionUseCase(
     private val repository: ReadingSessionRepository,
 ) {
-
     /**
      * Logs a session from a finished [timerResult] (the common path: user pressed stop on a live
      * [ReadingTimer]).
@@ -63,16 +62,17 @@ public class LogReadingSessionUseCase(
         endUnit: Double,
         deltaPages: Int? = null,
         notes: String? = null,
-    ): Resource<String> = execute(
-        mediaId = mediaId,
-        timestampStart = timerResult.timestampStart,
-        timestampEnd = timerResult.timestampEnd,
-        durationSeconds = timerResult.durationSeconds,
-        startUnit = startUnit,
-        endUnit = endUnit,
-        deltaPages = deltaPages,
-        notes = notes,
-    )
+    ): Resource<String> =
+        execute(
+            mediaId = mediaId,
+            timestampStart = timerResult.timestampStart,
+            timestampEnd = timerResult.timestampEnd,
+            durationSeconds = timerResult.durationSeconds,
+            startUnit = startUnit,
+            endUnit = endUnit,
+            deltaPages = deltaPages,
+            notes = notes,
+        )
 
     /**
      * Logs a session from explicit bounds rather than a [ReadingTimerResult], e.g. a manual
@@ -172,6 +172,8 @@ public class LogReadingSessionUseCase(
      * extraction) so the CSV importer can apply this exact rule too, rather than forking a second
      * copy -- see that object's KDoc.
      */
-    private fun validatePositions(startUnit: Double, endUnit: Double): Resource.Error? =
-        ReadingSessionValidation.validatePositions(startUnit, endUnit)?.let { Resource.Error(it) }
+    private fun validatePositions(
+        startUnit: Double,
+        endUnit: Double,
+    ): Resource.Error? = ReadingSessionValidation.validatePositions(startUnit, endUnit)?.let { Resource.Error(it) }
 }

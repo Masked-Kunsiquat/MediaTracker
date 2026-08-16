@@ -92,5 +92,8 @@ public fun parseInlineMarkup(text: String): List<InlineSpan> {
 }
 
 /** True if [marker] appears again at or after [from], i.e. the run opening here actually closes. */
-private fun hasCloser(text: String, from: Int, marker: String): Boolean =
-    from <= text.length && text.indexOf(marker, from) >= 0
+private fun hasCloser(
+    text: String,
+    from: Int,
+    marker: String,
+): Boolean = from <= text.length && text.indexOf(marker, from) >= 0

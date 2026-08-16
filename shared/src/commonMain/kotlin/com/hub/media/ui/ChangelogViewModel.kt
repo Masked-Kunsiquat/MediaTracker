@@ -28,7 +28,6 @@ public class ChangelogViewModel(
     private val currentVersion: String,
     private val readChangelog: suspend () -> String?,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(ChangelogUiState())
     public val uiState: StateFlow<ChangelogUiState> = _uiState.asStateFlow()
 
@@ -40,11 +39,12 @@ public class ChangelogViewModel(
                 return@launch
             }
             val document = parseChangelog(raw)
-            _uiState.value = ChangelogUiState(
-                document = document,
-                expandedVersions = initiallyExpanded(document.versions.map { it.version }),
-                isLoading = false,
-            )
+            _uiState.value =
+                ChangelogUiState(
+                    document = document,
+                    expandedVersions = initiallyExpanded(document.versions.map { it.version }),
+                    isLoading = false,
+                )
         }
     }
 
@@ -58,11 +58,12 @@ public class ChangelogViewModel(
      * everything collapsed there would make the screen look broken; opening the newest section
      * shows the `[Unreleased]` notes, which is what someone on an unreleased build wants anyway.
      */
-    private fun initiallyExpanded(versions: List<String>): Set<String> = when {
-        versions.isEmpty() -> emptySet()
-        currentVersion in versions -> setOf(currentVersion)
-        else -> setOf(versions.first())
-    }
+    private fun initiallyExpanded(versions: List<String>): Set<String> =
+        when {
+            versions.isEmpty() -> emptySet()
+            currentVersion in versions -> setOf(currentVersion)
+            else -> setOf(versions.first())
+        }
 
     /** Toggles one version's expanded state. */
     public fun toggleVersion(version: String) {
@@ -74,6 +75,5 @@ public class ChangelogViewModel(
         _uiState.update { it.copy(expandedEntries = it.expandedEntries.toggle(key)) }
     }
 
-    private fun Set<String>.toggle(value: String): Set<String> =
-        if (value in this) this - value else this + value
+    private fun Set<String>.toggle(value: String): Set<String> = if (value in this) this - value else this + value
 }

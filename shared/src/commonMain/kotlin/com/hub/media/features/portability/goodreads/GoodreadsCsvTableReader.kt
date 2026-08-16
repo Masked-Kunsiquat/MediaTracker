@@ -57,7 +57,6 @@ public object GoodreadsColumns {
 
 /** Structurally-validated Goodreads table, or a description of why the file was rejected outright. */
 public sealed class GoodreadsCsvTableResult {
-
     /**
      * @property columnIndex Every header cell's (trimmed) text mapped to its column position --
      *   [GoodreadsCsvImporter] looks columns up through this map, never by a hard-coded index.
@@ -70,7 +69,9 @@ public sealed class GoodreadsCsvTableResult {
     ) : GoodreadsCsvTableResult()
 
     /** The file was rejected wholesale -- see [GoodreadsCsvTableReader]'s KDoc for what triggers this. */
-    public data class Failure(public val message: String) : GoodreadsCsvTableResult()
+    public data class Failure(
+        public val message: String,
+    ) : GoodreadsCsvTableResult()
 }
 
 /**
@@ -108,13 +109,13 @@ public sealed class GoodreadsCsvTableResult {
  * phase, today) with no historical versions to distinguish between.
  */
 public object GoodreadsCsvTableReader {
-
     public fun read(text: String): GoodreadsCsvTableResult {
         val parsed = CsvReader.parse(text)
-        val rows = when (parsed) {
-            is CsvParseResult.Failure -> return GoodreadsCsvTableResult.Failure(parsed.message)
-            is CsvParseResult.Success -> parsed.rows
-        }
+        val rows =
+            when (parsed) {
+                is CsvParseResult.Failure -> return GoodreadsCsvTableResult.Failure(parsed.message)
+                is CsvParseResult.Success -> parsed.rows
+            }
 
         if (rows.isEmpty()) {
             return GoodreadsCsvTableResult.Failure("The file is empty -- no header row was found.")

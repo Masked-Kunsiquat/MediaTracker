@@ -81,9 +81,10 @@ fun EditBookScreenRoute(
     bookId: String,
     onNavigateBack: () -> Unit,
 ) {
-    val viewModel: EditBookViewModel = viewModel(
-        factory = EditBookViewModelFactory(appContainer, bookId),
-    )
+    val viewModel: EditBookViewModel =
+        viewModel(
+            factory = EditBookViewModelFactory(appContainer, bookId),
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val shouldNavigateBack = uiState is EditBookUiState.NotFound || uiState is EditBookUiState.Saved
@@ -156,9 +157,10 @@ fun EditBookScreen(
         },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             when (uiState) {
                 is EditBookUiState.Loading -> {
@@ -273,16 +275,18 @@ private fun EditBookForm(
     val titleIsValid = titleText.isNotBlank()
 
     val parsedReleaseYear = releaseYearText.toIntOrNull()
-    val releaseYearIsValid = releaseYearText.isBlank() ||
-        (
-            parsedReleaseYear != null &&
-                parsedReleaseYear in BookRepository.MIN_RELEASE_YEAR..BookRepository.MAX_RELEASE_YEAR
+    val releaseYearIsValid =
+        releaseYearText.isBlank() ||
+            (
+                parsedReleaseYear != null &&
+                    parsedReleaseYear in BookRepository.MIN_RELEASE_YEAR..BookRepository.MAX_RELEASE_YEAR
             )
     val validatedReleaseYear = if (releaseYearText.isBlank()) null else parsedReleaseYear
 
     val parsedPurchasePrice = purchasePriceText.toDoubleOrNull()
-    val purchasePriceIsValid = purchasePriceText.isBlank() ||
-        (parsedPurchasePrice != null && parsedPurchasePrice >= 0.0)
+    val purchasePriceIsValid =
+        purchasePriceText.isBlank() ||
+            (parsedPurchasePrice != null && parsedPurchasePrice >= 0.0)
     val validatedPurchasePrice = if (purchasePriceText.isBlank()) null else parsedPurchasePrice
 
     val parsedTotalPages = totalPagesText.toIntOrNull()
@@ -293,10 +297,11 @@ private fun EditBookForm(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             FormSection(title = stringResource(R.string.edit_section_book_details)) {
@@ -305,11 +310,12 @@ private fun EditBookForm(
                     onValueChange = { titleText = it },
                     label = { Text(stringResource(R.string.edit_title_label)) },
                     isError = !titleIsValid,
-                    supportingText = if (!titleIsValid) {
-                        { Text(stringResource(R.string.edit_title_required_error)) }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (!titleIsValid) {
+                            { Text(stringResource(R.string.edit_title_required_error)) }
+                        } else {
+                            null
+                        },
                     singleLine = true,
                     enabled = !state.isSaving,
                     modifier = Modifier.fillMaxWidth(),
@@ -320,19 +326,20 @@ private fun EditBookForm(
                     label = { Text(stringResource(R.string.edit_release_year_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = !releaseYearIsValid,
-                    supportingText = if (!releaseYearIsValid) {
-                        {
-                            Text(
-                                stringResource(
-                                    R.string.edit_release_year_invalid_error,
-                                    BookRepository.MIN_RELEASE_YEAR,
-                                    BookRepository.MAX_RELEASE_YEAR,
-                                ),
-                            )
-                        }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (!releaseYearIsValid) {
+                            {
+                                Text(
+                                    stringResource(
+                                        R.string.edit_release_year_invalid_error,
+                                        BookRepository.MIN_RELEASE_YEAR,
+                                        BookRepository.MAX_RELEASE_YEAR,
+                                    ),
+                                )
+                            }
+                        } else {
+                            null
+                        },
                     singleLine = true,
                     enabled = !state.isSaving,
                     modifier = Modifier.fillMaxWidth(),
@@ -352,11 +359,12 @@ private fun EditBookForm(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     suffix = { Text(stringResource(R.string.edit_total_pages_suffix)) },
                     isError = !totalPagesIsValid,
-                    supportingText = if (!totalPagesIsValid) {
-                        { Text(stringResource(R.string.edit_total_pages_invalid_error)) }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (!totalPagesIsValid) {
+                            { Text(stringResource(R.string.edit_total_pages_invalid_error)) }
+                        } else {
+                            null
+                        },
                     singleLine = true,
                     enabled = !state.isSaving,
                     modifier = Modifier.fillMaxWidth(),
@@ -384,11 +392,12 @@ private fun EditBookForm(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     prefix = { Text(stringResource(R.string.edit_purchase_price_prefix)) },
                     isError = !purchasePriceIsValid,
-                    supportingText = if (!purchasePriceIsValid) {
-                        { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (!purchasePriceIsValid) {
+                            { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
+                        } else {
+                            null
+                        },
                     singleLine = true,
                     enabled = !state.isSaving,
                     modifier = Modifier.fillMaxWidth(),
@@ -443,9 +452,10 @@ private fun FormSection(
         )
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 content = content,
             )
@@ -478,9 +488,10 @@ private fun FormatDropdownField(
             label = { Text(stringResource(R.string.edit_format_label)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             enabled = enabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = enabled),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = enabled),
         )
         ExposedDropdownMenu(
             expanded = expanded,
@@ -584,9 +595,10 @@ private fun EditBookBottomBar(
 ) {
     Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedButton(
@@ -615,13 +627,14 @@ private fun EditBookBottomBar(
     }
 }
 
-private val PREVIEW_READY_STATE = EditBookUiState.Ready(
-    title = "The Great Gatsby",
-    releaseYear = 1925,
-    purchasePrice = 9.99,
-    totalPages = 180,
-    format = BookFormat.PHYSICAL,
-)
+private val PREVIEW_READY_STATE =
+    EditBookUiState.Ready(
+        title = "The Great Gatsby",
+        releaseYear = 1925,
+        purchasePrice = 9.99,
+        totalPages = 180,
+        format = BookFormat.PHYSICAL,
+    )
 
 /** Preview of the edit-book screen prefilled with existing metadata (light theme). */
 @Preview(showBackground = true)
@@ -694,10 +707,12 @@ private fun EditBookScreenUnknownTotalPagesPreview() {
 private fun EditBookScreenLongTitlePreview() {
     MediaTrackerTheme {
         EditBookScreen(
-            uiState = PREVIEW_READY_STATE.copy(
-                title = "The Extraordinarily Long and Overly Descriptive Subtitle-Laden Book Title " +
-                    "That Just Keeps Going",
-            ),
+            uiState =
+                PREVIEW_READY_STATE.copy(
+                    title =
+                        "The Extraordinarily Long and Overly Descriptive Subtitle-Laden Book Title " +
+                            "That Just Keeps Going",
+                ),
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )

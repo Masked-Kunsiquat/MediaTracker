@@ -11,15 +11,21 @@ import kotlinx.coroutines.CompletableDeferred
  * Dependencies" -- no mocking library), mirroring [FakeExportDataUseCase]'s exact shape.
  */
 internal class FakeImportDataUseCase(
-    private val result: Resource<ImportSummary> = Resource.Success(
-        ImportSummary(
-            booksImported = 0, booksSkipped = 0, booksMerged = 0, booksReplaced = 0,
-            sessionsImported = 0, sessionsSkipped = 0, sessionsMerged = 0, sessionsReplaced = 0,
-            rejections = emptyList(),
+    private val result: Resource<ImportSummary> =
+        Resource.Success(
+            ImportSummary(
+                booksImported = 0,
+                booksSkipped = 0,
+                booksMerged = 0,
+                booksReplaced = 0,
+                sessionsImported = 0,
+                sessionsSkipped = 0,
+                sessionsMerged = 0,
+                sessionsReplaced = 0,
+                rejections = emptyList(),
+            ),
         ),
-    ),
 ) : ImportUseCase {
-
     /** Number of times [execute] has been called. */
     var callCount: Int = 0
         private set

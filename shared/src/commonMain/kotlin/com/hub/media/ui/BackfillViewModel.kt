@@ -43,7 +43,6 @@ public class BackfillViewModel(
     private val bulkBackfillUseCase: BulkBackfillUseCase,
     private val logger: Logger = AppLogger,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow<BackfillUiState>(BackfillUiState.Idle)
     public val uiState: StateFlow<BackfillUiState> = _uiState.asStateFlow()
 
@@ -98,47 +97,49 @@ public class BackfillViewModel(
         if (_uiState.value is BackfillUiState.Running) return
 
         _uiState.value = BackfillUiState.Running(progress = null)
-        job = viewModelScope.launch {
-            try {
-                val finalProgress = bulkBackfillUseCase.execute { progress ->
-                    _uiState.value = BackfillUiState.Running(progress)
+        job =
+            viewModelScope.launch {
+                try {
+                    val finalProgress =
+                        bulkBackfillUseCase.execute { progress ->
+                            _uiState.value = BackfillUiState.Running(progress)
+                        }
+                    _uiState.value = BackfillUiState.Stopped(finalProgress)
+                } catch (e: CancellationException) {
+                    // cancel() below cancels this exact job. Must be caught -- and rethrown -- before
+                    // the broad Exception catch below: CancellationException is itself a subtype of
+                    // Exception on Kotlin/JVM, so catching Exception first would swallow the caller's
+                    // coroutine cancellation instead of propagating it (the same ordering discipline
+                    // OpenLibraryIsbnCoverProbe's catch already established). settleOutOfRunning()
+                    // ensures uiState doesn't stay stuck at Running forever (the Stopped assignment
+                    // above never runs once this coroutine is cancelled).
+                    settleOutOfRunning()
+                    throw e
+                } catch (e: Exception) {
+                    // A DB failure mid-backfill (BulkBackfillUseCase.execute's getBulkBackfillState/
+                    // seedState/bookRepository reads, or saveBulkBackfillState, none of which catch
+                    // their own exceptions) must not crash this ViewModel's coroutine, and must not
+                    // leave uiState stuck at Running forever. Deliberately not rethrown: unlike
+                    // cancellation, there's no caller-side structured-concurrency contract to honor
+                    // here, only a UI state that must recover.
+                    //
+                    // PR review round 2: this used to also call settleOutOfRunning(), which settles on
+                    // exactly the same Stopped state cancellation does -- making a genuine failure
+                    // (data may not have been saved) visually indistinguishable from the user pressing
+                    // cancel. settleAsFailed() below settles on BackfillUiState.Failed instead, so the
+                    // Settings screen can tell the two apart.
+                    //
+                    // ROADMAP Task 15: the exception is now logged via [logger] at ERROR (tag/fixed
+                    // message only -- no book title/author/mediaId is in scope at this catch site to
+                    // even risk including) before settling to Failed. It is still deliberately NOT
+                    // surfaced to the Settings UI as raw text (settleAsFailed() below carries no message)
+                    // -- exposing exception text there risks leaking DB/provider internals to the user
+                    // for no actionable benefit; the log is where a developer, not the end user, goes to
+                    // diagnose it.
+                    logger.error(TAG, e) { "bulk backfill failed" }
+                    settleAsFailed()
                 }
-                _uiState.value = BackfillUiState.Stopped(finalProgress)
-            } catch (e: CancellationException) {
-                // cancel() below cancels this exact job. Must be caught -- and rethrown -- before
-                // the broad Exception catch below: CancellationException is itself a subtype of
-                // Exception on Kotlin/JVM, so catching Exception first would swallow the caller's
-                // coroutine cancellation instead of propagating it (the same ordering discipline
-                // OpenLibraryIsbnCoverProbe's catch already established). settleOutOfRunning()
-                // ensures uiState doesn't stay stuck at Running forever (the Stopped assignment
-                // above never runs once this coroutine is cancelled).
-                settleOutOfRunning()
-                throw e
-            } catch (e: Exception) {
-                // A DB failure mid-backfill (BulkBackfillUseCase.execute's getBulkBackfillState/
-                // seedState/bookRepository reads, or saveBulkBackfillState, none of which catch
-                // their own exceptions) must not crash this ViewModel's coroutine, and must not
-                // leave uiState stuck at Running forever. Deliberately not rethrown: unlike
-                // cancellation, there's no caller-side structured-concurrency contract to honor
-                // here, only a UI state that must recover.
-                //
-                // PR review round 2: this used to also call settleOutOfRunning(), which settles on
-                // exactly the same Stopped state cancellation does -- making a genuine failure
-                // (data may not have been saved) visually indistinguishable from the user pressing
-                // cancel. settleAsFailed() below settles on BackfillUiState.Failed instead, so the
-                // Settings screen can tell the two apart.
-                //
-                // ROADMAP Task 15: the exception is now logged via [logger] at ERROR (tag/fixed
-                // message only -- no book title/author/mediaId is in scope at this catch site to
-                // even risk including) before settling to Failed. It is still deliberately NOT
-                // surfaced to the Settings UI as raw text (settleAsFailed() below carries no message)
-                // -- exposing exception text there risks leaking DB/provider internals to the user
-                // for no actionable benefit; the log is where a developer, not the end user, goes to
-                // diagnose it.
-                logger.error(TAG, e) { "bulk backfill failed" }
-                settleAsFailed()
             }
-        }
     }
 
     /**

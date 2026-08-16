@@ -20,15 +20,16 @@ internal fun sampleMediaItem(
     purchasePrice: Double? = 9.99,
     createdAt: Instant = Instant.fromEpochMilliseconds(1_700_000_000_000),
     coverImageHash: String? = null,
-): MediaItemEntity = MediaItemEntity(
-    id = id,
-    type = type,
-    title = title,
-    releaseYear = releaseYear,
-    purchasePrice = purchasePrice,
-    createdAt = createdAt,
-    coverImageHash = coverImageHash,
-)
+): MediaItemEntity =
+    MediaItemEntity(
+        id = id,
+        type = type,
+        title = title,
+        releaseYear = releaseYear,
+        purchasePrice = purchasePrice,
+        createdAt = createdAt,
+        coverImageHash = coverImageHash,
+    )
 
 internal fun sampleBookDetails(
     mediaId: String,
@@ -38,25 +39,27 @@ internal fun sampleBookDetails(
     status: ReadingStatus = ReadingStatus.TO_READ,
     finishedAt: Instant? = null,
     trackingMode: TrackingMode = TrackingMode.PAGES,
-): BookDetailsEntity = BookDetailsEntity(
-    mediaId = mediaId,
-    isbn = isbn,
-    format = format,
-    totalPages = totalPages,
-    status = status,
-    finishedAt = finishedAt,
-    trackingMode = trackingMode,
-)
+): BookDetailsEntity =
+    BookDetailsEntity(
+        mediaId = mediaId,
+        isbn = isbn,
+        format = format,
+        totalPages = totalPages,
+        status = status,
+        finishedAt = finishedAt,
+        trackingMode = trackingMode,
+    )
 
 internal fun sampleExternalIdentifier(
     mediaId: String,
     provider: IdentifierProvider = IdentifierProvider.ISBN,
     externalId: String = "9780000000000",
-): ExternalIdentifierEntity = ExternalIdentifierEntity(
-    mediaId = mediaId,
-    provider = provider,
-    externalId = externalId,
-)
+): ExternalIdentifierEntity =
+    ExternalIdentifierEntity(
+        mediaId = mediaId,
+        provider = provider,
+        externalId = externalId,
+    )
 
 internal fun sampleReadingSession(
     mediaId: String,
@@ -68,14 +71,15 @@ internal fun sampleReadingSession(
     endUnit: Double = 25.0,
     deltaPages: Int? = 15,
     notes: String? = null,
-): ReadingSessionEntity = ReadingSessionEntity(
-    id = id,
-    mediaId = mediaId,
-    timestampStart = timestampStart,
-    timestampEnd = timestampEnd,
-    durationSeconds = durationSeconds,
-    startUnit = startUnit,
-    endUnit = endUnit,
-    deltaPages = deltaPages,
-    notes = notes,
-)
+): ReadingSessionEntity =
+    ReadingSessionEntity(
+        id = id,
+        mediaId = mediaId,
+        timestampStart = timestampStart,
+        timestampEnd = timestampEnd,
+        durationSeconds = durationSeconds,
+        startUnit = startUnit,
+        endUnit = endUnit,
+        deltaPages = deltaPages,
+        notes = notes,
+    )

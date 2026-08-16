@@ -92,6 +92,10 @@ So: **update this file in the same commit as the change that invalidates it.** C
 * **State Hoisting:** Compose UI components must be stateless where possible, accepting state objects and emitting events up to the ViewModel.
 * **Error Handling:** Network calls and database operations MUST be wrapped in custom `Result<T>` or sealed `Resource` classes to prevent UI crashes on offline/error states.
 * **No Unnecessary Dependencies:** Do not add third-party libraries without explicit project context approval. Stick to the primary KMP toolchain.
+* **Formatting is ktlint's job, and `.editorconfig` is its only configuration.** Run `./gradlew ktlintFormat` before committing; CI runs `ktlintCheck` and fails on any violation. The line limit is **120** — the Kotlin/IntelliJ default, and what this codebase was already written to. Every rule that is off carries a comment in `.editorconfig` saying why. A rule is disabled because the codebase has a considered reason to differ from it, **never because disabling it is the fastest way to make a violation disappear.** Two specific traps, both of which have already cost a session:
+  - **Do not widen `max_line_length` to silence violations.** Set it to `off` and ktlint's `function-signature` rule starts *demanding* the opposite of what it demanded before — wrapped expression bodies get collapsed onto single 150-column lines, so the "fix" reformats dozens of files in the wrong direction and undoes the previous formatting commit.
+  - **Prefer narrowing a rule to switching it off.** `function-naming` is not disabled; it is scoped with `ktlint_function_naming_ignore_when_annotated_with = Composable`, so PascalCase Composables pass while ordinary functions are still held to camelCase.
+* **ktlint must never be pointed at generated code.** KSP registers its output directories into the Kotlin source sets, so both modules filter ktlint in their `build.gradle.kts`. Without the filter ktlint reads `build/generated` and reports over 15,000 violations against Room's DAO and database implementations — machine output nobody can fix by editing. The filter matches on the **absolute path**; an `include("src/**")` / `exclude(...)` pattern pair does **not** work here, because those patterns resolve relative to each source-set root rather than to the project directory, so `src/**` matches nothing and silently filters out either everything or nothing. Verify a filter change by counting violations, not by assuming the pattern took.
 
 ---
 
@@ -148,6 +152,13 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   ```
 
   Unit tests never parse these. A malformed backup-rules XML or a broken manifest merge fails only here.
+* **Lint before pushing.** CI fails on either of these, and both are fast:
+
+  ```bash
+  ./gradlew ktlintCheck :app:lintDebug
+  ```
+
+  `ktlintCheck` is style only — see §5 for its configuration and the two traps in it. `:app:lintDebug` is Android Lint over the app module. Neither replaces the test gate above, and neither is a substitute for it: a lint-clean tree says nothing about whether the code works.
 * **Compose screens are covered by instrumented tests**, in `app/src/androidTest/`:
 
   ```bash
@@ -188,7 +199,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 
 * **Scheme:** Semantic Versioning `0.y.z` pre-1.0. Minor bump per feature milestone, patch for fixes. `1.0.0` when the app is daily-drivable.
 * **Single Source of Truth:** The app version lives ONLY in `[versions] app` in `gradle/libs.versions.toml`. `app/build.gradle.kts` reads `versionName` from it and derives `versionCode` as `major*10000 + minor*100 + patch`. NEVER hand-edit `versionCode` or duplicate the version string elsewhere.
-* **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase.
+* **Changelog Discipline:** `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every completed task/phase MUST add its user-visible changes to the `[Unreleased]` section in the same commit (or the phase commit immediately following). Agents finishing a phase without touching the changelog have not finished the phase. **CI enforces this:** Pull Requests touching `shared/` or `app/src/main/` will fail if `CHANGELOG.md` is not also modified.
 * **Release Ritual — a release is its own change, never a passenger on a feature PR.**
   1. Branch from `main` as `release/vX.Y.Z`. Nothing else rides along: the branch contains the two edits below and nothing more.
   2. Move `[Unreleased]` content into a dated `## [x.y.z] - YYYY-MM-DD` section.
@@ -199,7 +210,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   **Why the separate branch, and not a bump folded into the phase PR:** it keeps `main`'s history answering "what shipped in this version?" by inspection instead of by archaeology, and it keeps the release reviewable on its own — the changelog is the one artefact written for the user rather than the reviewer, and it is the last chance to catch a version bump of the wrong size. `v0.11.0` was cut the wrong way (the bump rode along inside the Task 15 Phase C PR, so `main` records `Task 15 Phase C ... (#37)` where it should say `Release v0.11.0`); the tag and release are correct, only the history's shape is wrong. Steps 1 and 4 exist because that happened.
 
   **The version bump is the release's job, not the feature's.** A phase PR adds to `[Unreleased]` (see Changelog Discipline above) and stops there. It must never touch `[versions] app`.
-* **Room Schema Freeze Rule:** Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration (`Migration` object + migration test). In-place edits of the current schema version are permitted ONLY for schema versions that have never been part of a tagged release.
+* **Room Schema Freeze Rule:** Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration (`Migration` object + migration test). In-place edits of the current schema version are permitted ONLY for schema versions that have never been part of a tagged release. **CI enforces this:** existing schema JSONs in `shared/schemas/` must never be modified in a PR, and `APP_DATABASE_VERSION` in `AppDatabase.kt` must always match the highest versioned file in that directory.
 * **Frozen schema ledger.** Every version below shipped in a tag and is therefore immutable. **Append a row here in the same commit that bumps `APP_DATABASE_VERSION`** — this table is the rule's only record, and a version missing from it is a version nobody can tell is frozen.
 
   | Schema | Froze at | Migration into it |

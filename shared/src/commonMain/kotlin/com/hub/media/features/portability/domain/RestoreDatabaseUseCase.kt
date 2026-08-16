@@ -220,7 +220,6 @@ public class DefaultRestoreDatabaseUseCase(
     private val liveDatabaseFilePath: String,
     private val logger: Logger = AppLogger,
 ) : RestoreDatabaseUseCase {
-
     override suspend fun stage(incomingFilePath: String): Resource<StagedRestoreInfo> {
         val header = readFileHeaderBytes(incomingFilePath, SQLITE_HEADER_SIZE)
         val info = header?.let(::parseSqliteHeader)
@@ -265,10 +264,11 @@ public class DefaultRestoreDatabaseUseCase(
 
     override suspend fun commit(staged: StagedRestoreInfo): Resource<Unit> {
         val result = swap(staged)
-        val marker = when (result) {
-            is Resource.Success -> RestoreMarker.Success
-            is Resource.Error -> RestoreMarker.Failure(result.message)
-        }
+        val marker =
+            when (result) {
+                is Resource.Success -> RestoreMarker.Success
+                is Resource.Error -> RestoreMarker.Failure(result.message)
+            }
         writeRestoreMarker(liveDatabaseFilePath, marker)
         return result
     }
@@ -297,8 +297,20 @@ public class DefaultRestoreDatabaseUseCase(
             // own -wal/-shm sidecars (if AppContainer.close() didn't already checkpoint them away)
             // along with it, so a rollback below can always put the whole pre-restore state back
             // together rather than just the main file.
-            val walMoved = if (fileExists(walPath)) renameFile(walPath, backupWalPath) else { deleteFileIfExists(backupWalPath); true }
-            val shmMoved = if (fileExists(shmPath)) renameFile(shmPath, backupShmPath) else { deleteFileIfExists(backupShmPath); true }
+            val walMoved =
+                if (fileExists(walPath)) {
+                    renameFile(walPath, backupWalPath)
+                } else {
+                    deleteFileIfExists(backupWalPath)
+                    true
+                }
+            val shmMoved =
+                if (fileExists(shmPath)) {
+                    renameFile(shmPath, backupShmPath)
+                } else {
+                    deleteFileIfExists(backupShmPath)
+                    true
+                }
             if (!walMoved || !shmMoved) {
                 // A sidecar rename can fail on a live, non-crashed process too (e.g. another handle
                 // transiently blocking the rename) -- if the staged file were swapped in anyway, the

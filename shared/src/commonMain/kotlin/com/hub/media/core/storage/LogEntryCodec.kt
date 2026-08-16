@@ -52,17 +52,18 @@ internal const val FIELD_DELIMITER: Char = '\u0001'
 private const val FIELD_COUNT = 5
 
 /** Encodes [entry] as one delimited line, without a trailing newline -- see this file's KDoc. */
-internal fun encodeLogEntry(entry: LogEntry): String = buildString {
-    append(entry.seq)
-    append(FIELD_DELIMITER)
-    append(entry.timestampMillis)
-    append(FIELD_DELIMITER)
-    append(entry.level.name)
-    append(FIELD_DELIMITER)
-    append(escapeField(entry.tag))
-    append(FIELD_DELIMITER)
-    append(escapeField(entry.message))
-}
+internal fun encodeLogEntry(entry: LogEntry): String =
+    buildString {
+        append(entry.seq)
+        append(FIELD_DELIMITER)
+        append(entry.timestampMillis)
+        append(FIELD_DELIMITER)
+        append(entry.level.name)
+        append(FIELD_DELIMITER)
+        append(escapeField(entry.tag))
+        append(FIELD_DELIMITER)
+        append(escapeField(entry.message))
+    }
 
 /** Encodes [entries] as UTF-8 bytes, one newline-terminated line per entry, in list order. */
 internal fun encodeLogEntries(entries: List<LogEntry>): ByteArray =
@@ -89,17 +90,18 @@ internal fun decodeLogEntry(line: String): LogEntry? {
     return LogEntry(seq, timestampMillis, level, tag, message)
 }
 
-private fun escapeField(value: String): String = buildString {
-    for (c in value) {
-        when (c) {
-            '\\' -> append("\\\\")
-            FIELD_DELIMITER -> append("\\d")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            else -> append(c)
+private fun escapeField(value: String): String =
+    buildString {
+        for (c in value) {
+            when (c) {
+                '\\' -> append("\\\\")
+                FIELD_DELIMITER -> append("\\d")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                else -> append(c)
+            }
         }
     }
-}
 
 /**
  * Reverses [escapeField]. Returns `null` on malformed escaping (a trailing backslash, or an

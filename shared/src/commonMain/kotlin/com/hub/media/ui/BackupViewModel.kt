@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 public class BackupViewModel(
     private val backupDatabaseUseCase: DatabaseBackupUseCase,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
     public val uiState: StateFlow<BackupUiState> = _uiState.asStateFlow()
 
@@ -38,10 +37,11 @@ public class BackupViewModel(
 
         _uiState.value = BackupUiState.Loading
         viewModelScope.launch {
-            _uiState.value = when (val result = backupDatabaseUseCase.execute()) {
-                is Resource.Success -> BackupUiState.Success(result.data)
-                is Resource.Error -> BackupUiState.Error(result.message)
-            }
+            _uiState.value =
+                when (val result = backupDatabaseUseCase.execute()) {
+                    is Resource.Success -> BackupUiState.Success(result.data)
+                    is Resource.Error -> BackupUiState.Error(result.message)
+                }
         }
     }
 

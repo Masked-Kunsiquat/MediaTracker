@@ -5,15 +5,15 @@ import com.hub.media.core.database.testAppDatabase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.setWeekStartDay
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * [SettingsViewModel] tests against a real in-memory [AppDatabase] (same builder/style as
@@ -30,7 +30,6 @@ import kotlinx.coroutines.test.runTest
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
-
     private lateinit var db: AppDatabase
     private lateinit var repository: SettingsRepository
     private val viewModels = ViewModelRegistry()
@@ -65,31 +64,38 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun uiState_neverChanged_staysMondayAfterFirstEmission() = runTest {
-        val viewModel = newViewModel()
+    fun uiState_neverChanged_staysMondayAfterFirstEmission() =
+        runTest {
+            val viewModel = newViewModel()
 
-        val settled = viewModel.uiState.first()
+            val settled = viewModel.uiState.first()
 
-        assertEquals(WeekStartDay.MONDAY, settled.weekStartDay, "an unset preference must default to MONDAY, matching pre-Phase-B behavior")
-    }
-
-    @Test
-    fun setWeekStartDay_updatesUiStateReactively() = runTest {
-        val viewModel = newViewModel()
-
-        viewModel.setWeekStartDay(WeekStartDay.SUNDAY)
-
-        val updated = viewModel.uiState.first { it.weekStartDay == WeekStartDay.SUNDAY }
-        assertEquals(WeekStartDay.SUNDAY, updated.weekStartDay)
-    }
+            assertEquals(
+                WeekStartDay.MONDAY,
+                settled.weekStartDay,
+                "an unset preference must default to MONDAY, matching pre-Phase-B behavior",
+            )
+        }
 
     @Test
-    fun uiState_reflectsValueAlreadyPersistedBeforeViewModelCreation() = runTest {
-        repository.setWeekStartDay(WeekStartDay.SUNDAY)
+    fun setWeekStartDay_updatesUiStateReactively() =
+        runTest {
+            val viewModel = newViewModel()
 
-        val viewModel = newViewModel()
-        val settled = viewModel.uiState.first { it.weekStartDay == WeekStartDay.SUNDAY }
+            viewModel.setWeekStartDay(WeekStartDay.SUNDAY)
 
-        assertEquals(WeekStartDay.SUNDAY, settled.weekStartDay)
-    }
+            val updated = viewModel.uiState.first { it.weekStartDay == WeekStartDay.SUNDAY }
+            assertEquals(WeekStartDay.SUNDAY, updated.weekStartDay)
+        }
+
+    @Test
+    fun uiState_reflectsValueAlreadyPersistedBeforeViewModelCreation() =
+        runTest {
+            repository.setWeekStartDay(WeekStartDay.SUNDAY)
+
+            val viewModel = newViewModel()
+            val settled = viewModel.uiState.first { it.weekStartDay == WeekStartDay.SUNDAY }
+
+            assertEquals(WeekStartDay.SUNDAY, settled.weekStartDay)
+        }
 }

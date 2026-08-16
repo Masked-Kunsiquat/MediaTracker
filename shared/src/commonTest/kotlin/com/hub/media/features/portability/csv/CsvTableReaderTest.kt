@@ -12,7 +12,6 @@ import kotlin.test.assertTrue
  * understands.
  */
 class CsvTableReaderTest {
-
     private val header = listOf("csv_schema_version", "a", "b")
 
     @Test
@@ -58,9 +57,10 @@ class CsvTableReaderTest {
 
     @Test
     fun read_secondRowWithWrongColumnCount_reportsRowThree() {
-        val csv = CsvUtil.buildLine(header) +
-            CsvUtil.buildLine(listOf("1", "x", "y")) +
-            CsvUtil.buildLine(listOf("1", "onlyOne"))
+        val csv =
+            CsvUtil.buildLine(header) +
+                CsvUtil.buildLine(listOf("1", "x", "y")) +
+                CsvUtil.buildLine(listOf("1", "onlyOne"))
         val result = CsvTableReader.read(csv, header)
         assertIs<CsvTableResult.Failure>(result)
         assertTrue(result.message.contains("Row 3"))
@@ -109,9 +109,10 @@ class CsvTableReaderTest {
 
     @Test
     fun read_validMultiRowFile_succeedsWithHeaderStripped() {
-        val csv = CsvUtil.buildLine(header) +
-            CsvUtil.buildLine(listOf("1", "x1", "y1")) +
-            CsvUtil.buildLine(listOf("1", "x2", "y2"))
+        val csv =
+            CsvUtil.buildLine(header) +
+                CsvUtil.buildLine(listOf("1", "x1", "y1")) +
+                CsvUtil.buildLine(listOf("1", "x2", "y2"))
         val result = CsvTableReader.read(csv, header)
         assertIs<CsvTableResult.Success>(result)
         assertEquals(header, result.header)

@@ -27,20 +27,23 @@ import kotlinx.coroutines.flow.map
  *
  * @param dao Backing [AppSettingsDao].
  */
-public class SettingsRepository(private val dao: AppSettingsDao) {
-
+public class SettingsRepository(
+    private val dao: AppSettingsDao,
+) {
     /**
      * Reactive current [String] value stored under [key], or null if never set (or cleared via
      * [clear]).
      */
-    public fun observeString(key: String): Flow<String?> =
-        dao.observeByKey(key).map { it?.value }
+    public fun observeString(key: String): Flow<String?> = dao.observeByKey(key).map { it?.value }
 
     /** One-shot fetch of [key]'s current [String] value, or null if never set. */
     public suspend fun getString(key: String): String? = dao.getByKey(key)?.value
 
     /** Upserts [value] under [key]. */
-    public suspend fun setString(key: String, value: String) {
+    public suspend fun setString(
+        key: String,
+        value: String,
+    ) {
         dao.upsert(AppSettingEntity(key = key, value = value))
     }
 
@@ -56,21 +59,26 @@ public class SettingsRepository(private val dao: AppSettingsDao) {
     public suspend fun getInt(key: String): Int? = getString(key)?.toIntOrNull()
 
     /** Upserts [value] under [key], stored as its decimal string form. */
-    public suspend fun setInt(key: String, value: Int) = setString(key, value.toString())
+    public suspend fun setInt(
+        key: String,
+        value: Int,
+    ) = setString(key, value.toString())
 
     /**
      * Reactive current [Boolean] value stored under [key] ("true"/"false", case-insensitive), or
      * null if never set OR malformed — see [observeInt]'s malformed-value rule, applied identically
      * here via [String.toBooleanStrictOrNull].
      */
-    public fun observeBoolean(key: String): Flow<Boolean?> =
-        observeString(key).map { it?.toBooleanStrictOrNull() }
+    public fun observeBoolean(key: String): Flow<Boolean?> = observeString(key).map { it?.toBooleanStrictOrNull() }
 
     /** One-shot fetch of [key]'s current [Boolean] value; see [observeBoolean]'s malformed-value rule. */
     public suspend fun getBoolean(key: String): Boolean? = getString(key)?.toBooleanStrictOrNull()
 
     /** Upserts [value] under [key], stored as `"true"`/`"false"`. */
-    public suspend fun setBoolean(key: String, value: Boolean) = setString(key, value.toString())
+    public suspend fun setBoolean(
+        key: String,
+        value: Boolean,
+    ) = setString(key, value.toString())
 
     /** Removes [key] entirely, reverting every accessor above to null (never-set) for it. */
     public suspend fun clear(key: String) = dao.deleteByKey(key)

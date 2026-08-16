@@ -13,7 +13,6 @@ import kotlin.test.assertTrue
  * validation lives one layer up -- and a completely empty file).
  */
 class CsvReaderTest {
-
     @Test
     fun parse_emptyFile_returnsEmptyRows() {
         val result = CsvReader.parse("")

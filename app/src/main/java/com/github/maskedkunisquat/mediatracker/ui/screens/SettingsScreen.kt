@@ -26,18 +26,18 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -78,6 +78,7 @@ import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.RestoreMarker
+import com.hub.media.core.util.LogLevel
 import com.hub.media.features.books.domain.BulkBackfillProgress
 import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.CsvExportBundle
@@ -85,7 +86,6 @@ import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportRejection
 import com.hub.media.features.portability.domain.ImportSummary
 import com.hub.media.features.portability.domain.StagedRestoreInfo
-import com.hub.media.core.util.LogLevel
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackfillUiState
@@ -100,13 +100,13 @@ import com.hub.media.ui.RestoreUiState
 import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
-import java.io.File
-import kotlin.math.ceil
-import kotlin.time.DurationUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import kotlin.math.ceil
+import kotlin.time.DurationUnit
 
 /**
  * Route-level composable for the Settings screen (ROADMAP Task 7 Phase B).
@@ -122,24 +122,30 @@ fun SettingsScreenRoute(
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
 ) {
-    val viewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModelFactory(appContainer),
-    )
-    val exportViewModel: ExportViewModel = viewModel(
-        factory = ExportViewModelFactory(appContainer),
-    )
-    val importViewModel: ImportViewModel = viewModel(
-        factory = ImportViewModelFactory(appContainer),
-    )
-    val backupViewModel: BackupViewModel = viewModel(
-        factory = BackupViewModelFactory(appContainer),
-    )
-    val restoreViewModel: RestoreViewModel = viewModel(
-        factory = RestoreViewModelFactory(appContainer),
-    )
-    val backfillViewModel: BackfillViewModel = viewModel(
-        factory = BackfillViewModelFactory(appContainer),
-    )
+    val viewModel: SettingsViewModel =
+        viewModel(
+            factory = SettingsViewModelFactory(appContainer),
+        )
+    val exportViewModel: ExportViewModel =
+        viewModel(
+            factory = ExportViewModelFactory(appContainer),
+        )
+    val importViewModel: ImportViewModel =
+        viewModel(
+            factory = ImportViewModelFactory(appContainer),
+        )
+    val backupViewModel: BackupViewModel =
+        viewModel(
+            factory = BackupViewModelFactory(appContainer),
+        )
+    val restoreViewModel: RestoreViewModel =
+        viewModel(
+            factory = RestoreViewModelFactory(appContainer),
+        )
+    val backfillViewModel: BackfillViewModel =
+        viewModel(
+            factory = BackfillViewModelFactory(appContainer),
+        )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val exportUiState by exportViewModel.uiState.collectAsStateWithLifecycle()
     val importUiState by importViewModel.uiState.collectAsStateWithLifecycle()
@@ -165,11 +171,12 @@ fun SettingsScreenRoute(
     // KDoc): the outcome of a restore that completed just before this process was killed and
     // relaunched (ROADMAP Task 8 Phase C -- see DefaultRestoreDatabaseUseCase's KDoc for why a
     // restart follows every restore attempt, success or failure). `null` on every ordinary launch.
-    val restoreOutcomeMessage: String? = when (val marker = appContainer.pendingRestoreMarker) {
-        RestoreMarker.Success -> stringResource(R.string.restore_previous_success_message)
-        is RestoreMarker.Failure -> stringResource(R.string.restore_previous_failure_message, marker.message)
-        null -> null
-    }
+    val restoreOutcomeMessage: String? =
+        when (val marker = appContainer.pendingRestoreMarker) {
+            RestoreMarker.Success -> stringResource(R.string.restore_previous_success_message)
+            is RestoreMarker.Failure -> stringResource(R.string.restore_previous_failure_message, marker.message)
+            null -> null
+        }
     LaunchedEffect(Unit) {
         restoreOutcomeMessage?.let { snackbarHostState.showSnackbar(it) }
     }
@@ -187,48 +194,50 @@ fun SettingsScreenRoute(
     // first-picker Cancel semantics below (which abort the whole import request).
     var pendingLibraryCsvForImport by remember { mutableStateOf<String?>(null) }
 
-    val readingLogsImportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        val libraryCsv = pendingLibraryCsvForImport
-        pendingLibraryCsvForImport = null
-        // Off the main thread: reading a whole document via SAF is blocking I/O that runs
-        // straight inside this launcher callback, which is itself dispatched on the main thread --
-        // an unbounded read here (a large reading-logs export) would otherwise ANR the app.
-        coroutineScope.launch {
-            val readingLogsCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
-            // A null uri means the user cancelled this second, optional picker -- that's a
-            // legitimate "library only" import (see pendingLibraryCsvForImport's KDoc above). A
-            // null readingLogsCsv from a uri the user *did* pick means the read itself failed --
-            // matching libraryImportLauncher's own null-content handling below, report it and stop
-            // before importData silently drops the reading logs and reports a clean success.
-            if (uri != null && readingLogsCsv == null) {
-                snackbarHostState.showSnackbar(importFailureMessage)
-                return@launch
+    val readingLogsImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            val libraryCsv = pendingLibraryCsvForImport
+            pendingLibraryCsvForImport = null
+            // Off the main thread: reading a whole document via SAF is blocking I/O that runs
+            // straight inside this launcher callback, which is itself dispatched on the main thread --
+            // an unbounded read here (a large reading-logs export) would otherwise ANR the app.
+            coroutineScope.launch {
+                val readingLogsCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
+                // A null uri means the user cancelled this second, optional picker -- that's a
+                // legitimate "library only" import (see pendingLibraryCsvForImport's KDoc above). A
+                // null readingLogsCsv from a uri the user *did* pick means the read itself failed --
+                // matching libraryImportLauncher's own null-content handling below, report it and stop
+                // before importData silently drops the reading logs and reports a clean success.
+                if (uri != null && readingLogsCsv == null) {
+                    snackbarHostState.showSnackbar(importFailureMessage)
+                    return@launch
+                }
+                importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
             }
-            importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
         }
-    }
 
-    val libraryImportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) {
-            coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
-            return@rememberLauncherForActivityResult
-        }
-        // Off the main thread -- see readingLogsImportLauncher above; a large library export is
-        // the more likely of the two files to be big enough to matter.
-        coroutineScope.launch {
-            val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
-            if (content == null) {
-                snackbarHostState.showSnackbar(importFailureMessage)
-                return@launch
+    val libraryImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri == null) {
+                coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
+                return@rememberLauncherForActivityResult
             }
-            pendingLibraryCsvForImport = content
-            readingLogsImportLauncher.launch(arrayOf("text/*"))
+            // Off the main thread -- see readingLogsImportLauncher above; a large library export is
+            // the more likely of the two files to be big enough to matter.
+            coroutineScope.launch {
+                val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
+                if (content == null) {
+                    snackbarHostState.showSnackbar(importFailureMessage)
+                    return@launch
+                }
+                pendingLibraryCsvForImport = content
+                readingLogsImportLauncher.launch(arrayOf("text/*"))
+            }
         }
-    }
 
     // ---- Goodreads import (ROADMAP Task 8 Phase D) ---------------------------------------------
     // A deliberately separate action from the CSV import above (own duplicate-policy choice, own
@@ -238,70 +247,76 @@ fun SettingsScreenRoute(
     // and can't usefully run concurrently.
     var goodreadsDuplicatePolicy by remember { mutableStateOf(DuplicatePolicy.SKIP) }
 
-    val goodreadsImportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) {
-            coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
-            return@rememberLauncherForActivityResult
-        }
-        // Off the main thread -- see the CSV import launchers above.
-        coroutineScope.launch {
-            val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
-            if (content == null) {
-                snackbarHostState.showSnackbar(importFailureMessage)
-                return@launch
+    val goodreadsImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri == null) {
+                coroutineScope.launch { snackbarHostState.showSnackbar(importCancelledMessage) }
+                return@rememberLauncherForActivityResult
             }
-            importViewModel.importGoodreads(content, goodreadsDuplicatePolicy)
+            // Off the main thread -- see the CSV import launchers above.
+            coroutineScope.launch {
+                val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
+                if (content == null) {
+                    snackbarHostState.showSnackbar(importFailureMessage)
+                    return@launch
+                }
+                importViewModel.importGoodreads(content, goodreadsDuplicatePolicy)
+            }
         }
-    }
 
     // Holds the generated bundle between the two sequential SAF "create document" picks below --
     // see SettingsScreen.kt's class-level export section KDoc for why both files are written from
     // one cached bundle rather than two independent ExportDataUseCase runs.
     var pendingBundle by remember { mutableStateOf<CsvExportBundle?>(null) }
 
-    val readingLogsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv"),
-    ) { uri ->
-        val bundle = pendingBundle
-        pendingBundle = null
-        exportViewModel.reset()
-        coroutineScope.launch {
-            // Off the main thread: writing a whole document via SAF is blocking I/O.
-            val message = when {
-                uri == null -> exportCancelledMessage
-                bundle == null -> exportFailureMessage
-                withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.readingLogsCsv) } -> exportSuccessMessage
-                else -> exportFailureMessage
-            }
-            snackbarHostState.showSnackbar(message)
-        }
-    }
-
-    val libraryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv"),
-    ) { uri ->
-        val bundle = pendingBundle
-        if (uri == null || bundle == null) {
+    val readingLogsLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/csv"),
+        ) { uri ->
+            val bundle = pendingBundle
             pendingBundle = null
             exportViewModel.reset()
-            coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-        } else {
-            // Off the main thread -- see readingLogsLauncher above.
             coroutineScope.launch {
-                if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
-                    // First file written; immediately prompt for the second file's destination so
-                    // both documents come from the exact same generated snapshot.
-                    readingLogsLauncher.launch("reading_logs_export.csv")
-                } else {
-                    pendingBundle = null
-                    exportViewModel.reset()
-                    snackbarHostState.showSnackbar(exportFailureMessage)
+                // Off the main thread: writing a whole document via SAF is blocking I/O.
+                val message =
+                    when {
+                        uri == null -> exportCancelledMessage
+                        bundle == null -> exportFailureMessage
+                        withContext(
+                            Dispatchers.IO,
+                        ) { writeCsvToUri(context, uri, bundle.readingLogsCsv) } -> exportSuccessMessage
+                        else -> exportFailureMessage
+                    }
+                snackbarHostState.showSnackbar(message)
+            }
+        }
+
+    val libraryLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/csv"),
+        ) { uri ->
+            val bundle = pendingBundle
+            if (uri == null || bundle == null) {
+                pendingBundle = null
+                exportViewModel.reset()
+                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
+            } else {
+                // Off the main thread -- see readingLogsLauncher above.
+                coroutineScope.launch {
+                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
+                        // First file written; immediately prompt for the second file's destination so
+                        // both documents come from the exact same generated snapshot.
+                        readingLogsLauncher.launch("reading_logs_export.csv")
+                    } else {
+                        pendingBundle = null
+                        exportViewModel.reset()
+                        snackbarHostState.showSnackbar(exportFailureMessage)
+                    }
                 }
             }
         }
-    }
 
     LaunchedEffect(exportUiState) {
         when (val state = exportUiState) {
@@ -346,37 +361,41 @@ fun SettingsScreenRoute(
     // picker below, mirroring pendingBundle's export-side role.
     var pendingBackupResult by remember { mutableStateOf<BackupResult?>(null) }
 
-    val backupDestinationLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
-    ) { uri ->
-        val result = pendingBackupResult
-        pendingBackupResult = null
-        backupViewModel.reset()
-        coroutineScope.launch {
-            try {
-                // Off the main thread: copying the staged database snapshot via SAF is blocking
-                // I/O over a potentially large file.
-                val message = when {
-                    uri == null -> backupCancelledMessage
-                    result == null -> backupFailureMessage
-                    withContext(Dispatchers.IO) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
-                    else -> backupFailureMessage
+    val backupDestinationLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
+        ) { uri ->
+            val result = pendingBackupResult
+            pendingBackupResult = null
+            backupViewModel.reset()
+            coroutineScope.launch {
+                try {
+                    // Off the main thread: copying the staged database snapshot via SAF is blocking
+                    // I/O over a potentially large file.
+                    val message =
+                        when {
+                            uri == null -> backupCancelledMessage
+                            result == null -> backupFailureMessage
+                            withContext(
+                                Dispatchers.IO,
+                            ) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
+                            else -> backupFailureMessage
+                        }
+                    snackbarHostState.showSnackbar(message)
+                } finally {
+                    // The staged snapshot is this screen's own private temp file (not the live
+                    // database itself) -- always clean it up once the SAF copy has been attempted,
+                    // success, failure, or cancellation. This `finally` (rather than a plain statement
+                    // after the `when`, as before) matters because `coroutineScope` comes from
+                    // `rememberCoroutineScope()`: leaving Settings while the copy above is still
+                    // running cancels this launch, and a plain post-`when` statement sitting after that
+                    // suspension point would simply never run, leaking a whole-database-sized file in
+                    // cacheDir. Wrapped in `NonCancellable` so the delete itself can't be skipped by
+                    // that same cancellation.
+                    result?.let { withContext(NonCancellable + Dispatchers.IO) { File(it.stagedFilePath).delete() } }
                 }
-                snackbarHostState.showSnackbar(message)
-            } finally {
-                // The staged snapshot is this screen's own private temp file (not the live
-                // database itself) -- always clean it up once the SAF copy has been attempted,
-                // success, failure, or cancellation. This `finally` (rather than a plain statement
-                // after the `when`, as before) matters because `coroutineScope` comes from
-                // `rememberCoroutineScope()`: leaving Settings while the copy above is still
-                // running cancels this launch, and a plain post-`when` statement sitting after that
-                // suspension point would simply never run, leaking a whole-database-sized file in
-                // cacheDir. Wrapped in `NonCancellable` so the delete itself can't be skipped by
-                // that same cancellation.
-                result?.let { withContext(NonCancellable + Dispatchers.IO) { File(it.stagedFilePath).delete() } }
             }
         }
-    }
 
     LaunchedEffect(backupUiState) {
         when (val state = backupUiState) {
@@ -396,46 +415,47 @@ fun SettingsScreenRoute(
     // The picked file is streamed into the app's own private cache directory *before* the
     // non-destructive shared-layer validation ever runs -- see RestoreDatabaseUseCase.stage's KDoc
     // for why this exact copy is what "copy the incoming file to a temp location" means here.
-    val restoreFilePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) {
-            coroutineScope.launch { snackbarHostState.showSnackbar(restoreCancelledMessage) }
-            return@rememberLauncherForActivityResult
-        }
-        val incomingFile = File(context.cacheDir, "restore-incoming-${System.currentTimeMillis()}.tmp")
-        // Off the main thread: this copies a whole database file via SAF, the largest single I/O
-        // operation on this screen -- doing it synchronously here (as before) would ANR on any
-        // real-sized library.
-        coroutineScope.launch {
-            // Tracks whether incomingFile's lifecycle has been handed off to
-            // validateSelectedFile -- once that call is made, RestoreDatabaseUseCase.stage owns
-            // the file (it deletes it on every rejection path) and, on success, ownership passes
-            // again to the AwaitingConfirmation/commit flow below. Until that handoff happens,
-            // nothing else ever takes ownership, so the `finally` below must clean it up itself.
-            var handedOffToValidation = false
-            try {
-                val copied = withContext(Dispatchers.IO) { copyUriToFile(context, uri, incomingFile.absolutePath) }
-                if (!copied) {
-                    snackbarHostState.showSnackbar(restoreReadFailureMessage)
-                    return@launch
-                }
-                handedOffToValidation = true
-                restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
-            } finally {
-                // `coroutineScope` is composition-scoped: leaving Settings while the copy above is
-                // still running cancels this launch. Without this `finally`, that cancellation (or
-                // a plain copy failure -- copyUriToFile already deletes its own partial output on
-                // an IOException, but not when the resolver simply couldn't open the input stream)
-                // would leave a whole-database-sized temp file behind in cacheDir with nothing left
-                // to ever clean it up. NonCancellable so the delete itself can't be skipped by that
-                // same cancellation.
-                if (!handedOffToValidation) {
-                    withContext(NonCancellable + Dispatchers.IO) { incomingFile.delete() }
+    val restoreFilePickerLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri == null) {
+                coroutineScope.launch { snackbarHostState.showSnackbar(restoreCancelledMessage) }
+                return@rememberLauncherForActivityResult
+            }
+            val incomingFile = File(context.cacheDir, "restore-incoming-${System.currentTimeMillis()}.tmp")
+            // Off the main thread: this copies a whole database file via SAF, the largest single I/O
+            // operation on this screen -- doing it synchronously here (as before) would ANR on any
+            // real-sized library.
+            coroutineScope.launch {
+                // Tracks whether incomingFile's lifecycle has been handed off to
+                // validateSelectedFile -- once that call is made, RestoreDatabaseUseCase.stage owns
+                // the file (it deletes it on every rejection path) and, on success, ownership passes
+                // again to the AwaitingConfirmation/commit flow below. Until that handoff happens,
+                // nothing else ever takes ownership, so the `finally` below must clean it up itself.
+                var handedOffToValidation = false
+                try {
+                    val copied = withContext(Dispatchers.IO) { copyUriToFile(context, uri, incomingFile.absolutePath) }
+                    if (!copied) {
+                        snackbarHostState.showSnackbar(restoreReadFailureMessage)
+                        return@launch
+                    }
+                    handedOffToValidation = true
+                    restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
+                } finally {
+                    // `coroutineScope` is composition-scoped: leaving Settings while the copy above is
+                    // still running cancels this launch. Without this `finally`, that cancellation (or
+                    // a plain copy failure -- copyUriToFile already deletes its own partial output on
+                    // an IOException, but not when the resolver simply couldn't open the input stream)
+                    // would leave a whole-database-sized temp file behind in cacheDir with nothing left
+                    // to ever clean it up. NonCancellable so the delete itself can't be skipped by that
+                    // same cancellation.
+                    if (!handedOffToValidation) {
+                        withContext(NonCancellable + Dispatchers.IO) { incomingFile.delete() }
+                    }
                 }
             }
         }
-    }
 
     LaunchedEffect(restoreUiState) {
         val state = restoreUiState
@@ -543,6 +563,7 @@ fun SettingsScreenRoute(
  *   per that phase's brief. Never shown for an import that added nothing (a pure duplicate-skip
  *   pass has no new gaps to fill).
  */
+
 /**
  * The levels offered in "Log detail", most verbose first to match [LogLevel]'s declaration order.
  *
@@ -597,10 +618,11 @@ private fun LogVerbositySetting(
                 // otherwise announce only the bare value -- "Warnings", with no indication of which
                 // setting it belongs to. Restating it here as a contentDescription gives screen
                 // readers that context without changing the visual layout.
-                modifier = Modifier
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth()
-                    .semantics { contentDescription = label },
+                modifier =
+                    Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth()
+                        .semantics { contentDescription = label },
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 SELECTABLE_LOG_LEVELS.forEach { level ->
@@ -627,6 +649,7 @@ private fun LogVerbositySetting(
  * their titles, authors, or notes -- the identifier rule from Phase A is only reassuring if it is
  * visible where the decision is made.
  */
+
 /**
  * The "What's new" row (ROADMAP Task 15 Phase B2b). Sits in Diagnostics beside the log viewer
  * rather than in its own section: both are read-only reference screens reached from here, and a
@@ -691,9 +714,10 @@ private fun ImportSummaryDialog(
         title = { Text(stringResource(R.string.import_summary_title)) },
         text = {
             Column(
-                modifier = Modifier
-                    .heightIn(max = 400.dp)
-                    .verticalScroll(rememberScrollState()),
+                modifier =
+                    Modifier
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
@@ -738,12 +762,13 @@ private fun ImportSummaryDialog(
                     )
                     summary.rejections.forEach { rejection: ImportRejection ->
                         Text(
-                            text = stringResource(
-                                R.string.import_summary_rejection_line,
-                                rejection.source.name,
-                                rejection.rowNumber,
-                                rejection.reason,
-                            ),
+                            text =
+                                stringResource(
+                                    R.string.import_summary_rejection_line,
+                                    rejection.source.name,
+                                    rejection.rowNumber,
+                                    rejection.reason,
+                                ),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -915,9 +940,10 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -1023,9 +1049,10 @@ private fun SettingsSection(
         )
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 content()
@@ -1417,16 +1444,18 @@ private fun BackfillRunningContent(progress: BulkBackfillProgress?) {
     if (progress != null && progress.totalCandidates > 0) {
         LinearProgressIndicator(
             progress = { progress.processed.toFloat() / progress.totalCandidates },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp),
         )
         Text(
-            text = stringResource(
-                R.string.settings_backfill_progress_format,
-                progress.processed,
-                progress.totalCandidates,
-            ),
+            text =
+                stringResource(
+                    R.string.settings_backfill_progress_format,
+                    progress.processed,
+                    progress.totalCandidates,
+                ),
             style = MaterialTheme.typography.bodyMedium,
         )
     } else {
@@ -1446,42 +1475,46 @@ private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
     when {
         progress.isPaused -> {
             val retryAfter = progress.retryAfter
-            val message = if (retryAfter != null) {
-                // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
-                // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
-                val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
-                pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
-            } else {
-                stringResource(R.string.settings_backfill_paused_message)
-            }
+            val message =
+                if (retryAfter != null) {
+                    // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
+                    // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
+                    val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
+                    pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
+                } else {
+                    stringResource(R.string.settings_backfill_paused_message)
+                }
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        progress.isComplete -> Text(
-            text = stringResource(R.string.settings_backfill_complete_message),
-            style = MaterialTheme.typography.bodySmall,
-        )
+        progress.isComplete ->
+            Text(
+                text = stringResource(R.string.settings_backfill_complete_message),
+                style = MaterialTheme.typography.bodySmall,
+            )
     }
     if (progress.totalCandidates > 0) {
         Text(
-            text = stringResource(
-                R.string.settings_backfill_progress_format,
-                progress.processed,
-                progress.totalCandidates,
-            ),
+            text =
+                stringResource(
+                    R.string.settings_backfill_progress_format,
+                    progress.processed,
+                    progress.totalCandidates,
+                ),
             style = MaterialTheme.typography.bodyMedium,
         )
     }
     if (progress.processed > 0) {
         Text(
-            text = stringResource(
-                R.string.settings_backfill_summary_format,
-                progress.updated,
-                progress.noProviderData,
-            ),
+            text =
+                stringResource(
+                    R.string.settings_backfill_summary_format,
+                    progress.updated,
+                    progress.noProviderData,
+                ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1510,11 +1543,12 @@ private fun BackfillFailedContent(progress: BulkBackfillProgress?) {
     )
     if (progress != null && progress.totalCandidates > 0) {
         Text(
-            text = stringResource(
-                R.string.settings_backfill_progress_format,
-                progress.processed,
-                progress.totalCandidates,
-            ),
+            text =
+                stringResource(
+                    R.string.settings_backfill_progress_format,
+                    progress.processed,
+                    progress.totalCandidates,
+                ),
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -1691,11 +1725,12 @@ private fun SettingsScreenValidatingRestorePreview() {
 private fun RestoreConfirmationDialogPreview() {
     MediaTrackerTheme {
         RestoreConfirmationDialog(
-            info = StagedRestoreInfo(
-                stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
-                schemaVersionFound = 4,
-                isOlderSchemaVersion = false,
-            ),
+            info =
+                StagedRestoreInfo(
+                    stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
+                    schemaVersionFound = 4,
+                    isOlderSchemaVersion = false,
+                ),
             onConfirm = {},
             onCancel = {},
         )
@@ -1708,11 +1743,12 @@ private fun RestoreConfirmationDialogPreview() {
 private fun RestoreConfirmationDialogOlderVersionPreview() {
     MediaTrackerTheme {
         RestoreConfirmationDialog(
-            info = StagedRestoreInfo(
-                stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
-                schemaVersionFound = 2,
-                isOlderSchemaVersion = true,
-            ),
+            info =
+                StagedRestoreInfo(
+                    stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
+                    schemaVersionFound = 2,
+                    isOlderSchemaVersion = true,
+                ),
             onConfirm = {},
             onCancel = {},
         )

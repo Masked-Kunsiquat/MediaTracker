@@ -3,8 +3,8 @@ package com.hub.media.core.database.dao
 import androidx.room.Dao
 import androidx.room.Query
 import com.hub.media.core.database.entities.ReadingStatus
-import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
+import kotlin.time.Instant
 
 /**
  * Reactive aggregate queries for ROADMAP Task 5 (stats): originally `reading_sessions`-only, joined
@@ -40,7 +40,6 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface StatsDao {
-
     /**
      * Sum of `durationSeconds` for sessions whose `timestampStart` falls in `[from, to)` and
      * whose duration is *known* (`durationSeconds IS NOT NULL`) -- null-duration sessions
@@ -52,7 +51,10 @@ interface StatsDao {
         "SELECT SUM(durationSeconds) FROM reading_sessions " +
             "WHERE durationSeconds IS NOT NULL AND timestampStart >= :from AND timestampStart < :to",
     )
-    fun observeTotalKnownDurationInRange(from: Instant, to: Instant): Flow<Long?>
+    fun observeTotalKnownDurationInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Long?>
 
     /**
      * Count of ALL sessions whose `timestampStart` falls in `[from, to)`, null-duration sessions
@@ -62,7 +64,10 @@ interface StatsDao {
      * legitimately returns `0`.
      */
     @Query("SELECT COUNT(*) FROM reading_sessions WHERE timestampStart >= :from AND timestampStart < :to")
-    fun observeSessionCountInRange(from: Instant, to: Instant): Flow<Int>
+    fun observeSessionCountInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Int>
 
     /**
      * Sum of `deltaPages` for sessions whose `timestampStart` falls in `[from, to)` and whose
@@ -76,7 +81,10 @@ interface StatsDao {
         "SELECT SUM(deltaPages) FROM reading_sessions " +
             "WHERE deltaPages IS NOT NULL AND timestampStart >= :from AND timestampStart < :to",
     )
-    fun observePagesReadInRange(from: Instant, to: Instant): Flow<Int?>
+    fun observePagesReadInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<Int?>
 
     /**
      * Distinct `timestampStart` values for every session whose `timestampStart` falls in `[from, to)`.
@@ -87,8 +95,13 @@ interface StatsDao {
      * an explicit, injected `TimeZone` instead — see
      * [com.hub.media.features.stats.data.StatsRepository.observeReadingStreak].
      */
-    @Query("SELECT DISTINCT timestampStart FROM reading_sessions WHERE timestampStart >= :from AND timestampStart < :to")
-    fun observeSessionStartTimestampsInRange(from: Instant, to: Instant): Flow<List<Instant>>
+    @Query(
+        "SELECT DISTINCT timestampStart FROM reading_sessions WHERE timestampStart >= :from AND timestampStart < :to",
+    )
+    fun observeSessionStartTimestampsInRange(
+        from: Instant,
+        to: Instant,
+    ): Flow<List<Instant>>
 
     /**
      * Lifetime count of `book_details` rows currently at [status] (ROADMAP Task 6 Phase C —
@@ -118,5 +131,9 @@ interface StatsDao {
         "SELECT COUNT(*) FROM book_details WHERE status = :status " +
             "AND finishedAt >= :from AND finishedAt < :to",
     )
-    fun observeBooksFinishedInRange(status: ReadingStatus, from: Instant, to: Instant): Flow<Int>
+    fun observeBooksFinishedInRange(
+        status: ReadingStatus,
+        from: Instant,
+        to: Instant,
+    ): Flow<Int>
 }

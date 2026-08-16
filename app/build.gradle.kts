@@ -1,18 +1,28 @@
-import java.io.ByteArrayOutputStream
 import org.gradle.kotlin.dsl.support.serviceOf
+import java.io.ByteArrayOutputStream
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ktlint)
+}
+
+// Lint only hand-written sources -- see the same block in shared/build.gradle.kts for why this is
+// a path match rather than an include/exclude pattern.
+ktlint {
+    filter {
+        exclude { it.file.invariantSeparatorsPath.contains("/build/generated/") }
+    }
 }
 
 android {
     namespace = "com.github.maskedkunisquat.mediatracker"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(36) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
@@ -23,7 +33,11 @@ android {
         // Version comes from [versions] app in gradle/libs.versions.toml (AGENTS.md §8).
         // versionCode must only ever increase across installs, so it is derived from
         // SemVer rather than hand-edited: major*10000 + minor*100 + patch.
-        val (vMajor, vMinor, vPatch) = libs.versions.app.get().split(".").map { it.toInt() }
+        val (vMajor, vMinor, vPatch) =
+            libs.versions.app
+                .get()
+                .split(".")
+                .map { it.toInt() }
         versionCode = vMajor * 10000 + vMinor * 100 + vPatch
         versionName = libs.versions.app.get()
 
@@ -57,7 +71,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -130,13 +144,19 @@ tasks.matching { it.name == "preDebugAndroidTestBuild" }.configureEach {
  */
 val seedDebugDevice by tasks.registering {
     group = "install"
-    description = "Installs the debug app and seeds it with docs/sample-data (run after connectedDebugAndroidTest)."
+    description =
+        "Installs the debug app and seeds it with docs/sample-data (run after connectedDebugAndroidTest)."
     dependsOn("installDebug", "installDebugAndroidTest")
 
-    val adbPath = android.sdkDirectory.resolve(
-        if (System.getProperty("os.name").startsWith("Windows")) "platform-tools/adb.exe"
-        else "platform-tools/adb",
-    ).absolutePath
+    val adbPath =
+        android.sdkDirectory
+            .resolve(
+                if (System.getProperty("os.name").startsWith("Windows")) {
+                    "platform-tools/adb.exe"
+                } else {
+                    "platform-tools/adb"
+                },
+            ).absolutePath
     // Derived rather than written out, so renaming the applicationId or changing the debug suffix
     // cannot leave this pointing at a package that no longer exists.
     val testPackage = "${android.defaultConfig.applicationId}.debug.test"
@@ -146,8 +166,14 @@ val seedDebugDevice by tasks.registering {
         val output = ByteArrayOutputStream()
         execOps.exec {
             commandLine(
-                adbPath, "shell", "am", "instrument", "-w",
-                "-e", "class", "com.github.maskedkunisquat.mediatracker.SampleDataSeedTest",
+                adbPath,
+                "shell",
+                "am",
+                "instrument",
+                "-w",
+                "-e",
+                "class",
+                "com.github.maskedkunisquat.mediatracker.SampleDataSeedTest",
                 "$testPackage/androidx.test.runner.AndroidJUnitRunner",
             )
             standardOutput = output
@@ -162,7 +188,12 @@ val seedDebugDevice by tasks.registering {
         // `OK (0 tests)`, which passes a naive substring check. That is the likeliest failure here,
         // since the class name is a string that a rename would silently invalidate -- and the task
         // would then cheerfully announce a seeded device having run nothing.
-        val ranCount = Regex("""OK \((\d+) test""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val ranCount =
+            Regex("""OK \((\d+) test""")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull() ?: 0
         check(ranCount > 0 && "FAILURES!!!" !in text) {
             "Seeding failed -- the device was not populated (tests run: $ranCount). Output above."
         }

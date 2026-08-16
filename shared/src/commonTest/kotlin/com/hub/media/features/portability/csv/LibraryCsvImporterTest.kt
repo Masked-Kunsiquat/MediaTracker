@@ -22,10 +22,9 @@ import kotlin.test.assertTrue
  * [LibraryCsvImporter.parseRow]'s `media_id` handling for why), but these fixtures should still
  * model what well-formed data actually looks like rather than implying a non-UUID id is the norm.
  */
+private const val SAMPLE_MEDIA_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
 class LibraryCsvImporterTest {
-
-    private val SAMPLE_MEDIA_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-
     private fun validRow(
         mediaId: String = SAMPLE_MEDIA_ID,
         type: String = "BOOK",
@@ -42,10 +41,25 @@ class LibraryCsvImporterTest {
         finishedAt: String = "",
         trackingMode: String = "PAGES",
         externalIdentifiers: String = "ISBN:9780441013593",
-    ): List<String> = listOf(
-        CSV_SCHEMA_VERSION.toString(), mediaId, type, title, authors, releaseYear, purchasePrice, createdAt,
-        coverImageHash, isbn, format, totalPages, status, finishedAt, trackingMode, externalIdentifiers,
-    )
+    ): List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION.toString(),
+            mediaId,
+            type,
+            title,
+            authors,
+            releaseYear,
+            purchasePrice,
+            createdAt,
+            coverImageHash,
+            isbn,
+            format,
+            totalPages,
+            status,
+            finishedAt,
+            trackingMode,
+            externalIdentifiers,
+        )
 
     @Test
     fun parseRow_happyPath_parsesEveryField() {
@@ -162,20 +176,21 @@ class LibraryCsvImporterTest {
 
     @Test
     fun parseRow_blankOptionalFields_parseAsNullWithDefaults() {
-        val result = LibraryCsvImporter.parseRow(
-            validRow(
-                authors = "",
-                releaseYear = "",
-                purchasePrice = "",
-                isbn = "",
-                format = "",
-                totalPages = "",
-                status = "",
-                finishedAt = "",
-                trackingMode = "",
-                externalIdentifiers = "",
-            ),
-        )
+        val result =
+            LibraryCsvImporter.parseRow(
+                validRow(
+                    authors = "",
+                    releaseYear = "",
+                    purchasePrice = "",
+                    isbn = "",
+                    format = "",
+                    totalPages = "",
+                    status = "",
+                    finishedAt = "",
+                    trackingMode = "",
+                    externalIdentifiers = "",
+                ),
+            )
         assertIs<LibraryRowParseResult.Parsed>(result)
         val row = result.row
         assertEquals(null, row.authors)
@@ -194,9 +209,10 @@ class LibraryCsvImporterTest {
 
     @Test
     fun parseRow_identifierContainingColon_roundTripsViaFirstColonSplit() {
-        val result = LibraryCsvImporter.parseRow(
-            validRow(externalIdentifiers = "TMDB:abc:def|ISBN:9780441013593"),
-        )
+        val result =
+            LibraryCsvImporter.parseRow(
+                validRow(externalIdentifiers = "TMDB:abc:def|ISBN:9780441013593"),
+            )
         assertIs<LibraryRowParseResult.Parsed>(result)
         assertEquals(
             listOf(IdentifierProvider.TMDB to "abc:def", IdentifierProvider.ISBN to "9780441013593"),
@@ -246,10 +262,24 @@ class LibraryCsvImporterTest {
 
     @Test
     fun padLegacyV1Row_insertsBlankAuthorsAtCorrectPosition() {
-        val v1Row = listOf(
-            "1", SAMPLE_MEDIA_ID, "BOOK", "Dune", "1965", "9.99", "2024-01-01T00:00:00Z",
-            "", "9780441013593", "PAPERBACK", "412", "READING", "", "PAGES", "ISBN:9780441013593",
-        )
+        val v1Row =
+            listOf(
+                "1",
+                SAMPLE_MEDIA_ID,
+                "BOOK",
+                "Dune",
+                "1965",
+                "9.99",
+                "2024-01-01T00:00:00Z",
+                "",
+                "9780441013593",
+                "PAPERBACK",
+                "412",
+                "READING",
+                "",
+                "PAGES",
+                "ISBN:9780441013593",
+            )
         val padded = LibraryCsvImporter.padLegacyV1Row(v1Row)
 
         // Same 15 values, now 16 fields long, with a blank inserted right after "Dune" (index 3).

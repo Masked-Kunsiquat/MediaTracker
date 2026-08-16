@@ -32,7 +32,6 @@ public data class StatsUiState(
     val currentStreakDays: Int = 0,
     val lifetimeBooksFinished: Int = 0,
 ) {
-
     /**
      * One period's (week or month) aggregate stats. Reused for both [week] and [month] rather
      * than duplicating three near-identical properties twice.

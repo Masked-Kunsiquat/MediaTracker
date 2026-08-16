@@ -35,13 +35,17 @@ import kotlinx.coroutines.runBlocking
  *   `MediaTrackerApplication.onCreate` must already have one (and have wired it into
  *   [com.hub.media.core.util.AppLogger]) before this function's lazy call site is ever reached.
  */
-public fun createAppContainer(context: Context, logFileStore: LogFileStore): AppContainer {
+public fun createAppContainer(
+    context: Context,
+    logFileStore: LogFileStore,
+): AppContainer {
     val databaseFactory = DatabaseFactory(context)
     val databaseFilePath = databaseFactory.databaseFilePath()
-    val pendingRestoreMarker = runBlocking {
-        selfHealDatabaseIfNeeded(databaseFilePath)
-        consumeRestoreMarker(databaseFilePath)
-    }
+    val pendingRestoreMarker =
+        runBlocking {
+            selfHealDatabaseIfNeeded(databaseFilePath)
+            consumeRestoreMarker(databaseFilePath)
+        }
     val database = buildAppDatabase(databaseFactory.create())
     val imageStorage = LocalImageStorageManager(coverStorageDirectory(context))
     return AppContainer(

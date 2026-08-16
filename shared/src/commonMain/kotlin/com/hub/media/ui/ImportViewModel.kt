@@ -22,7 +22,6 @@ import kotlinx.coroutines.launch
 public class ImportViewModel(
     private val importDataUseCase: ImportUseCase,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow<ImportUiState>(ImportUiState.Idle)
     public val uiState: StateFlow<ImportUiState> = _uiState.asStateFlow()
 
@@ -37,15 +36,20 @@ public class ImportViewModel(
      *   one.
      * @param duplicatePolicy The user's chosen [DuplicatePolicy] for this import.
      */
-    public fun importData(libraryCsv: String?, readingLogsCsv: String?, duplicatePolicy: DuplicatePolicy) {
+    public fun importData(
+        libraryCsv: String?,
+        readingLogsCsv: String?,
+        duplicatePolicy: DuplicatePolicy,
+    ) {
         if (_uiState.value is ImportUiState.Loading) return
 
         _uiState.value = ImportUiState.Loading
         viewModelScope.launch {
-            _uiState.value = when (val result = importDataUseCase.execute(libraryCsv, readingLogsCsv, duplicatePolicy)) {
-                is Resource.Success -> ImportUiState.Success(result.data)
-                is Resource.Error -> ImportUiState.Error(result.message)
-            }
+            _uiState.value =
+                when (val result = importDataUseCase.execute(libraryCsv, readingLogsCsv, duplicatePolicy)) {
+                    is Resource.Success -> ImportUiState.Success(result.data)
+                    is Resource.Error -> ImportUiState.Error(result.message)
+                }
         }
     }
 
@@ -63,15 +67,19 @@ public class ImportViewModel(
      * @param goodreadsCsv `goodreads_library_export.csv` text.
      * @param duplicatePolicy The user's chosen [DuplicatePolicy] for this import.
      */
-    public fun importGoodreads(goodreadsCsv: String, duplicatePolicy: DuplicatePolicy) {
+    public fun importGoodreads(
+        goodreadsCsv: String,
+        duplicatePolicy: DuplicatePolicy,
+    ) {
         if (_uiState.value is ImportUiState.Loading) return
 
         _uiState.value = ImportUiState.Loading
         viewModelScope.launch {
-            _uiState.value = when (val result = importDataUseCase.executeGoodreads(goodreadsCsv, duplicatePolicy)) {
-                is Resource.Success -> ImportUiState.Success(result.data)
-                is Resource.Error -> ImportUiState.Error(result.message)
-            }
+            _uiState.value =
+                when (val result = importDataUseCase.executeGoodreads(goodreadsCsv, duplicatePolicy)) {
+                    is Resource.Success -> ImportUiState.Success(result.data)
+                    is Resource.Error -> ImportUiState.Error(result.message)
+                }
         }
     }
 

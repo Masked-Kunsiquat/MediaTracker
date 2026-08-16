@@ -5,6 +5,8 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.portability.csv.LibraryRowParseResult
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -12,8 +14,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 /**
  * Tests [GoodreadsCsvImporter] -- the Goodreads-column-to-[com.hub.media.features.portability.csv.ParsedLibraryRow]
@@ -23,10 +23,10 @@ import kotlinx.datetime.toLocalDateTime
  * calls out by name. All book data below is invented.
  */
 class GoodreadsCsvImporterTest {
-
-    private fun fixedClock(instant: Instant): Clock = object : Clock {
-        override fun now(): Instant = instant
-    }
+    private fun fixedClock(instant: Instant): Clock =
+        object : Clock {
+            override fun now(): Instant = instant
+        }
 
     /** Builds a (columnIndex, row) pair for an arbitrary subset/order of Goodreads columns. */
     private fun rowOf(vararg fields: Pair<String, String>): Pair<Map<String, Int>, List<String>> {
@@ -48,20 +48,21 @@ class GoodreadsCsvImporterTest {
         exclusiveShelf: String = "read",
         dateRead: String = "2023/05/12",
         dateAdded: String = "2022/11/03",
-    ): Pair<Map<String, Int>, List<String>> = rowOf(
-        GoodreadsColumns.TITLE to title,
-        GoodreadsColumns.AUTHOR to author,
-        GoodreadsColumns.ADDITIONAL_AUTHORS to additionalAuthors,
-        GoodreadsColumns.ISBN13 to isbn13,
-        GoodreadsColumns.ISBN to isbn,
-        GoodreadsColumns.NUMBER_OF_PAGES to numberOfPages,
-        GoodreadsColumns.BINDING to binding,
-        GoodreadsColumns.YEAR_PUBLISHED to yearPublished,
-        GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR to originalPublicationYear,
-        GoodreadsColumns.EXCLUSIVE_SHELF to exclusiveShelf,
-        GoodreadsColumns.DATE_READ to dateRead,
-        GoodreadsColumns.DATE_ADDED to dateAdded,
-    )
+    ): Pair<Map<String, Int>, List<String>> =
+        rowOf(
+            GoodreadsColumns.TITLE to title,
+            GoodreadsColumns.AUTHOR to author,
+            GoodreadsColumns.ADDITIONAL_AUTHORS to additionalAuthors,
+            GoodreadsColumns.ISBN13 to isbn13,
+            GoodreadsColumns.ISBN to isbn,
+            GoodreadsColumns.NUMBER_OF_PAGES to numberOfPages,
+            GoodreadsColumns.BINDING to binding,
+            GoodreadsColumns.YEAR_PUBLISHED to yearPublished,
+            GoodreadsColumns.ORIGINAL_PUBLICATION_YEAR to originalPublicationYear,
+            GoodreadsColumns.EXCLUSIVE_SHELF to exclusiveShelf,
+            GoodreadsColumns.DATE_READ to dateRead,
+            GoodreadsColumns.DATE_ADDED to dateAdded,
+        )
 
     // ---- happy path / title-only ---------------------------------------------------------------
 
@@ -86,7 +87,12 @@ class GoodreadsCsvImporterTest {
     @Test
     fun parseRow_onlyTitleColumnPresent_stillImports() {
         val (columnIndex, row) = rowOf(GoodreadsColumns.TITLE to "Bare Minimum Book")
-        val result = GoodreadsCsvImporter.parseRow(columnIndex, row, clock = fixedClock(Instant.fromEpochMilliseconds(1_000)))
+        val result =
+            GoodreadsCsvImporter.parseRow(
+                columnIndex,
+                row,
+                clock = fixedClock(Instant.fromEpochMilliseconds(1_000)),
+            )
         assertIs<LibraryRowParseResult.Parsed>(result)
         val parsed = result.row
         assertEquals("Bare Minimum Book", parsed.title)
@@ -123,20 +129,22 @@ class GoodreadsCsvImporterTest {
     fun parseRow_primaryAuthorPlusAdditionalAuthors_combinedInOrder_reJoinedWithAppSeparator() {
         // Goodreads' own "Additional Authors" separator (",") must not leak into the stored form --
         // it's re-joined with this app's "; " (BookDetailsEntity.AUTHOR_SEPARATOR) instead.
-        val (columnIndex, row) = validRow(
-            author = "Ann Sample Author",
-            additionalAuthors = "B. Other Author, C. Third Author",
-        )
+        val (columnIndex, row) =
+            validRow(
+                author = "Ann Sample Author",
+                additionalAuthors = "B. Other Author, C. Third Author",
+            )
         val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
         assertEquals("Ann Sample Author; B. Other Author; C. Third Author", result.row.authors)
     }
 
     @Test
     fun parseRow_additionalAuthorsWithExtraWhitespace_eachNameTrimmed() {
-        val (columnIndex, row) = validRow(
-            author = "Ann Sample Author",
-            additionalAuthors = "  B. Other Author ,   C. Third Author  ",
-        )
+        val (columnIndex, row) =
+            validRow(
+                author = "Ann Sample Author",
+                additionalAuthors = "  B. Other Author ,   C. Third Author  ",
+            )
         val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
         assertEquals("Ann Sample Author; B. Other Author; C. Third Author", result.row.authors)
     }
@@ -206,43 +214,64 @@ class GoodreadsCsvImporterTest {
     @Test
     fun parseRow_bindingHardcover_mapsToHardcover() {
         val (columnIndex, row) = validRow(binding = "Hardcover")
-        assertEquals(BookFormat.HARDCOVER, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.HARDCOVER,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     @Test
     fun parseRow_bindingPaperback_mapsToPaperback() {
         val (columnIndex, row) = validRow(binding = "Paperback")
-        assertEquals(BookFormat.PAPERBACK, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.PAPERBACK,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     @Test
     fun parseRow_bindingMassMarketPaperback_mapsToPaperback() {
         val (columnIndex, row) = validRow(binding = "Mass Market Paperback")
-        assertEquals(BookFormat.PAPERBACK, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.PAPERBACK,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     @Test
     fun parseRow_bindingKindleEdition_mapsToEbook() {
         val (columnIndex, row) = validRow(binding = "Kindle Edition")
-        assertEquals(BookFormat.EBOOK, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.EBOOK,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     @Test
     fun parseRow_bindingAudiobook_mapsToAudiobook() {
         val (columnIndex, row) = validRow(binding = "Audiobook")
-        assertEquals(BookFormat.AUDIOBOOK, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.AUDIOBOOK,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     @Test
     fun parseRow_bindingUnrecognized_fallsBackToPhysical() {
         val (columnIndex, row) = validRow(binding = "Cuneiform Tablet")
-        assertEquals(BookFormat.PHYSICAL, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.PHYSICAL,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     @Test
     fun parseRow_bindingBlank_fallsBackToPhysical() {
         val (columnIndex, row) = validRow(binding = "")
-        assertEquals(BookFormat.PHYSICAL, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format)
+        assertEquals(
+            BookFormat.PHYSICAL,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.format,
+        )
     }
 
     // ---- Exclusive Shelf -> ReadingStatus ---------------------------------------------------------
@@ -250,25 +279,37 @@ class GoodreadsCsvImporterTest {
     @Test
     fun parseRow_shelfRead_mapsToFinished() {
         val (columnIndex, row) = validRow(exclusiveShelf = "read")
-        assertEquals(ReadingStatus.FINISHED, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.status)
+        assertEquals(
+            ReadingStatus.FINISHED,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.status,
+        )
     }
 
     @Test
     fun parseRow_shelfCurrentlyReading_mapsToReading() {
         val (columnIndex, row) = validRow(exclusiveShelf = "currently-reading")
-        assertEquals(ReadingStatus.READING, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.status)
+        assertEquals(
+            ReadingStatus.READING,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.status,
+        )
     }
 
     @Test
     fun parseRow_shelfToRead_mapsToToRead() {
         val (columnIndex, row) = validRow(exclusiveShelf = "to-read")
-        assertEquals(ReadingStatus.TO_READ, (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.status)
+        assertEquals(
+            ReadingStatus.TO_READ,
+            (GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed).row.status,
+        )
     }
 
     @Test
     fun parseRow_shelfUnrecognizedOrBlank_fallsBackToToRead_neverDnf() {
         val (blankColumnIndex, blankRow) = validRow(exclusiveShelf = "")
-        assertEquals(ReadingStatus.TO_READ, (GoodreadsCsvImporter.parseRow(blankColumnIndex, blankRow) as LibraryRowParseResult.Parsed).row.status)
+        assertEquals(
+            ReadingStatus.TO_READ,
+            (GoodreadsCsvImporter.parseRow(blankColumnIndex, blankRow) as LibraryRowParseResult.Parsed).row.status,
+        )
 
         val (customColumnIndex, customRow) = validRow(exclusiveShelf = "some-custom-shelf")
         val result = GoodreadsCsvImporter.parseRow(customColumnIndex, customRow) as LibraryRowParseResult.Parsed
@@ -318,7 +359,12 @@ class GoodreadsCsvImporterTest {
     fun parseRow_dateAddedBlank_fallsBackToClock() {
         val fixed = Instant.fromEpochMilliseconds(42_000)
         val (columnIndex, row) = validRow(dateAdded = "")
-        val result = GoodreadsCsvImporter.parseRow(columnIndex, row, clock = fixedClock(fixed)) as LibraryRowParseResult.Parsed
+        val result =
+            GoodreadsCsvImporter.parseRow(
+                columnIndex,
+                row,
+                clock = fixedClock(fixed),
+            ) as LibraryRowParseResult.Parsed
         assertEquals(fixed, result.row.createdAt)
     }
 
@@ -345,6 +391,5 @@ class GoodreadsCsvImporterTest {
         assertNull(result.row.releaseYear)
     }
 
-    private fun instantYear(instant: Instant): Int =
-        instant.toLocalDateTime(TimeZone.currentSystemDefault()).year
+    private fun instantYear(instant: Instant): Int = instant.toLocalDateTime(TimeZone.currentSystemDefault()).year
 }

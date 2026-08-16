@@ -56,6 +56,18 @@ data layer. Every Room-touching test is excluded from the Android unit-test vari
 `./gradlew test` passes while skipping them entirely. See AGENTS.md §7 and the comment block in
 `shared/build.gradle.kts`.
 
+## Formatting and lint
+
+```bash
+./gradlew ktlintFormat              # apply formatting
+./gradlew ktlintCheck :app:lintDebug
+```
+
+ktlint is configured entirely in `.editorconfig` (120-column limit). CI runs both on every pull
+request, along with the test suite and a debug build. See AGENTS.md §5 before changing any ktlint
+setting — the obvious ways to make violations go away are the wrong ones, and the reasons are
+written down there.
+
 ## Layout
 
 Two Gradle modules:

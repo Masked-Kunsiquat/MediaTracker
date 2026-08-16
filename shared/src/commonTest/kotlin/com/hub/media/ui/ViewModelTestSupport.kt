@@ -69,7 +69,6 @@ import kotlinx.coroutines.test.setMain
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class ViewModelRegistry {
-
     private val store = ViewModelStore()
     private var nextKey = 0
     private val scopeJobs = mutableListOf<Job>()

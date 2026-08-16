@@ -12,11 +12,11 @@ import kotlinx.coroutines.CompletableDeferred
  * called so tests can observe intermediate [ExportUiState.Loading] states deterministically.
  */
 internal class FakeExportDataUseCase(
-    private val result: Resource<CsvExportBundle> = Resource.Success(
-        CsvExportBundle(libraryCsv = "csv_schema_version\r\n", readingLogsCsv = "csv_schema_version\r\n"),
-    ),
+    private val result: Resource<CsvExportBundle> =
+        Resource.Success(
+            CsvExportBundle(libraryCsv = "csv_schema_version\r\n", readingLogsCsv = "csv_schema_version\r\n"),
+        ),
 ) : ExportUseCase {
-
     /** Number of times [execute] has been called. */
     var callCount: Int = 0
         private set

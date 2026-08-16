@@ -37,7 +37,6 @@ internal const val LOG_VIEWER_ENTRY_LIMIT: Int = 500
 public class LogViewerViewModel(
     private val logFileStore: LogFileStore,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(LogViewerUiState(isLoading = true))
     public val uiState: StateFlow<LogViewerUiState> = _uiState.asStateFlow()
 
@@ -57,15 +56,17 @@ public class LogViewerViewModel(
      */
     public fun load() {
         readJob?.cancel()
-        readJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val entries = readWindow()
-            _uiState.value = LogViewerUiState(
-                entries = entries,
-                newEntryBoundary = null,
-                isLoading = false,
-            )
-        }
+        readJob =
+            viewModelScope.launch {
+                _uiState.update { it.copy(isLoading = true) }
+                val entries = readWindow()
+                _uiState.value =
+                    LogViewerUiState(
+                        entries = entries,
+                        newEntryBoundary = null,
+                        isLoading = false,
+                    )
+            }
     }
 
     /**
@@ -89,17 +90,19 @@ public class LogViewerViewModel(
      */
     public fun refresh() {
         readJob?.cancel()
-        readJob = viewModelScope.launch {
-            val previous = _uiState.value.entries
-            val boundary = previous.maxOfOrNull { it.seq }
-            _uiState.update { it.copy(isLoading = true) }
-            val entries = readWindow()
-            _uiState.value = LogViewerUiState(
-                entries = entries,
-                newEntryBoundary = boundary,
-                isLoading = false,
-            )
-        }
+        readJob =
+            viewModelScope.launch {
+                val previous = _uiState.value.entries
+                val boundary = previous.maxOfOrNull { it.seq }
+                _uiState.update { it.copy(isLoading = true) }
+                val entries = readWindow()
+                _uiState.value =
+                    LogViewerUiState(
+                        entries = entries,
+                        newEntryBoundary = boundary,
+                        isLoading = false,
+                    )
+            }
     }
 
     /**

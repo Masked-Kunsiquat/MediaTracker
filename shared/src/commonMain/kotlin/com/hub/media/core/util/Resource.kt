@@ -8,13 +8,14 @@ package com.hub.media.core.util
  * @param T The type of the successful result.
  */
 public sealed class Resource<out T> {
-
     /**
      * Represents a successful result.
      *
      * @property data The result data.
      */
-    public data class Success<T>(val data: T) : Resource<T>()
+    public data class Success<T>(
+        val data: T,
+    ) : Resource<T>()
 
     /**
      * Represents a failed result.

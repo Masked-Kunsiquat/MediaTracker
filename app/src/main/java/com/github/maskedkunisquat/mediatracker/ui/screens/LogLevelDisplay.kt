@@ -14,9 +14,10 @@ import com.hub.media.core.util.LogLevel
  * gets, whereas WARN/ERROR say what a developer calls it.
  */
 @Composable
-internal fun LogLevel.displayLabel(): String = when (this) {
-    LogLevel.DEBUG -> stringResource(R.string.log_level_debug)
-    LogLevel.INFO -> stringResource(R.string.log_level_info)
-    LogLevel.WARN -> stringResource(R.string.log_level_warn)
-    LogLevel.ERROR -> stringResource(R.string.log_level_error)
-}
+internal fun LogLevel.displayLabel(): String =
+    when (this) {
+        LogLevel.DEBUG -> stringResource(R.string.log_level_debug)
+        LogLevel.INFO -> stringResource(R.string.log_level_info)
+        LogLevel.WARN -> stringResource(R.string.log_level_warn)
+        LogLevel.ERROR -> stringResource(R.string.log_level_error)
+    }

@@ -50,26 +50,26 @@ import com.hub.media.features.books.data.BookWithDetails
  *     keys, Google Books volume ids).
  */
 public object LibraryCsvExporter {
-
     /** Header row, in column order -- see class KDoc for what each column holds. */
-    public val HEADER: List<String> = listOf(
-        CSV_SCHEMA_VERSION_COLUMN,
-        "media_id",
-        "type",
-        "title",
-        "authors",
-        "release_year",
-        "purchase_price",
-        "created_at",
-        "cover_image_hash",
-        "isbn",
-        "format",
-        "total_pages",
-        "status",
-        "finished_at",
-        "tracking_mode",
-        "external_identifiers",
-    )
+    public val HEADER: List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION_COLUMN,
+            "media_id",
+            "type",
+            "title",
+            "authors",
+            "release_year",
+            "purchase_price",
+            "created_at",
+            "cover_image_hash",
+            "isbn",
+            "format",
+            "total_pages",
+            "status",
+            "finished_at",
+            "tracking_mode",
+            "external_identifiers",
+        )
 
     /**
      * The `csv_schema_version=1` header shape (ROADMAP Task 9 Phase A) -- every column [HEADER]
@@ -80,23 +80,24 @@ public object LibraryCsvExporter {
      * [LibraryCsvImporter.padLegacyV1Row] for the adapter that bridges a matched `v1` row into the
      * current row shape.
      */
-    public val HEADER_V1: List<String> = listOf(
-        CSV_SCHEMA_VERSION_COLUMN,
-        "media_id",
-        "type",
-        "title",
-        "release_year",
-        "purchase_price",
-        "created_at",
-        "cover_image_hash",
-        "isbn",
-        "format",
-        "total_pages",
-        "status",
-        "finished_at",
-        "tracking_mode",
-        "external_identifiers",
-    )
+    public val HEADER_V1: List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION_COLUMN,
+            "media_id",
+            "type",
+            "title",
+            "release_year",
+            "purchase_price",
+            "created_at",
+            "cover_image_hash",
+            "isbn",
+            "format",
+            "total_pages",
+            "status",
+            "finished_at",
+            "tracking_mode",
+            "external_identifiers",
+        )
 
     /**
      * Builds the complete CSV text for [books], including the header row.
@@ -111,14 +112,18 @@ public object LibraryCsvExporter {
     public fun export(
         books: List<BookWithDetails>,
         identifiersByMediaId: Map<String, List<ExternalIdentifierEntity>>,
-    ): String = buildString {
-        append(CsvUtil.buildLine(HEADER))
-        for (book in books) {
-            append(CsvUtil.buildLine(rowFor(book, identifiersByMediaId[book.mediaItem.id].orEmpty())))
+    ): String =
+        buildString {
+            append(CsvUtil.buildLine(HEADER))
+            for (book in books) {
+                append(CsvUtil.buildLine(rowFor(book, identifiersByMediaId[book.mediaItem.id].orEmpty())))
+            }
         }
-    }
 
-    private fun rowFor(book: BookWithDetails, identifiers: List<ExternalIdentifierEntity>): List<String> {
+    private fun rowFor(
+        book: BookWithDetails,
+        identifiers: List<ExternalIdentifierEntity>,
+    ): List<String> {
         val mediaItem = book.mediaItem
         val details = book.details
         return listOf(

@@ -8,9 +8,9 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.ReadingSessionValidation
+import kotlinx.coroutines.flow.Flow
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
-import kotlinx.coroutines.flow.Flow
 
 /**
  * Repository for managing reading session data. Encapsulates all direct database access
@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
  *
  * All write operations are wrapped in [Resource] to handle failures gracefully (AGENTS.md §5).
  */
+
 /** Log tag for this repository's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "ReadingSessionRepository"
 
@@ -25,7 +26,6 @@ public class ReadingSessionRepository(
     private val db: AppDatabase,
     private val logger: Logger = AppLogger,
 ) {
-
     /**
      * Observes all reading sessions for a specific media (book) as a reactive stream,
      * ordered by most recent first.
@@ -41,8 +41,7 @@ public class ReadingSessionRepository(
      * Task 8 Phase A: `reading_logs_export.csv` needs every session, not just one book's — see
      * [com.hub.media.features.portability.domain.ExportDataUseCase]).
      */
-    public fun observeAllSessions(): Flow<List<ReadingSessionEntity>> =
-        db.readingSessionDao().observeAll()
+    public fun observeAllSessions(): Flow<List<ReadingSessionEntity>> = db.readingSessionDao().observeAll()
 
     /**
      * Logs a new reading session with validation per AGENTS.md §7.
@@ -81,17 +80,18 @@ public class ReadingSessionRepository(
 
         return try {
             val sessionId = newId()
-            val session = ReadingSessionEntity(
-                id = sessionId,
-                mediaId = mediaId,
-                timestampStart = timestampStart,
-                timestampEnd = timestampEnd,
-                durationSeconds = durationSeconds,
-                startUnit = startUnit,
-                endUnit = endUnit,
-                deltaPages = deltaPages,
-                notes = notes,
-            )
+            val session =
+                ReadingSessionEntity(
+                    id = sessionId,
+                    mediaId = mediaId,
+                    timestampStart = timestampStart,
+                    timestampEnd = timestampEnd,
+                    durationSeconds = durationSeconds,
+                    startUnit = startUnit,
+                    endUnit = endUnit,
+                    deltaPages = deltaPages,
+                    notes = notes,
+                )
 
             db.readingSessionDao().insert(session)
             Resource.Success(sessionId)
@@ -157,18 +157,20 @@ public class ReadingSessionRepository(
         ReadingSessionValidation.validateDuration(durationSeconds)?.let { return Resource.Error(it) }
 
         return try {
-            val existing = db.readingSessionDao().getById(sessionId)
-                ?: return Resource.Error("Reading session not found: $sessionId")
+            val existing =
+                db.readingSessionDao().getById(sessionId)
+                    ?: return Resource.Error("Reading session not found: $sessionId")
 
-            val updated = existing.copy(
-                timestampStart = timestampStart,
-                timestampEnd = timestampEnd,
-                durationSeconds = durationSeconds,
-                startUnit = startUnit,
-                endUnit = endUnit,
-                deltaPages = deltaPages,
-                notes = notes,
-            )
+            val updated =
+                existing.copy(
+                    timestampStart = timestampStart,
+                    timestampEnd = timestampEnd,
+                    durationSeconds = durationSeconds,
+                    startUnit = startUnit,
+                    endUnit = endUnit,
+                    deltaPages = deltaPages,
+                    notes = notes,
+                )
 
             val rowsAffected = db.readingSessionDao().update(updated)
             if (rowsAffected == 0) {
@@ -194,18 +196,19 @@ public class ReadingSessionRepository(
      * @param id The session ID to delete.
      * @return [Resource.Success] if deleted, or [Resource.Error] on failure.
      */
-    public suspend fun deleteSession(id: String): Resource<Unit> = try {
-        db.readingSessionDao().deleteById(id)
-        Resource.Success(Unit)
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-        // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Failed to delete reading session: sessionId=$id" }
-        Resource.Error(
-            message = "Failed to delete reading session: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
+    public suspend fun deleteSession(id: String): Resource<Unit> =
+        try {
+            db.readingSessionDao().deleteById(id)
+            Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to delete reading session: sessionId=$id" }
+            Resource.Error(
+                message = "Failed to delete reading session: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
 }

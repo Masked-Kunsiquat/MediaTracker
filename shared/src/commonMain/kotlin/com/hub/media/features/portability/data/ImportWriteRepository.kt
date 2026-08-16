@@ -26,7 +26,6 @@ public class ImportWriteRepository(
     private val db: AppDatabase,
     private val logger: Logger = AppLogger,
 ) {
-
     /**
      * Applies every queued book/session insert/update in one database transaction (see
      * [com.hub.media.core.database.dao.ImportWriteDao.importAtomically]).
@@ -40,18 +39,19 @@ public class ImportWriteRepository(
         bookUpdates: List<ImportBookUpdate>,
         sessionInserts: List<ReadingSessionEntity>,
         sessionUpdates: List<ReadingSessionEntity>,
-    ): Resource<Unit> = try {
-        db.importWriteDao().importAtomically(bookInserts, bookUpdates, sessionInserts, sessionUpdates)
-        Resource.Success(Unit)
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-        // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Import write failed" }
-        Resource.Error(
-            message = "Import failed -- nothing was written: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
+    ): Resource<Unit> =
+        try {
+            db.importWriteDao().importAtomically(bookInserts, bookUpdates, sessionInserts, sessionUpdates)
+            Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Import write failed" }
+            Resource.Error(
+                message = "Import failed -- nothing was written: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
 }

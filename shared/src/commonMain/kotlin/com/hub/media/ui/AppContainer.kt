@@ -13,11 +13,11 @@ import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.SearchBooksUseCase
-import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
+import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
@@ -90,10 +90,11 @@ public class AppContainer(
      * deleting a book can leave its content-addressed cover unreferenced -- see that use case's
      * KDoc for why the file cannot simply be deleted alongside the row.
      */
-    public val deleteBooksUseCase: DeleteBooksUseCase = DeleteBooksUseCase(
-        database = database,
-        imageStorage = imageStorage,
-    )
+    public val deleteBooksUseCase: DeleteBooksUseCase =
+        DeleteBooksUseCase(
+            database = database,
+            imageStorage = imageStorage,
+        )
 
     /** Reading session logging/history, shared by future reading-session screens. */
     public val readingSessionRepository: ReadingSessionRepository = ReadingSessionRepository(database)
@@ -132,12 +133,13 @@ public class AppContainer(
     private val coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter()
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */
-    public val addBookByIsbnUseCase: AddBookByIsbnUseCase = createDefaultAddBookByIsbnUseCase(
-        httpClient = httpClient,
-        imageStorage = imageStorage,
-        bookRepository = bookRepository,
-        coverRateLimiter = coverRateLimiter,
-    )
+    public val addBookByIsbnUseCase: AddBookByIsbnUseCase =
+        createDefaultAddBookByIsbnUseCase(
+            httpClient = httpClient,
+            imageStorage = imageStorage,
+            bookRepository = bookRepository,
+            coverRateLimiter = coverRateLimiter,
+        )
 
     /**
      * Per-book "re-fetch cover" affordance (ROADMAP Task 6 Phase E), consumed by
@@ -145,12 +147,13 @@ public class AppContainer(
      * chain as [addBookByIsbnUseCase] (see [createDefaultRefetchCoverUseCase]), and the same
      * [coverRateLimiter].
      */
-    public val refetchCoverUseCase: RefetchCoverUseCase = createDefaultRefetchCoverUseCase(
-        httpClient = httpClient,
-        imageStorage = imageStorage,
-        bookRepository = bookRepository,
-        coverRateLimiter = coverRateLimiter,
-    )
+    public val refetchCoverUseCase: RefetchCoverUseCase =
+        createDefaultRefetchCoverUseCase(
+            httpClient = httpClient,
+            imageStorage = imageStorage,
+            bookRepository = bookRepository,
+            coverRateLimiter = coverRateLimiter,
+        )
 
     /**
      * Title/author type-ahead search (ROADMAP Task 9 Phase B1).
@@ -165,9 +168,10 @@ public class AppContainer(
      * different endpoint with a different budget. Search is throttled by the debounce and minimum
      * query length in [SearchBooksUseCase] and its caller instead.
      */
-    public val searchBooksUseCase: SearchBooksUseCase = SearchBooksUseCase(
-        OpenLibrarySearchClient(httpClient),
-    )
+    public val searchBooksUseCase: SearchBooksUseCase =
+        SearchBooksUseCase(
+            OpenLibrarySearchClient(httpClient),
+        )
 
     /**
      * Bulk cover-and-author backfill across the whole library (ROADMAP Task 14 Phase A), consumed
@@ -176,22 +180,24 @@ public class AppContainer(
      * [settingsRepository] for its persisted resume state (see
      * [com.hub.media.features.settings.data.BulkBackfillState]).
      */
-    public val bulkBackfillUseCase: BulkBackfillUseCase = createDefaultBulkBackfillUseCase(
-        httpClient = httpClient,
-        imageStorage = imageStorage,
-        bookRepository = bookRepository,
-        settingsRepository = settingsRepository,
-        coverRateLimiter = coverRateLimiter,
-    )
+    public val bulkBackfillUseCase: BulkBackfillUseCase =
+        createDefaultBulkBackfillUseCase(
+            httpClient = httpClient,
+            imageStorage = imageStorage,
+            bookRepository = bookRepository,
+            settingsRepository = settingsRepository,
+            coverRateLimiter = coverRateLimiter,
+        )
 
     /**
      * CSV data-export workflow (ROADMAP Task 8 Phase A), consumed by [ExportViewModel] from the
      * Settings screen. Pure Kotlin -- see [ExportDataUseCase]'s KDoc.
      */
-    public val exportDataUseCase: ExportDataUseCase = ExportDataUseCase(
-        bookRepository = bookRepository,
-        readingSessionRepository = readingSessionRepository,
-    )
+    public val exportDataUseCase: ExportDataUseCase =
+        ExportDataUseCase(
+            bookRepository = bookRepository,
+            readingSessionRepository = readingSessionRepository,
+        )
 
     /**
      * CSV data-import workflow (ROADMAP Task 8 Phase B), consumed by [ImportViewModel] from the
@@ -202,20 +208,22 @@ public class AppContainer(
      */
     private val importWriteRepository: ImportWriteRepository = ImportWriteRepository(database)
 
-    public val importDataUseCase: ImportDataUseCase = ImportDataUseCase(
-        bookRepository = bookRepository,
-        readingSessionRepository = readingSessionRepository,
-        importWriteRepository = importWriteRepository,
-    )
+    public val importDataUseCase: ImportDataUseCase =
+        ImportDataUseCase(
+            bookRepository = bookRepository,
+            readingSessionRepository = readingSessionRepository,
+            importWriteRepository = importWriteRepository,
+        )
 
     /**
      * Whole-database `.sqlite` backup workflow (ROADMAP Task 8 Phase C), consumed by
      * [BackupViewModel] from the Settings screen.
      */
-    public val backupDatabaseUseCase: DatabaseBackupUseCase = DefaultDatabaseBackupUseCase(
-        database = database,
-        databaseFilePath = databaseFilePath,
-    )
+    public val backupDatabaseUseCase: DatabaseBackupUseCase =
+        DefaultDatabaseBackupUseCase(
+            database = database,
+            databaseFilePath = databaseFilePath,
+        )
 
     /**
      * Whole-database `.sqlite` restore workflow (ROADMAP Task 8 Phase C), consumed by
@@ -225,9 +233,10 @@ public class AppContainer(
      * restarted afterward; neither of those steps can happen from within this container itself,
      * since they're about the container's own lifecycle and the platform process, respectively.
      */
-    public val restoreDatabaseUseCase: RestoreDatabaseUseCase = DefaultRestoreDatabaseUseCase(
-        liveDatabaseFilePath = databaseFilePath,
-    )
+    public val restoreDatabaseUseCase: RestoreDatabaseUseCase =
+        DefaultRestoreDatabaseUseCase(
+            liveDatabaseFilePath = databaseFilePath,
+        )
 
     /**
      * Releases resources owned by this container: cancels [logFileStore]'s background flush loop

@@ -5,10 +5,10 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.get
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
 
 /**
  * The identification header is the whole point of [USER_AGENT] — Open Library rate-limits
@@ -16,22 +16,23 @@ import kotlinx.coroutines.test.runTest
  * the header genuinely reaches the wire rather than trusting that the plugin is installed.
  */
 class HttpClientFactoryTest {
-
-    private fun capturingEngine(captured: MutableList<String?>) = MockEngine { request ->
-        captured.add(request.headers[HttpHeaders.UserAgent])
-        respond(content = "{}", status = HttpStatusCode.OK)
-    }
+    private fun capturingEngine(captured: MutableList<String?>) =
+        MockEngine { request ->
+            captured.add(request.headers[HttpHeaders.UserAgent])
+            respond(content = "{}", status = HttpStatusCode.OK)
+        }
 
     @Test
-    fun everyRequest_carriesTheIdentifyingUserAgent() = runTest {
-        val captured = mutableListOf<String?>()
-        val client = createHttpClient(capturingEngine(captured))
+    fun everyRequest_carriesTheIdentifyingUserAgent() =
+        runTest {
+            val captured = mutableListOf<String?>()
+            val client = createHttpClient(capturingEngine(captured))
 
-        client.get("https://openlibrary.org/search.json")
-        client.get("https://covers.openlibrary.org/b/id/1-L.jpg")
+            client.get("https://openlibrary.org/search.json")
+            client.get("https://covers.openlibrary.org/b/id/1-L.jpg")
 
-        assertEquals(listOf<String?>(USER_AGENT, USER_AGENT), captured.toList())
-    }
+            assertEquals(listOf<String?>(USER_AGENT, USER_AGENT), captured.toList())
+        }
 
     @Test
     fun userAgent_namesTheAppAndCarriesAContactChannel() {
@@ -52,5 +53,4 @@ class HttpClientFactoryTest {
         // leaving it to a comment nobody re-reads.
         assertTrue('@' !in USER_AGENT, "User-Agent should carry no email address: $USER_AGENT")
     }
-
 }

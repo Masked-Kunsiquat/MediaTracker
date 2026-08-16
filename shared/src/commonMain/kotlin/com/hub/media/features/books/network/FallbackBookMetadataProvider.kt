@@ -37,7 +37,6 @@ public class FallbackBookMetadataProvider(
     private val secondary: BookMetadataProvider,
     private val isbnCoverProbe: OpenLibraryIsbnCoverProbe? = null,
 ) : BookMetadataProvider {
-
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         val primaryResult = primary.fetchByIsbn(isbn)
         if (primaryResult is Resource.Success) {

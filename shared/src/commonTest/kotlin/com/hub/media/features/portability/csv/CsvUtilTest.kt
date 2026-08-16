@@ -11,7 +11,6 @@ import kotlin.test.assertEquals
  * production code never needs to parse CSV until Phase B's importer).
  */
 class CsvUtilTest {
-
     @Test
     fun escapeField_plainValue_isUnchanged() {
         assertEquals("hello world", CsvUtil.escapeField("hello world"))

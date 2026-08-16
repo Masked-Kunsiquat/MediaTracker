@@ -47,49 +47,60 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SampleDataSeedTest {
-
     private val application: MediaTrackerApplication
-        get() = InstrumentationRegistry.getInstrumentation()
-            .targetContext.applicationContext as MediaTrackerApplication
+        get() =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext.applicationContext as MediaTrackerApplication
 
     /** Reads a fixture from the *test* APK's assets, where the Gradle copy task puts them. */
     private fun asset(name: String): String =
-        InstrumentationRegistry.getInstrumentation().context.assets
-            .open(name).bufferedReader().use { it.readText() }
+        InstrumentationRegistry
+            .getInstrumentation()
+            .context.assets
+            .open(name)
+            .bufferedReader()
+            .use { it.readText() }
 
     @Test
-    fun sampleData_importsIntoTheDebugAppsLibrary() = runBlocking {
-        val container = application.appContainer
-        val booksBefore = container.bookRepository.getAllBooksWithDetails().size
+    fun sampleData_importsIntoTheDebugAppsLibrary() =
+        runBlocking {
+            val container = application.appContainer
+            val booksBefore = container.bookRepository.getAllBooksWithDetails().size
 
-        val result = container.importDataUseCase.execute(
-            libraryCsv = asset("library_sample.csv"),
-            readingLogsCsv = asset("reading_logs_sample.csv"),
-            duplicatePolicy = DuplicatePolicy.SKIP,
-        )
+            val result =
+                container.importDataUseCase.execute(
+                    libraryCsv = asset("library_sample.csv"),
+                    readingLogsCsv = asset("reading_logs_sample.csv"),
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
 
-        val summary = when (result) {
-            is Resource.Success -> result.data
-            else -> throw AssertionError("sample data failed to import: $result")
+            val summary =
+                when (result) {
+                    is Resource.Success -> result.data
+                    else -> throw AssertionError("sample data failed to import: $result")
+                }
+
+            // Rejections are reported rather than fatal, so an import can "succeed" having skipped
+            // every row. Unconditional: the previous `|| booksBefore > 0` meant a device that already
+            // held books would pass no matter how badly the fixture failed to import.
+            assertTrue(
+                "no sample row should be rejected on a real device: $summary",
+                summary.rejections.isEmpty(),
+            )
+
+            // Named records rather than a count, for the same reason: a count is satisfied by whatever
+            // happened to be on the device already.
+            val titles = container.bookRepository.getAllBooksWithDetails().map { it.mediaItem.title }
+            listOf("The Way of Kings", "Beowulf", "A Wizard of Earthsea").forEach { expected ->
+                assertTrue("fixture book missing after import: $expected (had $booksBefore before)", expected in titles)
+            }
+            assertTrue(
+                "the fixture's reading sessions must import too, not just the books",
+                container.readingSessionRepository
+                    .observeAllSessions()
+                    .first()
+                    .isNotEmpty(),
+            )
         }
-
-        // Rejections are reported rather than fatal, so an import can "succeed" having skipped
-        // every row. Unconditional: the previous `|| booksBefore > 0` meant a device that already
-        // held books would pass no matter how badly the fixture failed to import.
-        assertTrue(
-            "no sample row should be rejected on a real device: $summary",
-            summary.rejections.isEmpty(),
-        )
-
-        // Named records rather than a count, for the same reason: a count is satisfied by whatever
-        // happened to be on the device already.
-        val titles = container.bookRepository.getAllBooksWithDetails().map { it.mediaItem.title }
-        listOf("The Way of Kings", "Beowulf", "A Wizard of Earthsea").forEach { expected ->
-            assertTrue("fixture book missing after import: $expected (had $booksBefore before)", expected in titles)
-        }
-        assertTrue(
-            "the fixture's reading sessions must import too, not just the books",
-            container.readingSessionRepository.observeAllSessions().first().isNotEmpty(),
-        )
-    }
 }

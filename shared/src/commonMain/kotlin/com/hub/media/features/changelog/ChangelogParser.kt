@@ -142,10 +142,11 @@ public fun parseChangelog(markdown: String): ChangelogDocument {
         val versionMatch = VERSION_HEADING.matchEntire(rawLine)
         if (versionMatch != null) {
             current?.let { versions += it.build() }
-            current = VersionBuilder(
-                version = versionMatch.groupValues[1],
-                date = versionMatch.groupValues[2].takeIf { it.isNotBlank() },
-            )
+            current =
+                VersionBuilder(
+                    version = versionMatch.groupValues[1],
+                    date = versionMatch.groupValues[2].takeIf { it.isNotBlank() },
+                )
             continue
         }
         current?.accept(rawLine)
@@ -155,7 +156,10 @@ public fun parseChangelog(markdown: String): ChangelogDocument {
 }
 
 /** Accumulates one version's lines, splitting them into preamble, sections and bullets. */
-private class VersionBuilder(private val version: String, private val date: String?) {
+private class VersionBuilder(
+    private val version: String,
+    private val date: String?,
+) {
     private val preamble = mutableListOf<String>()
     private val sections = mutableListOf<ChangelogSection>()
     private var sectionTitle: String? = null
@@ -189,20 +193,22 @@ private class VersionBuilder(private val version: String, private val date: Stri
         entryLines = mutableListOf()
         if (text.isEmpty()) return
         val lead = BOLD_LEAD.find(text)
-        entries += if (lead != null) {
-            ChangelogEntry(
-                heading = lead.groupValues[1].replace("\n", " ").trim(),
-                // Entries are written "**Title** - detail", so removing the title leaves the
-                // separator dangling at the start of the body. Stripped here rather than in the UI
-                // so every renderer gets the same clean text. Covers hyphen, en dash and em dash --
-                // this changelog uses the last of those, but the others cost nothing to accept.
-                body = reflow(
-                    text.removeRange(lead.range).trim().trimStart('-', '–', '—', ' '),
-                ),
-            )
-        } else {
-            ChangelogEntry(heading = null, body = reflow(text))
-        }
+        entries +=
+            if (lead != null) {
+                ChangelogEntry(
+                    heading = lead.groupValues[1].replace("\n", " ").trim(),
+                    // Entries are written "**Title** - detail", so removing the title leaves the
+                    // separator dangling at the start of the body. Stripped here rather than in the UI
+                    // so every renderer gets the same clean text. Covers hyphen, en dash and em dash --
+                    // this changelog uses the last of those, but the others cost nothing to accept.
+                    body =
+                        reflow(
+                            text.removeRange(lead.range).trim().trimStart('-', '–', '—', ' '),
+                        ),
+                )
+            } else {
+                ChangelogEntry(heading = null, body = reflow(text))
+            }
     }
 
     private fun closeSection() {

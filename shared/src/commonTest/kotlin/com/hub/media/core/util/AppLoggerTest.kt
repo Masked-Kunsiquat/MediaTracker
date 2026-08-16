@@ -20,7 +20,6 @@ import kotlin.test.assertTrue
  * lowered threshold installed for whatever runs next.
  */
 class AppLoggerTest {
-
     @AfterTest
     fun restoreDefaults() {
         // Matches AppLogger's initial state: WARN, writing to the real platform sink.
@@ -33,8 +32,14 @@ class AppLoggerTest {
         AppLogger.configure(minLevel = LogLevel.WARN, delegate = recorder)
         var lambdaEvaluations = 0
 
-        AppLogger.debug(tag = "T") { lambdaEvaluations++; "debug" }
-        AppLogger.info(tag = "T") { lambdaEvaluations++; "info" }
+        AppLogger.debug(tag = "T") {
+            lambdaEvaluations++
+            "debug"
+        }
+        AppLogger.info(tag = "T") {
+            lambdaEvaluations++
+            "info"
+        }
 
         assertTrue(recorder.entries.isEmpty(), "calls below the threshold must not reach the delegate")
         // The stronger half of the claim: a suppressed call must cost nothing to *build*, not merely
@@ -100,7 +105,11 @@ class AppLoggerTest {
         AppLogger.configure(minLevel = LogLevel.DEBUG, delegate = second)
         AppLogger.error(tag = "T") { "after swap" }
 
-        assertEquals(listOf("before swap"), first.entries.map { it.message }, "the replaced delegate must stop receiving calls")
+        assertEquals(
+            listOf("before swap"),
+            first.entries.map { it.message },
+            "the replaced delegate must stop receiving calls",
+        )
         assertEquals(listOf("after swap"), second.entries.map { it.message })
     }
 }

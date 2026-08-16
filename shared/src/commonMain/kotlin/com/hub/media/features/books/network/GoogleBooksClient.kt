@@ -1,12 +1,12 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
-import com.hub.media.core.util.Resource
-import com.hub.media.features.books.network.dto.GoogleBooksImageLinksDto
-import com.hub.media.features.books.network.dto.GoogleBooksResponseDto
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.Resource
 import com.hub.media.core.util.warn
+import com.hub.media.features.books.network.dto.GoogleBooksImageLinksDto
+import com.hub.media.features.books.network.dto.GoogleBooksResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -27,33 +27,36 @@ public class GoogleBooksClient(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
 ) : BookMetadataProvider {
-
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         return try {
-            val response = client.get(GOOGLE_BOOKS_VOLUMES_URL) {
-                parameter("q", "isbn:$isbn")
-            }
+            val response =
+                client.get(GOOGLE_BOOKS_VOLUMES_URL) {
+                    parameter("q", "isbn:$isbn")
+                }
             if (!response.status.isSuccess()) {
                 return Resource.Error(
                     "Google Books request failed with status ${response.status.value} for ISBN $isbn",
                 )
             }
 
-            val dto = try {
-                response.body<GoogleBooksResponseDto>()
-            } catch (e: CancellationException) {
-                // Same rethrow as the outer catch below -- a cancelled deserialization is not a
-                // malformed-JSON failure.
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "Google Books returned malformed JSON for isbn=$isbn" }
-                return Resource.Error("Google Books returned malformed JSON for ISBN $isbn", e)
-            }
+            val dto =
+                try {
+                    response.body<GoogleBooksResponseDto>()
+                } catch (e: CancellationException) {
+                    // Same rethrow as the outer catch below -- a cancelled deserialization is not a
+                    // malformed-JSON failure.
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(TAG, e) { "Google Books returned malformed JSON for isbn=$isbn" }
+                    return Resource.Error("Google Books returned malformed JSON for ISBN $isbn", e)
+                }
 
-            val item = dto.items?.firstOrNull()
-                ?: return Resource.Error("Google Books returned no results for ISBN $isbn")
-            val volumeInfo = item.volumeInfo
-                ?: return Resource.Error("Google Books result for ISBN $isbn is missing volumeInfo")
+            val item =
+                dto.items?.firstOrNull()
+                    ?: return Resource.Error("Google Books returned no results for ISBN $isbn")
+            val volumeInfo =
+                item.volumeInfo
+                    ?: return Resource.Error("Google Books result for ISBN $isbn is missing volumeInfo")
 
             val title = volumeInfo.title
             if (title.isNullOrBlank()) {

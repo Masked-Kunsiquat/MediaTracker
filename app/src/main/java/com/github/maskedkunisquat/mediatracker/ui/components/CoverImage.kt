@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,11 +15,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private const val TAG = "CoverImage"
 
@@ -75,23 +73,26 @@ fun CoverImage(
     }
 
     // Load the image off-thread via produceState.
-    val imageBitmap = produceState<ImageBitmap?>(
-        initialValue = null,
-        coverDir,
-        coverImageHash,
-    ) {
-        value = withContext(Dispatchers.IO) {
-            try {
-                // coverImageHash is already the full "<sha256>.jpg" filename from the database
-                BitmapFactory.decodeFile(File(coverDir, coverImageHash).absolutePath)
-                    ?.asImageBitmap()
-            } catch (e: Exception) {
-                // Decode failed or file missing; fall through to placeholder.
-                Log.w(TAG, "Failed to load cover image: $coverImageHash", e)
-                null
-            }
-        }
-    }.value
+    val imageBitmap =
+        produceState<ImageBitmap?>(
+            initialValue = null,
+            coverDir,
+            coverImageHash,
+        ) {
+            value =
+                withContext(Dispatchers.IO) {
+                    try {
+                        // coverImageHash is already the full "<sha256>.jpg" filename from the database
+                        BitmapFactory
+                            .decodeFile(File(coverDir, coverImageHash).absolutePath)
+                            ?.asImageBitmap()
+                    } catch (e: Exception) {
+                        // Decode failed or file missing; fall through to placeholder.
+                        Log.w(TAG, "Failed to load cover image: $coverImageHash", e)
+                        null
+                    }
+                }
+        }.value
 
     if (imageBitmap != null) {
         Image(
@@ -112,8 +113,9 @@ fun CoverImage(
 @Composable
 private fun CoverPlaceholder(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier =
+            modifier
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         Text(

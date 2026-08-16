@@ -6,10 +6,9 @@ import com.hub.media.core.database.readFileBytes
 import com.hub.media.core.database.readFileTailBytes
 import com.hub.media.core.database.renameFile
 import com.hub.media.core.util.LogLevel
-import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -17,6 +16,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
 
 /** Per-file cap: worst case two retained files (see [LogFileStore]) is ~2x this, "a few MB" total
  * per ROADMAP Task 15 Phase B. */
@@ -173,7 +173,11 @@ public class LogFileStore(
      * Synchronous and never suspends/throws -- called directly from [FileLogSink.log], which must
      * never become a new source of failure for its caller.
      */
-    internal fun append(level: LogLevel, tag: String, message: String) {
+    internal fun append(
+        level: LogLevel,
+        tag: String,
+        message: String,
+    ) {
         try {
             buffer.append(clock.now().toEpochMilliseconds(), level, tag, message)
             // At most one threshold-triggered flush may be in flight at a time. Without this gate,

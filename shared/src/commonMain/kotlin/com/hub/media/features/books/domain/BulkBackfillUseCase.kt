@@ -1,14 +1,13 @@
 package com.hub.media.features.books.domain
 
-import kotlin.coroutines.cancellation.CancellationException
-import com.hub.media.core.util.AppLogger
-import com.hub.media.core.util.Logger
-import com.hub.media.core.util.info
-import com.hub.media.core.util.warn
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.network.BookMetadataProvider
 import com.hub.media.features.books.network.CoverImageDownloader
@@ -25,9 +24,10 @@ import com.hub.media.features.settings.data.clearBulkBackfillState
 import com.hub.media.features.settings.data.getBulkBackfillState
 import com.hub.media.features.settings.data.saveBulkBackfillState
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
-import kotlinx.coroutines.ensureActive
 
 /**
  * Progress/result snapshot for a [BulkBackfillUseCase.execute] run (ROADMAP Task 14 Phase A),
@@ -161,6 +161,7 @@ public data class BulkBackfillProgress(
  * @param settingsRepository Backing store for [BulkBackfillState] (see that class's KDoc for why
  *   `app_settings` -- no schema change -- is where resume state lives).
  */
+
 /** Log tag for this use case's lifecycle tracing (ROADMAP Task 15 Phase C). */
 private const val TAG = "BulkBackfillUseCase"
 
@@ -173,7 +174,6 @@ public class BulkBackfillUseCase(
     private val settingsRepository: SettingsRepository,
     private val logger: Logger = AppLogger,
 ) {
-
     /**
      * Runs (or resumes) one backfill pass. Processes [BulkBackfillState.pendingMediaIds] in order,
      * checkpointing to [settingsRepository] after every book, until either every candidate is
@@ -187,9 +187,7 @@ public class BulkBackfillUseCase(
      * @return The final [BulkBackfillProgress] for this run. [BulkBackfillProgress.isComplete]
      *   tells the caller whether anything is left to resume later.
      */
-    public suspend fun execute(
-        onProgress: (suspend (BulkBackfillProgress) -> Unit)? = null,
-    ): BulkBackfillProgress {
+    public suspend fun execute(onProgress: (suspend (BulkBackfillProgress) -> Unit)? = null): BulkBackfillProgress {
         var state = settingsRepository.getBulkBackfillState() ?: seedState()
 
         if (state.pendingMediaIds.isEmpty()) {
@@ -214,34 +212,34 @@ public class BulkBackfillUseCase(
         var retryAfterSeen: Duration? = null
 
         try {
-        for (index in toProcess.indices) {
-            // Cooperative cancellation between books: a caller (e.g. the Settings screen's "cancel
-            // backfill" action) cancelling this coroutine stops the loop here rather than mid-book,
-            // and since state is checkpointed after every *completed* book below, whatever was last
-            // saved remains the correct resume point either way.
-            coroutineContext.ensureActive()
-            val mediaId = toProcess[index]
+            for (index in toProcess.indices) {
+                // Cooperative cancellation between books: a caller (e.g. the Settings screen's "cancel
+                // backfill" action) cancelling this coroutine stops the loop here rather than mid-book,
+                // and since state is checkpointed after every *completed* book below, whatever was last
+                // saved remains the correct resume point either way.
+                coroutineContext.ensureActive()
+                val mediaId = toProcess[index]
 
-            when (val outcome = processOneBook(mediaId, quotaExhausted, retryAfterSeen)) {
-                StepOutcome.Removed -> Unit
-                is StepOutcome.Done -> if (outcome.wroteAnything) updated++ else noProviderData++
-                StepOutcome.DeferredTransient -> stillPending += mediaId
-                is StepOutcome.DeferredRateLimited -> {
-                    stillPending += mediaId
-                    quotaExhausted = true
-                    retryAfterSeen = outcome.retryAfter
+                when (val outcome = processOneBook(mediaId, quotaExhausted, retryAfterSeen)) {
+                    StepOutcome.Removed -> Unit
+                    is StepOutcome.Done -> if (outcome.wroteAnything) updated++ else noProviderData++
+                    StepOutcome.DeferredTransient -> stillPending += mediaId
+                    is StepOutcome.DeferredRateLimited -> {
+                        stillPending += mediaId
+                        quotaExhausted = true
+                        retryAfterSeen = outcome.retryAfter
+                    }
                 }
+
+                state =
+                    state.copy(
+                        pendingMediaIds = stillPending + toProcess.subList(index + 1, toProcess.size),
+                        updated = updated,
+                        noProviderData = noProviderData,
+                    )
+                settingsRepository.saveBulkBackfillState(state)
+                onProgress?.invoke(state.toProgress(isPaused = quotaExhausted, retryAfter = retryAfterSeen))
             }
-
-            state = state.copy(
-                pendingMediaIds = stillPending + toProcess.subList(index + 1, toProcess.size),
-                updated = updated,
-                noProviderData = noProviderData,
-            )
-            settingsRepository.saveBulkBackfillState(state)
-            onProgress?.invoke(state.toProgress(isPaused = quotaExhausted, retryAfter = retryAfterSeen))
-        }
-
         } catch (e: CancellationException) {
             // Cancelling is normal -- the Settings screen offers it -- but without this the run
             // logs "starting, 168 pending" and then nothing at all, which reads as a hang or a
@@ -300,21 +298,23 @@ public class BulkBackfillUseCase(
      */
     private suspend fun seedState(): BulkBackfillState {
         val haveWorkKey = bookRepository.getMediaIdsWithIdentifier(IdentifierProvider.OPEN_LIBRARY_WORK)
-        val candidates = bookRepository.getAllBooksWithDetails().filter { book ->
-            val needsCover = book.mediaItem.coverImageHash == null
-            val needsAuthors = book.details?.authors == null
-            val needsWorkKey = book.mediaItem.id !in haveWorkKey
-            needsCover || needsAuthors || needsWorkKey
-        }
+        val candidates =
+            bookRepository.getAllBooksWithDetails().filter { book ->
+                val needsCover = book.mediaItem.coverImageHash == null
+                val needsAuthors = book.details?.authors == null
+                val needsWorkKey = book.mediaItem.id !in haveWorkKey
+                needsCover || needsAuthors || needsWorkKey
+            }
         val (withIsbn, withoutIsbn) = candidates.partition { !it.details?.isbn.isNullOrBlank() }
 
-        val state = BulkBackfillState(
-            pendingMediaIds = withIsbn.map { it.mediaItem.id },
-            totalCandidates = withIsbn.size,
-            noIsbnSkipped = withoutIsbn.size,
-            updated = 0,
-            noProviderData = 0,
-        )
+        val state =
+            BulkBackfillState(
+                pendingMediaIds = withIsbn.map { it.mediaItem.id },
+                totalCandidates = withIsbn.size,
+                noIsbnSkipped = withoutIsbn.size,
+                updated = 0,
+                noProviderData = 0,
+            )
         settingsRepository.saveBulkBackfillState(state)
         return state
     }
@@ -386,9 +386,11 @@ public class BulkBackfillUseCase(
         if (needsCover && coverUrl != null) {
             val downloadResult = coverDownloader.download(coverUrl)
             if (downloadResult is Resource.Success) {
-                coverHashToWrite = imageStorage.saveImage(downloadResult.data)
-                    .onFailure { logger.warn(TAG, it) { "Cover save failed for mediaId=$mediaId" } }
-                    .getOrNull()
+                coverHashToWrite =
+                    imageStorage
+                        .saveImage(downloadResult.data)
+                        .onFailure { logger.warn(TAG, it) { "Cover save failed for mediaId=$mediaId" } }
+                        .getOrNull()
                 if (coverHashToWrite == null) coverDeferred = true // save failed -- transient, retry later
             } else {
                 coverDeferred = true // download failed -- transient, retry later
@@ -437,18 +439,25 @@ public class BulkBackfillUseCase(
         data object Removed : StepOutcome()
 
         /** Fully resolved this run -- removed from the pending list permanently. */
-        data class Done(val wroteAnything: Boolean) : StepOutcome()
+        data class Done(
+            val wroteAnything: Boolean,
+        ) : StepOutcome()
 
         /** A transient failure (lookup, download, image save, or database write) -- retried on a
          * future run. */
         data object DeferredTransient : StepOutcome()
 
         /** The shared cover-probe quota is exhausted -- retried on a future run. */
-        data class DeferredRateLimited(val retryAfter: Duration) : StepOutcome()
+        data class DeferredRateLimited(
+            val retryAfter: Duration,
+        ) : StepOutcome()
     }
 }
 
-private fun BulkBackfillState.toProgress(isPaused: Boolean, retryAfter: Duration?): BulkBackfillProgress =
+private fun BulkBackfillState.toProgress(
+    isPaused: Boolean,
+    retryAfter: Duration?,
+): BulkBackfillProgress =
     BulkBackfillProgress(
         totalCandidates = totalCandidates,
         processed = totalCandidates - pendingMediaIds.size,
@@ -486,15 +495,17 @@ public fun createDefaultBulkBackfillUseCase(
     bookRepository: BookRepository,
     settingsRepository: SettingsRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter,
-): BulkBackfillUseCase = BulkBackfillUseCase(
-    metadataProvider = FallbackBookMetadataProvider(
-        primary = OpenLibraryClient(httpClient),
-        secondary = GoogleBooksClient(httpClient),
-        isbnCoverProbe = null,
-    ),
-    isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient, coverRateLimiter),
-    coverDownloader = CoverImageDownloader(httpClient),
-    imageStorage = imageStorage,
-    bookRepository = bookRepository,
-    settingsRepository = settingsRepository,
-)
+): BulkBackfillUseCase =
+    BulkBackfillUseCase(
+        metadataProvider =
+            FallbackBookMetadataProvider(
+                primary = OpenLibraryClient(httpClient),
+                secondary = GoogleBooksClient(httpClient),
+                isbnCoverProbe = null,
+            ),
+        isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient, coverRateLimiter),
+        coverDownloader = CoverImageDownloader(httpClient),
+        imageStorage = imageStorage,
+        bookRepository = bookRepository,
+        settingsRepository = settingsRepository,
+    )

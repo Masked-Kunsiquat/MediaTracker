@@ -23,7 +23,12 @@ internal actual class LogBuffer actual constructor(
     private var seqCounter = initialSeq
     private var droppedSinceDrain = 0
 
-    actual fun append(timestampMillis: Long, level: LogLevel, tag: String, message: String) {
+    actual fun append(
+        timestampMillis: Long,
+        level: LogLevel,
+        tag: String,
+        message: String,
+    ) {
         synchronized(lock) {
             seqCounter += 1
             val entry = LogEntry(seqCounter, timestampMillis, level, tag, message)
@@ -35,26 +40,28 @@ internal actual class LogBuffer actual constructor(
         }
     }
 
-    actual fun drainSnapshot(nowMillis: Long): List<LogEntry> = synchronized(lock) {
-        val out = ArrayList<LogEntry>(deque.size + 1)
-        out.addAll(deque)
-        deque.clear()
-        if (droppedSinceDrain > 0) {
-            seqCounter += 1
-            out.add(
-                LogEntry(
-                    seq = seqCounter,
-                    timestampMillis = nowMillis,
-                    level = LogLevel.WARN,
-                    tag = OVERFLOW_TAG,
-                    message = "Log buffer overflow: dropped $droppedSinceDrain entries " +
-                        "(oldest evicted first -- see LogBuffer's KDoc \"Overflow policy\").",
-                ),
-            )
-            droppedSinceDrain = 0
+    actual fun drainSnapshot(nowMillis: Long): List<LogEntry> =
+        synchronized(lock) {
+            val out = ArrayList<LogEntry>(deque.size + 1)
+            out.addAll(deque)
+            deque.clear()
+            if (droppedSinceDrain > 0) {
+                seqCounter += 1
+                out.add(
+                    LogEntry(
+                        seq = seqCounter,
+                        timestampMillis = nowMillis,
+                        level = LogLevel.WARN,
+                        tag = OVERFLOW_TAG,
+                        message =
+                            "Log buffer overflow: dropped $droppedSinceDrain entries " +
+                                "(oldest evicted first -- see LogBuffer's KDoc \"Overflow policy\").",
+                    ),
+                )
+                droppedSinceDrain = 0
+            }
+            out
         }
-        out
-    }
 
     actual fun size(): Int = synchronized(lock) { deque.size }
 }

@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ReadingSessionDao {
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(session: ReadingSessionEntity)
 

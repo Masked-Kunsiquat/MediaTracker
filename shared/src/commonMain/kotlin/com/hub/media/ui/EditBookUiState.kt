@@ -8,7 +8,6 @@ import com.hub.media.core.database.entities.TrackingMode
 
 /** UI state for the edit-book-metadata screen (ROADMAP Task 6 Phase A). */
 public sealed class EditBookUiState {
-
     /** Initial state before the book's current metadata has loaded. */
     public data object Loading : EditBookUiState()
 

@@ -44,13 +44,21 @@ import com.hub.media.core.util.LogLevel
  * invariants the rest of this facility relies on are that [LogEntry.seq] is unique and
  * non-decreasing in file order, never that it is gap-free.
  */
-internal expect class LogBuffer(capacity: Int, initialSeq: Long) {
+internal expect class LogBuffer(
+    capacity: Int,
+    initialSeq: Long,
+) {
     /**
      * Assigns the next sequence number to a new entry (built from [timestampMillis]/[level]/[tag]/
      * [message]) and admits it, evicting the oldest buffered entry first if already at capacity
      * (see this class's KDoc "Overflow policy").
      */
-    fun append(timestampMillis: Long, level: LogLevel, tag: String, message: String)
+    fun append(
+        timestampMillis: Long,
+        level: LogLevel,
+        tag: String,
+        message: String,
+    )
 
     /**
      * Atomically removes and returns every currently-buffered entry, oldest first, leaving the

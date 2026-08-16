@@ -15,8 +15,8 @@ import kotlin.test.assertTrue
  * Phase B2's "Known tension" bullet for the measurements.
  */
 class ChangelogParserTest {
-
-    private val sample = """
+    private val sample =
+        """
         # Changelog
 
         Some blurb about the format that belongs to no release.
@@ -42,7 +42,7 @@ class ChangelogParserTest {
         ### Changed
 
         - **Something changed** — why.
-    """.trimIndent()
+        """.trimIndent()
 
     @Test
     fun parseChangelog_realWorldShape_splitsVersionsSectionsAndEntries() {
@@ -70,7 +70,12 @@ class ChangelogParserTest {
         )
         // Positive control: the parser CAN find a preamble, so the empty string above is a real
         // absence rather than the preamble logic being broken outright.
-        assertTrue(doc.versions.single { it.version == "0.8.0" }.preamble.isNotEmpty())
+        assertTrue(
+            doc.versions
+                .single { it.version == "0.8.0" }
+                .preamble
+                .isNotEmpty(),
+        )
     }
 
     @Test
@@ -190,9 +195,10 @@ class ChangelogParserTest {
         // The preamble is hard-wrapped in source exactly like entry bodies are. It was left
         // unreflowed at first and the tests above did not catch it, because they only asserted
         // 'contains' -- the ragged rendering was visible on a device instead.
-        val doc = parseChangelog(
-            "## [1.0.0]\n\na preamble that was\nwrapped in source.\n\n### Added\n\n- x",
-        )
+        val doc =
+            parseChangelog(
+                "## [1.0.0]\n\na preamble that was\nwrapped in source.\n\n### Added\n\n- x",
+            )
 
         assertEquals("a preamble that was wrapped in source.", doc.versions[0].preamble)
     }
@@ -204,7 +210,8 @@ class ChangelogParserTest {
  * `commonTest` unit test with no file-I/O or asset plumbing; refreshed by hand if the changelog's
  * *structure* (not its content) ever changes.
  */
-private val REAL_CHANGELOG_EXCERPT = """
+private val REAL_CHANGELOG_EXCERPT =
+    """
     ## [Unreleased]
 
     ### Added
@@ -226,4 +233,4 @@ private val REAL_CHANGELOG_EXCERPT = """
     ### Added
 
     - **Author capture** (Room schema v5, `MIGRATION_4_5`) — `BookDetailsEntity` gained a column.
-""".trimIndent()
+    """.trimIndent()

@@ -20,21 +20,26 @@ import kotlinx.coroutines.sync.withLock
  *   would evict every entry immediately on insert, which is a silently useless cache rather than
  *   an obviously broken one.
  */
-public class LruCache<K, V>(maxSize: Int) {
-
+public class LruCache<K, V>(
+    maxSize: Int,
+) {
     private val maxSize: Int = maxSize.coerceAtLeast(1)
     private val entries = LinkedHashMap<K, V>()
     private val mutex = Mutex()
 
     /** Returns the value for [key], marking it most-recently-used, or null if absent. */
-    public suspend fun get(key: K): V? = mutex.withLock {
-        val value = entries.remove(key) ?: return@withLock null
-        entries[key] = value
-        value
-    }
+    public suspend fun get(key: K): V? =
+        mutex.withLock {
+            val value = entries.remove(key) ?: return@withLock null
+            entries[key] = value
+            value
+        }
 
     /** Stores [value] under [key] as most-recently-used, evicting the oldest entry if needed. */
-    public suspend fun put(key: K, value: V) {
+    public suspend fun put(
+        key: K,
+        value: V,
+    ) {
         mutex.withLock {
             // Remove first so an overwrite refreshes recency instead of leaving the key at its
             // original insertion position.

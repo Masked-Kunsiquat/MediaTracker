@@ -21,22 +21,22 @@ import org.junit.Test
  * but whether collapsed content is actually *hidden* is a rendering question.
  */
 class ChangelogScreenTest {
-
     @get:Rule
     val composeRule = createComposeRule()
 
-    private val document = parseChangelog(
-        """
-        ## [0.9.0] - 2026-08-09
+    private val document =
+        parseChangelog(
+            """
+            ## [0.9.0] - 2026-08-09
 
-        A summary that is always visible once the version is open.
+            A summary that is always visible once the version is open.
 
-        ### Added
+            ### Added
 
-        - **A folded entry** — detail that stays hidden until expanded.
-        - a flat one-liner with no bold lead
-        """.trimIndent(),
-    )
+            - **A folded entry** — detail that stays hidden until expanded.
+            - a flat one-liner with no bold lead
+            """.trimIndent(),
+        )
 
     private fun setContent(
         uiState: ChangelogUiState,

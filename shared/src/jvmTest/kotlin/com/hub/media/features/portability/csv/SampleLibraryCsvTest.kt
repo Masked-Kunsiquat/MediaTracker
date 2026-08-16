@@ -22,7 +22,6 @@ import kotlin.test.assertTrue
  * filesystem access the common source set cannot assume.
  */
 class SampleLibraryCsvTest {
-
     /**
      * Walks up from the working directory to find the repository root, since Gradle may invoke this
      * from either the root or the `shared` module directory.
@@ -56,15 +55,17 @@ class SampleLibraryCsvTest {
     }
 
     private fun parsedSessions(): List<ParsedSessionRow> {
-        val table = CsvTableReader.read(
-            sampleFile("reading_logs_sample.csv").readText(),
-            ReadingLogCsvExporter.HEADER,
-        )
-        val rows = assertIs<CsvTableResult.Success>(
-            table,
-            "the reading-log fixture must read as a valid CSV table -- note a wrong column count " +
-                "is a structural failure that rejects the WHOLE file, not just the offending row",
-        ).rows
+        val table =
+            CsvTableReader.read(
+                sampleFile("reading_logs_sample.csv").readText(),
+                ReadingLogCsvExporter.HEADER,
+            )
+        val rows =
+            assertIs<CsvTableResult.Success>(
+                table,
+                "the reading-log fixture must read as a valid CSV table -- note a wrong column count " +
+                    "is a structural failure that rejects the WHOLE file, not just the offending row",
+            ).rows
         return rows.mapIndexed { index, row ->
             val result = ReadingLogCsvImporter.parseRow(row)
             assertIs<SessionRowParseResult.Parsed>(

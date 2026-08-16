@@ -2,16 +2,16 @@ package com.hub.media.ui
 
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BookIngestionUseCase
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /**
  * [AddBookViewModel] tests against a hand-rolled [FakeAddBookByIsbnUseCase] — no Ktor engine, no
@@ -21,7 +21,6 @@ import kotlinx.coroutines.test.runTest
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddBookViewModelTest {
-
     private val viewModels = ViewModelRegistry()
 
     @BeforeTest
@@ -40,8 +39,7 @@ class AddBookViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel(useCase: BookIngestionUseCase) =
-        viewModels.track(AddBookViewModel(useCase))
+    private fun newViewModel(useCase: BookIngestionUseCase) = viewModels.track(AddBookViewModel(useCase))
 
     @Test
     fun initialState_isIdle() {
@@ -50,76 +48,83 @@ class AddBookViewModelTest {
     }
 
     @Test
-    fun addBook_emitsIdleThenLoadingThenSuccess() = runTest {
-        val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
-            awaitGate = true
+    fun addBook_emitsIdleThenLoadingThenSuccess() =
+        runTest {
+            val fake =
+                FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
+                    awaitGate = true
+                }
+            val viewModel = newViewModel(fake)
+
+            assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
+
+            viewModel.addBook("9780135957059")
+            assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
+
+            fake.release()
+            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
+            assertEquals(AddBookUiState.Success("media-1"), finalState)
         }
-        val viewModel = newViewModel(fake)
-
-        assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
-
-        viewModel.addBook("9780135957059")
-        assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
-
-        fake.release()
-        val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
-        assertEquals(AddBookUiState.Success("media-1"), finalState)
-    }
 
     @Test
-    fun addBook_useCaseError_setsErrorState() = runTest {
-        val fake = FakeAddBookByIsbnUseCase(result = Resource.Error("Invalid ISBN: 'bad'"))
-        val viewModel = newViewModel(fake)
+    fun addBook_useCaseError_setsErrorState() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Error("Invalid ISBN: 'bad'"))
+            val viewModel = newViewModel(fake)
 
-        viewModel.addBook("bad")
+            viewModel.addBook("bad")
 
-        val finalState = viewModel.uiState.value
-        assertIs<AddBookUiState.Error>(finalState)
-        assertEquals("Invalid ISBN: 'bad'", finalState.message)
-    }
-
-    @Test
-    fun addBook_concurrentSubmissionWhileLoading_isIgnored() = runTest {
-        val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
-            awaitGate = true
+            val finalState = viewModel.uiState.value
+            assertIs<AddBookUiState.Error>(finalState)
+            assertEquals("Invalid ISBN: 'bad'", finalState.message)
         }
-        val viewModel = newViewModel(fake)
-
-        viewModel.addBook("9780135957059")
-        assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
-
-        // Second submission while the first is still in flight must be a no-op.
-        viewModel.addBook("9780132350884")
-        assertEquals(1, fake.callCount)
-
-        fake.release()
-        viewModel.uiState.first { it is AddBookUiState.Success }
-        assertEquals(1, fake.callCount)
-    }
 
     @Test
-    fun reset_returnsToIdleAfterTerminalState() = runTest {
-        val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-        val viewModel = newViewModel(fake)
+    fun addBook_concurrentSubmissionWhileLoading_isIgnored() =
+        runTest {
+            val fake =
+                FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
+                    awaitGate = true
+                }
+            val viewModel = newViewModel(fake)
 
-        viewModel.addBook("9780135957059")
-        assertIs<AddBookUiState.Success>(viewModel.uiState.value)
+            viewModel.addBook("9780135957059")
+            assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
 
-        viewModel.reset()
+            // Second submission while the first is still in flight must be a no-op.
+            viewModel.addBook("9780132350884")
+            assertEquals(1, fake.callCount)
 
-        assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
-    }
+            fake.release()
+            viewModel.uiState.first { it is AddBookUiState.Success }
+            assertEquals(1, fake.callCount)
+        }
 
     @Test
-    fun addBook_afterReset_isAcceptedAgain() = runTest {
-        val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-        val viewModel = newViewModel(fake)
+    fun reset_returnsToIdleAfterTerminalState() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
+            val viewModel = newViewModel(fake)
 
-        viewModel.addBook("9780135957059")
-        viewModel.reset()
-        viewModel.addBook("9780132350884")
+            viewModel.addBook("9780135957059")
+            assertIs<AddBookUiState.Success>(viewModel.uiState.value)
 
-        assertEquals(2, fake.callCount)
-        assertIs<AddBookUiState.Success>(viewModel.uiState.value)
-    }
+            viewModel.reset()
+
+            assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
+        }
+
+    @Test
+    fun addBook_afterReset_isAcceptedAgain() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
+            val viewModel = newViewModel(fake)
+
+            viewModel.addBook("9780135957059")
+            viewModel.reset()
+            viewModel.addBook("9780132350884")
+
+            assertEquals(2, fake.callCount)
+            assertIs<AddBookUiState.Success>(viewModel.uiState.value)
+        }
 }

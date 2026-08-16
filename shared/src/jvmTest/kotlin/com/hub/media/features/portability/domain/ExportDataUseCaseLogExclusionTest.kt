@@ -8,6 +8,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
+import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.nio.file.Files
 import kotlin.io.path.deleteExisting
@@ -18,7 +19,6 @@ import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Instant
-import kotlinx.coroutines.test.runTest
 
 /**
  * Regression guard for ROADMAP Task 15 Phase B ("Must be excluded from backup and export -- the
@@ -38,7 +38,6 @@ import kotlinx.coroutines.test.runTest
  * generated CSV.
  */
 class ExportDataUseCaseLogExclusionTest {
-
     private val tempDir = Files.createTempDirectory("export-log-exclusion-test")
     private val dbFile = tempDir.resolve("live.db").toFile()
 
@@ -49,70 +48,78 @@ class ExportDataUseCaseLogExclusionTest {
     }
 
     @Test
-    fun execute_decoyLogFileAtFixedContractPath_neitherCsvContainsItsContent() = runTest {
-        val logMarker = "REGRESSION_GUARD_LOG_MARKER_do_not_leak_into_csv_export"
-        // The fixed contract this task was told to coordinate with by convention only (ROADMAP
-        // Task 15 Phase B): the log store writes into `<filesDir>/logs/`. dbFile's parent stands
-        // in for filesDir here, the same way DatabaseBackupUseCaseTest's dbFile does.
-        val logsDir = File(dbFile.parentFile, "logs").apply { mkdirs() }
-        val decoyLogFile = File(logsDir, "app.log").apply {
-            writeText("WARN BackfillViewModel: $logMarker\n")
+    fun execute_decoyLogFileAtFixedContractPath_neitherCsvContainsItsContent() =
+        runTest {
+            val logMarker = "REGRESSION_GUARD_LOG_MARKER_do_not_leak_into_csv_export"
+            // The fixed contract this task was told to coordinate with by convention only (ROADMAP
+            // Task 15 Phase B): the log store writes into `<filesDir>/logs/`. dbFile's parent stands
+            // in for filesDir here, the same way DatabaseBackupUseCaseTest's dbFile does.
+            val logsDir = File(dbFile.parentFile, "logs").apply { mkdirs() }
+            val decoyLogFile =
+                File(logsDir, "app.log").apply {
+                    writeText("WARN BackfillViewModel: $logMarker\n")
+                }
+
+            val liveDb =
+                buildAppDatabase(
+                    Room.databaseBuilder<AppDatabase>(
+                        name = dbFile.absolutePath,
+                        factory = AppDatabaseConstructor::initialize,
+                    ),
+                )
+            try {
+                val bookRepository = BookRepository(liveDb)
+                val readingSessionRepository = ReadingSessionRepository(liveDb)
+
+                val addResult =
+                    bookRepository.addBook(
+                        title = "Log Exclusion Export Check",
+                        releaseYear = 2024,
+                        purchasePrice = null,
+                        format = BookFormat.EBOOK,
+                        totalPages = null,
+                        isbn = null,
+                        externalIdentifiers = emptyList(),
+                    )
+                assertIs<Resource.Success<String>>(addResult)
+                val mediaId = addResult.data
+
+                val sessionResult =
+                    readingSessionRepository.logSession(
+                        mediaId = mediaId,
+                        timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000),
+                        timestampEnd = Instant.fromEpochMilliseconds(1_700_000_600_000),
+                        durationSeconds = 600,
+                        startUnit = 0.0,
+                        endUnit = 10.0,
+                        deltaPages = null,
+                        notes = null,
+                    )
+                assertIs<Resource.Success<String>>(sessionResult)
+
+                val useCase = ExportDataUseCase(bookRepository, readingSessionRepository)
+                val result = useCase.execute()
+                assertIs<Resource.Success<CsvExportBundle>>(result)
+                val bundle = result.data
+
+                assertTrue(
+                    !bundle.libraryCsv.contains(logMarker),
+                    "library_export.csv must never contain log content -- see ExportDataUseCase's " +
+                        "\"why there is no exclude filter\" KDoc section",
+                )
+                assertTrue(
+                    !bundle.readingLogsCsv.contains(logMarker),
+                    "reading_logs_export.csv must never contain log content -- despite the filename, " +
+                        "this file is reading SESSIONS, not application logs; see ExportDataUseCase's " +
+                        "\"why there is no exclude filter\" KDoc section",
+                )
+                // Sanity check that the decoy file itself really holds the marker, so a typo in the
+                // marker string above couldn't make this test pass for the wrong reason.
+                assertTrue(decoyLogFile.readText().contains(logMarker))
+            } finally {
+                liveDb.close()
+                decoyLogFile.delete()
+                logsDir.delete()
+            }
         }
-
-        val liveDb = buildAppDatabase(
-            Room.databaseBuilder<AppDatabase>(name = dbFile.absolutePath, factory = AppDatabaseConstructor::initialize),
-        )
-        try {
-            val bookRepository = BookRepository(liveDb)
-            val readingSessionRepository = ReadingSessionRepository(liveDb)
-
-            val addResult = bookRepository.addBook(
-                title = "Log Exclusion Export Check",
-                releaseYear = 2024,
-                purchasePrice = null,
-                format = BookFormat.EBOOK,
-                totalPages = null,
-                isbn = null,
-                externalIdentifiers = emptyList(),
-            )
-            assertIs<Resource.Success<String>>(addResult)
-            val mediaId = addResult.data
-
-            val sessionResult = readingSessionRepository.logSession(
-                mediaId = mediaId,
-                timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000),
-                timestampEnd = Instant.fromEpochMilliseconds(1_700_000_600_000),
-                durationSeconds = 600,
-                startUnit = 0.0,
-                endUnit = 10.0,
-                deltaPages = null,
-                notes = null,
-            )
-            assertIs<Resource.Success<String>>(sessionResult)
-
-            val useCase = ExportDataUseCase(bookRepository, readingSessionRepository)
-            val result = useCase.execute()
-            assertIs<Resource.Success<CsvExportBundle>>(result)
-            val bundle = result.data
-
-            assertTrue(
-                !bundle.libraryCsv.contains(logMarker),
-                "library_export.csv must never contain log content -- see ExportDataUseCase's " +
-                    "\"why there is no exclude filter\" KDoc section",
-            )
-            assertTrue(
-                !bundle.readingLogsCsv.contains(logMarker),
-                "reading_logs_export.csv must never contain log content -- despite the filename, " +
-                    "this file is reading SESSIONS, not application logs; see ExportDataUseCase's " +
-                    "\"why there is no exclude filter\" KDoc section",
-            )
-            // Sanity check that the decoy file itself really holds the marker, so a typo in the
-            // marker string above couldn't make this test pass for the wrong reason.
-            assertTrue(decoyLogFile.readText().contains(logMarker))
-        } finally {
-            liveDb.close()
-            decoyLogFile.delete()
-            logsDir.delete()
-        }
-    }
 }

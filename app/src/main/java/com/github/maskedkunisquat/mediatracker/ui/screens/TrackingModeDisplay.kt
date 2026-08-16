@@ -12,7 +12,8 @@ import com.hub.media.core.database.entities.TrackingMode
  * until a label is added.
  */
 @Composable
-internal fun TrackingMode.displayLabel(): String = when (this) {
-    TrackingMode.PAGES -> stringResource(R.string.tracking_mode_pages)
-    TrackingMode.PERCENT -> stringResource(R.string.tracking_mode_percent)
-}
+internal fun TrackingMode.displayLabel(): String =
+    when (this) {
+        TrackingMode.PAGES -> stringResource(R.string.tracking_mode_pages)
+        TrackingMode.PERCENT -> stringResource(R.string.tracking_mode_percent)
+    }

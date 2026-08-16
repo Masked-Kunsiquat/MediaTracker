@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MediaItemDao {
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(item: MediaItemEntity)
 
@@ -30,7 +29,10 @@ interface MediaItemDao {
      *   no longer reads the row first.
      */
     @Query("UPDATE media_items SET coverImageHash = :coverImageHash WHERE id = :mediaId")
-    suspend fun updateCoverImageHash(mediaId: String, coverImageHash: String?): Int
+    suspend fun updateCoverImageHash(
+        mediaId: String,
+        coverImageHash: String?,
+    ): Int
 
     @Delete
     suspend fun delete(item: MediaItemEntity)

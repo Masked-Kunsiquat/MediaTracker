@@ -9,8 +9,8 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.first
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "ExportDataUseCase"
@@ -64,7 +64,6 @@ public class ExportDataUseCase(
     private val readingSessionRepository: ReadingSessionRepository,
     private val logger: Logger = AppLogger,
 ) : ExportUseCase {
-
     /**
      * Runs the export: reads one current snapshot of books, their external identifiers, and every
      * reading session (each via `Flow.first()` -- a one-shot read, not an ongoing subscription),
@@ -73,33 +72,38 @@ public class ExportDataUseCase(
      * @return [Resource.Success] with both generated CSV documents, or [Resource.Error] describing
      *   why the read/format step failed. Never throws.
      */
-    public override suspend fun execute(): Resource<CsvExportBundle> = try {
-        val books = bookRepository.observeAllBooksWithDetails().first()
-        val identifiersByMediaId = bookRepository.observeAllExternalIdentifiers().first()
-            .groupBy { it.mediaId }
-        val sessions = readingSessionRepository.observeAllSessions().first()
+    public override suspend fun execute(): Resource<CsvExportBundle> =
+        try {
+            val books = bookRepository.observeAllBooksWithDetails().first()
+            val identifiersByMediaId =
+                bookRepository
+                    .observeAllExternalIdentifiers()
+                    .first()
+                    .groupBy { it.mediaId }
+            val sessions = readingSessionRepository.observeAllSessions().first()
 
-        // Build the bundle BEFORE logging completion, deliberately -- a completion entry must
-        // never be written before the thing it claims completed. If either exporter throws, this
-        // ordering ensures the catch block below logs "Export failed" instead of this having
-        // already logged "Export completed" moments earlier.
-        val bundle = CsvExportBundle(
-            libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
-            readingLogsCsv = ReadingLogCsvExporter.export(sessions),
-        )
-        logger.info(TAG) {
-            "Export completed: ${books.size} book(s), ${sessions.size} session(s)"
+            // Build the bundle BEFORE logging completion, deliberately -- a completion entry must
+            // never be written before the thing it claims completed. If either exporter throws, this
+            // ordering ensures the catch block below logs "Export failed" instead of this having
+            // already logged "Export completed" moments earlier.
+            val bundle =
+                CsvExportBundle(
+                    libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
+                    readingLogsCsv = ReadingLogCsvExporter.export(sessions),
+                )
+            logger.info(TAG) {
+                "Export completed: ${books.size} book(s), ${sessions.size} session(s)"
+            }
+            Resource.Success(bundle)
+        } catch (e: CancellationException) {
+            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
+            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Export failed" }
+            Resource.Error(
+                message = "Failed to export data: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
         }
-        Resource.Success(bundle)
-    } catch (e: CancellationException) {
-        // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-        // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-        throw e
-    } catch (e: Exception) {
-        logger.error(TAG, e) { "Export failed" }
-        Resource.Error(
-            message = "Failed to export data: ${e.message ?: "Unknown error"}",
-            cause = e,
-        )
-    }
 }

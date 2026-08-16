@@ -25,19 +25,24 @@ private const val COPY_BUFFER_SIZE = 64 * 1024
  * @return `true` if the copy completed, `false` on any [IOException] or if the resolver couldn't
  *   open an output stream for [uri] at all.
  */
-internal fun copyFileToUri(context: Context, uri: Uri, sourcePath: String): Boolean = try {
-    val output = context.contentResolver.openOutputStream(uri)
-    if (output == null) {
-        false
-    } else {
-        output.use { out ->
-            File(sourcePath).inputStream().use { input -> input.copyTo(out, bufferSize = COPY_BUFFER_SIZE) }
+internal fun copyFileToUri(
+    context: Context,
+    uri: Uri,
+    sourcePath: String,
+): Boolean =
+    try {
+        val output = context.contentResolver.openOutputStream(uri)
+        if (output == null) {
+            false
+        } else {
+            output.use { out ->
+                File(sourcePath).inputStream().use { input -> input.copyTo(out, bufferSize = COPY_BUFFER_SIZE) }
+            }
+            true
         }
-        true
+    } catch (e: IOException) {
+        false
     }
-} catch (e: IOException) {
-    false
-}
 
 /**
  * Streams the SAF source [uri] (an `OpenDocument`-provided `Uri`) into a fresh local file at
@@ -50,15 +55,22 @@ internal fun copyFileToUri(context: Context, uri: Uri, sourcePath: String): Bool
  *   open an input stream for [uri] at all (the partially-written destination file, if any, is
  *   deleted so a failed copy never leaves a corrupt-looking leftover).
  */
-internal fun copyUriToFile(context: Context, uri: Uri, destinationPath: String): Boolean = try {
-    val input = context.contentResolver.openInputStream(uri)
-    if (input == null) {
+internal fun copyUriToFile(
+    context: Context,
+    uri: Uri,
+    destinationPath: String,
+): Boolean =
+    try {
+        val input = context.contentResolver.openInputStream(uri)
+        if (input == null) {
+            false
+        } else {
+            input.use { inp ->
+                File(destinationPath).outputStream().use { out -> inp.copyTo(out, bufferSize = COPY_BUFFER_SIZE) }
+            }
+            true
+        }
+    } catch (e: IOException) {
+        File(destinationPath).delete()
         false
-    } else {
-        input.use { inp -> File(destinationPath).outputStream().use { out -> inp.copyTo(out, bufferSize = COPY_BUFFER_SIZE) } }
-        true
     }
-} catch (e: IOException) {
-    File(destinationPath).delete()
-    false
-}

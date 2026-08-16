@@ -6,7 +6,6 @@ package com.hub.media.features.portability.domain
  * per-field rules each policy applies.
  */
 public enum class DuplicatePolicy {
-
     /** Leave the existing record completely untouched; the imported row is discarded. */
     SKIP,
 

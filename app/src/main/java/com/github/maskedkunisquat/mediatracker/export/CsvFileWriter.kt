@@ -24,14 +24,19 @@ import java.io.IOException
  *   rather than a crash, per AGENTS.md §5 -- a silently failed export would be worse than no
  *   export button).
  */
-internal fun writeCsvToUri(context: Context, uri: Uri, content: String): Boolean = try {
-    val stream = context.contentResolver.openOutputStream(uri)
-    if (stream == null) {
+internal fun writeCsvToUri(
+    context: Context,
+    uri: Uri,
+    content: String,
+): Boolean =
+    try {
+        val stream = context.contentResolver.openOutputStream(uri)
+        if (stream == null) {
+            false
+        } else {
+            stream.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+            true
+        }
+    } catch (e: IOException) {
         false
-    } else {
-        stream.use { it.write(content.toByteArray(Charsets.UTF_8)) }
-        true
     }
-} catch (e: IOException) {
-    false
-}

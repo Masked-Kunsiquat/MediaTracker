@@ -1,18 +1,22 @@
 package com.hub.media.core.database
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
-internal actual suspend fun fileExists(path: String): Boolean = withContext(Dispatchers.IO) {
-    File(path).exists()
-}
+internal actual suspend fun fileExists(path: String): Boolean =
+    withContext(Dispatchers.IO) {
+        File(path).exists()
+    }
 
-internal actual suspend fun readFileHeaderBytes(path: String, byteCount: Int): ByteArray? =
+internal actual suspend fun readFileHeaderBytes(
+    path: String,
+    byteCount: Int,
+): ByteArray? =
     withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.exists()) return@withContext null
@@ -28,20 +32,24 @@ internal actual suspend fun readFileHeaderBytes(path: String, byteCount: Int): B
         }
     }
 
-internal actual suspend fun readFileBytes(path: String): ByteArray? = withContext(Dispatchers.IO) {
-    val file = File(path)
-    if (!file.exists()) {
-        null
-    } else {
-        try {
-            file.readBytes()
-        } catch (e: Exception) {
+internal actual suspend fun readFileBytes(path: String): ByteArray? =
+    withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (!file.exists()) {
             null
+        } else {
+            try {
+                file.readBytes()
+            } catch (e: Exception) {
+                null
+            }
         }
     }
-}
 
-internal actual suspend fun writeFileBytes(path: String, bytes: ByteArray): Boolean =
+internal actual suspend fun writeFileBytes(
+    path: String,
+    bytes: ByteArray,
+): Boolean =
     withContext(Dispatchers.IO) {
         try {
             val file = File(path)
@@ -53,7 +61,10 @@ internal actual suspend fun writeFileBytes(path: String, bytes: ByteArray): Bool
         }
     }
 
-internal actual suspend fun appendFileBytes(path: String, bytes: ByteArray): Boolean =
+internal actual suspend fun appendFileBytes(
+    path: String,
+    bytes: ByteArray,
+): Boolean =
     withContext(Dispatchers.IO) {
         try {
             val file = File(path)
@@ -67,7 +78,10 @@ internal actual suspend fun appendFileBytes(path: String, bytes: ByteArray): Boo
         }
     }
 
-internal actual suspend fun readFileTailBytes(path: String, byteCount: Int): ByteArray? =
+internal actual suspend fun readFileTailBytes(
+    path: String,
+    byteCount: Int,
+): ByteArray? =
     withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.exists()) return@withContext null
@@ -85,21 +99,26 @@ internal actual suspend fun readFileTailBytes(path: String, byteCount: Int): Byt
         }
     }
 
-internal actual suspend fun fileSizeBytes(path: String): Long = withContext(Dispatchers.IO) {
-    try {
-        val file = File(path)
-        if (file.exists()) file.length() else 0L
-    } catch (e: Exception) {
-        0L
+internal actual suspend fun fileSizeBytes(path: String): Long =
+    withContext(Dispatchers.IO) {
+        try {
+            val file = File(path)
+            if (file.exists()) file.length() else 0L
+        } catch (e: Exception) {
+            0L
+        }
     }
-}
 
-internal actual suspend fun deleteFileIfExists(path: String): Boolean = withContext(Dispatchers.IO) {
-    val file = File(path)
-    if (file.exists()) file.delete() else false
-}
+internal actual suspend fun deleteFileIfExists(path: String): Boolean =
+    withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (file.exists()) file.delete() else false
+    }
 
-internal actual suspend fun renameFile(fromPath: String, toPath: String): Boolean =
+internal actual suspend fun renameFile(
+    fromPath: String,
+    toPath: String,
+): Boolean =
     withContext(Dispatchers.IO) {
         val from = File(fromPath)
         if (!from.exists()) return@withContext false

@@ -21,7 +21,6 @@ import kotlinx.coroutines.launch
 public class AddBookViewModel(
     private val addBookByIsbnUseCase: BookIngestionUseCase,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow<AddBookUiState>(AddBookUiState.Idle)
     public val uiState: StateFlow<AddBookUiState> = _uiState.asStateFlow()
 
@@ -36,10 +35,11 @@ public class AddBookViewModel(
 
         _uiState.value = AddBookUiState.Loading
         viewModelScope.launch {
-            _uiState.value = when (val result = addBookByIsbnUseCase.execute(isbn)) {
-                is Resource.Success -> AddBookUiState.Success(result.data)
-                is Resource.Error -> AddBookUiState.Error(result.message)
-            }
+            _uiState.value =
+                when (val result = addBookByIsbnUseCase.execute(isbn)) {
+                    is Resource.Success -> AddBookUiState.Success(result.data)
+                    is Resource.Error -> AddBookUiState.Error(result.message)
+                }
         }
     }
 

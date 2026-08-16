@@ -30,7 +30,12 @@ public class RecordingLogger : Logger {
     /** Every call recorded so far, in call order. */
     public val entries: List<Entry> get() = _entries
 
-    override fun log(level: LogLevel, tag: String, throwable: Throwable?, message: () -> String) {
+    override fun log(
+        level: LogLevel,
+        tag: String,
+        throwable: Throwable?,
+        message: () -> String,
+    ) {
         _entries += Entry(level, tag, message(), throwable)
     }
 }

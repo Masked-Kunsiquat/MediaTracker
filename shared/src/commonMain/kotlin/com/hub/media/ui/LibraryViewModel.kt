@@ -6,7 +6,6 @@ import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.domain.BulkDeleteUseCase
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +13,7 @@ import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Drives the library/book-list screen.
@@ -38,42 +38,43 @@ public class LibraryViewModel(
     private val bookRepository: BookRepository,
     private val deleteBooksUseCase: BulkDeleteUseCase,
 ) : ViewModel() {
-
     private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
     private val searchQuery = MutableStateFlow("")
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
     private val deleteError = MutableStateFlow<DeleteErrorEvent?>(null)
     private var deleteErrorSeq = 0L
 
-    public val uiState: StateFlow<LibraryUiState> = combine(
-        bookRepository.observeAllBooksWithDetails(),
-        statusFilter,
-        searchQuery,
-        selectedIds,
-        deleteError,
-    ) { books, filter, query, selected, error ->
-        LibraryUiState(
-            books = books,
-            statusFilter = filter,
-            searchQuery = query,
-            isEmpty = books.isEmpty(),
-            // Drop ids that no longer exist. A selected book can be deleted from Book Detail while
-            // selection is active, and a stale id would keep inflating the contextual bar's count
-            // and be passed to a delete that could do nothing with it.
-            selectedIds = selected intersect books.mapTo(mutableSetOf()) { it.mediaItem.id },
-            deleteError = error,
+    public val uiState: StateFlow<LibraryUiState> =
+        combine(
+            bookRepository.observeAllBooksWithDetails(),
+            statusFilter,
+            searchQuery,
+            selectedIds,
+            deleteError,
+        ) { books, filter, query, selected, error ->
+            LibraryUiState(
+                books = books,
+                statusFilter = filter,
+                searchQuery = query,
+                isEmpty = books.isEmpty(),
+                // Drop ids that no longer exist. A selected book can be deleted from Book Detail while
+                // selection is active, and a stale id would keep inflating the contextual bar's count
+                // and be passed to a delete that could do nothing with it.
+                selectedIds = selected intersect books.mapTo(mutableSetOf()) { it.mediaItem.id },
+                deleteError = error,
+            )
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5.seconds),
+            initialValue = LibraryUiState(),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5.seconds),
-        initialValue = LibraryUiState(),
-    )
 
     /**
      * Deletes the book identified by [id]. Fire-and-forget: [uiState] reflects the outcome
      * reactively via [BookRepository.observeAllBooksWithDetails] once the delete completes, so no
      * separate result needs to be threaded back to the caller here.
      */
+
     /**
      * Adds or removes [id] from the current selection (ROADMAP Task 14 Phase B), entering selection
      * mode on the first one and leaving it when the last is removed -- see

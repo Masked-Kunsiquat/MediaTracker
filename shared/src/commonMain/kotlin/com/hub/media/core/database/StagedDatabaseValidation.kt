@@ -120,12 +120,13 @@ internal suspend fun validateStagedDatabaseIntegrity(
             var failureReason: String? = null
             BundledSQLiteDriver().open(path, SQLITE_OPEN_READONLY).use { connection ->
                 connection.prepare("PRAGMA integrity_check").use { statement ->
-                    failureReason = if (statement.step()) {
-                        val verdict = statement.getText(0)
-                        if (verdict != "ok") "failed SQLite's integrity check: $verdict" else null
-                    } else {
-                        "SQLite's integrity check produced no result"
-                    }
+                    failureReason =
+                        if (statement.step()) {
+                            val verdict = statement.getText(0)
+                            if (verdict != "ok") "failed SQLite's integrity check: $verdict" else null
+                        } else {
+                            "SQLite's integrity check produced no result"
+                        }
                 }
                 if (failureReason == null) {
                     val foundTables = mutableSetOf<String>()

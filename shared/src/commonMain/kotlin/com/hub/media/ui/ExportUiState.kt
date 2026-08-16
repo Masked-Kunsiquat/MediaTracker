@@ -4,7 +4,6 @@ import com.hub.media.features.portability.domain.CsvExportBundle
 
 /** UI state for the Settings screen's data-export action (ROADMAP Task 8 Phase A). */
 public sealed class ExportUiState {
-
     /** No export has been requested yet, or [ExportViewModel.reset] was called. */
     public data object Idle : ExportUiState()
 
@@ -20,12 +19,16 @@ public sealed class ExportUiState {
      *
      * @property bundle The generated `library_export.csv` and `reading_logs_export.csv` text.
      */
-    public data class Success(val bundle: CsvExportBundle) : ExportUiState()
+    public data class Success(
+        val bundle: CsvExportBundle,
+    ) : ExportUiState()
 
     /**
      * Export failed before any file was produced (e.g. a database read failure).
      *
      * @property message A user-facing/diagnostic description of the failure.
      */
-    public data class Error(val message: String) : ExportUiState()
+    public data class Error(
+        val message: String,
+    ) : ExportUiState()
 }

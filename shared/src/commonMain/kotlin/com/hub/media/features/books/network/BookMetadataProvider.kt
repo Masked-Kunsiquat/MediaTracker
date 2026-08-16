@@ -8,7 +8,6 @@ import com.hub.media.core.util.Resource
  * as [Resource.Error] per AGENTS.md §5.
  */
 public interface BookMetadataProvider {
-
     /**
      * Looks up book metadata for the given [isbn].
      *
