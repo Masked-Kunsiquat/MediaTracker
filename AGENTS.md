@@ -92,6 +92,10 @@ So: **update this file in the same commit as the change that invalidates it.** C
 * **State Hoisting:** Compose UI components must be stateless where possible, accepting state objects and emitting events up to the ViewModel.
 * **Error Handling:** Network calls and database operations MUST be wrapped in custom `Result<T>` or sealed `Resource` classes to prevent UI crashes on offline/error states.
 * **No Unnecessary Dependencies:** Do not add third-party libraries without explicit project context approval. Stick to the primary KMP toolchain.
+* **Formatting is ktlint's job, and `.editorconfig` is its only configuration.** Run `./gradlew ktlintFormat` before committing; CI runs `ktlintCheck` and fails on any violation. The line limit is **120** — the Kotlin/IntelliJ default, and what this codebase was already written to. Every rule that is off carries a comment in `.editorconfig` saying why. A rule is disabled because the codebase has a considered reason to differ from it, **never because disabling it is the fastest way to make a violation disappear.** Two specific traps, both of which have already cost a session:
+  - **Do not widen `max_line_length` to silence violations.** Set it to `off` and ktlint's `function-signature` rule starts *demanding* the opposite of what it demanded before — wrapped expression bodies get collapsed onto single 150-column lines, so the "fix" reformats dozens of files in the wrong direction and undoes the previous formatting commit.
+  - **Prefer narrowing a rule to switching it off.** `function-naming` is not disabled; it is scoped with `ktlint_function_naming_ignore_when_annotated_with = Composable`, so PascalCase Composables pass while ordinary functions are still held to camelCase.
+* **ktlint must never be pointed at generated code.** KSP registers its output directories into the Kotlin source sets, so both modules filter ktlint in their `build.gradle.kts`. Without the filter ktlint reads `build/generated` and reports over 15,000 violations against Room's DAO and database implementations — machine output nobody can fix by editing. The filter matches on the **absolute path**; an `include("src/**")` / `exclude(...)` pattern pair does **not** work here, because those patterns resolve relative to each source-set root rather than to the project directory, so `src/**` matches nothing and silently filters out either everything or nothing. Verify a filter change by counting violations, not by assuming the pattern took.
 
 ---
 
@@ -148,6 +152,13 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   ```
 
   Unit tests never parse these. A malformed backup-rules XML or a broken manifest merge fails only here.
+* **Lint before pushing.** CI fails on either of these, and both are fast:
+
+  ```bash
+  ./gradlew ktlintCheck :app:lintDebug
+  ```
+
+  `ktlintCheck` is style only — see §5 for its configuration and the two traps in it. `:app:lintDebug` is Android Lint over the app module. Neither replaces the test gate above, and neither is a substitute for it: a lint-clean tree says nothing about whether the code works.
 * **Compose screens are covered by instrumented tests**, in `app/src/androidTest/`:
 
   ```bash

@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Expanded CI workflow** — `.github/workflows/ci.yml` now includes the enforcement checks for changelog updates and schema integrity, integrated into the standard PR verification suite.
-- **Updated `AGENTS.md`** to formalize these automated rules within the project's development guidelines.
+- **Updated `AGENTS.md`** to formalize these automated rules within the project's development guidelines, including a §5 convention for ktlint configuration (and the two ways of "fixing" violations that make things worse) and a §7 lint step alongside the existing test gate. `ROADMAP.md` and `README.md` record the same.
 
 ## [0.11.1] - 2026-08-16
 

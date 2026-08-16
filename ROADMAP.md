@@ -28,6 +28,19 @@ single list below and reordering is a one-line edit there.
 
 ## Done
 
+- **CI pipeline**: GitHub Actions on every pull request and every push to `main`. Four jobs — the
+  two-command test gate plus `:app:assembleDebug` (AGENTS.md §7); a changelog check failing any PR
+  that touches `shared/` or `app/src/main/` without editing `CHANGELOG.md`; a Room schema check
+  enforcing the freeze rule and the `APP_DATABASE_VERSION`/exported-schema match (AGENTS.md §8);
+  and ktlint + Android Lint. Before this, nothing ran the suite except when a developer remembered
+  to, which is how a build once reported green while a resource failure had actually failed it.
+  - **The ktlint adoption is the part with a lesson in it**, recorded in AGENTS.md §5 because it
+    is cheap to repeat: the first attempt "fixed" thousands of violations in generated Room code
+    by switching `max_line_length` off and disabling four standard rules. That inverted the
+    `function-signature` rule, reformatting 31 files in the opposite direction and undoing the
+    formatting commit immediately before it. The actual fix was a path-based ktlint filter
+    excluding `build/generated`, after which the real violation count was 324, not 15,000.
+
 - **Task 14 — Bulk operations & cover backfill**: bulk cover/author backfill over the whole library
   behind one shared rate limiter (Phase A); library multi-select with bulk delete and reference-aware
   cover cleanup, which retires the orphaned-cover-files backlog item (Phase B). Bulk reading-status
@@ -1019,10 +1032,11 @@ secrets, attach it to the GitHub Release for that tag. `versionCode` already der
 `[versions] app` (AGENTS.md §8), so it increases monotonically with no extra step — which is what
 Android requires of an update.
 
-Note the same workflow should run `./gradlew :shared:jvmTest :shared:testDebugUnitTest`, since
-nothing currently runs the test suite anywhere but a developer's machine. The instrumented tests
-(AGENTS.md §7) need a device and would require a hosted emulator, so they stay a manual step unless
-that is separately worth setting up.
+The test suite already runs in CI on every pull request and every push to `main` (see **CI
+pipeline** under Done), so this workflow does not need to re-establish that — it needs only the
+release-specific half: build, sign, attach. The instrumented tests (AGENTS.md §7) still need a
+device and would require a hosted emulator, so they remain a manual step unless that is separately
+worth setting up.
 
 ### In-app update check — decided: talk to GitHub directly, not through a proxy
 `https://api.github.com/repos/OWNER/REPO/releases/latest` already returns the tag and the APK's
