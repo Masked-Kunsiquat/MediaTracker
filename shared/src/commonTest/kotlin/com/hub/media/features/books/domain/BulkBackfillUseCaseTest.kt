@@ -5,6 +5,7 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.sampleBookDetails
@@ -108,15 +109,34 @@ class BulkBackfillUseCaseTest {
         }
     }
 
-    private fun metadata(authors: List<String> = emptyList(), coverImageUrl: String? = null): Resource<BookMetadata> =
+    private fun metadata(
+        authors: List<String> = emptyList(),
+        coverImageUrl: String? = null,
+        workKey: String? = null,
+    ): Resource<BookMetadata> =
         Resource.Success(
             BookMetadata(
                 title = "Some Title",
                 authors = authors,
                 coverImageUrl = coverImageUrl,
                 provider = IdentifierProvider.OPEN_LIBRARY,
+                workKey = workKey,
             ),
         )
+
+    /** Gives [mediaId] a pre-existing work key, so it is *not* a work-key backfill candidate. */
+    private suspend fun insertWorkKey(mediaId: String, workKey: String = "/works/OL27482W") {
+        db.externalIdentifierDao().insert(
+            ExternalIdentifierEntity(
+                mediaId = mediaId,
+                provider = IdentifierProvider.OPEN_LIBRARY_WORK,
+                externalId = workKey,
+            ),
+        )
+    }
+
+    private suspend fun storedWorkKey(mediaId: String): String? =
+        db.externalIdentifierDao().getByKey(mediaId, IdentifierProvider.OPEN_LIBRARY_WORK)?.externalId
 
     /** A probe-target [MockEngine] answering the `?default=false` cover probe per-ISBN. */
     private fun probeEngine(found: Set<String> = emptySet(), rateLimited: Set<String> = emptySet()) = MockEngine { request ->
@@ -171,6 +191,103 @@ class BulkBackfillUseCaseTest {
         val info = recorder.entries.single { it.level == LogLevel.INFO }
         assertEquals("BulkBackfillUseCase", info.tag)
         assertTrue(info.message.contains("nothing pending"), "got: ${info.message}")
+    }
+
+    @Test
+    fun bookMissingOnlyTheWorkKey_isStillACandidate_andTheKeyIsWritten() = runTest {
+        // The case the whole widening exists for: after Task 14's original crawl, a library's
+        // covers and authors are complete, so nothing here was a candidate and the work key --
+        // which only a provider lookup can produce -- would never have been captured for any book
+        // that predates AddBookByIsbnUseCase recording it.
+        val isbn = "9780547928227"
+        val mediaId = insertBook(isbn = isbn, coverImageHash = "abc123.jpg", authors = "Ada Lovelace")
+        val provider = FakeMetadataProvider(mapOf(isbn to metadata(workKey = "/works/OL27482W")))
+        val probe = probeEngine() // nothing here needs a cover, so the quota must stay untouched
+
+        val progress = useCase(provider, probe).execute()
+
+        assertEquals("/works/OL27482W", storedWorkKey(mediaId))
+        assertEquals(1, progress.updated)
+        assertTrue(progress.isComplete)
+        assertTrue(probe.requestHistory.isEmpty(), "a work-key-only candidate must never reach the rate-limited probe")
+
+        val mediaItem = db.mediaItemDao().getById(mediaId)
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        assertEquals("abc123.jpg", mediaItem?.coverImageHash, "an existing cover must not be touched")
+        assertEquals("Ada Lovelace", details?.authors, "existing authors must not be touched")
+    }
+
+    @Test
+    fun bookAlreadyHoldingAWorkKey_isNotACandidateAtAll() = runTest {
+        // The positive control's negative half (AGENTS.md §7): the test above passes just as well
+        // if *every* book is a candidate forever. This is what proves the check actually reads the
+        // stored key rather than always reporting it missing.
+        val isbn = "9780547928227"
+        val mediaId = insertBook(isbn = isbn, coverImageHash = "abc123.jpg", authors = "Ada Lovelace")
+        insertWorkKey(mediaId)
+        val provider = FakeMetadataProvider(mapOf(isbn to metadata(workKey = "/works/SHOULD_NOT_BE_FETCHED")))
+
+        val progress = useCase(provider, probeEngine()).execute()
+
+        assertEquals(0, progress.totalCandidates, "a book with cover, authors and a work key needs nothing")
+        assertNull(provider.callCounts[isbn], "it must not be looked up at all")
+        assertEquals("/works/OL27482W", storedWorkKey(mediaId), "the existing key must survive untouched")
+    }
+
+    @Test
+    fun workKeyRidesTheSameLookupAsTheCoverAndAuthors() = runTest {
+        val isbn = "9780547928227"
+        val mediaId = insertBook(isbn = isbn, coverImageHash = null, authors = null)
+        val provider = FakeMetadataProvider(
+            mapOf(isbn to metadata(authors = listOf("Ada Lovelace"), workKey = "/works/OL27482W")),
+        )
+
+        val progress = useCase(provider, probeEngine(found = setOf(isbn))).execute()
+
+        assertEquals(1, provider.callCounts[isbn], "all three fields come from one lookup, not three crawls")
+        assertEquals(1, progress.updated)
+        assertNotNull(db.mediaItemDao().getById(mediaId)?.coverImageHash)
+        assertEquals("Ada Lovelace", db.bookDetailsDao().getByMediaId(mediaId)?.authors)
+        assertEquals("/works/OL27482W", storedWorkKey(mediaId))
+    }
+
+    @Test
+    fun providerWithNoWorkConcept_resolvesTheBookPermanently_ratherThanRetryingForever() = runTest {
+        // Google Books answers with no work key and never will. Such a book must resolve and drop
+        // out of the pending queue, exactly as a book with a confirmed-absent cover does -- the
+        // failure mode being guarded is a candidate that can never be satisfied and so is retried
+        // on every future run.
+        val isbn = "9780547928227"
+        val mediaId = insertBook(isbn = isbn, coverImageHash = "abc123.jpg", authors = "Ada Lovelace")
+        val provider = FakeMetadataProvider(mapOf(isbn to metadata(workKey = null)))
+
+        val progress = useCase(provider, probeEngine()).execute()
+
+        assertEquals(1, progress.totalCandidates)
+        assertEquals(0, progress.updated)
+        assertEquals(1, progress.noProviderData, "nothing to write is resolved, not deferred")
+        assertEquals(0, progress.remaining)
+        assertTrue(progress.isComplete)
+        assertNull(storedWorkKey(mediaId))
+        assertNull(settingsRepository.getBulkBackfillState(), "a resolved run clears its resume state")
+    }
+
+    @Test
+    fun rateLimitedCover_stillPersistsTheWorkKeyItAlreadyResolved() = runTest {
+        // The deferral branches write whatever did not depend on the quota. Losing the work key
+        // here would mean paying for the same lookup again on the resume run.
+        val isbn = "9780547928227"
+        val mediaId = insertBook(isbn = isbn, coverImageHash = null, authors = null)
+        val provider = FakeMetadataProvider(
+            mapOf(isbn to metadata(authors = listOf("Ada Lovelace"), workKey = "/works/OL27482W")),
+        )
+
+        val progress = useCase(provider, probeEngine(rateLimited = setOf(isbn))).execute()
+
+        assertTrue(progress.isPaused)
+        assertEquals(1, progress.remaining, "the cover is still owed")
+        assertEquals("/works/OL27482W", storedWorkKey(mediaId), "the work key never needed the quota")
+        assertEquals("Ada Lovelace", db.bookDetailsDao().getByMediaId(mediaId)?.authors)
     }
 
     @Test
@@ -438,8 +555,15 @@ class BulkBackfillUseCaseTest {
         // RefetchCoverUseCase) between when this pending list was seeded/checkpointed and this run.
         db.mediaItemDao().updateCoverImageHash(mediaIdB, "already-there.jpg")
         db.bookDetailsDao().insert(sampleBookDetails(mediaId = mediaIdB, isbn = isbnB).copy(authors = "Already There"))
+        // "Fully resolved" includes the work key now that a missing one is its own backfill gap --
+        // without this, mediaIdB would still legitimately need a lookup and this test would be
+        // asserting the old, narrower definition.
+        insertWorkKey(mediaIdB)
 
-        val provider = FakeMetadataProvider(mapOf(isbnA to metadata(authors = listOf("Author A"))))
+        // mediaIdA is missing everything, work key included, so its lookup supplies one.
+        val provider = FakeMetadataProvider(
+            mapOf(isbnA to metadata(authors = listOf("Author A"), workKey = "/works/OL1A")),
+        )
         val progress = useCase(provider, probeEngine()).execute()
 
         assertTrue(progress.isComplete)

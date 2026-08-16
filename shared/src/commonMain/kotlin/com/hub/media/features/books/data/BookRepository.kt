@@ -372,6 +372,18 @@ public class BookRepository(
      * KDoc), backed by [com.hub.media.core.database.dao.MediaItemDao.getAllByType]/
      * [com.hub.media.core.database.dao.BookDetailsDao.getAll].
      */
+    /**
+     * The set of mediaIds that already hold an identifier for [provider] (ROADMAP Task 14 Phase A's
+     * candidate seed, widened to the Open Library work key). Returned as a `Set` because the only
+     * caller asks "is this book in it?" once per library row.
+     */
+    public suspend fun getMediaIdsWithIdentifier(provider: IdentifierProvider): Set<String> =
+        db.externalIdentifierDao().getMediaIdsForProvider(provider).toSet()
+
+    /** Whether [mediaId] already holds an identifier for [provider]. */
+    public suspend fun hasIdentifier(mediaId: String, provider: IdentifierProvider): Boolean =
+        db.externalIdentifierDao().getByKey(mediaId, provider) != null
+
     public suspend fun getAllBooksWithDetails(): List<BookWithDetails> {
         val mediaItems = db.mediaItemDao().getAllByType(MediaType.BOOK)
         val detailsByMediaId = db.bookDetailsDao().getAll().associateBy { it.mediaId }
@@ -441,8 +453,13 @@ public class BookRepository(
      *   pass didn't resolve a new cover (the book already had one, or none was found/downloadable).
      * @param authors The newly resolved [com.hub.media.core.database.entities.joinAuthors]-encoded
      *   author string, or `null` if this pass didn't resolve new authors.
-     * @return [Resource.Success] immediately, without touching the database, if both
-     *   [coverImageHash] and [authors] are `null` (nothing to write is not an error -- a caller
+     * @param workKey The newly resolved Open Library work key, written as an
+     *   [com.hub.media.core.database.entities.IdentifierProvider.OPEN_LIBRARY_WORK] row, or `null`
+     *   if this pass didn't resolve one (the book already had one, or the provider that answered
+     *   has no work concept -- Google Books doesn't). See that constant's KDoc for why a key that
+     *   nothing reads yet is still worth a round trip.
+     * @return [Resource.Success] immediately, without touching the database, if
+     *   [coverImageHash], [authors] and [workKey] are all `null` (nothing to write is not an error -- a caller
      *   that resolved neither field for a book simply shouldn't have called this, but treating it
      *   as a no-op success rather than an error keeps this method safe to call defensively).
      *   Otherwise [Resource.Success] if at least one targeted column was written, or
@@ -453,10 +470,12 @@ public class BookRepository(
         mediaId: String,
         coverImageHash: String?,
         authors: String?,
+        workKey: String? = null,
     ): Resource<Unit> {
-        if (coverImageHash == null && authors == null) return Resource.Success(Unit)
+        if (coverImageHash == null && authors == null && workKey == null) return Resource.Success(Unit)
         return try {
-            val rowsAffected = db.bookWriteDao().applyBackfilledMetadata(mediaId, coverImageHash, authors)
+            val rowsAffected =
+                db.bookWriteDao().applyBackfilledMetadata(mediaId, coverImageHash, authors, workKey)
             if (rowsAffected == 0) {
                 Resource.Error("Book with id=$mediaId not found")
             } else {

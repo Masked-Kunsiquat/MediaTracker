@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arriving with the author field simply blank, and because nothing had actually failed, nothing was
   logged to say so either. The author is now read from the book when the printing doesn't carry one.
 
+### Changed
+
+- **The cover & author backfill also fills in authors it previously couldn't**, for exactly the
+  books described above — run it again if any of your books are missing an author.
+- **The backfill now records each book's catalogue link.** Books added before this update don't have
+  one and it can only be fetched from Open Library, so the first run may work through your whole
+  library even if every cover and author already looks complete. Nothing in the app displays this
+  yet; it is what will let a future update tell two printings of the same book apart, for re-read
+  history and genre tagging.
+
 ## [0.11.0] - 2026-08-11
 
 The log now tells you what the app was doing, not just what broke. Until now nothing was recorded

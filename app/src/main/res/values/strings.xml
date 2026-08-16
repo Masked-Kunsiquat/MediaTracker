@@ -190,7 +190,7 @@
 
     <!-- SettingsScreen: bulk cover/author backfill (ROADMAP Task 14 Phase A) -->
     <string name="settings_section_backfill">Cover &amp; author backfill</string>
-    <string name="settings_backfill_description">Look up missing covers and authors for books that have an ISBN on record — useful after a Goodreads import, or for books added before author tracking existed.</string>
+    <string name="settings_backfill_description">Look up missing covers and authors for books that have an ISBN on record — useful after a Goodreads import, or for books added before author tracking existed. It also records each book\'s catalogue link, which books added earlier don\'t have, so the first run may work through your whole library even when nothing looks missing.</string>
     <string name="settings_backfill_start_button">Start backfill</string>
     <string name="settings_backfill_resume_button">Resume backfill</string>
     <string name="settings_backfill_cancel_button">Cancel</string>

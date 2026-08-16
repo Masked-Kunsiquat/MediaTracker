@@ -25,6 +25,15 @@ interface ExternalIdentifierDao {
     @Query("SELECT * FROM external_identifiers WHERE mediaId = :mediaId AND provider = :provider")
     suspend fun getByKey(mediaId: String, provider: IdentifierProvider): ExternalIdentifierEntity?
 
+    /**
+     * Every mediaId that already has an identifier for [provider], for a bulk scan that needs to
+     * know which books are *missing* one (ROADMAP Task 14 Phase A's candidate seed). One query for
+     * the whole library rather than [getByKey] per book — the scan already reads every book once
+     * and a second per-book round trip would make seeding O(library) queries for no gain.
+     */
+    @Query("SELECT mediaId FROM external_identifiers WHERE provider = :provider")
+    suspend fun getMediaIdsForProvider(provider: IdentifierProvider): List<String>
+
     @Query("SELECT * FROM external_identifiers WHERE mediaId = :mediaId")
     fun observeForMedia(mediaId: String): Flow<List<ExternalIdentifierEntity>>
 
