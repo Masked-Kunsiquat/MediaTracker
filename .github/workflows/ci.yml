@@ -203,7 +203,11 @@ jobs:
       - name: Verify no credential files have ever been committed
         run: |
           set -euo pipefail
-          COMMITTED=$(git log --all --pretty=format: --name-only --diff-filter=A \
+          # Every path any commit ever touched, deliberately unfiltered by change type. An earlier
+          # version restricted this to --diff-filter=A and missed the case that matters most: git
+          # records a rename as R, not A, so a keystore committed as `app.bin` and renamed to
+          # `release.jks` never appears as an addition under the name being matched. Verified.
+          COMMITTED=$(git log --all --pretty=format: --name-only \
             | sort -u \
             | grep -E '\.(jks|keystore|p12)$|(^|/)keystore\.properties$' || true)
           if [ -n "$COMMITTED" ]; then
