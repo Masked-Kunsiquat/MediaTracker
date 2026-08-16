@@ -105,6 +105,17 @@ public data class BulkBackfillProgress(
  * walks essentially the whole library. Only the cover probe is quota-limited, and a book that needs
  * nothing but a work key never reaches it.
  *
+ * ### What "resolved" does and does not mean
+ * A book leaves [BulkBackfillState.pendingMediaIds] once this pass has nothing further to try for
+ * it, which makes it final for that run *and every resume of that run*. It is not final across a
+ * later fresh run: [seedState] rescans from current database state, so a book whose gap could not
+ * be filled -- no work key because the answering provider has none, or no cover because none
+ * exists anywhere -- still looks like a gap and is queried once more. Closing that would need a
+ * persisted per-book, per-dimension "confirmed unavailable" marker; it is deliberately not built,
+ * because a marker covering only the work key would leave the three dimensions behaving
+ * differently for no principled reason, and the cost being avoided is one lookup per unfillable
+ * book per user-initiated run.
+ *
  * ### Only touches books missing data, never refreshes a book that already has all three
  * A book with an existing cover/authors/work key is never re-queried, even if a "better" provider match
  * might exist -- this is a *repair* pass for gaps, not a re-sync, and re-fetching data a user may
@@ -335,9 +346,13 @@ public class BulkBackfillUseCase(
         val metadata = metadataResult.data
 
         val authorsToWrite = if (needsAuthors) joinAuthors(metadata.authors) else null
-        // Null whenever the answering provider has no work concept (Google Books) -- such a book
-        // resolves as Done with nothing written rather than being retried forever, exactly as a
-        // book with a confirmed-absent cover does.
+        // Null whenever the answering provider has no work concept (Google Books). Such a book
+        // resolves as Done with nothing written, so it leaves the pending queue and is not retried
+        // within this run or any resume of it. A later *fresh* run does rescan it, because the key
+        // is still absent and nothing records that it was already asked for -- the same cost a
+        // genuinely-absent cover has always carried. Telling "confirmed unavailable" from "not
+        // fetched yet" needs a persisted negative cache that would have to cover all three
+        // dimensions to be coherent; see this class's KDoc.
         val workKeyToWrite = if (needsWorkKey) metadata.workKey else null
 
         var coverUrl = metadata.coverImageUrl

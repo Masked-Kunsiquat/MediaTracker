@@ -252,11 +252,14 @@ class BulkBackfillUseCaseTest {
     }
 
     @Test
-    fun providerWithNoWorkConcept_resolvesTheBookPermanently_ratherThanRetryingForever() = runTest {
+    fun providerWithNoWorkConcept_dropsOutOfThePendingQueue_ratherThanDeferringForever() = runTest {
         // Google Books answers with no work key and never will. Such a book must resolve and drop
         // out of the pending queue, exactly as a book with a confirmed-absent cover does -- the
-        // failure mode being guarded is a candidate that can never be satisfied and so is retried
-        // on every future run.
+        // failure mode being guarded is a candidate that is deferred rather than resolved, and so
+        // is retried on every resume of this run without ever being satisfiable.
+        //
+        // The guarantee is scoped to the run and its resumes. A later fresh run rescans it -- see
+        // providerWithNoWorkConcept_isRescannedByAFreshRun_theAcceptedLimitation below.
         val isbn = "9780547928227"
         val mediaId = insertBook(isbn = isbn, coverImageHash = "abc123.jpg", authors = "Ada Lovelace")
         val provider = FakeMetadataProvider(mapOf(isbn to metadata(workKey = null)))
@@ -270,6 +273,32 @@ class BulkBackfillUseCaseTest {
         assertTrue(progress.isComplete)
         assertNull(storedWorkKey(mediaId))
         assertNull(settingsRepository.getBulkBackfillState(), "a resolved run clears its resume state")
+    }
+
+    @Test
+    fun providerWithNoWorkConcept_isRescannedByAFreshRun_theAcceptedLimitation() = runTest {
+        // Pins the *actual* boundary of the guarantee above, which is per resume chain, not
+        // forever. A book that can never have a work key drops out of the pending queue and is
+        // never retried within a run or its resumes -- but a later fresh run rescans the library
+        // from current state, where the key is still absent, so it is a candidate again and costs
+        // one more lookup.
+        //
+        // This is identical to how a book with a genuinely-absent cover has always behaved, and is
+        // accepted for the same reason: distinguishing "confirmed unavailable" from "not fetched
+        // yet" needs a persisted negative cache, which would have to cover covers and authors too
+        // or leave the three dimensions inconsistent. Recorded as a test so the cost is a known
+        // quantity rather than a surprise.
+        val isbn = "9780547928227"
+        insertBook(isbn = isbn, coverImageHash = "abc123.jpg", authors = "Ada Lovelace")
+        val provider = FakeMetadataProvider(mapOf(isbn to metadata(workKey = null)))
+
+        useCase(provider, probeEngine()).execute()
+        assertEquals(1, provider.callCounts[isbn])
+        assertNull(settingsRepository.getBulkBackfillState(), "the first run resolved everything")
+
+        useCase(provider, probeEngine()).execute()
+
+        assertEquals(2, provider.callCounts[isbn], "a fresh run rescans from current state")
     }
 
     @Test

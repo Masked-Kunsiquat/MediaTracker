@@ -663,7 +663,12 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
     deliberately; the alternative was capturing the key for new books only and leaving the existing
     library permanently without it. Only the cover probe is quota-limited, and a book needing
     nothing but a work key never reaches it. A book whose provider has no work concept (Google
-    Books) resolves permanently with nothing written rather than being retried forever.
+    Books) resolves with nothing written and leaves the pending queue, so it is never retried
+    within a run or its resumes — but a later *fresh* run rescans it, since nothing records that
+    the key was already asked for and found unavailable. That is the pre-existing behaviour of a
+    genuinely-absent cover, kept rather than special-cased: a "confirmed unavailable" marker for
+    the work key alone would leave the three gap dimensions inconsistent, and the cost is one
+    lookup per unfillable book per user-initiated run.
   - **`RefetchCoverUseCase` was left as-is (sibling use case, not generalized/wrapped).** It only
     ever touches the cover column and returns a single-book UX `Resource`; neither shape fits a
     many-book, resumable, cover-*and*-author operation, so `BulkBackfillUseCase` is new and
