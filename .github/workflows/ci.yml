@@ -108,6 +108,70 @@ jobs:
             fi
           done
 
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history, deliberately -- not just this PR's commits. A secret is compromised from
+          # the moment it is pushed; rebasing the branch or squashing on merge does not unpublish
+          # it, and a diff-scoped scan would miss one that arrived via a rebase or came in from
+          # another branch. The whole history of this repository scans in about two seconds, so
+          # there is nothing to buy by narrowing it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Pinned release binary rather than gitleaks-action, for two reasons. The action requires a
+      # licence key for organisation-owned repositories, which is a dependency on this repository
+      # staying personally owned. More importantly it is third-party code executing in the
+      # workflow: this job exists to find credentials, so it is the last one that should run
+      # something unpinned. The checksum is the 8.30.1 release's published digest -- if the asset
+      # ever changes underneath the tag, this step fails rather than executing it.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          curl -sSL --fail -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+
+      # --redact is not optional here. This repository is public, so its Actions logs are public:
+      # without it, a detected secret gets printed in full to a world-readable log, and the scan
+      # meant to catch the leak becomes a second, more visible copy of it.
+      - name: Scan git history for secrets
+        run: |
+          ./gitleaks git . \
+            --redact \
+            --no-banner \
+            --report-format sarif \
+            --report-path gitleaks.sarif
+
+      # The SARIF names the commit, file and rule for each finding, which is what makes a hit
+      # actionable; values inside it are redacted by the flag above.
+      - name: Upload findings
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-findings
+          path: gitleaks.sarif
+          retention-days: 7
+
+      # A hit is not a "fix the file and move on" situation, so say so at the point of failure
+      # rather than leaving it to be worked out from a red X.
+      - name: Explain what a failure means
+        if: failure()
+        run: |
+          echo "::error::gitleaks found a credential in the repository's history."
+          echo "Removing it in a new commit is NOT sufficient -- the value stays in the history and"
+          echo "must be treated as compromised. Rotate the credential first, then decide whether the"
+          echo "history needs rewriting. If this is a false positive, add its fingerprint (shown in"
+          echo "the uploaded SARIF) to .gitleaksignore with a comment saying why it is safe."
+
   test:
     name: Unit tests and debug build
     runs-on: ubuntu-latest
