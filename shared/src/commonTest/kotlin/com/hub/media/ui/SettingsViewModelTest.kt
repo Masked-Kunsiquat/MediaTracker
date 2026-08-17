@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
+import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import com.hub.media.features.settings.data.setWeekStartDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -14,6 +15,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * [SettingsViewModel] tests against a real in-memory [AppDatabase] (same builder/style as
@@ -97,5 +100,53 @@ class SettingsViewModelTest {
             val settled = viewModel.uiState.first { it.weekStartDay == WeekStartDay.SUNDAY }
 
             assertEquals(WeekStartDay.SUNDAY, settled.weekStartDay)
+        }
+
+    @Test
+    fun googleBooksApiKey_defaultsToNotSet() {
+        val viewModel = newViewModel()
+
+        assertFalse(viewModel.uiState.value.googleBooksApiKeySet)
+    }
+
+    @Test
+    fun setGoogleBooksApiKey_flipsTheKeySetFlagReactively() =
+        runTest {
+            val viewModel = newViewModel()
+
+            viewModel.setGoogleBooksApiKey("a-key")
+
+            val updated = viewModel.uiState.first { it.googleBooksApiKeySet }
+            assertTrue(updated.googleBooksApiKeySet)
+        }
+
+    @Test
+    fun clearGoogleBooksApiKey_flipsTheFlagBack() =
+        runTest {
+            repository.setGoogleBooksApiKey("a-key")
+            val viewModel = newViewModel()
+            viewModel.uiState.first { it.googleBooksApiKeySet }
+
+            viewModel.clearGoogleBooksApiKey()
+
+            val cleared = viewModel.uiState.first { !it.googleBooksApiKeySet }
+            assertFalse(cleared.googleBooksApiKeySet)
+        }
+
+    @Test
+    fun uiState_neverExposesTheKeyItself() =
+        runTest {
+            // The guarantee SettingsUiState.googleBooksApiKeySet's KDoc makes, asserted rather than
+            // trusted to review: the state object is what a future "log the UI state" line would
+            // capture, so a key leaking into it is a credential leak with no other symptom.
+            repository.setGoogleBooksApiKey("super-secret-key")
+            val viewModel = newViewModel()
+
+            val settled = viewModel.uiState.first { it.googleBooksApiKeySet }
+
+            assertFalse(
+                "super-secret-key" in settled.toString(),
+                "the key must never reach SettingsUiState: $settled",
+            )
         }
 }

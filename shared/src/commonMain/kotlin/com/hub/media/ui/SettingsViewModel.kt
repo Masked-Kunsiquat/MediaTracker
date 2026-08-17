@@ -5,14 +5,18 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.LogLevel
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
+import com.hub.media.features.settings.data.clearGoogleBooksApiKey
+import com.hub.media.features.settings.data.observeGoogleBooksApiKey
 import com.hub.media.features.settings.data.observeLogVerbosity
 import com.hub.media.features.settings.data.observeWeekStartDay
+import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setWeekStartDay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
@@ -46,8 +50,16 @@ public class SettingsViewModel(
         combine(
             settingsRepository.observeWeekStartDay(),
             settingsRepository.observeLogVerbosity(),
-        ) { weekStartDay, logVerbosity ->
-            SettingsUiState(weekStartDay = weekStartDay, logVerbosity = logVerbosity)
+            // Mapped to presence before it reaches this ViewModel's state at all -- see
+            // SettingsUiState.googleBooksApiKeySet's KDoc. The raw key never enters uiState, so it
+            // can never be recomposed with, snapshotted, or logged from here.
+            settingsRepository.observeGoogleBooksApiKey().map { it != null },
+        ) { weekStartDay, logVerbosity, apiKeySet ->
+            SettingsUiState(
+                weekStartDay = weekStartDay,
+                logVerbosity = logVerbosity,
+                googleBooksApiKeySet = apiKeySet,
+            )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5.seconds),
@@ -79,6 +91,36 @@ public class SettingsViewModel(
     public fun setLogVerbosity(value: LogLevel) {
         viewModelScope.launch {
             settingsRepository.setLogVerbosity(value)
+        }
+    }
+
+    /**
+     * Persists [value] as the user's Google Books API key, or clears the stored key when [value] is
+     * blank (see
+     * [com.hub.media.features.settings.data.setGoogleBooksApiKey] for why blank means "clear" rather
+     * than "store an empty key"). Fire-and-forget like the two setters above -- [uiState]'s
+     * [SettingsUiState.googleBooksApiKeySet] flips reactively once the write lands.
+     *
+     * [value] is passed straight through to the repository and never retained, logged, or echoed
+     * back through [uiState]. Nothing in this class holds the key after this call returns.
+     */
+    public fun setGoogleBooksApiKey(value: String) {
+        viewModelScope.launch {
+            settingsRepository.setGoogleBooksApiKey(value)
+        }
+    }
+
+    /**
+     * Removes the stored Google Books API key, returning every Google Books request to the keyless
+     * path it used before one was entered (see
+     * [com.hub.media.features.books.network.GoogleBooksClient]'s KDoc -- a missing key is a
+     * supported state, not a broken one). Separate from [setGoogleBooksApiKey] with a blank value
+     * even though the two end up in the same place, because the *screen* offers them as two distinct
+     * actions and a "clear" that works by submitting an empty text field reads as an accident.
+     */
+    public fun clearGoogleBooksApiKey() {
+        viewModelScope.launch {
+            settingsRepository.clearGoogleBooksApiKey()
         }
     }
 }

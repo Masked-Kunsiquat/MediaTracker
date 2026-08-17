@@ -28,8 +28,17 @@ import com.hub.media.features.settings.data.WeekStartDay
  *   level shown in Settings; the level the *process* is currently running at can differ until the
  *   preference is applied, and differs deliberately when it has never been set (see
  *   [com.hub.media.features.settings.data.observeLogVerbosityOrNull]).
+ * @property googleBooksApiKeySet Whether a user-supplied Google Books API key is currently stored --
+ *   **a boolean, deliberately not the key itself.** The key is a credential and this screen has no
+ *   use for its value: a saved key is reported as saved, never echoed back into a field, and the
+ *   only write path is the user typing a new one into a control that holds its own local state until
+ *   Save. Carrying the value here would put a credential into an object held by a ViewModel,
+ *   recomputed on every settings change, and trivially captured by any future "log the UI state"
+ *   debugging line -- for no capability the screen actually needs. `false` is the right first-
+ *   composition default: it renders the no-key state, which is also what a fresh install has.
  */
 public data class SettingsUiState(
     val weekStartDay: WeekStartDay = WeekStartDay.MONDAY,
     val logVerbosity: LogLevel = DEFAULT_LOG_VERBOSITY,
+    val googleBooksApiKeySet: Boolean = false,
 )

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -60,6 +61,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -166,6 +170,8 @@ fun SettingsScreenRoute(
     val backupCancelledMessage = stringResource(R.string.backup_cancelled_message)
     val restoreCancelledMessage = stringResource(R.string.restore_cancelled_message)
     val restoreReadFailureMessage = stringResource(R.string.restore_read_failure_message)
+    val apiKeySavedMessage = stringResource(R.string.settings_google_books_key_saved_message)
+    val apiKeyClearedMessage = stringResource(R.string.settings_google_books_key_cleared_message)
 
     // Surfaced exactly once per Settings-screen visit (see AppContainer.pendingRestoreMarker's
     // KDoc): the outcome of a restore that completed just before this process was killed and
@@ -529,6 +535,14 @@ fun SettingsScreenRoute(
         uiState = uiState,
         onWeekStartDayChange = viewModel::setWeekStartDay,
         onLogVerbosityChange = viewModel::setLogVerbosity,
+        onGoogleBooksApiKeySave = { key ->
+            viewModel.setGoogleBooksApiKey(key)
+            coroutineScope.launch { snackbarHostState.showSnackbar(apiKeySavedMessage) }
+        },
+        onGoogleBooksApiKeyClear = {
+            viewModel.clearGoogleBooksApiKey()
+            coroutineScope.launch { snackbarHostState.showSnackbar(apiKeyClearedMessage) }
+        },
         onNavigateToLogViewer = onNavigateToLogViewer,
         onNavigateToChangelog = onNavigateToChangelog,
         exportInProgress = exportUiState is ExportUiState.Loading,
@@ -859,6 +873,12 @@ private fun RestoreConfirmationDialog(
  * @param uiState Current [SettingsUiState].
  * @param onWeekStartDayChange Called with the newly selected [WeekStartDay] when the week-start-day
  *   control is changed, wired to [SettingsViewModel.setWeekStartDay].
+ * @param onGoogleBooksApiKeySave Called with the raw contents of the API-key field when Save is
+ *   tapped, wired to [SettingsViewModel.setGoogleBooksApiKey] (which trims, and treats blank as
+ *   "clear"). The value is passed straight through and never stored on this screen -- see
+ *   [GoogleBooksApiKeySetting]'s KDoc.
+ * @param onGoogleBooksApiKeyClear Called when the API key's Clear button is tapped, wired to
+ *   [SettingsViewModel.clearGoogleBooksApiKey].
  * @param exportInProgress Whether a CSV export is currently being generated (ROADMAP Task 8 Phase
  *   A) -- wired to `ExportUiState.Loading`, disables the export button and shows a progress
  *   indicator so a double-tap can't fire two concurrent exports.
@@ -914,6 +934,8 @@ fun SettingsScreen(
     uiState: SettingsUiState,
     onWeekStartDayChange: (WeekStartDay) -> Unit,
     onLogVerbosityChange: (LogLevel) -> Unit,
+    onGoogleBooksApiKeySave: (String) -> Unit,
+    onGoogleBooksApiKeyClear: () -> Unit,
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
     exportInProgress: Boolean,
@@ -967,6 +989,18 @@ fun SettingsScreen(
                         WeekStartDaySetting(
                             selected = uiState.weekStartDay,
                             onSelectedChange = onWeekStartDayChange,
+                        )
+                    }
+                }
+                item {
+                    // Its own section rather than a row under "Data": this is about how books are
+                    // looked up when they are added, not about moving data in and out of the app,
+                    // and it is the only setting on this screen that stores a credential.
+                    SettingsSection(title = stringResource(R.string.settings_section_book_lookups)) {
+                        GoogleBooksApiKeySetting(
+                            keySet = uiState.googleBooksApiKeySet,
+                            onSave = onGoogleBooksApiKeySave,
+                            onClear = onGoogleBooksApiKeyClear,
                         )
                     }
                 }
@@ -1068,6 +1102,113 @@ private fun SettingsSection(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 content()
+            }
+        }
+    }
+}
+
+/**
+ * The Google Books API key row.
+ *
+ * ### The stored key is never displayed
+ * [keySet] is a boolean, and this row has no way to read the saved key even if it wanted to (see
+ * [SettingsUiState.googleBooksApiKeySet]). A saved key is reported as saved; the text field always
+ * starts empty and holds its own local state, so what it contains is only ever what the user has
+ * just typed in this composition. Re-entering a key to change it is a deliberate cost: echoing a
+ * credential back into an on-screen field, in an app whose Settings screen is a normal, non-
+ * authenticated destination, buys nothing but a shoulder-surfing surface.
+ *
+ * Masked by default with an explicit Show toggle, and [KeyboardType.Password] regardless of that
+ * toggle -- which is what keeps the soft keyboard from learning and later suggesting the key, a
+ * leak that would outlive the app entirely. Show exists because these keys are pasted far more often
+ * than typed, and a paste you cannot verify is a support problem.
+ *
+ * @param keySet Whether a key is currently stored, driving the status line and whether Clear is
+ *   offered at all.
+ * @param onSave Called with the trimmed-by-the-repository field contents when Save is tapped.
+ * @param onClear Called when Clear is tapped -- offered only when [keySet], since clearing nothing
+ *   is not an action.
+ */
+@Composable
+private fun GoogleBooksApiKeySetting(
+    keySet: Boolean,
+    onSave: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    var entered by remember { mutableStateOf("") }
+    var revealed by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.settings_google_books_key_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_google_books_key_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text =
+                if (keySet) {
+                    stringResource(R.string.settings_google_books_key_saved)
+                } else {
+                    stringResource(R.string.settings_google_books_key_not_saved)
+                },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = entered,
+            onValueChange = { entered = it },
+            label = { Text(stringResource(R.string.settings_google_books_key_field_label)) },
+            singleLine = true,
+            visualTransformation =
+                if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+            // Password even when revealed -- see this composable's KDoc: the point is the keyboard's
+            // learning/suggestion behavior, not the on-screen masking, and those are separate.
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                TextButton(onClick = { revealed = !revealed }) {
+                    Text(
+                        text =
+                            if (revealed) {
+                                stringResource(R.string.settings_google_books_key_hide)
+                            } else {
+                                stringResource(R.string.settings_google_books_key_show)
+                            },
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = {
+                    onSave(entered)
+                    // Dropped as soon as it has been handed over: nothing on this screen needs the
+                    // key again, and leaving it sitting in a composition-scoped field would keep a
+                    // credential on screen (and in the recomposition snapshot) for the rest of the
+                    // visit for no reason.
+                    entered = ""
+                    revealed = false
+                },
+                enabled = entered.isNotBlank(),
+            ) {
+                Text(
+                    text =
+                        if (keySet) {
+                            stringResource(R.string.settings_google_books_key_replace_button)
+                        } else {
+                            stringResource(R.string.settings_google_books_key_save_button)
+                        },
+                )
+            }
+            if (keySet) {
+                OutlinedButton(onClick = onClear) {
+                    Text(stringResource(R.string.settings_google_books_key_clear_button))
+                }
             }
         }
     }
@@ -1575,6 +1716,8 @@ private fun SettingsScreenMondayPreview() {
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
+            onGoogleBooksApiKeySave = {},
+            onGoogleBooksApiKeyClear = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1608,6 +1751,8 @@ private fun SettingsScreenSundayPreview() {
             uiState = SettingsUiState(weekStartDay = WeekStartDay.SUNDAY),
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
+            onGoogleBooksApiKeySave = {},
+            onGoogleBooksApiKeyClear = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1641,6 +1786,8 @@ private fun SettingsScreenExportingPreview() {
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
+            onGoogleBooksApiKeySave = {},
+            onGoogleBooksApiKeyClear = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = true,
@@ -1674,6 +1821,8 @@ private fun SettingsScreenBackingUpPreview() {
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
+            onGoogleBooksApiKeySave = {},
+            onGoogleBooksApiKeyClear = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1707,6 +1856,8 @@ private fun SettingsScreenValidatingRestorePreview() {
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
             onLogVerbosityChange = {},
+            onGoogleBooksApiKeySave = {},
+            onGoogleBooksApiKeyClear = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
