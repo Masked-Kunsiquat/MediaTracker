@@ -13,8 +13,15 @@ import kotlinx.coroutines.flow.map
  * setting, its value must never appear in a log line, crash report, or KDoc example anywhere it is
  * threaded through the app. Nothing about the *name* of the setting is sensitive -- only the value
  * read back out of [SettingsRepository] under it.
+ *
+ * `internal`, not `private`: [com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase]
+ * needs this exact row name to scrub the credential out of a staged `.sqlite` backup (a whole-file
+ * `VACUUM INTO` snapshot would otherwise carry the plaintext key along in any backup the user
+ * shares). That use case imports this constant rather than hardcoding the string a second time --
+ * a duplicated literal is how a future rename of this setting silently stops the scrub from
+ * matching, which is a credential leak, not a cosmetic bug.
  */
-private const val KEY_GOOGLE_BOOKS_API_KEY = "google_books_api_key"
+internal const val KEY_GOOGLE_BOOKS_API_KEY = "google_books_api_key"
 
 /**
  * Reactive current Google Books API key, or `null` if the user has never supplied one, has since

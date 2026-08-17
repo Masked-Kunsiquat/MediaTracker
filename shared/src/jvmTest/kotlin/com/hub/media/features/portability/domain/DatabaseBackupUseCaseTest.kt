@@ -9,6 +9,10 @@ import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.settings.data.KEY_GOOGLE_BOOKS_API_KEY
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.getGoogleBooksApiKey
+import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import java.io.File
@@ -297,5 +301,81 @@ class DatabaseBackupUseCaseTest {
             } finally {
                 stagedFile.delete()
             }
+        }
+
+    /**
+     * The credential-scrub deliverable (task brief): a staged `.sqlite` backup must never contain
+     * the user's Google Books API key row, even though `VACUUM INTO` copies `app_settings` wholesale
+     * exactly like every other table -- see [DefaultDatabaseBackupUseCase]'s "Credential scrubbing"
+     * KDoc section for why the removal has to happen on the copy, after the fact.
+     *
+     * Doubles as the mandatory positive control (AGENTS.md §7, "a test that cannot fail is worse
+     * than no test"): asserts a *different*, non-credential `app_settings` row IS still present in
+     * the same staged file. Without this, "the key row is absent" would pass vacuously if the whole
+     * `app_settings` table -- or this test's own query -- came back empty or wired up wrong.
+     */
+    @Test
+    fun execute_apiKeySet_stagedBackupOmitsKeyRowButKeepsOtherSettings() =
+        runTest {
+            val liveDb = openLiveDatabase()
+            val settingsRepository = SettingsRepository(liveDb.appSettingsDao())
+            settingsRepository.setGoogleBooksApiKey("super-secret-google-books-key-do-not-leak")
+            settingsRepository.setString("unrelated_setting", "keep-me")
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            val stagedFile = File(result.data.stagedFilePath)
+            liveDb.close()
+
+            try {
+                val rows = mutableMapOf<String, String>()
+                BundledSQLiteDriver().open(stagedFile.absolutePath, SQLITE_OPEN_READONLY).use { connection ->
+                    connection.prepare("SELECT `key`, `value` FROM app_settings").use { statement ->
+                        while (statement.step()) {
+                            rows[statement.getText(0)] = statement.getText(1)
+                        }
+                    }
+                }
+
+                assertTrue(
+                    KEY_GOOGLE_BOOKS_API_KEY !in rows,
+                    "backup must never contain the google books api key row",
+                )
+                // Positive control: see this test's KDoc -- without this assertion, the one above
+                // could pass vacuously.
+                assertEquals(
+                    "keep-me",
+                    rows["unrelated_setting"],
+                    "a non-credential app_settings row must still survive the scrub into the backup",
+                )
+            } finally {
+                stagedFile.delete()
+            }
+        }
+
+    /**
+     * Confirms the scrub touches only the staged copy: the live database must still have the user's
+     * api key after a backup completes, proving [DefaultDatabaseBackupUseCase] never deletes the row
+     * from the live [database] itself -- only from the disposable staging file.
+     */
+    @Test
+    fun execute_apiKeySet_liveDatabaseKeyUntouchedAfterBackup() =
+        runTest {
+            val liveDb = openLiveDatabase()
+            val settingsRepository = SettingsRepository(liveDb.appSettingsDao())
+            settingsRepository.setGoogleBooksApiKey("super-secret-google-books-key-do-not-leak")
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            File(result.data.stagedFilePath).delete()
+
+            assertEquals(
+                "super-secret-google-books-key-do-not-leak",
+                settingsRepository.getGoogleBooksApiKey(),
+                "scrubbing the staged copy must not disturb the live database's own row",
+            )
+            liveDb.close()
         }
 }
