@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A provider failing with an HTTP error is now recorded in the log.** Both book-metadata providers logged thrown exceptions but said nothing when a provider answered with an error status, which is not an exception. Found during a real Open Library outage: the lookup failed on both providers, the screen explained both, and the application log contained only one of them — so the artefact you would reach for to diagnose it was the one missing half the story.
+
 ### Internal
 - **CI actions pinned to commit SHAs (CI)** — every `uses:` in `.github/workflows/ci.yml` now names a full commit SHA with the version in a trailing comment, instead of a mutable tag like `@v4`. A tag is a label its owner can repoint at any commit, and every subsequent run would execute the new code with no diff in this repository to show it happened; a SHA makes an action upgrade an explicit, reviewable line. The two that matter are the third-party ones, `gradle/actions/setup-gradle` and `android-actions/setup-android` — the `actions/*` three are GitHub's own, running on GitHub's runners. Sequenced ahead of signing (ROADMAP Task 16) on purpose: that is when CI first holds a secret worth stealing, and an app signing key is the one credential that cannot be rotated.
 - **Dependabot tracks those pins (CI)** — `.github/dependabot.yml` proposes weekly updates, grouped into a single pull request. Pinning without this is worse than not pinning: a frozen SHA never picks up a security fix and nothing complains, so the two halves ship together.

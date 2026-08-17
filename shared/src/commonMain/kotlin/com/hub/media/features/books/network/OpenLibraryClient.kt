@@ -51,6 +51,13 @@ public class OpenLibraryClient(
         return try {
             val response = client.get("$OPEN_LIBRARY_BASE_URL/isbn/$isbn.json")
             if (!response.status.isSuccess()) {
+                // Logged for the same reason the thrown-exception path below is: this is the primary
+                // provider on the add-book flow, and a status failure is the one failure mode that
+                // used to leave no trace at all. A real Open Library outage produced a user-visible
+                // error and an empty log, which is precisely backwards.
+                logger.warn(TAG) {
+                    "Open Library lookup returned ${response.status.value} for isbn=$isbn"
+                }
                 return Resource.Error(
                     "Open Library request failed with status ${response.status.value} for ISBN $isbn",
                 )

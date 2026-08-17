@@ -34,6 +34,13 @@ public class GoogleBooksClient(
                     parameter("q", "isbn:$isbn")
                 }
             if (!response.status.isSuccess()) {
+                // This is the *fallback*, so a status failure here means the add genuinely has no
+                // metadata to offer -- and it was the one failure mode in this class that logged
+                // nothing. Observed for real: with Open Library down, Google Books answered 429 and
+                // the log recorded only the primary's timeout, so two failures left one entry.
+                logger.warn(TAG) {
+                    "Google Books lookup returned ${response.status.value} for isbn=$isbn"
+                }
                 return Resource.Error(
                     "Google Books request failed with status ${response.status.value} for ISBN $isbn",
                 )
