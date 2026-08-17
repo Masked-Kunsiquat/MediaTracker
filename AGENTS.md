@@ -155,6 +155,8 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   ```
 
   Unit tests never parse these. A malformed backup-rules XML or a broken manifest merge fails only here.
+* **Five CI jobs are required status checks on `main`, matched by name.** `Unit tests and debug build`, `Linting`, `Secret scan`, `Changelog check` and `Room schema check` must all pass before a PR can merge — the `protect-main` ruleset also requires a PR and forbids force-pushing or deleting `main`, with no bypass for anyone. **Renaming a job's `name:` in `ci.yml` silently blocks every pull request**, because the required check by the old name never arrives and GitHub cannot tell "not applicable" from "not reported yet". Renaming a job therefore means updating the ruleset in the same change. For the same reason, adding a job that only runs conditionally must *not* make it a required check.
+  - **CodeRabbit and GitGuardian are deliberately not required.** CodeRabbit reports `pass` without having reviewed anything in at least four situations (over 100 changed files, draft PRs, this repository's manual-review setting, and rate limiting), so as a gate it certifies nothing; requiring it would also tie merging to a third-party review quota. GitGuardian is left advisory because gitleaks already covers secrets in-repo more thoroughly, across the whole history and every branch.
 * **Lint before pushing.** CI fails on either of these, and both are fast:
 
   ```bash
