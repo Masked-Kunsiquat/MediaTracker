@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-08-16
+
+This screen had begun filling up with notes about the project's own plumbing — build checks, code
+formatting, credential scanning — written for whoever maintains the code rather than for you reading
+release notes. Those notes are all still kept; they simply no longer appear here.
+
 ### Fixed
 - **"What's new" no longer shows build-pipeline notes.** This file is copied into the app verbatim, so entries written for whoever maintains the repository — CI jobs, lint configuration, secret scanning — had been appearing on that screen alongside the release notes written for you. They now live under an `### Internal` heading that the viewer skips, so the screen shows only the half addressed to its reader. One file still, and nothing is deleted: the entries are still here for anyone reading the repository.
 
