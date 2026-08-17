@@ -197,15 +197,24 @@ internal fun isValidIsbn(normalizedIsbn: String): Boolean =
  * @param coverRateLimiter Shared ISBN-cover-probe quota tracker (ROADMAP Task 14 Phase A) --
  *   forwarded to [createDefaultBookMetadataProvider]; see that function's KDoc for why production
  *   callers pass the same instance used elsewhere in the app rather than the default.
+ * @param googleBooksApiKeyProvider Suspending source of the user-supplied Google Books API key --
+ *   forwarded to [createDefaultBookMetadataProvider]; defaults to no key, which is the keyless
+ *   behavior every caller had before this parameter existed.
  */
 public fun createDefaultAddBookByIsbnUseCase(
     httpClient: HttpClient,
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
+    googleBooksApiKeyProvider: suspend () -> String? = { null },
 ): AddBookByIsbnUseCase =
     AddBookByIsbnUseCase(
-        metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
+        metadataProvider =
+            createDefaultBookMetadataProvider(
+                httpClient = httpClient,
+                coverRateLimiter = coverRateLimiter,
+                googleBooksApiKeyProvider = googleBooksApiKeyProvider,
+            ),
         coverDownloader = CoverImageDownloader(httpClient),
         imageStorage = imageStorage,
         bookRepository = bookRepository,

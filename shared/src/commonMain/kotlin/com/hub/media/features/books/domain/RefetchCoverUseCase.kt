@@ -124,15 +124,24 @@ public class RefetchCoverUseCase(
  *   [createDefaultAddBookByIsbnUseCase], so a bulk backfill and this per-book re-fetch draw on one
  *   shared budget instead of each silently pushing the combined total over Open Library's limit --
  *   see [com.hub.media.features.books.network.OpenLibraryCoverRateLimiter]'s KDoc.
+ * @param googleBooksApiKeyProvider Suspending source of the user-supplied Google Books API key --
+ *   forwarded to [createDefaultBookMetadataProvider]; defaults to no key, which is the keyless
+ *   behavior every caller had before this parameter existed.
  */
 public fun createDefaultRefetchCoverUseCase(
     httpClient: HttpClient,
     imageStorage: LocalImageStorageManager,
     bookRepository: BookRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
+    googleBooksApiKeyProvider: suspend () -> String? = { null },
 ): RefetchCoverUseCase =
     RefetchCoverUseCase(
-        metadataProvider = createDefaultBookMetadataProvider(httpClient, coverRateLimiter),
+        metadataProvider =
+            createDefaultBookMetadataProvider(
+                httpClient = httpClient,
+                coverRateLimiter = coverRateLimiter,
+                googleBooksApiKeyProvider = googleBooksApiKeyProvider,
+            ),
         coverDownloader = CoverImageDownloader(httpClient),
         imageStorage = imageStorage,
         bookRepository = bookRepository,

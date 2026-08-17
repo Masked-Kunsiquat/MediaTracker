@@ -305,7 +305,7 @@ class GoogleBooksClientTest {
             // status path was the only failure mode here that did not log.
             val logger = RecordingLogger()
             val engine = MockEngine { respondError(HttpStatusCode.TooManyRequests) }
-            val client = GoogleBooksClient(createHttpClient(engine), logger)
+            val client = GoogleBooksClient(createHttpClient(engine), logger = logger)
 
             val result = client.fetchByIsbn("9780261102217")
 
@@ -314,5 +314,107 @@ class GoogleBooksClientTest {
             val logged = logger.entries.single()
             assertEquals(LogLevel.WARN, logged.level)
             assertTrue("429" in logged.message, "expected the status in the log: ${logged.message}")
+        }
+
+    @Test
+    fun noApiKeyConfigured_sendsNoKeyParameter() =
+        runTest {
+            // The default, and the behavior this client had before a key was configurable at all. It
+            // matters that the parameter is *absent* rather than empty: Google rejects `key=` with a
+            // blank value outright, so an always-present parameter would turn the working keyless
+            // path into a 400 for every user who never enters a key.
+            var requestedUrl: String? = null
+            val engine =
+                MockEngine { request ->
+                    requestedUrl = request.url.toString()
+                    jsonResponse("""{"totalItems": 0}""")
+                }
+            val client = GoogleBooksClient(createHttpClient(engine))
+
+            client.fetchByIsbn("9780261102217")
+
+            assertTrue("key=" !in requestedUrl.orEmpty(), "expected no key parameter: $requestedUrl")
+        }
+
+    @Test
+    fun apiKeyConfigured_sendsItAsTheKeyParameter() =
+        runTest {
+            var requestedUrl: String? = null
+            val engine =
+                MockEngine { request ->
+                    requestedUrl = request.url.toString()
+                    jsonResponse("""{"totalItems": 0}""")
+                }
+            val client = GoogleBooksClient(createHttpClient(engine), apiKeyProvider = { "test-key-123" })
+
+            client.fetchByIsbn("9780261102217")
+
+            assertTrue("key=test-key-123" in requestedUrl.orEmpty(), "expected the key parameter: $requestedUrl")
+        }
+
+    @Test
+    fun apiKeyIsReadPerRequest_notCapturedOnce() =
+        runTest {
+            // The key lives in app_settings and this client is constructed once, at AppContainer
+            // construction, so it outlives every visit to the Settings screen. A key captured at
+            // construction would keep being sent after the user cleared it -- still sending a
+            // credential somebody had deliberately deleted.
+            val requestedUrls = mutableListOf<String>()
+            var currentKey: String? = "first-key"
+            val engine =
+                MockEngine { request ->
+                    requestedUrls += request.url.toString()
+                    jsonResponse("""{"totalItems": 0}""")
+                }
+            val client = GoogleBooksClient(createHttpClient(engine), apiKeyProvider = { currentKey })
+
+            client.fetchByIsbn("9780261102217")
+            currentKey = null
+            client.fetchByIsbn("9780261102217")
+
+            assertTrue("key=first-key" in requestedUrls[0], "expected the first key: ${requestedUrls[0]}")
+            assertTrue("key=" !in requestedUrls[1], "expected no key after clearing: ${requestedUrls[1]}")
+        }
+
+    @Test
+    fun apiKeyRejectedWithBadRequest_logsThatAKeyIsConfiguredWithoutLoggingIt() =
+        runTest {
+            // 400/403 from Google is unattributable on its own: a user who has just pasted a key and
+            // starts seeing failures cannot tell a bad key from a bad ISBN. The log says a key is in
+            // play -- and must never say which.
+            val logger = RecordingLogger()
+            val engine = MockEngine { respondError(HttpStatusCode.BadRequest) }
+            val client =
+                GoogleBooksClient(
+                    createHttpClient(engine),
+                    apiKeyProvider = { "super-secret-key" },
+                    logger = logger,
+                )
+
+            client.fetchByIsbn("9780261102217")
+
+            val logged = logger.entries.single()
+            assertEquals(LogLevel.WARN, logged.level)
+            assertTrue("API key" in logged.message, "expected the key hint: ${logged.message}")
+            assertTrue(
+                "super-secret-key" !in logged.message,
+                "the key itself must never be logged: ${logged.message}",
+            )
+        }
+
+    @Test
+    fun keylessBadRequest_doesNotBlameAKeyThatIsNotThere() =
+        runTest {
+            // The mirror of the test above, and the one that keeps the hint honest: with no key
+            // configured, a 400 has nothing to do with credentials and saying otherwise would send
+            // the user hunting for a problem in the one place it cannot be.
+            val logger = RecordingLogger()
+            val engine = MockEngine { respondError(HttpStatusCode.BadRequest) }
+            val client = GoogleBooksClient(createHttpClient(engine), logger = logger)
+
+            client.fetchByIsbn("9780261102217")
+
+            val logged = logger.entries.single()
+            assertTrue("API key" !in logged.message, "expected no key hint: ${logged.message}")
         }
 }

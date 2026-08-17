@@ -109,13 +109,18 @@ public class FallbackBookMetadataProvider(
  *   wiring (`AppContainer`) passes the *same* instance here and to
  *   [com.hub.media.features.books.domain.BulkBackfillUseCase] so both draw on one budget -- see
  *   [OpenLibraryCoverRateLimiter]'s KDoc for why a per-call-site limiter would be wrong.
+ * @param googleBooksApiKeyProvider Suspending source of the user-supplied Google Books API key, or
+ *   `null` for the keyless behavior this chain has always had (the default, which every test and
+ *   any caller that omits it keeps). Reaches [GoogleBooksClient] only -- Open Library issues no keys
+ *   of any kind (ROADMAP Task 13), so there is nothing for the other two steps to authenticate with.
  */
 public fun createDefaultBookMetadataProvider(
     httpClient: HttpClient,
     coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter(),
+    googleBooksApiKeyProvider: suspend () -> String? = { null },
 ): BookMetadataProvider =
     FallbackBookMetadataProvider(
         primary = OpenLibraryClient(httpClient),
-        secondary = GoogleBooksClient(httpClient),
+        secondary = GoogleBooksClient(httpClient, googleBooksApiKeyProvider),
         isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient, coverRateLimiter),
     )

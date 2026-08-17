@@ -26,6 +26,7 @@ import com.hub.media.features.portability.domain.ExportDataUseCase
 import com.hub.media.features.portability.domain.ImportDataUseCase
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.stats.data.StatsRepository
 
 /**
@@ -132,6 +133,27 @@ public class AppContainer(
      */
     private val coverRateLimiter: OpenLibraryCoverRateLimiter = OpenLibraryCoverRateLimiter()
 
+    /**
+     * The user-supplied Google Books API key, read fresh from [settingsRepository] on every request
+     * that might use one.
+     *
+     * A function rather than a captured value, and deliberately not cached: this container is built
+     * once per process and outlives every visit to the Settings screen, so a key read at
+     * construction would be stale the moment the user entered, changed or cleared one -- and the
+     * stale-and-cleared case is the bad one, since it would keep sending a credential the user had
+     * just deleted. The cost is one indexed key-value read per lookup, alongside a network call that
+     * dwarfs it.
+     *
+     * Handed to every path that talks to Google Books ([addBookByIsbnUseCase],
+     * [refetchCoverUseCase], [bulkBackfillUseCase]), for the same reason [coverRateLimiter] is
+     * shared: a quota is a property of the device, not of the call site. Not handed to
+     * [searchBooksUseCase] -- type-ahead is Open Library only by design (see its KDoc), and Open
+     * Library issues no keys.
+     */
+    private val googleBooksApiKeyProvider: suspend () -> String? = {
+        settingsRepository.getGoogleBooksApiKey()
+    }
+
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */
     public val addBookByIsbnUseCase: AddBookByIsbnUseCase =
         createDefaultAddBookByIsbnUseCase(
@@ -139,6 +161,7 @@ public class AppContainer(
             imageStorage = imageStorage,
             bookRepository = bookRepository,
             coverRateLimiter = coverRateLimiter,
+            googleBooksApiKeyProvider = googleBooksApiKeyProvider,
         )
 
     /**
@@ -153,6 +176,7 @@ public class AppContainer(
             imageStorage = imageStorage,
             bookRepository = bookRepository,
             coverRateLimiter = coverRateLimiter,
+            googleBooksApiKeyProvider = googleBooksApiKeyProvider,
         )
 
     /**
@@ -187,6 +211,7 @@ public class AppContainer(
             bookRepository = bookRepository,
             settingsRepository = settingsRepository,
             coverRateLimiter = coverRateLimiter,
+            googleBooksApiKeyProvider = googleBooksApiKeyProvider,
         )
 
     /**

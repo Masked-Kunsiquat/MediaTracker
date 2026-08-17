@@ -488,6 +488,10 @@ private fun BulkBackfillState.toProgress(
  *   and [createDefaultAddBookByIsbnUseCase], so this bulk pass and every interactive path draw on
  *   one budget (ROADMAP Task 14 Phase A's hard requirement -- see
  *   [OpenLibraryCoverRateLimiter]'s KDoc).
+ * @param googleBooksApiKeyProvider Suspending source of the user-supplied Google Books API key,
+ *   defaulting to no key. This is the path that benefits most from one: a backfill walks the whole
+ *   library, so it is the request pattern most likely to exhaust the keyless quota Google never
+ *   documented in the first place.
  */
 public fun createDefaultBulkBackfillUseCase(
     httpClient: HttpClient,
@@ -495,12 +499,13 @@ public fun createDefaultBulkBackfillUseCase(
     bookRepository: BookRepository,
     settingsRepository: SettingsRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter,
+    googleBooksApiKeyProvider: suspend () -> String? = { null },
 ): BulkBackfillUseCase =
     BulkBackfillUseCase(
         metadataProvider =
             FallbackBookMetadataProvider(
                 primary = OpenLibraryClient(httpClient),
-                secondary = GoogleBooksClient(httpClient),
+                secondary = GoogleBooksClient(httpClient, googleBooksApiKeyProvider),
                 isbnCoverProbe = null,
             ),
         isbnCoverProbe = OpenLibraryIsbnCoverProbe(httpClient, coverRateLimiter),

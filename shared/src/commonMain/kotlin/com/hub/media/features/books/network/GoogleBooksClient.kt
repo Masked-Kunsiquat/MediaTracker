@@ -16,30 +16,81 @@ import kotlin.coroutines.cancellation.CancellationException
 
 private const val GOOGLE_BOOKS_VOLUMES_URL = "https://www.googleapis.com/books/v1/volumes"
 
-/**
- * [BookMetadataProvider] backed by the keyless Google Books volumes search API
- * (`GET /volumes?q=isbn:{isbn}`), the fallback book metadata source per AGENTS.md §4.
- */
 /** Log tag for this client's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "GoogleBooksClient"
 
+/**
+ * Statuses Google Books answers with when it is the *credential* it objects to rather than the
+ * request: `400` for a malformed/unknown key and `403` for one that is disabled, restricted to
+ * other referrers/IPs, or has no Books API access. Both are indistinguishable from an ordinary
+ * client error in the status code alone, which is exactly why a key being configured changes what
+ * the log says about them -- see [GoogleBooksClient.fetchByIsbn].
+ */
+private val KEY_REJECTION_STATUS_CODES = setOf(400, 403)
+
+/**
+ * [BookMetadataProvider] backed by the Google Books volumes search API
+ * (`GET /volumes?q=isbn:{isbn}`), the fallback book metadata source per AGENTS.md §4.
+ *
+ * ### The API key is optional, and stays optional
+ * Google's documentation says public-data requests require an API key; in practice keyless requests
+ * are tolerated, on an undocumented and demonstrably thin quota -- 429s have been observed against
+ * it on a *single* request during an Open Library outage, which is the one moment the fallback has
+ * to work (ROADMAP Task 13's Google-Books-key bullet). Supplying a key moves this client onto a
+ * documented quota, so [apiKeyProvider] exists; it does not become a requirement. A `null` key means
+ * exactly the keyless behavior this class has always had, and every call site that omits the
+ * parameter keeps it.
+ *
+ * @param client Shared Ktor client.
+ * @param apiKeyProvider Suspending source of the user-supplied Google Books API key, or `null` for
+ *   no key (the default). Read per request rather than captured once at construction: the key lives
+ *   in `app_settings` behind
+ *   [com.hub.media.features.settings.data.getGoogleBooksApiKey], and this client is built once at
+ *   [com.hub.media.ui.AppContainer] construction and outlives every visit to the Settings screen --
+ *   a value captured up front would go stale the moment the user entered, changed, or cleared a key,
+ *   and would keep sending a key they had just deleted.
+ * @param logger Log sink. **The key's value must never reach it** -- this class logs only whether a
+ *   key was in play (see [KEY_REJECTION_STATUS_CODES]'s use below), never the key itself, and the
+ *   request URL that carries it is never logged either.
+ */
 public class GoogleBooksClient(
     private val client: HttpClient,
+    private val apiKeyProvider: suspend () -> String? = { null },
     private val logger: Logger = AppLogger,
 ) : BookMetadataProvider {
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         return try {
+            val apiKey = apiKeyProvider()
             val response =
                 client.get(GOOGLE_BOOKS_VOLUMES_URL) {
                     parameter("q", "isbn:$isbn")
+                    // Omitted entirely when no key is configured, rather than sent empty: `key=`
+                    // with a blank value is a *rejected* key to Google, so an empty parameter would
+                    // turn the working keyless path into a 400. getGoogleBooksApiKey() already
+                    // collapses blank to null for the same reason.
+                    if (apiKey != null) {
+                        parameter("key", apiKey)
+                    }
                 }
             if (!response.status.isSuccess()) {
                 // This is the *fallback*, so a status failure here means the add genuinely has no
                 // metadata to offer -- and it was the one failure mode in this class that logged
                 // nothing. Observed for real: with Open Library down, Google Books answered 429 and
                 // the log recorded only the primary's timeout, so two failures left one entry.
+                //
+                // The key-rejection hint matters because the failure is otherwise unattributable: a
+                // user who has just pasted a key into Settings and starts getting 400s has no way to
+                // tell a bad key from a bad ISBN, and the status code alone doesn't say. Only the
+                // *presence* of a key is mentioned; its value is never logged (see the class KDoc).
+                val keyHint =
+                    if (apiKey != null && response.status.value in KEY_REJECTION_STATUS_CODES) {
+                        " (an API key is configured -- Google rejects the request itself when the key is " +
+                            "invalid, restricted, or not enabled for the Books API)"
+                    } else {
+                        ""
+                    }
                 logger.warn(TAG) {
-                    "Google Books lookup returned ${response.status.value} for isbn=$isbn"
+                    "Google Books lookup returned ${response.status.value} for isbn=$isbn$keyHint"
                 }
                 return Resource.Error(
                     "Google Books request failed with status ${response.status.value} for ISBN $isbn",
