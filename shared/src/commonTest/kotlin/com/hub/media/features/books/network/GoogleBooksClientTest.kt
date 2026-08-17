@@ -2,10 +2,13 @@ package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
@@ -292,5 +295,24 @@ class GoogleBooksClientTest {
 
             assertTrue(result is Resource.Success, "expected Success, got $result")
             assertNull((result as Resource.Success).data.coverImageUrl)
+        }
+
+    @Test
+    fun nonSuccessStatus_surfacesTheStatusAndLogsIt() =
+        runTest {
+            // Observed for real, not hypothesised: with Open Library down, the fallback answered 429
+            // and this class logged nothing, so two provider failures left a single log entry. The
+            // status path was the only failure mode here that did not log.
+            val logger = RecordingLogger()
+            val engine = MockEngine { respondError(HttpStatusCode.TooManyRequests) }
+            val client = GoogleBooksClient(createHttpClient(engine), logger)
+
+            val result = client.fetchByIsbn("9780261102217")
+
+            assertTrue(result is Resource.Error, "expected Error, got $result")
+            assertTrue("429" in (result as Resource.Error).message, "expected the status: ${result.message}")
+            val logged = logger.entries.single()
+            assertEquals(LogLevel.WARN, logged.level)
+            assertTrue("429" in logged.message, "expected the status in the log: ${logged.message}")
         }
 }

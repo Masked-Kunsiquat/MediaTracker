@@ -403,4 +403,23 @@ class OpenLibraryClientTest {
                 "cancellation must not be logged as a lookup failure",
             )
         }
+
+    @Test
+    fun nonSuccessStatus_surfacesTheStatusAndLogsIt() =
+        runTest {
+            // The primary provider on the add-book flow. A status failure here used to leave no
+            // trace, so a real outage produced a user-visible error and an empty log -- backwards,
+            // since the log is the artefact you reach for when the screen has already failed.
+            val logger = RecordingLogger()
+            val engine = MockEngine { respondError(HttpStatusCode.TooManyRequests) }
+            val client = OpenLibraryClient(createHttpClient(engine), logger)
+
+            val result = client.fetchByIsbn("9780261102217")
+
+            assertTrue(result is Resource.Error, "expected Error, got $result")
+            assertTrue("429" in (result as Resource.Error).message, "expected the status: ${result.message}")
+            val logged = logger.entries.single()
+            assertEquals(LogLevel.WARN, logged.level)
+            assertTrue("429" in logged.message, "expected the status in the log: ${logged.message}")
+        }
 }
