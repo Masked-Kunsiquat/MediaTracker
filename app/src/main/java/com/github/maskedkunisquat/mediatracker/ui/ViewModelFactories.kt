@@ -216,7 +216,7 @@ class RestoreViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         when {
             modelClass.isAssignableFrom(RestoreViewModel::class.java) -> {
-                RestoreViewModel(appContainer.restoreDatabaseUseCase) as T
+                RestoreViewModel(appContainer.restoreDatabaseUseCase, appContainer.settingsRepository) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

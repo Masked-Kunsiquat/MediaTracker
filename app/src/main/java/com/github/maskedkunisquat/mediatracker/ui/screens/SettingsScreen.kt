@@ -474,6 +474,7 @@ fun SettingsScreenRoute(
     (restoreUiState as? RestoreUiState.AwaitingConfirmation)?.let { state ->
         RestoreConfirmationDialog(
             info = state.info,
+            apiKeyWillBeCleared = state.apiKeyWillBeCleared,
             onConfirm = {
                 // Deliberately NOT routed through restoreViewModel.viewModelScope: the very next
                 // step closes the AppContainer this ViewModel's own use case was wired from, and
@@ -786,10 +787,15 @@ private fun ImportSummaryDialog(
  * file that turns out to be unusable), requiring an explicit checkbox acknowledgement before the
  * destructive confirm button becomes enabled, with that button styled in the theme's `error` color
  * to read as visually distinct from every other action on this screen.
+ *
+ * @param apiKeyWillBeCleared Mirrors [com.hub.media.ui.RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared]
+ *   -- when true, an extra sentence warns that the user's Google Books API key will need to be
+ *   re-entered afterward, since backups never carry it (see that property's KDoc for why).
  */
 @Composable
 private fun RestoreConfirmationDialog(
     info: StagedRestoreInfo,
+    apiKeyWillBeCleared: Boolean,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -803,6 +809,12 @@ private fun RestoreConfirmationDialog(
                 if (info.isOlderSchemaVersion) {
                     Text(
                         text = stringResource(R.string.restore_confirm_message_older_version, info.schemaVersionFound),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (apiKeyWillBeCleared) {
+                    Text(
+                        text = stringResource(R.string.restore_confirm_message_api_key),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -1731,6 +1743,7 @@ private fun RestoreConfirmationDialogPreview() {
                     schemaVersionFound = 4,
                     isOlderSchemaVersion = false,
                 ),
+            apiKeyWillBeCleared = false,
             onConfirm = {},
             onCancel = {},
         )
@@ -1749,6 +1762,7 @@ private fun RestoreConfirmationDialogOlderVersionPreview() {
                     schemaVersionFound = 2,
                     isOlderSchemaVersion = true,
                 ),
+            apiKeyWillBeCleared = true,
             onConfirm = {},
             onCancel = {},
         )

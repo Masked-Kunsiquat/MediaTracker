@@ -224,6 +224,7 @@
     <string name="restore_confirm_title">Replace your entire library?</string>
     <string name="restore_confirm_message">This will permanently delete everything currently in your library — every book, reading session, and setting — and replace it with the contents of the selected backup file. This cannot be undone.</string>
     <string name="restore_confirm_message_older_version">The selected backup is from an older version of the app (database version %1$d). It will be upgraded automatically after restoring.</string>
+    <string name="restore_confirm_message_api_key">Your Google Books API key is not included in backups. After this restore, you\'ll need to enter it again in Settings.</string>
     <string name="restore_confirm_checkbox_label">I understand this will permanently delete my current library and replace it with the backup file</string>
     <string name="restore_confirm_button">Restore &amp; restart app</string>
     <string name="restore_cancel_button">Cancel</string>
