@@ -1,0 +1,23 @@
+{
+  "skill_name": "mediatracker-testing-qa",
+  "evals": [
+    {
+      "id": 0,
+      "name": "verification-command-check",
+      "prompt": "I just finished a refactor of the Room DAOs. What command should I run to make sure I haven't broken anything?",
+      "expected_output": "The response must explicitly mandate './gradlew :shared:jvmTest :shared:testDebugUnitTest' and warn against using a bare './gradlew test'."
+    },
+    {
+      "id": 1,
+      "name": "vm-test-async-pattern",
+      "prompt": "Write a unit test for a ViewModel that triggers a database save. How should I assert the final state?",
+      "expected_output": "The test code should avoid reading 'uiState.value' immediately after the save call. It should use 'first { ... }' or 'runCurrent()' to wait for the state to propagate."
+    },
+    {
+      "id": 2,
+      "name": "test-location-rationale",
+      "prompt": "I'm writing a test for a new utility function in the shared module. Where should I put the file?",
+      "expected_output": "The response should recommend 'shared/src/commonTest/kotlin/' as the default location for shared logic."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+Recommended Verification Command:
+./gradlew :shared:jvmTest :shared:testDebugUnitTest
+
+Rationale:
+You must run `./gradlew :shared:jvmTest :shared:testDebugUnitTest` to verify Room DAOs and the data layer.
+
+The standard `./gradlew test` command is insufficient because it only runs `:app:testDebugUnitTest` and `:shared:testDebugUnitTest`. In this project, Room-touching tests (DAOs, migrations, repositories) are explicitly excluded from the standard Android unit test variants. This is because those variants run on the host JVM against a stubbed `android.jar` where Room cannot obtain a real `Context`.
+
+The `:shared:jvmTest` task is the authoritative run that exercises the actual SQLite/Room implementation on the JVM. Skipping it means you are not actually testing your DAO changes.
