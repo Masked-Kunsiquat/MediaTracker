@@ -1084,6 +1084,25 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
 
+- **CI actions are pinned to tags, not commit SHAs.** A tag is mutable: whoever controls the
+  repository behind `uses:` can repoint `@v4` at any commit, and every workflow run picks it up with
+  no diff anywhere in this repository to show it happened. Pinning to a full commit SHA makes an
+  action upgrade an explicit, reviewable change.
+  - **The two that matter are not the two a reviewer notices.** `actions/checkout`,
+    `actions/upload-artifact` and `actions/setup-java` are GitHub's own, running on GitHub's
+    runners — compromising them means compromising the platform the job already trusts entirely.
+    `gradle/actions/setup-gradle` and `android-actions/setup-android` are third-party, and those are
+    the real supply-chain surface here. A review of the secret-scanning PR raised only the
+    GitHub-owned three.
+  - **Pinning without Dependabot is worse than not pinning**, because a pinned SHA never picks up a
+    security fix and nothing complains. The two halves ship together or not at all: add
+    `.github/dependabot.yml` with the `github-actions` ecosystem so the pins are proposed for update
+    rather than silently rotting.
+  - Deferred from the secret-scanning work deliberately: it rewrites five jobs that have nothing to
+    do with secret scanning, and adds a new config file. Note the inconsistency it leaves behind
+    meanwhile — that PR checksum-pins the gitleaks *binary* it downloads while running tag-pinned
+    actions in the same job.
+
 - **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
   viewer state and viewer rendering are all covered, but the composition that connects them is not:
   `MediaTrackerApplication.onCreate`'s `AppLogger.configure(minLevel, FileLogSink(store)
