@@ -24,5 +24,21 @@ updates:
         patterns:
           - "*"
 
+    # gradle/actions is held at v5.x, and that is a licensing decision rather than a technical one.
+    # v6 extracted the caching half into `gradle-actions-caching`, a proprietary component that is
+    # no longer MIT-licensed and whose use means accepting Gradle's commercial Terms of Use. It
+    # loads whenever caching is enabled, which it is here by default -- so upgrading would accept
+    # those terms for this repository. v6 also dropped configuration-cache support pending a
+    # reimplementation inside that component.
+    #
+    # Without this block Dependabot re-proposes v6 every week, and the hazard is real: the upgrade
+    # passes CI green, because nothing in a test run has an opinion about a licence. Blocking only
+    # major updates keeps v5.x patches and security fixes flowing.
+    #
+    # To revisit, delete these two lines and v6+ will be proposed again.
+    ignore:
+      - dependency-name: "gradle/actions"
+        update-types: ["version-update:semver-major"]
+
     commit-message:
       prefix: "ci"
