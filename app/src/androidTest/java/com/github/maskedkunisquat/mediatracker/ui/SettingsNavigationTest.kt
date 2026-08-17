@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.maskedkunisquat.mediatracker.BuildConfig
 import com.github.maskedkunisquat.mediatracker.MainActivity
@@ -78,5 +79,41 @@ class SettingsNavigationTest {
         // test broke the moment v0.10.0 was tagged -- a release should not require editing a test
         // that is not about the release.
         composeRule.onNodeWithText(BuildConfig.VERSION_NAME, substring = true).assertIsDisplayed()
+    }
+
+    /**
+     * The Google Books API key row's Save and Clear are wired to real callbacks.
+     *
+     * A route-level test rather than a stateless screen-level one, deliberately, and for this
+     * control specifically: the screen half is already covered without a device -- `SettingsViewModel`
+     * writes and clears through a real repository in `SettingsViewModelTest`, and the composable
+     * has no logic beyond calling what it is handed. What no JVM test can see is whether
+     * `SettingsScreenRoute` hands it `viewModel::setGoogleBooksApiKey` or a `{}` stub, which is
+     * exactly the failure this file was created for (see the class KDoc) and exactly the shape of
+     * edit that produced it: a bulk edit adding parameters to every call site, five of which are
+     * previews where a stub is correct.
+     *
+     * The status line is the assertion target rather than the field, because it is downstream of a
+     * real write: it flips only once the key has reached `app_settings` and come back out through
+     * the repository's reactive accessor. A stubbed callback leaves it saying "No key saved" while
+     * everything on screen still looks right.
+     *
+     * Clears the key again at the end -- this runs against the debug app's real database, so
+     * leaving a bogus credential behind would break the next real lookup on that install.
+     */
+    @Test
+    fun googleBooksApiKeyRow_saveAndClearAreWiredToRealCallbacks() {
+        openSettings()
+
+        composeRule.onNodeWithText("API key").performScrollTo().performTextInput("test-key-not-a-real-one")
+        composeRule.onNodeWithText("Save key").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("A key is saved", substring = true).assertIsDisplayed()
+
+        composeRule.onNodeWithText("Clear key").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("No key saved", substring = true).assertIsDisplayed()
     }
 }
