@@ -1,0 +1,23 @@
+{
+  "skill_name": "mediatracker-release-management",
+  "evals": [
+    {
+      "id": 0,
+      "name": "version-bump-location",
+      "prompt": "I'm ready to cut a new release. Where should I update the version number?",
+      "expected_output": "The response must explicitly point to '[versions] app' in 'gradle/libs.versions.toml' as the single source of truth and warn against hand-editing 'versionCode' in build.gradle.kts."
+    },
+    {
+      "id": 1,
+      "name": "changelog-internal-rule",
+      "prompt": "I just added a new CI job for secret scanning. How should I record this in the changelog?",
+      "expected_output": "The response should mandate adding the entry under a '### Internal' heading in the '[Unreleased]' section so it's excluded from the in-app viewer."
+    },
+    {
+      "id": 2,
+      "name": "schema-modification-protocol",
+      "prompt": "I need to make a column nullable in an entity that was part of the v0.8.0 release. Can I just edit the @ColumnInfo in the Entity class?",
+      "expected_output": "The response must say NO. Since the version shipped in a release, its schema is frozen. It requires a database version bump and a tested Migration object."
+    }
+  ]
+}

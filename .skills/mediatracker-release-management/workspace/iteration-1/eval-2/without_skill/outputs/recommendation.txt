@@ -1,0 +1,19 @@
+No, you cannot just edit the @ColumnInfo or property type in the Entity class for a column that was part of a tagged release.
+
+According to the "Room Schema Freeze Rule" in AGENTS.md, once a release is tagged (v0.8.0 in this case), the database schema shipped in it is FROZEN. Since v0.8.0 corresponds to schema version 5, you must follow the migration protocol:
+
+1. Increment APP_DATABASE_VERSION to 6:
+   File: shared/src/commonMain/kotlin/com/hub/media/core/database/AppDatabase.kt
+
+2. Create a Migration:
+   Define MIGRATION_5_6 in shared/src/commonMain/kotlin/com/hub/media/core/database/Migrations.kt.
+   Note: SQLite does not support "ALTER COLUMN" to change nullability directly in many cases. You may need to create a new table, copy data, drop the old table, and rename the new one, or use a specific SQLite migration pattern if applicable.
+
+3. Test the Migration:
+   Add a test case to shared/src/jvmTest/kotlin/com/hub/media/core/database/MigrationTest.kt.
+
+4. Update Documentation:
+   - Update the "Frozen schema ledger" in AGENTS.md §8.
+   - Add the change to the [Unreleased] section of CHANGELOG.md.
+
+In-place edits are only permitted for schema versions that have NEVER been part of a tagged release.
