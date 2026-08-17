@@ -35,9 +35,16 @@ updates:
     # passes CI green, because nothing in a test run has an opinion about a licence. Blocking only
     # major updates keeps v5.x patches and security fixes flowing.
     #
-    # To revisit, delete these two lines and v6+ will be proposed again.
+    # To revisit, delete this block and v6+ will be proposed again.
+    #
+    # The name must be the full action path, not the repository. This first read
+    # `gradle/actions`, which matched nothing -- Dependabot calls the dependency
+    # `gradle/actions/setup-gradle`, as its own PR titles say. Nothing reported the mismatch: the
+    # dependabot.yml status check validates syntax, and the syntax was fine, so the rule simply did
+    # nothing and v6 was proposed again the same day. The wildcard covers the other actions in that
+    # repository too, since the licence change is to a component they all share.
     ignore:
-      - dependency-name: "gradle/actions"
+      - dependency-name: "gradle/actions*"
         update-types: ["version-update:semver-major"]
 
     commit-message:
