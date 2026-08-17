@@ -26,6 +26,35 @@ single list below and reordering is a one-line edit there.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
+## Index
+
+Jump links, because more than half this file is finished work that you scroll past to reach
+the part that is not. Priority lives in **Execution order** above, not here -- this is navigation and
+status only, so the two do not disagree about what is next.
+
+Anchors are derived from the headings, so **renaming a section breaks its row here** — silently, since
+a dead in-page link scrolls nowhere rather than erroring. Renaming a section means fixing its row in
+the same edit. Note the `(done)` suffixes are part of the anchor for exactly that reason.
+
+| Section | Status |
+| --- | --- |
+| [Done](#done) | — |
+| [Task 6 — Books polish](#task-6--books-polish-done) | done |
+| [Task 7 — UI revamp & settings](#task-7--ui-revamp--settings-done) | done |
+| [Task 8 — Data portability](#task-8--data-portability-done) | done |
+| [Task 9 — Search & discovery](#task-9--search--discovery) | **in progress** |
+| [Task 10 — Re-read modeling](#task-10--re-read-modeling) | planned |
+| [Task 11 — Analytics & stats revamp](#task-11--analytics--stats-revamp) | planned |
+| [Task 12 — Genre tracking](#task-12--genre-tracking) | planned |
+| [Task 13 — Movies & TV](#task-13--movies--tv) | planned |
+| [Task 14 — Bulk operations & cover backfill](#task-14--bulk-operations--cover-backfill) | done |
+| [Task 15 — Logging](#task-15--logging) | done |
+| [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned |
+| [Blocked on external changes](#blocked-on-external-changes) | — |
+| [Backlog / tech debt](#backlog--tech-debt) | — |
+| [Unscheduled features](#unscheduled-features) | — |
+| [Source of truth note](#source-of-truth-note) | — |
+
 ## Done
 
 - **CI pipeline**: GitHub Actions on every pull request and every push to `main`. Four jobs — the
@@ -96,7 +125,7 @@ single list below and reordering is a one-line edit there.
   total but still counts toward the session count); the stats screen renders an unknown-value
   marker rather than a misleading `0` when a period's sum is entirely `null`.
 
-## Task 6 — Books polish (done — ready for release)
+## Task 6 — Books polish (done)
 
 The book domain gets finished before any other media type starts: real-world use of
 v0.3.0/v0.4.0 surfaced too many rough edges (wrong provider page counts with no way to
@@ -176,7 +205,7 @@ going wide. Movies & TV move to Task 13.
     one-book-at-a-time re-fetch affordance, but explicitly NOT used in any bulk/loop context this
     phase (see backlog for the deferred bulk-backfill item this constrains).
 
-## Task 7 — UI revamp & settings (done — ready for release)
+## Task 7 — UI revamp & settings (done)
 
 Task 6 made the book domain functionally complete; this task makes it pleasant. Prioritized
 ahead of search because these are the screens in daily use, and the rough edges were reported
@@ -243,7 +272,7 @@ from real use rather than inferred.
   prefill, edit-mode prefill, and `PendingSessionDialog`'s not-dismissible-except-by-Discard rule)
   is unchanged — layout only.
 
-## Task 8 — Data portability (done — ready for release)
+## Task 8 — Data portability (done)
 
 The vision doc calls CSV export/import and `.sqlite` backups "first-class support," but none of
 it exists — which means an app whose entire premise is *no cloud* currently offers the user no
