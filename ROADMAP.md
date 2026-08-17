@@ -633,6 +633,15 @@ and never implemented: there is no genre column, table, or UI anywhere today.
     this task has to build the identical UI, storage and validation anyway — riding along here
     costs almost nothing, whereas a settings screen built for one optional key does not pay for
     itself.
+    - **The case for pulling the Google Books half forward got stronger on 2026-08-16.** Open
+      Library went fully down (not slow — unreachable, its own status page included), and the app
+      behaved exactly as designed: the 15s timeout fired, the fallback engaged, and Google Books
+      answered **429 on a single request**. So the two providers failed *together*, which is the one
+      thing a fallback exists to prevent. The keyless quota is not merely undocumented, it is thin
+      enough to be exhausted before the fallback is needed. That is a reliability hole open today,
+      whereas Task 13 is fifth in the execution order — worth deciding deliberately whether the
+      key-entry plumbing is really Task 13's to own, or a small piece that should ship sooner and
+      have TMDB become *its* second consumer rather than the other way round.
   - **Open Library is explicitly not part of this**, and the question comes up often enough to
     answer once: Open Library issues no API keys, tokens or paid tiers of any kind. The only lever
     is the `User-Agent` identification already in `HttpClientFactory` (1 → 3 req/s, AGENTS.md §4),
@@ -1112,6 +1121,20 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
+
+- **The Library FAB has no usable accessibility label, and Compose test tags are not exposed.**
+  `LibraryScreen`'s add-book button is `FloatingActionButton { Text("+") }` — a literal plus
+  character rather than an icon with a description — so TalkBack announces "plus" and a screen-reader
+  user is told nothing about what it does. It is the only such gap: every `Icon(` across all eight
+  screens carries a real `contentDescription`, with zero `contentDescription = null`, so this is an
+  outlier rather than a pattern. `Icon(Icons.Default.Add, contentDescription = "Add book")` fixes it.
+  - **Separately, `testTagsAsResourceId` is not enabled and no `testTag()` calls exist.** Turning it
+    on surfaces Compose test tags as `resource-id` in `uiautomator` dumps, which gives device
+    verification stable handles that survive text and layout changes. Today the only reliable way to
+    drive a control is to dump the view hierarchy and match on its visible text — workable, and in
+    fact how the changelog, log viewer and Add Book flows were verified, but it breaks whenever a
+    label is reworded, and it tempts guessing coordinates from a screenshot instead (which has
+    already produced one mis-tap into the wrong screen).
 
 - **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
   viewer state and viewer rendering are all covered, but the composition that connects them is not:
