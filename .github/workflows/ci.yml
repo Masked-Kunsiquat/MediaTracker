@@ -313,6 +313,21 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug
 
+      # Only on failure -- a green run's reports are noise, but a red one is very hard to diagnose
+      # from log output alone. This belongs to *this* job: it names shared/build/test-results, which
+      # only exists where the tests actually ran. It spent a while attached to the lint job instead,
+      # after that job was inserted directly above it, so a failing test run uploaded nothing at all
+      # while the lint job uploaded a path that never existed there.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-reports
+          path: |
+            shared/build/reports/tests/
+            shared/build/test-results/
+          retention-days: 7
+
   lint:
     name: Linting
     runs-on: ubuntu-latest
@@ -352,16 +367,4 @@ jobs:
             **/build/reports/ktlint/
             app/build/reports/lint-results-debug.xml
             app/build/reports/lint-results-debug.html
-          retention-days: 7
-
-      # Only on failure -- a green run's reports are noise, but a red one is very hard to diagnose
-      # from log output alone.
-      - name: Upload test reports
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: test-reports
-          path: |
-            shared/build/reports/tests/
-            shared/build/test-results/
           retention-days: 7
