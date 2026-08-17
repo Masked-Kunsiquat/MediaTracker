@@ -123,6 +123,23 @@ internal fun reflow(raw: String): String {
     }
 }
 
+/**
+ * The one `###` section title the viewer does not show.
+ *
+ * `CHANGELOG.md` serves two audiences that had been silently merged. Most of it is written for the
+ * person using the app -- `[0.11.1]` opens "Books were quietly losing their authors" -- but the CI
+ * and tooling entries are written for whoever maintains the repository, and the file is copied into
+ * the app's assets verbatim, so those were appearing on the What's New screen next to release prose.
+ * Putting them under `### Internal` keeps one file and one source of truth while letting the screen
+ * show only the half addressed to its reader.
+ *
+ * Matched case-insensitively on purpose. The two failure directions are not symmetric: hiding a
+ * section that should have been shown is a missing line on a screen, while showing one that should
+ * have been hidden puts build-pipeline detail in front of a user. A stray `### internal` should
+ * still be hidden.
+ */
+private const val INTERNAL_SECTION = "Internal"
+
 private val VERSION_HEADING = Regex("""^##\s+\[([^\]]+)\]\s*(?:-\s*(.+))?\s*$""")
 private val SECTION_HEADING = Regex("""^###\s+(.+?)\s*$""")
 private val BOLD_LEAD = Regex("""^\*\*(.+?)\*\*""", RegexOption.DOT_MATCHES_ALL)
@@ -132,16 +149,27 @@ private val BOLD_LEAD = Regex("""^\*\*(.+?)\*\*""", RegexOption.DOT_MATCHES_ALL)
  *
  * Content before the first `## [` heading (the file's title and format blurb) is skipped: it
  * describes the changelog rather than any release, so it has no place in a per-version viewer.
+ * `### Internal` sections are omitted entirely -- see [INTERNAL_SECTION].
+ *
  * Never throws -- an input with no version headings at all yields an empty document.
  */
 public fun parseChangelog(markdown: String): ChangelogDocument {
     val versions = mutableListOf<ChangelogVersion>()
     var current: VersionBuilder? = null
 
+    fun finishCurrent() {
+        val built = current?.build() ?: return
+        // A version left with nothing after [INTERNAL_SECTION] is dropped rather than rendered as a
+        // bare heading with nothing under it -- which would be a worse screen than the noise this
+        // removes. The preamble is checked too, so a release whose prose carries the story keeps its
+        // entry even if every one of its sections was internal.
+        if (built.preamble.isNotBlank() || built.sections.isNotEmpty()) versions += built
+    }
+
     for (rawLine in markdown.lineSequence()) {
         val versionMatch = VERSION_HEADING.matchEntire(rawLine)
         if (versionMatch != null) {
-            current?.let { versions += it.build() }
+            finishCurrent()
             current =
                 VersionBuilder(
                     version = versionMatch.groupValues[1],
@@ -151,7 +179,7 @@ public fun parseChangelog(markdown: String): ChangelogDocument {
         }
         current?.accept(rawLine)
     }
-    current?.let { versions += it.build() }
+    finishCurrent()
     return ChangelogDocument(versions)
 }
 
@@ -214,7 +242,13 @@ private class VersionBuilder(
     private fun closeSection() {
         closeEntry()
         val title = sectionTitle
-        if (title != null) sections += ChangelogSection(title, entries)
+        // Dropped here rather than skipped while reading, so an [Internal] section's bullets are
+        // still parsed normally and simply discarded. Bailing out earlier would mean teaching
+        // accept() to track "am I inside a hidden section", which is the kind of mode that goes
+        // wrong the moment the file grows a shape nobody anticipated.
+        if (title != null && !title.equals(INTERNAL_SECTION, ignoreCase = true)) {
+            sections += ChangelogSection(title, entries)
+        }
         entries = mutableListOf()
         sectionTitle = null
     }

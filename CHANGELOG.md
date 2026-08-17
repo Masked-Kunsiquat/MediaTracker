@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Fixed
+- **"What's new" no longer shows build-pipeline notes.** This file is copied into the app verbatim, so entries written for whoever maintains the repository — CI jobs, lint configuration, secret scanning — had been appearing on that screen alongside the release notes written for you. They now live under an `### Internal` heading that the viewer skips, so the screen shows only the half addressed to its reader. One file still, and nothing is deleted: the entries are still here for anyone reading the repository.
+
+### Internal
 - **Automated changelog enforcement (CI)** — The CI pipeline now verifies that every pull request modifying core code (`shared/` or `app/src/main/`) also includes an update to `CHANGELOG.md`. This ensures architectural and user-visible changes are documented as they happen, maintaining the project's "Keep a Changelog" discipline (AGENTS.md §8).
 - **Room schema protection (CI)** — CI now enforces that changes to Room entities are accompanied by updated schema export files, preventing silent schema drift and ensuring that migrations are always verified against the expected state.
 - **Kotlin and Android linting (CI)** — ktlint and Android Lint now run on every pull request. ktlint is configured in `.editorconfig` at a 120-column limit, which is the Kotlin/IntelliJ default and what this codebase was already written to. Both Gradle modules scope ktlint to hand-written sources, because KSP registers its output directories into the Kotlin source sets and ktlint would otherwise report tens of thousands of violations against generated Room code.
@@ -15,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The job first **proves the scanner still detects**, by scanning a throwaway fixture containing a known token and asserting it is caught, reported and redacted. Without that, a broken scanner and a clean repository produce the same green tick — the failure AGENTS.md §7 exists to prevent, and one this work hit for real: the first version of the control used a token gitleaks allowlists, so it passed while proving nothing.
   - It also **fails if a credential file has ever been committed** (`*.jks`, `*.keystore`, `*.p12`, `keystore.properties`), checked by name across the whole history. `.gitignore` only stops an accidental `git add` of an untracked file, and gitleaks cannot read an opaque binary keystore, so neither would notice one already tracked.
 
-### Changed
 - **Expanded CI workflow** — `.github/workflows/ci.yml` now includes the enforcement checks for changelog updates, schema integrity and secret scanning, integrated into the standard PR verification suite.
 - **Updated `AGENTS.md`** to formalize these automated rules within the project's development guidelines, including a §5 convention for ktlint configuration (and the two ways of "fixing" violations that make things worse) and a §7 lint step alongside the existing test gate. `ROADMAP.md` and `README.md` record the same.
 
