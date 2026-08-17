@@ -1,0 +1,28 @@
+# Keeps the commit-SHA pins in .github/workflows/ up to date.
+#
+# This file is the other half of pinning, not an optional extra. A pinned SHA is frozen: it will
+# never pick up a security fix in the action it points at, and nothing anywhere will complain about
+# that. Pinning without something proposing updates trades "an action can change under us silently"
+# for "an action can never change, including when it must" -- which is the worse of the two, because
+# the first is at least a live repository being maintained by someone.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    # "/" means .github/workflows/, not the repository root -- that is how the github-actions
+    # ecosystem is addressed, and pointing it at .github/workflows finds nothing.
+    directory: "/"
+    schedule:
+      interval: weekly
+
+    # One pull request for all of them rather than one each. Every Dependabot PR runs the full
+    # pipeline here -- unit tests, a debug build, lint and a secret scan, about five minutes -- and
+    # five separate PRs bumping five actions is five runs of that to review the same kind of change.
+    # Grouped, an update is one diff where every line is a SHA and a version comment.
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+    commit-message:
+      prefix: "ci"
