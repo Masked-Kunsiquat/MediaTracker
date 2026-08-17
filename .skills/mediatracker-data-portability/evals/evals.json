@@ -1,0 +1,23 @@
+{
+  "skill_name": "mediatracker-data-portability",
+  "evals": [
+    {
+      "id": 0,
+      "name": "csv-header-ordering",
+      "prompt": "I'm adding a new field to the library export. Where should I put the new column in the CSV?",
+      "expected_output": "The response should warn that CSV header ordering is non-negotiable and that appending is safer than inserting, while noting that existing importers will fail if the header doesn't match their expected list."
+    },
+    {
+      "id": 1,
+      "name": "csv-null-representation",
+      "prompt": "How should I represent a reading session with an unknown duration in the export CSV?",
+      "expected_output": "The response must mandate an empty field, explicitly forbidding the use of '0' or 'null' strings, as '0' is a valid 0-second session."
+    },
+    {
+      "id": 2,
+      "name": "backup-wal-consistency",
+      "prompt": "Can I just copy the .db file to create a backup?",
+      "expected_output": "The response should say NO, because in WAL mode the most recent commits might be in the -wal sidecar. It should recommend using 'VACUUM INTO' instead."
+    }
+  ]
+}

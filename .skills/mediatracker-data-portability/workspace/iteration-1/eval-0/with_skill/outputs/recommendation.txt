@@ -1,0 +1,20 @@
+### Recommendation: Logic-First Placement with Version Bump
+
+Based on MediaTracker's data portability standards (RFC 4180) and the precedent set during the version 1 to version 2 transition:
+
+1. **Placement: Logical Grouping over Append-Only**
+   - Place the new column where it is logically "natural" for a human reader.
+   - Precedent: The `authors` column was inserted at index 5 (after `title`) in v2, rather than being appended at the end (index 16).
+   - If your field is metadata (like 'Publisher' or 'Subtitle'), place it near `title` or `release_year`. If it is a technical identifier, place it near `external_identifiers`.
+
+2. **Schema Versioning**
+   - You MUST increment `CSV_SCHEMA_VERSION` from `2` to `3` in `CsvSchemaVersion.kt`.
+   - Column order is "NON-NEGOTIABLE" within a version. Changing the set of columns essentially creates a new schema.
+
+3. **Maintenance of Import Compatibility**
+   - Keep the existing header list as a legacy reference (e.g., `HEADER_V2`) in `LibraryCsvExporter`.
+   - Update `LibraryCsvImporter` to recognize the new version and provide a "padding" adapter for v1 and v2 files so they remain importable even though they lack the new column.
+
+4. **Documentation**
+   - Update `docs/sample-data/CSV_FORMAT.md` to reflect the new column count and order.
+   - Update the `SKILL.md` metadata if it explicitly lists the version as `2`.

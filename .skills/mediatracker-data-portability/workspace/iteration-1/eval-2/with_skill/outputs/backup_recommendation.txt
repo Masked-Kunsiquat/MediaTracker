@@ -1,0 +1,14 @@
+The recommendation for backing up the MediaTracker database is as follows:
+
+**No, you should not just copy the .db file to create a backup.**
+
+Doing so risks creating an inconsistent or "stale" backup due to how MediaTracker handles data:
+
+1.  **WAL Mode Hazard:** MediaTracker uses SQLite's **Write-Ahead Logging (WAL)** mode. In this mode, the most recent commits often live in a separate `-wal` sidecar file rather than the main `.db` file. A simple file copy of just the `.db` file would miss any data that hasn't been "checkpointed" (merged) yet.
+2.  **The Recommended Protocol:** You must use SQLite's **`VACUUM INTO`** command. This is the authoritative way to back up a WAL-mode database because it:
+    *   Reads through the normal SQLite pager, ensuring a consistent snapshot of the entire database state (including un-checkpointed WAL data).
+    *   Produces a single, compact `.db` file that is "WAL-free" and ready for transport.
+3.  **Credential Safety:** MediaTracker's internal backup logic (via `DatabaseBackupUseCase`) performs a **Credential Scrub** after the `VACUUM INTO` snapshot is created. It specifically deletes sensitive data like API keys (e.g., for Google Books) from the backup file before handing it to the user. A manual file copy would leave these plaintext credentials in your backup.
+4.  **Verification on Restore:** MediaTracker's restore protocol expects a file created via this process. It validates the first 100 bytes (checking the SQLite magic string and the `user_version`) and runs `PRAGMA integrity_check` before allowing a restore to proceed.
+
+**In summary:** Always use the in-app backup feature (which leverages `VACUUM INTO`) rather than manual file manipulation to ensure your data is complete, consistent, and secure.
