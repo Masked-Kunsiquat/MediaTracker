@@ -223,7 +223,7 @@
     <!-- SettingsScreen: .sqlite backup (ROADMAP Task 8 Phase C) -->
     <string name="settings_section_backup_restore">Backup &amp; restore</string>
     <string name="settings_backup_label">Back up database</string>
-    <string name="settings_backup_description">Save a complete copy of your database (every book, session, and setting) as a single file you choose the location for.</string>
+    <string name="settings_backup_description">Save a complete copy of your database (every book, session, and setting except credentials) as a single file you choose the location for.</string>
     <string name="settings_backup_button">Back up now</string>
     <string name="backup_success_message">Backup saved successfully</string>
     <string name="backup_failure_message">Backup failed — nothing was saved</string>

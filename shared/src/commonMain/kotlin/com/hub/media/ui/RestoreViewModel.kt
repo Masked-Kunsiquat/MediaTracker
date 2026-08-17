@@ -6,6 +6,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,14 +59,24 @@ public class RestoreViewModel(
 
         _uiState.value = RestoreUiState.Validating
         viewModelScope.launch {
+            // Read now, while the live database still holds whatever key it holds -- see
+            // RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared's KDoc for why this can't
+            // be deferred to any later point in the restore flow. Presence only; the key's
+            // value is never read here or held by this ViewModel.
+            val keySet =
+                try {
+                    settingsRepository.getGoogleBooksApiKey() != null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Failing to read the key is rare but shouldn't crash validation; assume true
+                    // for safety so the warning appears regardless.
+                    true
+                }
+
             _uiState.value =
                 when (val result = restoreDatabaseUseCase.stage(incomingFilePath)) {
                     is Resource.Success -> {
-                        // Read now, while the live database still holds whatever key it holds --
-                        // see RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared's KDoc for why
-                        // this can't be deferred to any later point in the restore flow. Presence
-                        // only; the key's value is never read here or held by this ViewModel.
-                        val keySet = settingsRepository.getGoogleBooksApiKey() != null
                         RestoreUiState.AwaitingConfirmation(result.data, apiKeyWillBeCleared = keySet)
                     }
                     is Resource.Error -> RestoreUiState.Error(result.message)

@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.Resource
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.clearGoogleBooksApiKey
@@ -98,17 +99,20 @@ public class SettingsViewModel(
      * Persists [value] as the user's Google Books API key, or clears the stored key when [value] is
      * blank (see
      * [com.hub.media.features.settings.data.setGoogleBooksApiKey] for why blank means "clear" rather
-     * than "store an empty key"). Fire-and-forget like the two setters above -- [uiState]'s
-     * [SettingsUiState.googleBooksApiKeySet] flips reactively once the write lands.
+     * than "store an empty key").
      *
      * [value] is passed straight through to the repository and never retained, logged, or echoed
      * back through [uiState]. Nothing in this class holds the key after this call returns.
+     *
+     * @return [Resource.Success] if the write completed, or [Resource.Error] with a message.
      */
-    public fun setGoogleBooksApiKey(value: String) {
-        viewModelScope.launch {
+    public suspend fun setGoogleBooksApiKey(value: String): Resource<Unit> =
+        try {
             settingsRepository.setGoogleBooksApiKey(value)
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error("Failed to save API key", e)
         }
-    }
 
     /**
      * Removes the stored Google Books API key, returning every Google Books request to the keyless
@@ -117,10 +121,14 @@ public class SettingsViewModel(
      * supported state, not a broken one). Separate from [setGoogleBooksApiKey] with a blank value
      * even though the two end up in the same place, because the *screen* offers them as two distinct
      * actions and a "clear" that works by submitting an empty text field reads as an accident.
+     *
+     * @return [Resource.Success] if the key was cleared, or [Resource.Error] with a message.
      */
-    public fun clearGoogleBooksApiKey() {
-        viewModelScope.launch {
+    public suspend fun clearGoogleBooksApiKey(): Resource<Unit> =
+        try {
             settingsRepository.clearGoogleBooksApiKey()
+            Resource.Success(Unit)
+        } catch (e: Exception) {
+            Resource.Error("Failed to clear API key", e)
         }
-    }
 }

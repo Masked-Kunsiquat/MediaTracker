@@ -626,8 +626,9 @@ and never implemented: there is no genre column, table, or UI anywhere today.
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
   - **DECIDED AND DONE, AHEAD OF THIS TASK: the Google Books half shipped on its own, and TMDB is
-    now the second consumer rather than the first.** The reliability hole below was open *today*
-    while this task sits fifth in the execution order, which is what settled it. What exists now:
+    now the second consumer rather than the first.** The reliability hole below was open until the
+    Google Books key plumbing was pulled forward on 2026-08-16, while this task sits fifth in the
+    execution order, which is what settled it. What exists now:
     `ProviderApiKeys.kt` (typed `app_settings` accessors, no schema change — [WeekStartDay]'s
     convention), a "Book lookups" Settings section, and a `googleBooksApiKeyProvider: suspend () ->
     String?` threaded from `AppContainer` through the three factories that build a

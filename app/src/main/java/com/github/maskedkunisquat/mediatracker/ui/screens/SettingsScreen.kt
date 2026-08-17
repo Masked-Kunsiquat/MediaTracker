@@ -83,6 +83,7 @@ import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BulkBackfillProgress
 import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.CsvExportBundle
@@ -536,12 +537,20 @@ fun SettingsScreenRoute(
         onWeekStartDayChange = viewModel::setWeekStartDay,
         onLogVerbosityChange = viewModel::setLogVerbosity,
         onGoogleBooksApiKeySave = { key ->
-            viewModel.setGoogleBooksApiKey(key)
-            coroutineScope.launch { snackbarHostState.showSnackbar(apiKeySavedMessage) }
+            coroutineScope.launch {
+                val result = viewModel.setGoogleBooksApiKey(key)
+                if (result is Resource.Success) {
+                    snackbarHostState.showSnackbar(apiKeySavedMessage)
+                }
+            }
         },
         onGoogleBooksApiKeyClear = {
-            viewModel.clearGoogleBooksApiKey()
-            coroutineScope.launch { snackbarHostState.showSnackbar(apiKeyClearedMessage) }
+            coroutineScope.launch {
+                val result = viewModel.clearGoogleBooksApiKey()
+                if (result is Resource.Success) {
+                    snackbarHostState.showSnackbar(apiKeyClearedMessage)
+                }
+            }
         },
         onNavigateToLogViewer = onNavigateToLogViewer,
         onNavigateToChangelog = onNavigateToChangelog,
