@@ -625,8 +625,26 @@ and never implemented: there is no genre column, table, or UI anywhere today.
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
+  - **DECIDED AND DONE, AHEAD OF THIS TASK: the Google Books half shipped on its own, and TMDB is
+    now the second consumer rather than the first.** The reliability hole below was open *today*
+    while this task sits fifth in the execution order, which is what settled it. What exists now:
+    `ProviderApiKeys.kt` (typed `app_settings` accessors, no schema change — [WeekStartDay]'s
+    convention), a "Book lookups" Settings section, and a `googleBooksApiKeyProvider: suspend () ->
+    String?` threaded from `AppContainer` through the three factories that build a
+    `GoogleBooksClient`. Three decisions in it that TMDB should inherit rather than re-derive:
+    - **The key is read per request, never captured at construction.** `AppContainer` is built once
+      per process and outlives every Settings visit; a captured value would keep sending a key the
+      user had just cleared.
+    - **The stored key never reaches the UI state.** `SettingsUiState` carries a
+      `googleBooksApiKeySet: Boolean`, not the key — so a future "log the UI state" line cannot leak
+      it — and the screen never echoes a saved key back into a field.
+    - **`VACUUM INTO` copies everything, including credentials.** The backup use case scrubs the key
+      row out of the staged snapshot (sharing the constant with the accessor, so a rename can't
+      silently stop the scrub matching), and the restore confirmation warns that the key will be
+      cleared. A second key added by this task needs the same two things; neither is automatic.
   - **Build that key-entry setting as shared plumbing, not a TMDB-only field, and let Google Books
-    be its second consumer.** Google's docs state that public-data requests *require* an API key;
+    be its second consumer.** *(Superseded by the bullet above — kept for the reasoning, which is
+    what carried.)* Google's docs state that public-data requests *require* an API key;
     this app has always called it keyless, which works in practice but is undocumented tolerance,
     and 429s have already been observed against it (Task 9). A key would put the Google Books
     fallback on a documented quota instead of a favour. It is not scheduled on its own because

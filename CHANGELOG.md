@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **You can now give MediaTracker your own Google Books API key**, under a new "Book lookups" section in Settings. Books are looked up on Open Library first, with Google Books as the backup — and without a key that backup shares an unofficial allowance with everyone else using it. That is not theoretical: during an Open Library outage the backup answered "too many requests" on a *single* lookup, so both sources failed together at the one moment the backup was all there was. A key is free from the Google Cloud console, entirely optional, and everything works exactly as before without one.
+  - **The key stays on this device.** It is stripped out of `.sqlite` backups before the file is handed over, so a backup you share or store elsewhere never carries it. The consequence is stated up front rather than discovered: restoring a backup clears the key, and the restore confirmation now says so before you commit to it.
+  - **A saved key is never shown again.** Settings reports that a key is saved rather than displaying it, and changing it means entering the new one — the same as everywhere else that holds a credential. The entry field is masked with a Show toggle for verifying a paste, and is marked as a password field so your keyboard never learns or later suggests it.
+  - **A rejected key now says so in the log.** Google answers a bad, restricted, or not-enabled key with the same generic error it uses for a bad request, which on its own is indistinguishable from a book that simply isn't there. When a key is configured, the log now notes that — never the key itself.
+
 ### Fixed
 - **A provider failing with an HTTP error is now recorded in the log.** Both book-metadata providers logged thrown exceptions but said nothing when a provider answered with an error status, which is not an exception. Found during a real Open Library outage: the lookup failed on both providers, the screen explained both, and the application log contained only one of them — so the artefact you would reach for to diagnose it was the one missing half the story.
 
