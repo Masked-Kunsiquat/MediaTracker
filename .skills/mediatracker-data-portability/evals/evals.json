@@ -5,7 +5,7 @@
       "id": 0,
       "name": "csv-header-ordering",
       "prompt": "I'm adding a new field to the library export. Where should I put the new column in the CSV?",
-      "expected_output": "The response should warn that CSV header ordering is non-negotiable and that appending is safer than inserting, while noting that existing importers will fail if the header doesn't match their expected list."
+      "expected_output": "The response should warn that CSV header ordering is non-negotiable and recommend logical insertion of new columns by incrementing the schema version and implementing legacy header support in ImportDataUseCase, rather than requiring append-only placement."
     },
     {
       "id": 1,
@@ -17,7 +17,7 @@
       "id": 2,
       "name": "backup-wal-consistency",
       "prompt": "Can I just copy the .db file to create a backup?",
-      "expected_output": "The response should say NO, because in WAL mode the most recent commits might be in the -wal sidecar. It should recommend using 'VACUUM INTO' instead."
+      "expected_output": "The response should say NO, because in WAL mode recent committed changes might be in the -wal sidecar. It should recommend using 'VACUUM INTO' and mandate that DatabaseBackupUseCase removes the Google Books API-key row from the staged snapshot."
     }
   ]
 }

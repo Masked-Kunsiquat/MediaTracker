@@ -4,7 +4,7 @@
 
 **Answer:** **No.** You cannot just edit the entity class for a schema that has already been shipped in a tagged release.
 
-### Rationale
+## Rationale
 According to the **Room Schema Freeze Rule** (defined in `AGENTS.md §8` and the `mediatracker-release-management` skill):
 > "Once a release is tagged, the database schema shipped in it is FROZEN. Any later schema change requires incrementing the Room `@Database` version and providing a tested migration."
 
@@ -29,6 +29,8 @@ To make the column nullable, you must follow the migration ritual:
 
 5.  **Update the Frozen Schema Ledger**:
     Append a new row to the ledger in `AGENTS.md §8` documenting the new schema version and the migration:
+
     | Schema | Froze at | Migration into it |
     | :--- | :--- | :--- |
     | v6 | (Upcoming) | `MIGRATION_5_6` — [Brief description of change] |
+

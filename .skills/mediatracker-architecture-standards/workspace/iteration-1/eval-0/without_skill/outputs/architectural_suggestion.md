@@ -2,7 +2,7 @@
 
 The project uses a **Polymorphic Media Schema** to ensure universal metadata is shared while domain-specific details remain isolated and type-safe.
 
-### Core Principles
+## Core Principles
 1. **Universal Table (`media_items`)**: Every movie is first represented as a `MediaItemEntity`. This table stores fields common to all media: `id`, `type`, `title`, `releaseYear`, `purchasePrice`, `createdAt`, and `coverImageHash`.
 2. **Child Table (`movie_details`)**: Domain-specific data (e.g., director, runtime) is stored in a `MovieDetailsEntity`. This keeps the universal table from becoming bloated with nullable columns that only apply to certain media types.
 3. **Primary Key (UUID)**: Following `AGENTS.md §3.1`, all primary keys MUST be generated `UUID` strings. 

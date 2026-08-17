@@ -53,7 +53,7 @@ public class TmdbClient(
 }
 
 // 3. AppContainer Wiring (ui/AppContainer.kt)
-public class AppContainer(...) {
+public class AppContainer {
     private val httpClient = createHttpClient()
     private val settingsRepository = SettingsRepository(database.appSettingsDao())
 
