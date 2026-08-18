@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,6 +41,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +66,7 @@ import com.hub.media.features.books.domain.MIN_SEARCH_QUERY_LENGTH
 import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddBookViewModel
+import com.hub.media.ui.AddSearchErrorReason
 import com.hub.media.ui.AddSearchState
 import com.hub.media.ui.AppContainer
 import io.ktor.client.HttpClient
@@ -77,6 +80,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
 private const val TAG = "AddBookScreen"
+
+private const val TAB_SEARCH = 0
+private const val TAB_ISBN = 1
 
 /**
  * Route-level composable for the add-book screen.
@@ -173,8 +179,8 @@ fun AddBookScreen(
     httpClient: HttpClient? = null,
     logger: Logger = AppLogger,
 ) {
-    var isbnInput by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var isbnInput by rememberSaveable { mutableStateOf("") }
+    var selectedTab by rememberSaveable { mutableIntStateOf(TAB_SEARCH) }
 
     val currentConfirmationResult by confirmationResult?.collectAsStateWithLifecycle() ?: remember {
         mutableStateOf(null)
@@ -204,13 +210,13 @@ fun AddBookScreen(
             // Tab row for Search and ISBN modes
             PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    selected = selectedTab == TAB_SEARCH,
+                    onClick = { selectedTab = TAB_SEARCH },
                     text = { Text(stringResource(R.string.add_book_tab_search)) },
                 )
                 Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    selected = selectedTab == TAB_ISBN,
+                    onClick = { selectedTab = TAB_ISBN },
                     text = { Text(stringResource(R.string.add_book_tab_isbn)) },
                 )
             }
@@ -222,7 +228,7 @@ fun AddBookScreen(
                         .padding(16.dp),
             ) {
                 when (selectedTab) {
-                    0 ->
+                    TAB_SEARCH ->
                         SearchTabContent(
                             uiState = uiState,
                             searchQuery = searchQuery,
@@ -234,7 +240,7 @@ fun AddBookScreen(
                             httpClient = httpClient,
                             logger = logger,
                         )
-                    else ->
+                    TAB_ISBN ->
                         IsbnTabContent(
                             uiState = uiState,
                             isbnInput = isbnInput,
@@ -309,7 +315,7 @@ private fun SearchTabContent(
                 value = currentSearchQuery,
                 onValueChange = onSearchQueryChange,
                 label = { Text(stringResource(R.string.add_book_search_label)) },
-                placeholder = { Text(stringResource(R.string.add_book_search_placeholder)) },
+                placeholder = { Text(stringResource(R.string.add_book_search_placeholder, MIN_SEARCH_QUERY_LENGTH)) },
                 enabled = !isAddLoading,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -353,7 +359,7 @@ private fun SearchTabContent(
 }
 
 /**
- * ISO tab content: ISBN entry field and submit button (unchanged from before).
+ * ISBN tab content: ISBN entry field and submit button (unchanged from before).
  */
 @Composable
 private fun IsbnTabContent(
@@ -428,16 +434,30 @@ private fun HelpfulSearchText(
 
     val text =
         when {
-            query.isEmpty() -> stringResource(R.string.add_book_search_hint_min_chars, MIN_SEARCH_QUERY_LENGTH)
-            query.length < MIN_SEARCH_QUERY_LENGTH ->
-                stringResource(
-                    R.string.add_book_search_hint_keep_typing,
-                    MIN_SEARCH_QUERY_LENGTH - query.length,
+            query.trim().isEmpty() -> stringResource(R.string.add_book_search_hint_min_chars, MIN_SEARCH_QUERY_LENGTH)
+            query.trim().length < MIN_SEARCH_QUERY_LENGTH -> {
+                val remaining = MIN_SEARCH_QUERY_LENGTH - query.trim().length
+                pluralStringResource(
+                    R.plurals.add_book_search_hint_keep_typing,
+                    remaining,
+                    remaining,
                 )
+            }
 
             searchState is AddSearchState.Searching -> stringResource(R.string.add_book_search_hint_searching)
             searchState is AddSearchState.NoResults -> stringResource(R.string.add_book_search_hint_no_results)
-            searchState is AddSearchState.Error -> searchState.message
+            searchState is AddSearchState.Error -> {
+                when (searchState.reason) {
+                    AddSearchErrorReason.MissingEditionKey ->
+                        stringResource(R.string.add_book_search_error_missing_edition_key)
+
+                    AddSearchErrorReason.MissingIsbn ->
+                        stringResource(R.string.add_book_search_error_missing_isbn)
+
+                    is AddSearchErrorReason.Generic -> (searchState.reason as AddSearchErrorReason.Generic).message
+                }
+            }
+
             else -> ""
         }
 
@@ -465,7 +485,7 @@ private fun SearchResultsSection(
     modifier: Modifier = Modifier,
 ) {
     // Only show results/loading when query is long enough
-    if (query.length < MIN_SEARCH_QUERY_LENGTH) {
+    if (query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
         return
     }
 
@@ -496,10 +516,10 @@ private fun SearchResultsSection(
                             ).padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(
+                    itemsIndexed(
                         items = results,
-                        key = { result -> result.workKey ?: result.title },
-                    ) { result ->
+                        key = { index, result -> "${result.workKey ?: result.title}_$index" },
+                    ) { index, result ->
                         SearchResultRow(
                             result = result,
                             enabled = !isAddLoading,
@@ -609,16 +629,7 @@ private fun SearchResultThumbnail(
     modifier: Modifier = Modifier,
 ) {
     if (coverThumbnailUrl.isNullOrBlank()) {
-        Box(
-            modifier =
-                modifier.background(
-                    MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(4.dp),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("📖", style = MaterialTheme.typography.bodyLarge)
-        }
+        ThumbnailPlaceholder(modifier = modifier)
         return
     }
 
@@ -664,16 +675,24 @@ private fun SearchResultThumbnail(
             contentScale = ContentScale.Crop,
         )
     } else {
-        Box(
-            modifier =
-                modifier.background(
-                    MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(4.dp),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("📖", style = MaterialTheme.typography.bodyLarge)
-        }
+        ThumbnailPlaceholder(modifier = modifier)
+    }
+}
+
+/**
+ * Placeholder displayed when a search result thumbnail is missing or loading.
+ */
+@Composable
+private fun ThumbnailPlaceholder(modifier: Modifier = Modifier) {
+    Box(
+        modifier =
+            modifier.background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(4.dp),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("📖", style = MaterialTheme.typography.bodyLarge)
     }
 }
 

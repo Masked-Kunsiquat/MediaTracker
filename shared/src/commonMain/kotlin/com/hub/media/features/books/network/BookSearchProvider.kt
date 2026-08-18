@@ -50,8 +50,8 @@ public interface BookSearchProvider {
      *   merely the case where this edition cannot be added (it legitimately has no ISBN). [Resource.Error]
      *   means the lookup itself failed (network, parse, status).
      *
-     * Implementations must never throw out of this method — the same [Resource.Error] contract as
-     * [searchByTitleOrAuthor] applies.
+     * Implementations must never throw out of this method — the same [Resource.Error] contract and
+     * [kotlinx.coroutines.CancellationException] propagation rule as [searchByTitleOrAuthor] apply.
      */
     public suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?>
 }

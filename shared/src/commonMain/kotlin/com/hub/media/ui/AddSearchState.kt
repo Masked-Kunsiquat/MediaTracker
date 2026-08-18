@@ -23,9 +23,27 @@ public sealed class AddSearchState {
     /**
      * The most recent search failed.
      *
-     * @property message A user-facing/diagnostic description of the failure.
+     * @property reason Typed reason for the failure, for localization.
      */
     public data class Error(
-        val message: String,
+        val reason: AddSearchErrorReason,
     ) : AddSearchState()
+}
+
+/** Typed reasons for a search or resolution failure (ROADMAP Task 9 Phase B2). */
+public sealed class AddSearchErrorReason {
+    /** Selected result has no edition key; cannot resolve to ISBN. */
+    public data object MissingEditionKey : AddSearchErrorReason()
+
+    /** Selected edition has no ISBN in the provider index. */
+    public data object MissingIsbn : AddSearchErrorReason()
+
+    /**
+     * The search or lookup failed with a generic error (network, parse, status).
+     *
+     * @property message Diagnostic description of the failure.
+     */
+    public data class Generic(
+        val message: String,
+    ) : AddSearchErrorReason()
 }

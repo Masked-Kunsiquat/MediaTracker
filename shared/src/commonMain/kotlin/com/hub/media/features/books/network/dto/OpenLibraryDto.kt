@@ -25,13 +25,14 @@ internal data class OpenLibraryEditionDto(
      */
     val works: List<OpenLibraryWorkRefDto>? = null,
     /**
-     * 10-digit ISBN, when available in the edition record. Prefer over [isbn13] when both are
-     * present, though Open Library typically provides just one or the other.
+     * 10-digit ISBN, when available in the edition record. Falls back to [isbn13] if not present.
      */
     @SerialName("isbn_10")
     val isbn10: List<String>? = null,
     /**
-     * 13-digit ISBN, when available in the edition record. Falls back to [isbn10] if not present.
+     * 13-digit ISBN, when available in the edition record. Prefer over [isbn10] when both are
+     * present, matching the resolution order in
+     * [com.hub.media.features.books.network.OpenLibrarySearchClient.resolveEditionToIsbn].
      */
     @SerialName("isbn_13")
     val isbn13: List<String>? = null,

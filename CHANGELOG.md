@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Search UI: two-tab layout (Search | ISBN), dropdown results showing cover thumbnail, title + author(s), publication year, and edition count.
   - Infrastructure: 300ms debounce on keystroke, cancellation of in-flight requests when you keep typing, separate search error state so failures don't leak into the add flow.
   - Edition-to-ISBN resolver: Open Library API bridge to fetch the ISBN for a selected edition, since search results are works (many editions) rather than concrete ISBNs.
+- **Refined Add Book screen search and state management** — Updated query-length checks to use trimmed query consistently, cleared terminal add failure state when starting a new search, and switched to `rememberSaveable` for UI state persistence across configuration changes.
+- **Improved search result keying** — Switched to indexed item keys in search results list to prevent duplicate LazyColumn keys when multiple editions have the same title.
+- **Enhanced search and resolution error handling** — Replaced raw error strings with typed error reasons in `AddSearchState`, mapped to localized strings in the UI. Introduced `resolveJob` tracking to ensure abandoned selections cannot resolve and trigger stale ingestion.
+- **Infrastructure improvements** — Updated `BookSearchProvider` contract and `OpenLibrarySearchClient` to propagate `CancellationException` and prefer ISBN-13 during resolution. Cleaned up `AppContainer` documentation and imports.
 
 ### Internal
 

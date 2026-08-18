@@ -17,6 +17,7 @@ import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.portability.data.ImportWriteRepository
@@ -186,10 +187,7 @@ public class AppContainer(
         )
 
     /**
-     * Edition-level search client backing [searchBooksUseCase]. Exposed separately (in addition to
-     * [searchBooksUseCase]) so [AddBookViewModel] can call [com.hub.media.features.books.network.BookSearchProvider.resolveEditionToIsbn]
-     * on the result of a search — resolving the work-level search hit to a concrete ISBN
-     * (ROADMAP Task 9 Phase B2).
+     * Edition-level search client backing [searchBooksUseCase].
      */
     private val openLibrarySearchClient = OpenLibrarySearchClient(httpClient)
 
@@ -213,10 +211,12 @@ public class AppContainer(
 
     /**
      * Edition-to-ISBN resolver for search result selection (ROADMAP Task 9 Phase B2).
-     * Exposed to [AddBookViewModel] so it can resolve a search result's [BookSearchResult.coverEditionKey]
-     * to a concrete ISBN, which is then passed to [addBookByIsbnUseCase].
+     *
+     * Exposed separately (in addition to [searchBooksUseCase]) so [AddBookViewModel] can resolve a
+     * search result's [BookSearchResult.coverEditionKey] to a concrete ISBN, which is then passed
+     * to [addBookByIsbnUseCase].
      */
-    public val searchProvider: com.hub.media.features.books.network.BookSearchProvider =
+    public val searchProvider: BookSearchProvider =
         openLibrarySearchClient
 
     /**

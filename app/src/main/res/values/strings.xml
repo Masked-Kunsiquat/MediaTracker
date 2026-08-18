@@ -295,14 +295,20 @@
     <string name="add_book_tab_search">Search</string>
     <string name="add_book_tab_isbn">ISBN</string>
     <string name="add_book_search_label">Search by title or author</string>
-    <string name="add_book_search_placeholder">Type at least 3 characters</string>
+    <string name="add_book_search_placeholder">Type at least %1$d characters</string>
     <string name="add_book_search_clear_content_description">Clear search</string>
     <string name="add_book_search_hint_min_chars">Search by title or author (min %1$d chars)</string>
-    <string name="add_book_search_hint_keep_typing">Keep typing… (%1$d more chars)</string>
+    <plurals name="add_book_search_hint_keep_typing">
+        <item quantity="one">Keep typing… (%1$d more char)</item>
+        <item quantity="other">Keep typing… (%1$d more chars)</item>
+    </plurals>
     <string name="add_book_search_hint_searching">Searching…</string>
     <string name="add_book_search_hint_no_results">No books found</string>
+    <string name="add_book_search_error_missing_edition_key">Selected result has no edition key; cannot resolve to ISBN</string>
+    <string name="add_book_search_error_missing_isbn">Selected edition has no ISBN in Open Library; cannot add this book this way</string>
+    <string name="add_book_search_error_generic">Search failed. Please try again.</string>
     <string name="add_book_isbn_label">ISBN</string>
-    <string name="add_book_isbn_placeholder">e.g., 978&#8211;0&#8211;13&#8211;110362&#8211;7</string>
+    <string name="add_book_isbn_placeholder">e.g., 978-0-13-110362-7</string>
     <string name="add_book_submit_button">Add Book</string>
     <string name="add_book_search_result_year_format">(%1$d)</string>
     <plurals name="add_book_search_result_editions_format">

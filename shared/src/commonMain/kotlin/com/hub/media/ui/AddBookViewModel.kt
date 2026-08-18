@@ -56,6 +56,7 @@ public class AddBookViewModel(
     public val confirmationResult: StateFlow<BookSearchResult?> = _confirmationResult.asStateFlow()
 
     private var searchJob: Job? = null
+    private var resolveJob: Job? = null
 
     /**
      * Initiates a search for [query], with debounce (300ms) and previous-query cancellation.
@@ -74,14 +75,18 @@ public class AddBookViewModel(
         // Cancel any in-flight search for the previous query.
         searchJob?.cancel()
 
-        if (!_uiState.value.isCompatibleWithSearch()) {
-            // Don't start a new search if the add flow is in flight. Once it finishes (user has
-            // been shown success or error), reset() will return to Idle and searching can resume.
-            return
-        }
-
         // Guard: search requires both use case and provider to be injected.
         if (searchBooksUseCase == null || searchProvider == null) return
+
+        // If the add flow is in a terminal error state, clear it so searching can resume.
+        if (_uiState.value is AddBookUiState.Error) {
+            _uiState.value = AddBookUiState.Idle
+        }
+
+        if (_uiState.value is AddBookUiState.Loading) {
+            // Don't start a new search if the add flow is in flight.
+            return
+        }
 
         // A too-short query immediately returns empty results without hitting the network.
         if (!searchBooksUseCase.isQueryLongEnough(query)) {
@@ -107,7 +112,7 @@ public class AddBookViewModel(
                     }
 
                     is Resource.Error -> {
-                        _searchState.value = AddSearchState.Error(result.message)
+                        _searchState.value = AddSearchState.Error(AddSearchErrorReason.Generic(result.message))
                     }
                 }
             }
@@ -125,7 +130,7 @@ public class AddBookViewModel(
         val editionKey = result.coverEditionKey
         if (editionKey.isNullOrBlank()) {
             _searchState.value =
-                AddSearchState.Error("Selected result has no edition key; cannot resolve to ISBN")
+                AddSearchState.Error(AddSearchErrorReason.MissingEditionKey)
             return
         }
 
@@ -147,34 +152,39 @@ public class AddBookViewModel(
 
         val provider = searchProvider ?: return
         _searchState.value = AddSearchState.Searching
-        viewModelScope.launch {
-            val isbnResult = provider.resolveEditionToIsbn(editionKey)
-            when (isbnResult) {
-                is Resource.Success -> {
-                    val isbn = isbnResult.data
-                    if (isbn.isNullOrBlank()) {
-                        _searchState.value =
-                            AddSearchState.Error(
-                                "Selected edition has no ISBN in Open Library; " +
-                                    "cannot add this book this way",
-                            )
-                    } else {
-                        // Successfully resolved — now add the book.
-                        _searchState.value = AddSearchState.Idle
-                        addBook(isbn)
+
+        // Cancel any in-flight resolution (ROADMAP Task 9 Phase B2 nitpick).
+        resolveJob?.cancel()
+
+        resolveJob =
+            viewModelScope.launch {
+                val isbnResult = provider.resolveEditionToIsbn(editionKey)
+                when (isbnResult) {
+                    is Resource.Success -> {
+                        val isbn = isbnResult.data
+                        if (isbn.isNullOrBlank()) {
+                            _searchState.value =
+                                AddSearchState.Error(AddSearchErrorReason.MissingIsbn)
+                        } else {
+                            // Successfully resolved — now add the book.
+                            _searchState.value = AddSearchState.Idle
+                            addBook(isbn)
+                        }
+                    }
+
+                    is Resource.Error -> {
+                        _searchState.value = AddSearchState.Error(AddSearchErrorReason.Generic(isbnResult.message))
                     }
                 }
-
-                is Resource.Error -> {
-                    _searchState.value = AddSearchState.Error(isbnResult.message)
-                }
+                resolveJob = null
             }
-        }
     }
 
     /** Discards the current [confirmationResult]. */
     public fun cancelSelection() {
         _confirmationResult.value = null
+        resolveJob?.cancel()
+        resolveJob = null
     }
 
     /** Clears the search state, results, and query. */
@@ -183,6 +193,8 @@ public class AddBookViewModel(
         _searchResults.value = emptyList()
         _searchState.value = AddSearchState.Idle
         searchJob?.cancel()
+        resolveJob?.cancel()
+        resolveJob = null
     }
 
     /**
@@ -213,6 +225,3 @@ public class AddBookViewModel(
         private const val SEARCH_DEBOUNCE_MS = 300L
     }
 }
-
-/** Whether the add-flow state permits starting a new search. Loading or a terminal state blocks it. */
-private fun AddBookUiState.isCompatibleWithSearch(): Boolean = this is AddBookUiState.Idle

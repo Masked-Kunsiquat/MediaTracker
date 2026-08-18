@@ -90,7 +90,7 @@ class AddBookViewModelTest {
 
             viewModel.addBook("bad")
 
-            val finalState = viewModel.uiState.value
+            val finalState = viewModel.uiState.first { it is AddBookUiState.Error }
             assertIs<AddBookUiState.Error>(finalState)
             assertEquals("Invalid ISBN: 'bad'", finalState.message)
         }
@@ -123,7 +123,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModel(fake)
 
             viewModel.addBook("9780135957059")
-            assertIs<AddBookUiState.Success>(viewModel.uiState.value)
+            viewModel.uiState.first { it is AddBookUiState.Success }
 
             viewModel.reset()
 
@@ -137,11 +137,13 @@ class AddBookViewModelTest {
             val viewModel = newViewModel(fake)
 
             viewModel.addBook("9780135957059")
+            viewModel.uiState.first { it is AddBookUiState.Success }
             viewModel.reset()
             viewModel.addBook("9780132350884")
+            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
 
             assertEquals(2, fake.callCount)
-            assertIs<AddBookUiState.Success>(viewModel.uiState.value)
+            assertIs<AddBookUiState.Success>(finalState)
         }
 
     // ============ Search integration tests (ROADMAP Task 9 Phase B2) ============
@@ -220,7 +222,9 @@ class AddBookViewModelTest {
 
             val errorState = viewModel.searchState.value
             assertIs<AddSearchState.Error>(errorState)
-            assertEquals("Network error", errorState.message)
+            val reason = errorState.reason
+            assertIs<AddSearchErrorReason.Generic>(reason)
+            assertEquals("Network error", reason.message)
         }
 
     @Test
@@ -322,7 +326,7 @@ class AddBookViewModelTest {
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value)
             val errorState = viewModel.searchState.value as AddSearchState.Error
-            assertEquals("Selected result has no edition key; cannot resolve to ISBN", errorState.message)
+            assertIs<AddSearchErrorReason.MissingEditionKey>(errorState.reason)
         }
 
     @Test
@@ -346,7 +350,9 @@ class AddBookViewModelTest {
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value, "expected Error state")
             val errorState = viewModel.searchState.value as AddSearchState.Error
-            assertEquals("Open Library failed", errorState.message, "error message mismatch")
+            val reason = errorState.reason
+            assertIs<AddSearchErrorReason.Generic>(reason)
+            assertEquals("Open Library failed", reason.message, "error message mismatch")
 
             // Results must NOT be cleared on failure (ROADMAP Task 9 Phase B2 PR review)
             assertEquals(1, viewModel.searchResults.value.size, "searchResults should NOT be cleared on failure")
@@ -371,10 +377,7 @@ class AddBookViewModelTest {
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value)
             val errorState = viewModel.searchState.value as AddSearchState.Error
-            assertEquals(
-                "Selected edition has no ISBN in Open Library; cannot add this book this way",
-                errorState.message,
-            )
+            assertIs<AddSearchErrorReason.MissingIsbn>(errorState.reason)
 
             // Results must NOT be cleared on failure (ROADMAP Task 9 Phase B2 PR review)
             assertEquals(1, viewModel.searchResults.value.size)
@@ -400,8 +403,8 @@ class AddBookViewModelTest {
                 bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             viewModel.selectSearchResult(result)
 
-            // The selection should be ignored
-            assertEquals(0, providerFake.resolveCallCount)
+            // The selection should be ignored (confirmationResult remains null)
+            assertEquals(null, viewModel.confirmationResult.value)
         }
 
     @Test
