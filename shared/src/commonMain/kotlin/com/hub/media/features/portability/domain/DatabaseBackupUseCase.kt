@@ -195,11 +195,11 @@ public class DefaultDatabaseBackupUseCase(
     private suspend fun scrubGoogleBooksApiKey(path: String) {
         withContext(Dispatchers.IO) {
             BundledSQLiteDriver().open(path).use { connection ->
-                var wasPresent = false
-                connection.prepare("SELECT COUNT(*) FROM app_settings WHERE `key` = ?").use { statement ->
-                    statement.bindText(1, KEY_GOOGLE_BOOKS_API_KEY)
-                    if (statement.step()) wasPresent = statement.getInt(0) > 0
-                }
+                val wasPresent =
+                    connection.prepare("SELECT COUNT(*) FROM app_settings WHERE `key` = ?").use { statement ->
+                        statement.bindText(1, KEY_GOOGLE_BOOKS_API_KEY)
+                        if (statement.step()) statement.getInt(0) > 0 else false
+                    }
                 connection.prepare("DELETE FROM app_settings WHERE `key` = ?").use { statement ->
                     statement.bindText(1, KEY_GOOGLE_BOOKS_API_KEY)
                     statement.step()

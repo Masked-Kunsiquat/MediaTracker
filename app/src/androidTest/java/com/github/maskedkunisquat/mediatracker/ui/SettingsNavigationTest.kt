@@ -105,15 +105,17 @@ class SettingsNavigationTest {
     fun googleBooksApiKeyRow_saveAndClearAreWiredToRealCallbacks() {
         openSettings()
 
-        composeRule.onNodeWithText("API key").performScrollTo().performTextInput("test-key-not-a-real-one")
-        composeRule.onNodeWithText("Save key").performScrollTo().performClick()
-        composeRule.waitForIdle()
+        try {
+            composeRule.onNodeWithText("API key").performScrollTo().performTextInput("test-key-not-a-real-one")
+            composeRule.onNodeWithText("Save key").performScrollTo().performClick()
+            composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("A key is saved", substring = true).assertIsDisplayed()
+            composeRule.onNodeWithText("A key is saved", substring = true).assertIsDisplayed()
+        } finally {
+            composeRule.onNodeWithText("Clear key").performScrollTo().performClick()
+            composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Clear key").performScrollTo().performClick()
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithText("No key saved", substring = true).assertIsDisplayed()
+            composeRule.onNodeWithText("No key saved", substring = true).assertIsDisplayed()
+        }
     }
 }

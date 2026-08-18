@@ -1215,7 +1215,13 @@ private fun GoogleBooksApiKeySetting(
                 )
             }
             if (keySet) {
-                OutlinedButton(onClick = onClear) {
+                OutlinedButton(
+                    onClick = {
+                        onClear()
+                        entered = ""
+                        revealed = false
+                    },
+                ) {
                     Text(stringResource(R.string.settings_google_books_key_clear_button))
                 }
             }

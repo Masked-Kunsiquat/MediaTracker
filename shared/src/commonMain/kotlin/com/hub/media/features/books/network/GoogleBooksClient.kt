@@ -144,8 +144,12 @@ public class GoogleBooksClient(
         } catch (e: Exception) {
             // The fallback provider: when this one fails too, the add/backfill genuinely has no
             // metadata to offer, so this is the entry that explains an empty result.
-            logger.warn(TAG, e) { "Google Books lookup failed for isbn=$isbn" }
-            Resource.Error("Google Books lookup failed for ISBN $isbn: ${e.message}", e)
+            //
+            // LOGGING: throwable is omitted so a transport-level error (e.g. from Ktor or OkHttp)
+            // cannot leak the API key into the log file if it were to embed the request URL
+            // in its own message or string representation.
+            logger.warn(TAG) { "Google Books lookup failed for isbn=$isbn (transport error)" }
+            return Resource.Error("Google Books lookup failed for ISBN $isbn")
         }
     }
 }

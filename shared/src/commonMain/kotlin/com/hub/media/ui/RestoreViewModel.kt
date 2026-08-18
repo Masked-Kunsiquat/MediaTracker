@@ -63,22 +63,29 @@ public class RestoreViewModel(
             // RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared's KDoc for why this can't
             // be deferred to any later point in the restore flow. Presence only; the key's
             // value is never read here or held by this ViewModel.
-            val keySet =
+            val keyCheckResult: Resource<Boolean> =
                 try {
-                    settingsRepository.getGoogleBooksApiKey() != null
+                    Resource.Success(settingsRepository.getGoogleBooksApiKey() != null)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    _uiState.value = RestoreUiState.Error("Failed to check existing API key")
-                    return@launch
+                    Resource.Error("Failed to check existing API key")
                 }
 
             _uiState.value =
-                when (val result = restoreDatabaseUseCase.stage(incomingFilePath)) {
+                when (keyCheckResult) {
                     is Resource.Success -> {
-                        RestoreUiState.AwaitingConfirmation(result.data, apiKeyWillBeCleared = keySet)
+                        when (val result = restoreDatabaseUseCase.stage(incomingFilePath)) {
+                            is Resource.Success -> {
+                                RestoreUiState.AwaitingConfirmation(
+                                    result.data,
+                                    apiKeyWillBeCleared = keyCheckResult.data,
+                                )
+                            }
+                            is Resource.Error -> RestoreUiState.Error(result.message)
+                        }
                     }
-                    is Resource.Error -> RestoreUiState.Error(result.message)
+                    is Resource.Error -> RestoreUiState.Error(keyCheckResult.message)
                 }
         }
     }
