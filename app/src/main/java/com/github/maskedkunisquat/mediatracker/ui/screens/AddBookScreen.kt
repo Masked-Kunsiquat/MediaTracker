@@ -29,15 +29,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -48,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -166,12 +169,12 @@ fun AddBookScreen(
     logger: Logger = AppLogger,
 ) {
     var isbnInput by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Add Book") },
+                title = { Text(stringResource(R.string.add_book_screen_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -190,16 +193,16 @@ fun AddBookScreen(
                     .padding(innerPadding),
         ) {
             // Tab row for Search and ISBN modes
-            TabRow(selectedTabIndex = selectedTab) {
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Search") },
+                    text = { Text(stringResource(R.string.add_book_tab_search)) },
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("ISBN") },
+                    text = { Text(stringResource(R.string.add_book_tab_isbn)) },
                 )
             }
 
@@ -263,7 +266,7 @@ private fun SearchTabContent(
     val isAddLoading = uiState is AddBookUiState.Loading
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Search input field
@@ -271,8 +274,8 @@ private fun SearchTabContent(
             TextField(
                 value = currentSearchQuery,
                 onValueChange = onSearchQueryChange,
-                label = { Text("Search by title or author") },
-                placeholder = { Text("Type at least 3 characters") },
+                label = { Text(stringResource(R.string.add_book_search_label)) },
+                placeholder = { Text(stringResource(R.string.add_book_search_placeholder)) },
                 enabled = !isAddLoading,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -286,7 +289,7 @@ private fun SearchTabContent(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear search",
+                                contentDescription = stringResource(R.string.add_book_search_clear_content_description),
                             )
                         }
                     }
@@ -310,6 +313,7 @@ private fun SearchTabContent(
             onSelectResult = onSelectSearchResult,
             httpClient = httpClient,
             logger = logger,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -334,8 +338,8 @@ private fun IsbnTabContent(
         OutlinedTextField(
             value = isbnInput,
             onValueChange = onIsbnChange,
-            label = { Text("ISBN") },
-            placeholder = { Text("e.g., 978-0-13-110362-7") },
+            label = { Text(stringResource(R.string.add_book_isbn_label)) },
+            placeholder = { Text(stringResource(R.string.add_book_isbn_placeholder)) },
             enabled = !isLoading,
             isError = isError,
             modifier = Modifier.fillMaxWidth(),
@@ -367,7 +371,7 @@ private fun IsbnTabContent(
             enabled = !isLoading && isbnInput.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Add Book")
+            Text(stringResource(R.string.add_book_submit_button))
         }
     }
 }
@@ -390,11 +394,15 @@ private fun HelpfulSearchText(
 
     val text =
         when {
-            query.isEmpty() -> "Search by title or author (min $MIN_SEARCH_QUERY_LENGTH chars)"
+            query.isEmpty() -> stringResource(R.string.add_book_search_hint_min_chars, MIN_SEARCH_QUERY_LENGTH)
             query.length < MIN_SEARCH_QUERY_LENGTH ->
-                "Keep typing... (${MIN_SEARCH_QUERY_LENGTH - query.length} more chars)"
-            searchState is AddSearchState.Searching -> "Searching..."
-            searchState is AddSearchState.NoResults -> "No books found"
+                stringResource(
+                    R.string.add_book_search_hint_keep_typing,
+                    MIN_SEARCH_QUERY_LENGTH - query.length,
+                )
+
+            searchState is AddSearchState.Searching -> stringResource(R.string.add_book_search_hint_searching)
+            searchState is AddSearchState.NoResults -> stringResource(R.string.add_book_search_hint_no_results)
             searchState is AddSearchState.Error -> searchState.message
             else -> ""
         }
@@ -420,6 +428,7 @@ private fun SearchResultsSection(
     onSelectResult: (BookSearchResult) -> Unit,
     httpClient: HttpClient?,
     logger: Logger,
+    modifier: Modifier = Modifier,
 ) {
     // Only show results/loading when query is long enough
     if (query.length < MIN_SEARCH_QUERY_LENGTH) {
@@ -427,10 +436,7 @@ private fun SearchResultsSection(
     }
 
     Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(250.dp),
+        modifier = modifier.fillMaxWidth(),
     ) {
         when {
             searchState is AddSearchState.Searching -> {
@@ -438,7 +444,7 @@ private fun SearchResultsSection(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(250.dp),
+                            .fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
@@ -471,21 +477,7 @@ private fun SearchResultsSection(
                 }
             }
 
-            searchState is AddSearchState.Error -> {
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = searchState.message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
+            else -> Unit
         }
     }
 }
@@ -551,11 +543,11 @@ private fun SearchResultRow(
             val metadata =
                 buildString {
                     result.firstPublishYear?.let { year ->
-                        append("($year)")
+                        append(stringResource(R.string.add_book_search_result_year_format, year))
                     }
                     result.editionCount?.let { count ->
                         if (isNotEmpty()) append(" ")
-                        append("$count editions")
+                        append(pluralStringResource(R.plurals.add_book_search_result_editions_format, count, count))
                     }
                 }
             if (metadata.isNotEmpty()) {
@@ -629,7 +621,7 @@ private fun SearchResultThumbnail(
     if (imageBitmap != null) {
         Image(
             bitmap = imageBitmap,
-            contentDescription = null, // decorative in results list
+            contentDescription = stringResource(R.string.add_book_search_thumbnail_content_description),
             modifier = modifier,
             contentScale = ContentScale.Crop,
         )
