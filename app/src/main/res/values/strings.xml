@@ -304,8 +304,8 @@
     </plurals>
     <string name="add_book_search_hint_searching">Searching…</string>
     <string name="add_book_search_hint_no_results">No books found</string>
-    <string name="add_book_search_error_missing_edition_key">Selected result has no edition key; cannot resolve to ISBN</string>
-    <string name="add_book_search_error_missing_isbn">Selected edition has no ISBN in Open Library; cannot add this book this way</string>
+    <string name="add_book_search_error_missing_edition_key">This result cannot be added automatically. Try picking another edition or adding it by ISBN.</string>
+    <string name="add_book_search_error_missing_isbn">This edition has no ISBN on record and cannot be added this way. Try another edition or add it by ISBN.</string>
     <string name="add_book_search_error_generic">Search failed. Please try again.</string>
     <string name="add_book_isbn_label">ISBN</string>
     <string name="add_book_isbn_placeholder">e.g., 978-0-13-110362-7</string>

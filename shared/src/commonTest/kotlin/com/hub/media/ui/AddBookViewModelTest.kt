@@ -430,6 +430,27 @@ class AddBookViewModelTest {
         }
 
     @Test
+    fun search_afterAddFailure_clearsErrorAndProceeds() =
+        runTest {
+            val addFake = FakeAddBookByIsbnUseCase(result = Resource.Error("Add failed"))
+            val searchFake = FakeSearchBooksUseCase(results = listOf(bookSearchResult("Found")))
+            val providerFake = FakeBookSearchProvider()
+            val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
+
+            // 1. Fail an add operation
+            viewModel.addBook("9780135957059")
+            viewModel.uiState.first { it is AddBookUiState.Error }
+
+            // 2. Start a search
+            viewModel.search("hobbit")
+            advanceUntilIdle()
+
+            // Search should have proceeded, and uiState should be back to Idle
+            assertEquals(1, searchFake.executeCallCount)
+            assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
+        }
+
+    @Test
     fun cancelSelection_clearsConfirmationResult() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()

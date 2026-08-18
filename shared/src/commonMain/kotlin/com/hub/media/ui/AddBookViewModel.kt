@@ -156,7 +156,7 @@ public class AddBookViewModel(
         // Cancel any in-flight resolution (ROADMAP Task 9 Phase B2 nitpick).
         resolveJob?.cancel()
 
-        resolveJob =
+        val job =
             viewModelScope.launch {
                 val isbnResult = provider.resolveEditionToIsbn(editionKey)
                 when (isbnResult) {
@@ -176,8 +176,12 @@ public class AddBookViewModel(
                         _searchState.value = AddSearchState.Error(AddSearchErrorReason.Generic(isbnResult.message))
                     }
                 }
-                resolveJob = null
+                // Only clear resolveJob if it still points to this job.
+                if (resolveJob === coroutineContext[Job]) {
+                    resolveJob = null
+                }
             }
+        resolveJob = job
     }
 
     /** Discards the current [confirmationResult]. */

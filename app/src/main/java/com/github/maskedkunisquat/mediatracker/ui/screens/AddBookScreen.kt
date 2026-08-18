@@ -40,7 +40,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,7 +74,6 @@ import io.ktor.client.request.get
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
@@ -107,6 +105,10 @@ fun AddBookScreenRoute(
             factory = AddBookViewModelFactory(appContainer),
         )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val searchState by viewModel.searchState.collectAsStateWithLifecycle()
+    val confirmationResult by viewModel.confirmationResult.collectAsStateWithLifecycle()
 
     // When the submission succeeds, navigate back to library, clear search, and reset the ViewModel.
     LaunchedEffect(uiState) {
@@ -119,14 +121,14 @@ fun AddBookScreenRoute(
 
     AddBookScreen(
         uiState = uiState,
+        searchQuery = searchQuery,
+        searchResults = searchResults,
+        searchState = searchState,
+        confirmationResult = confirmationResult,
         onNavigateBack = onNavigateBack,
         onSubmitIsbn = { isbn -> viewModel.addBook(isbn) },
         onSearchQueryChange = { query -> viewModel.search(query) },
         onSelectSearchResult = { result -> viewModel.selectSearchResult(result) },
-        searchQuery = viewModel.searchQuery,
-        searchResults = viewModel.searchResults,
-        searchState = viewModel.searchState,
-        confirmationResult = viewModel.confirmationResult,
         onClearSearch = { viewModel.clearSearch() },
         onConfirmSelection = { viewModel.confirmSelection() },
         onCancelSelection = { viewModel.cancelSelection() },
@@ -165,14 +167,14 @@ fun AddBookScreenRoute(
 @Composable
 fun AddBookScreen(
     uiState: AddBookUiState,
+    searchQuery: String,
+    searchResults: List<BookSearchResult>,
+    searchState: AddSearchState,
+    confirmationResult: BookSearchResult?,
     onNavigateBack: () -> Unit,
     onSubmitIsbn: (String) -> Unit,
     onSearchQueryChange: (String) -> Unit = {},
     onSelectSearchResult: (BookSearchResult) -> Unit = {},
-    searchQuery: StateFlow<String>? = null,
-    searchResults: StateFlow<List<BookSearchResult>>? = null,
-    searchState: StateFlow<AddSearchState>? = null,
-    confirmationResult: StateFlow<BookSearchResult?>? = null,
     onClearSearch: () -> Unit = {},
     onConfirmSelection: () -> Unit = {},
     onCancelSelection: () -> Unit = {},
@@ -181,10 +183,6 @@ fun AddBookScreen(
 ) {
     var isbnInput by rememberSaveable { mutableStateOf("") }
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_SEARCH) }
-
-    val currentConfirmationResult by confirmationResult?.collectAsStateWithLifecycle() ?: remember {
-        mutableStateOf(null)
-    }
 
     Scaffold(
         topBar = {
@@ -257,7 +255,7 @@ fun AddBookScreen(
             }
         }
 
-        currentConfirmationResult?.let { result ->
+        confirmationResult?.let { result ->
             AlertDialog(
                 onDismissRequest = onCancelSelection,
                 title = { Text(stringResource(R.string.add_book_search_confirm_title)) },
@@ -290,19 +288,15 @@ fun AddBookScreen(
 @Composable
 private fun SearchTabContent(
     uiState: AddBookUiState,
-    searchQuery: StateFlow<String>?,
-    searchResults: StateFlow<List<BookSearchResult>>?,
-    searchState: StateFlow<AddSearchState>?,
+    searchQuery: String,
+    searchResults: List<BookSearchResult>,
+    searchState: AddSearchState,
     onSearchQueryChange: (String) -> Unit,
     onSelectSearchResult: (BookSearchResult) -> Unit,
     onClearSearch: () -> Unit,
     httpClient: HttpClient?,
     logger: Logger,
 ) {
-    val currentSearchQuery by searchQuery?.collectAsStateWithLifecycle() ?: remember { mutableStateOf("") }
-    val currentSearchResults by searchResults?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyList()) }
-    val currentSearchState by searchState?.collectAsStateWithLifecycle()
-        ?: remember { mutableStateOf(AddSearchState.Idle) }
     val isAddLoading = uiState is AddBookUiState.Loading
 
     Column(
@@ -312,7 +306,7 @@ private fun SearchTabContent(
         // Search input field
         Box(modifier = Modifier.fillMaxWidth()) {
             TextField(
-                value = currentSearchQuery,
+                value = searchQuery,
                 onValueChange = onSearchQueryChange,
                 label = { Text(stringResource(R.string.add_book_search_label)) },
                 placeholder = { Text(stringResource(R.string.add_book_search_placeholder, MIN_SEARCH_QUERY_LENGTH)) },
@@ -320,7 +314,7 @@ private fun SearchTabContent(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 trailingIcon = {
-                    if (currentSearchQuery.isNotEmpty()) {
+                    if (searchQuery.isNotEmpty()) {
                         IconButton(
                             onClick = {
                                 onClearSearch()
@@ -339,16 +333,16 @@ private fun SearchTabContent(
 
         // Helpful text based on search state
         HelpfulSearchText(
-            query = currentSearchQuery,
-            searchState = currentSearchState,
+            query = searchQuery,
+            searchState = searchState,
             isAddLoading = isAddLoading,
         )
 
         // Results list or state message
         SearchResultsSection(
-            query = currentSearchQuery,
-            results = currentSearchResults,
-            searchState = currentSearchState,
+            query = searchQuery,
+            results = searchResults,
+            searchState = searchState,
             isAddLoading = isAddLoading,
             onSelectResult = onSelectSearchResult,
             httpClient = httpClient,
@@ -454,7 +448,8 @@ private fun HelpfulSearchText(
                     AddSearchErrorReason.MissingIsbn ->
                         stringResource(R.string.add_book_search_error_missing_isbn)
 
-                    is AddSearchErrorReason.Generic -> (searchState.reason as AddSearchErrorReason.Generic).message
+                    is AddSearchErrorReason.Generic ->
+                        stringResource(R.string.add_book_search_error_generic)
                 }
             }
 
@@ -705,6 +700,10 @@ private fun AddBookScreenIsbnPreview() {
     MediaTrackerTheme {
         AddBookScreen(
             uiState = AddBookUiState.Idle,
+            searchQuery = "",
+            searchResults = emptyList(),
+            searchState = AddSearchState.Idle,
+            confirmationResult = null,
             onNavigateBack = {},
             onSubmitIsbn = {},
         )
@@ -720,6 +719,10 @@ private fun AddBookScreenIsbnLoadingPreview() {
     MediaTrackerTheme {
         AddBookScreen(
             uiState = AddBookUiState.Loading,
+            searchQuery = "",
+            searchResults = emptyList(),
+            searchState = AddSearchState.Idle,
+            confirmationResult = null,
             onNavigateBack = {},
             onSubmitIsbn = {},
         )
@@ -735,6 +738,10 @@ private fun AddBookScreenIsbnErrorPreview() {
     MediaTrackerTheme {
         AddBookScreen(
             uiState = AddBookUiState.Error("Invalid ISBN format. Please check and try again."),
+            searchQuery = "",
+            searchResults = emptyList(),
+            searchState = AddSearchState.Idle,
+            confirmationResult = null,
             onNavigateBack = {},
             onSubmitIsbn = {},
         )
@@ -750,9 +757,9 @@ private fun SearchTabEmptyPreview() {
     MediaTrackerTheme {
         SearchTabContent(
             uiState = AddBookUiState.Idle,
-            searchQuery = null,
-            searchResults = null,
-            searchState = null,
+            searchQuery = "",
+            searchResults = emptyList(),
+            searchState = AddSearchState.Idle,
             onSearchQueryChange = {},
             onSelectSearchResult = {},
             onClearSearch = {},
@@ -795,10 +802,9 @@ private fun SearchTabWithResultsPreview() {
     MediaTrackerTheme {
         SearchTabContent(
             uiState = AddBookUiState.Idle,
-            searchQuery =
-                MutableStateFlow("The Hobbit"), // Use MutableStateFlow for preview
-            searchResults = MutableStateFlow(sampleResults),
-            searchState = MutableStateFlow(AddSearchState.Idle),
+            searchQuery = "The Hobbit",
+            searchResults = sampleResults,
+            searchState = AddSearchState.Idle,
             onSearchQueryChange = {},
             onSelectSearchResult = {},
             onClearSearch = {},
