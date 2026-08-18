@@ -180,7 +180,7 @@ fun AddBookScreen(
                     .padding(innerPadding),
         ) {
             // Tab row for Search and ISBN modes
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
+            TabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
