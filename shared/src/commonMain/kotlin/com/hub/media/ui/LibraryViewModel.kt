@@ -129,7 +129,6 @@ public class LibraryViewModel(
                 is Resource.Success -> clearSelection()
                 is Resource.Error ->
                     deleteError.value = DeleteErrorEvent(++deleteErrorSeq, result.message)
-                else -> Unit
             }
         }
     }

@@ -226,6 +226,6 @@ public fun suggestedBackupFileName(
     val now = clock.now().toLocalDateTime(timeZone)
 
     fun pad(value: Int) = value.toString().padStart(2, '0')
-    return "media_tracker_backup_${now.year}${pad(now.monthNumber)}${pad(now.dayOfMonth)}_" +
+    return "media_tracker_backup_${now.year}${pad(now.month.number)}${pad(now.day)}_" +
         "${pad(now.hour)}${pad(now.minute)}${pad(now.second)}.db"
 }
