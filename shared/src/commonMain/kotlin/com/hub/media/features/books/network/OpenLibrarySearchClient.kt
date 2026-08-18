@@ -91,6 +91,7 @@ private fun Throwable.typeName(): String = this::class.simpleName ?: "unknown"
  * edition key but no ISBN, so selecting a result means resolving that key to a concrete ISBN
  * that can be passed to [AddBookByIsbnUseCase].
  */
+
 /** Log tag for edition resolution adoption sites. */
 private const val TAG_EDITION = "OpenLibraryEditionResolver"
 
@@ -107,7 +108,9 @@ public class OpenLibrarySearchClient(
         return try {
             val response = client.get("$OPEN_LIBRARY_BASE_URL/books/$trimmed.json")
             if (!response.status.isSuccess()) {
-                logger.warn(TAG_EDITION) { "Open Library edition lookup returned ${response.status.value} for edition_key=$trimmed" }
+                logger.warn(
+                    TAG_EDITION,
+                ) { "Open Library edition lookup returned ${response.status.value} for edition_key=$trimmed" }
                 return Resource.Error("Open Library edition lookup failed with status ${response.status.value}")
             }
 
@@ -117,7 +120,9 @@ public class OpenLibrarySearchClient(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    logger.warn(TAG_EDITION) { "Open Library returned malformed JSON for edition_key=$trimmed (${e.typeName()})" }
+                    logger.warn(
+                        TAG_EDITION,
+                    ) { "Open Library returned malformed JSON for edition_key=$trimmed (${e.typeName()})" }
                     return Resource.Error("Open Library returned malformed JSON for edition $trimmed")
                 }
 

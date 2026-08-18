@@ -11,6 +11,7 @@ import com.hub.media.features.books.network.FakeBookSearchProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -48,8 +49,7 @@ class AddBookViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel(useCase: BookIngestionUseCase) =
-        viewModels.track(AddBookViewModel(useCase))
+    private fun newViewModel(useCase: BookIngestionUseCase) = viewModels.track(AddBookViewModel(useCase))
 
     private fun newViewModelWithSearch(
         useCase: BookIngestionUseCase,
@@ -184,6 +184,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
             viewModel.search("hob")
+            advanceUntilIdle()
 
             assertEquals(AddSearchState.Idle, viewModel.searchState.value)
             assertEquals(listOf(result), viewModel.searchResults.value)
@@ -199,6 +200,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
             viewModel.search("hobbit")
+            advanceUntilIdle()
 
             assertIs<AddSearchState.NoResults>(viewModel.searchState.value)
             assertEquals(emptyList(), viewModel.searchResults.value)
@@ -214,6 +216,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
             viewModel.search("hobbit")
+            advanceUntilIdle()
 
             val errorState = viewModel.searchState.value
             assertIs<AddSearchState.Error>(errorState)
@@ -230,6 +233,8 @@ class AddBookViewModelTest {
 
             viewModel.search("hob")
             viewModel.search("hobbit") // Cancel the first, start the second
+
+            advanceUntilIdle()
 
             // The first search (with delay) is cancelled; only the second call counts
             assertEquals(1, searchFake.executeCallCount)
@@ -258,6 +263,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
             viewModel.search("hobbit")
+            advanceUntilIdle()
             assertEquals(1, viewModel.searchResults.value.size)
 
             viewModel.clearSearch()

@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Infrastructure: 300ms debounce on keystroke, cancellation of in-flight requests when you keep typing, separate search error state so failures don't leak into the add flow.
   - Edition-to-ISBN resolver: Open Library API bridge to fetch the ISBN for a selected edition, since search results are works (many editions) rather than concrete ISBNs.
 
+### Internal
+
+- **Fixed search integration tests** — Added missing `advanceUntilIdle()` calls in `AddBookViewModelTest` to account for the new 300ms search debounce delay.
+- **Refactored `SearchBooksUseCase` for testability** — Extracted `SearchBooksUseCase` as an interface to support hand-rolled fakes in ViewModel tests, moving the logic and caching into `RealSearchBooksUseCase`.
+- **Fixed `OpenLibraryEditionResolverTest` and `SearchBooksUseCaseTest`** — Updated tests to match recent API changes in `BookSearchProvider` and fixed Ktor `MockEngine` helper usage.
+- **Lint and style fixes** — Resolved ktlint violations in both modules, including an over-length line in `AddBookScreen.kt`.
+
 ## [0.12.0] - 2026-08-17
 
 This release introduces project-specific skills to improve how AI agents collaborate on the

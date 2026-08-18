@@ -88,25 +88,26 @@ public class AddBookViewModel(
         }
 
         _searchState.value = AddSearchState.Searching
-        searchJob = viewModelScope.launch {
-            // 300ms debounce: wait before actually hitting the network, so typing multiple
-            // characters fires one request instead of N. A cancellation (next keystroke) kills
-            // this delay and starts the count over.
-            delay(SEARCH_DEBOUNCE_MS)
+        searchJob =
+            viewModelScope.launch {
+                // 300ms debounce: wait before actually hitting the network, so typing multiple
+                // characters fires one request instead of N. A cancellation (next keystroke) kills
+                // this delay and starts the count over.
+                delay(SEARCH_DEBOUNCE_MS)
 
-            val result = searchBooksUseCase.execute(query)
-            when (result) {
-                is Resource.Success -> {
-                    _searchResults.value = result.data
-                    _searchState.value =
-                        if (result.data.isEmpty()) AddSearchState.NoResults else AddSearchState.Idle
-                }
+                val result = searchBooksUseCase.execute(query)
+                when (result) {
+                    is Resource.Success -> {
+                        _searchResults.value = result.data
+                        _searchState.value =
+                            if (result.data.isEmpty()) AddSearchState.NoResults else AddSearchState.Idle
+                    }
 
-                is Resource.Error -> {
-                    _searchState.value = AddSearchState.Error(result.message)
+                    is Resource.Error -> {
+                        _searchState.value = AddSearchState.Error(result.message)
+                    }
                 }
             }
-        }
     }
 
     /**
@@ -196,5 +197,4 @@ public class AddBookViewModel(
 }
 
 /** Whether the add-flow state permits starting a new search. Loading or a terminal state blocks it. */
-private fun AddBookUiState.isCompatibleWithSearch(): Boolean =
-    this is AddBookUiState.Idle
+private fun AddBookUiState.isCompatibleWithSearch(): Boolean = this is AddBookUiState.Idle

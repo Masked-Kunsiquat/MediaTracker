@@ -11,6 +11,7 @@ import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
 import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
+import com.hub.media.features.books.domain.RealSearchBooksUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
@@ -201,7 +202,7 @@ public class AppContainer(
      * query length in [SearchBooksUseCase] and its caller instead.
      */
     public val searchBooksUseCase: SearchBooksUseCase =
-        SearchBooksUseCase(
+        RealSearchBooksUseCase(
             openLibrarySearchClient,
         )
 

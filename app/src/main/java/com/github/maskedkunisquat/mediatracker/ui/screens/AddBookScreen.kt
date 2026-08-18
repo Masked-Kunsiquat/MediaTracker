@@ -52,7 +52,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.StateFlow
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -64,6 +63,7 @@ import com.hub.media.ui.AddSearchState
 import com.hub.media.ui.AppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
@@ -200,27 +200,29 @@ fun AddBookScreen(
                         .padding(16.dp),
             ) {
                 when (selectedTab) {
-                    0 -> SearchTabContent(
-                        uiState = uiState,
-                        searchQuery = searchQuery,
-                        searchResults = searchResults,
-                        searchState = searchState,
-                        onSearchQueryChange = onSearchQueryChange,
-                        onSelectSearchResult = onSelectSearchResult,
-                        onClearSearch = onClearSearch,
-                    )
-                    else -> IsbnTabContent(
-                        uiState = uiState,
-                        isbnInput = isbnInput,
-                        onIsbnChange = { newValue ->
-                            isbnInput =
-                                newValue
-                                    .filter { char: Char ->
-                                        char.isDigit() || char.uppercaseChar() == 'X'
-                                    }.take(13)
-                        },
-                        onSubmitIsbn = onSubmitIsbn,
-                    )
+                    0 ->
+                        SearchTabContent(
+                            uiState = uiState,
+                            searchQuery = searchQuery,
+                            searchResults = searchResults,
+                            searchState = searchState,
+                            onSearchQueryChange = onSearchQueryChange,
+                            onSelectSearchResult = onSelectSearchResult,
+                            onClearSearch = onClearSearch,
+                        )
+                    else ->
+                        IsbnTabContent(
+                            uiState = uiState,
+                            isbnInput = isbnInput,
+                            onIsbnChange = { newValue ->
+                                isbnInput =
+                                    newValue
+                                        .filter { char: Char ->
+                                            char.isDigit() || char.uppercaseChar() == 'X'
+                                        }.take(13)
+                            },
+                            onSubmitIsbn = onSubmitIsbn,
+                        )
                 }
             }
         }
@@ -242,7 +244,8 @@ private fun SearchTabContent(
 ) {
     val currentSearchQuery by searchQuery?.collectAsStateWithLifecycle() ?: remember { mutableStateOf("") }
     val currentSearchResults by searchResults?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyList()) }
-    val currentSearchState by searchState?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(AddSearchState.Idle) }
+    val currentSearchState by searchState?.collectAsStateWithLifecycle()
+        ?: remember { mutableStateOf(AddSearchState.Idle) }
     val isAddLoading = uiState is AddBookUiState.Loading
 
     Column(
@@ -372,7 +375,8 @@ private fun HelpfulSearchText(
     val text =
         when {
             query.isEmpty() -> "Search by title or author (min $MIN_SEARCH_QUERY_LENGTH chars)"
-            query.length < MIN_SEARCH_QUERY_LENGTH -> "Keep typing... (${MIN_SEARCH_QUERY_LENGTH - query.length} more chars)"
+            query.length < MIN_SEARCH_QUERY_LENGTH ->
+                "Keep typing... (${MIN_SEARCH_QUERY_LENGTH - query.length} more chars)"
             searchState is AddSearchState.Searching -> "Searching..."
             searchState is AddSearchState.NoResults -> "No books found"
             searchState is AddSearchState.Error -> searchState.message
@@ -431,8 +435,7 @@ private fun SearchResultsSection(
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(8.dp),
-                            )
-                            .padding(4.dp),
+                            ).padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(

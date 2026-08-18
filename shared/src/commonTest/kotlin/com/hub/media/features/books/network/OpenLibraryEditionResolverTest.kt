@@ -5,6 +5,7 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
@@ -25,7 +26,7 @@ import kotlin.test.assertTrue
  * (network failure, parse failure, non-2xx status).
  */
 class OpenLibraryEditionResolverTest {
-    private fun MockEngine.jsonResponse(
+    private fun MockRequestHandleScope.jsonResponse(
         json: String,
         status: HttpStatusCode = HttpStatusCode.OK,
     ) = respond(
@@ -168,13 +169,14 @@ class OpenLibraryEditionResolverTest {
     @Test
     fun malformedJson_returnsError() =
         runTest {
-            val engine = MockEngine {
-                respond(
-                    content = "{ invalid json ]",
-                    status = HttpStatusCode.OK,
-                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
-                )
-            }
+            val engine =
+                MockEngine {
+                    respond(
+                        content = "{ invalid json ]",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                }
             val client = OpenLibrarySearchClient(createHttpClient(engine))
 
             val result = client.resolveEditionToIsbn("OL51711263M")
@@ -252,10 +254,10 @@ class OpenLibraryEditionResolverTest {
 
             client.resolveEditionToIsbn("OL99999999M")
 
-            val warns = logger.recordedLogs.filter { it.level == LogLevel.WARN }
+            val warns = logger.entries.filter { it.level == LogLevel.WARN }
             assertTrue(
                 warns.isNotEmpty(),
-                "expected at least one WARN log, got ${logger.recordedLogs}",
+                "expected at least one WARN log, got ${logger.entries}",
             )
             assertTrue(
                 warns.any { it.message.contains("404") },
