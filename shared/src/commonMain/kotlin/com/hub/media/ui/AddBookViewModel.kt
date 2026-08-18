@@ -77,8 +77,11 @@ public class AddBookViewModel(
             return
         }
 
+        // Guard: search requires both use case and provider to be injected.
+        if (searchBooksUseCase == null || searchProvider == null) return
+
         // A too-short query immediately returns empty results without hitting the network.
-        if (!searchBooksUseCase?.isQueryLongEnough(query) == true) {
+        if (!searchBooksUseCase.isQueryLongEnough(query)) {
             _searchState.value = AddSearchState.Idle
             _searchResults.value = emptyList()
             return
