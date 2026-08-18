@@ -33,7 +33,7 @@ private const val SOCKET_TIMEOUT_MILLIS = 15_000L
  * No version number, on purpose: it would duplicate `[versions] app` in `gradle/libs.versions.toml`
  * with nothing to keep the copy honest, and the identification policy does not ask for one.
  */
-internal const val USER_AGENT = "MediaTracker (+https://github.com/Masked-Kunsiquat/MediaTracker)"
+public const val USER_AGENT: String = "MediaTracker (+https://github.com/Masked-Kunsiquat/MediaTracker)"
 
 /**
  * The [Json] instance used for all Ktor content negotiation.

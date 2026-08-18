@@ -1,7 +1,9 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.graphics.BitmapFactory
-import android.util.Log
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,6 +63,11 @@ import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AddSearchState
 import com.hub.media.ui.AppContainer
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.get
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,6 +119,7 @@ fun AddBookScreenRoute(
         searchResults = viewModel.searchResults,
         searchState = viewModel.searchState,
         onClearSearch = { viewModel.clearSearch() },
+        httpClient = appContainer.httpClient,
     )
 }
 
@@ -154,6 +162,8 @@ fun AddBookScreen(
     searchResults: StateFlow<List<BookSearchResult>>? = null,
     searchState: StateFlow<AddSearchState>? = null,
     onClearSearch: () -> Unit = {},
+    httpClient: HttpClient? = null,
+    logger: Logger = AppLogger,
 ) {
     var isbnInput by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) }
@@ -209,6 +219,8 @@ fun AddBookScreen(
                             onSearchQueryChange = onSearchQueryChange,
                             onSelectSearchResult = onSelectSearchResult,
                             onClearSearch = onClearSearch,
+                            httpClient = httpClient,
+                            logger = logger,
                         )
                     else ->
                         IsbnTabContent(
@@ -241,6 +253,8 @@ private fun SearchTabContent(
     onSearchQueryChange: (String) -> Unit,
     onSelectSearchResult: (BookSearchResult) -> Unit,
     onClearSearch: () -> Unit,
+    httpClient: HttpClient?,
+    logger: Logger,
 ) {
     val currentSearchQuery by searchQuery?.collectAsStateWithLifecycle() ?: remember { mutableStateOf("") }
     val currentSearchResults by searchResults?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyList()) }
@@ -294,6 +308,8 @@ private fun SearchTabContent(
             searchState = currentSearchState,
             isAddLoading = isAddLoading,
             onSelectResult = onSelectSearchResult,
+            httpClient = httpClient,
+            logger = logger,
         )
     }
 }
@@ -402,6 +418,8 @@ private fun SearchResultsSection(
     searchState: AddSearchState,
     isAddLoading: Boolean,
     onSelectResult: (BookSearchResult) -> Unit,
+    httpClient: HttpClient?,
+    logger: Logger,
 ) {
     // Only show results/loading when query is long enough
     if (query.length < MIN_SEARCH_QUERY_LENGTH) {
@@ -446,6 +464,8 @@ private fun SearchResultsSection(
                             result = result,
                             enabled = !isAddLoading,
                             onSelect = onSelectResult,
+                            httpClient = httpClient,
+                            logger = logger,
                         )
                     }
                 }
@@ -478,6 +498,8 @@ private fun SearchResultRow(
     result: BookSearchResult,
     enabled: Boolean,
     onSelect: (BookSearchResult) -> Unit,
+    httpClient: HttpClient?,
+    logger: Logger,
 ) {
     Row(
         modifier =
@@ -492,6 +514,8 @@ private fun SearchResultRow(
         // Thumbnail
         SearchResultThumbnail(
             coverThumbnailUrl = result.coverThumbnailUrl,
+            httpClient = httpClient,
+            logger = logger,
             modifier =
                 Modifier
                     .size(56.dp)
@@ -554,6 +578,8 @@ private fun SearchResultRow(
 @Composable
 private fun SearchResultThumbnail(
     coverThumbnailUrl: String?,
+    httpClient: HttpClient?,
+    logger: Logger,
     modifier: Modifier = Modifier,
 ) {
     if (coverThumbnailUrl.isNullOrBlank()) {
@@ -577,20 +603,24 @@ private fun SearchResultThumbnail(
         ) {
             value =
                 withContext(Dispatchers.IO) {
+                    if (httpClient == null) {
+                        logger.warn(TAG) { "No HttpClient provided for thumbnail loading: $coverThumbnailUrl" }
+                        return@withContext null
+                    }
                     try {
-                        val url = java.net.URL(coverThumbnailUrl)
-                        val connection = url.openConnection() as java.net.HttpURLConnection
-                        connection.connectTimeout = 5000
-                        connection.readTimeout = 5000
-                        val inputStream = connection.inputStream
-                        BitmapFactory
-                            .decodeStream(inputStream)
-                            ?.asImageBitmap()
-                    } catch (e: IOException) {
-                        Log.w(TAG, "Failed to load search result thumbnail: $coverThumbnailUrl", e)
-                        null
+                        val response = httpClient.get(coverThumbnailUrl)
+                        if (response.status.isSuccess()) {
+                            val bytes = response.body<ByteArray>()
+                            BitmapFactory
+                                .decodeByteArray(bytes, 0, bytes.size)
+                                ?.asImageBitmap()
+                        } else {
+                            logger.warn(TAG) { "Failed to load thumbnail: $coverThumbnailUrl (status ${response.status.value})" }
+                            null
+                        }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Unexpected error loading thumbnail: $coverThumbnailUrl", e)
+                        if (e is CancellationException) throw e
+                        logger.warn(TAG) { "Unexpected error loading thumbnail: $coverThumbnailUrl (${e::class.simpleName})" }
                         null
                     }
                 }
@@ -599,7 +629,7 @@ private fun SearchResultThumbnail(
     if (imageBitmap != null) {
         Image(
             bitmap = imageBitmap,
-            contentDescription = "Book cover",
+            contentDescription = null, // decorative in results list
             modifier = modifier,
             contentScale = ContentScale.Crop,
         )
@@ -677,6 +707,8 @@ private fun SearchTabEmptyPreview() {
             onSearchQueryChange = {},
             onSelectSearchResult = {},
             onClearSearch = {},
+            httpClient = null,
+            logger = AppLogger,
         )
     }
 }
@@ -721,6 +753,8 @@ private fun SearchTabWithResultsPreview() {
             onSearchQueryChange = {},
             onSelectSearchResult = {},
             onClearSearch = {},
+            httpClient = null,
+            logger = AppLogger,
         )
     }
 }

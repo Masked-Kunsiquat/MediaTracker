@@ -3,6 +3,7 @@ package com.hub.media.ui
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
+import io.ktor.client.HttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.LogFileStore
 import com.hub.media.features.books.data.BookRepository
@@ -81,7 +82,11 @@ public class AppContainer(
     public val logFileStore: LogFileStore,
     public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
-    private val httpClient = createHttpClient()
+    /**
+     * Shared [HttpClient] for all outbound requests. Configured with a [com.hub.media.core.network.USER_AGENT]
+     * and timeouts per AGENTS.md §4.
+     */
+    public val httpClient: HttpClient = createHttpClient()
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
