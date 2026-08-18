@@ -13,6 +13,7 @@ import com.hub.media.features.settings.data.observeWeekStartDay
 import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setWeekStartDay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
@@ -110,6 +111,8 @@ public class SettingsViewModel(
         try {
             settingsRepository.setGoogleBooksApiKey(value)
             Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Resource.Error("Failed to save API key", e)
         }
@@ -128,6 +131,8 @@ public class SettingsViewModel(
         try {
             settingsRepository.clearGoogleBooksApiKey()
             Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Resource.Error("Failed to clear API key", e)
         }

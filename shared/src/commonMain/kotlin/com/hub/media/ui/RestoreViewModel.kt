@@ -69,9 +69,8 @@ public class RestoreViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // Failing to read the key is rare but shouldn't crash validation; assume true
-                    // for safety so the warning appears regardless.
-                    true
+                    _uiState.value = RestoreUiState.Error("Failed to check existing API key")
+                    return@launch
                 }
 
             _uiState.value =
