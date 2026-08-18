@@ -288,6 +288,9 @@ class AddBookViewModelTest {
             assertEquals(1, viewModel.searchResults.value.size)
 
             viewModel.selectSearchResult(result)
+            assertEquals(result, viewModel.confirmationResult.value, "confirmationResult should be populated")
+
+            viewModel.confirmSelection()
             advanceUntilIdle()
 
             // After selection and resolution, addBook should have been called
@@ -338,6 +341,7 @@ class AddBookViewModelTest {
             assertEquals(1, viewModel.searchResults.value.size)
 
             viewModel.selectSearchResult(result)
+            viewModel.confirmSelection()
             advanceUntilIdle()
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value, "expected Error state")
@@ -362,6 +366,7 @@ class AddBookViewModelTest {
             advanceUntilIdle()
 
             viewModel.selectSearchResult(result)
+            viewModel.confirmSelection()
             advanceUntilIdle()
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value)
@@ -419,6 +424,22 @@ class AddBookViewModelTest {
 
             // Search should not proceed; no new call should be made
             assertEquals(0, searchFake.executeCallCount)
+        }
+
+    @Test
+    fun cancelSelection_clearsConfirmationResult() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase()
+            val searchFake = FakeSearchBooksUseCase()
+            val providerFake = FakeBookSearchProvider()
+            val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
+
+            val result = bookSearchResult("The Hobbit")
+            viewModel.selectSearchResult(result)
+            assertEquals(result, viewModel.confirmationResult.value)
+
+            viewModel.cancelSelection()
+            assertEquals(null, viewModel.confirmationResult.value)
         }
 
     private companion object {

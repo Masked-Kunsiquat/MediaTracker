@@ -52,6 +52,9 @@ public class AddBookViewModel(
     private val _searchState = MutableStateFlow<AddSearchState>(AddSearchState.Idle)
     public val searchState: StateFlow<AddSearchState> = _searchState.asStateFlow()
 
+    private val _confirmationResult = MutableStateFlow<BookSearchResult?>(null)
+    public val confirmationResult: StateFlow<BookSearchResult?> = _confirmationResult.asStateFlow()
+
     private var searchJob: Job? = null
 
     /**
@@ -111,15 +114,10 @@ public class AddBookViewModel(
     }
 
     /**
-     * Selects a search result, resolving it to an ISBN and initiating ingestion.
+     * Selects a search result, initiating a confirmation request.
      *
-     * Attempts to resolve the result's [BookSearchResult.coverEditionKey] to an ISBN via
-     * [searchProvider]. If successful, feeds the ISBN to [addBook]. If resolution fails, the
-     * error is surfaced in [searchState] (not [uiState]) so the search UI can show the failure
-     * without leaving the flow. No retry is automatic; the user can try again or select a
-     * different result.
-     *
-     * Does nothing if a submission is already in flight — the same guard as [addBook].
+     * Selectable only when no add is already in flight. Result is stored in [confirmationResult];
+     * callers should show a confirmation dialog and then call [confirmSelection] or [cancelSelection].
      */
     public fun selectSearchResult(result: BookSearchResult) {
         if (_uiState.value is AddBookUiState.Loading || searchProvider == null) return
@@ -131,9 +129,26 @@ public class AddBookViewModel(
             return
         }
 
+        _confirmationResult.value = result
+    }
+
+    /**
+     * Confirms the current [confirmationResult], resolving it to an ISBN and initiating ingestion.
+     *
+     * Resolution happens via [searchProvider]. If successful, feeds the ISBN to [addBook]. If
+     * resolution fails, the error is surfaced in [searchState] so the search UI can show the
+     * failure without leaving the flow.
+     */
+    public fun confirmSelection() {
+        val result = _confirmationResult.value ?: return
+        _confirmationResult.value = null
+
+        val editionKey = result.coverEditionKey ?: return // Already guarded by selectSearchResult
+
+        val provider = searchProvider ?: return
         _searchState.value = AddSearchState.Searching
         viewModelScope.launch {
-            val isbnResult = searchProvider.resolveEditionToIsbn(editionKey)
+            val isbnResult = provider.resolveEditionToIsbn(editionKey)
             when (isbnResult) {
                 is Resource.Success -> {
                     val isbn = isbnResult.data
@@ -155,6 +170,11 @@ public class AddBookViewModel(
                 }
             }
         }
+    }
+
+    /** Discards the current [confirmationResult]. */
+    public fun cancelSelection() {
+        _confirmationResult.value = null
     }
 
     /** Clears the search state, results, and query. */

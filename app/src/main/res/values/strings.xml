@@ -310,4 +310,7 @@
         <item quantity="other">%1$d editions</item>
     </plurals>
     <string name="add_book_search_thumbnail_content_description">Book thumbnail</string>
+    <string name="add_book_search_confirm_title">Add this book?</string>
+    <string name="add_book_search_confirm_message">Would you like to add \'%1$s\' to your library?</string>
+    <string name="add_book_search_confirm_button">Add Book</string>
 </resources>

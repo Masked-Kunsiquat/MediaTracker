@@ -3,7 +3,6 @@ package com.hub.media.ui
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
-import io.ktor.client.HttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.LogFileStore
 import com.hub.media.features.books.data.BookRepository
@@ -30,6 +29,7 @@ import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.stats.data.StatsRepository
+import io.ktor.client.HttpClient
 
 /**
  * Manual composition root for the shared layer (AGENTS.md §5 "No Unnecessary Dependencies" —

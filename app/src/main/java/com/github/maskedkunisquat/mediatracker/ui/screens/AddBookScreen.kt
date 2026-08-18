@@ -1,9 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.graphics.BitmapFactory
-import com.hub.media.core.util.AppLogger
-import com.hub.media.core.util.Logger
-import com.hub.media.core.util.warn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,12 +26,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +57,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.warn
 import com.hub.media.features.books.domain.MIN_SEARCH_QUERY_LENGTH
 import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.ui.AddBookUiState
@@ -75,7 +75,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-import java.io.IOException
 
 private const val TAG = "AddBookScreen"
 
@@ -121,7 +120,10 @@ fun AddBookScreenRoute(
         searchQuery = viewModel.searchQuery,
         searchResults = viewModel.searchResults,
         searchState = viewModel.searchState,
+        confirmationResult = viewModel.confirmationResult,
         onClearSearch = { viewModel.clearSearch() },
+        onConfirmSelection = { viewModel.confirmSelection() },
+        onCancelSelection = { viewModel.cancelSelection() },
         httpClient = appContainer.httpClient,
     )
 }
@@ -164,12 +166,19 @@ fun AddBookScreen(
     searchQuery: StateFlow<String>? = null,
     searchResults: StateFlow<List<BookSearchResult>>? = null,
     searchState: StateFlow<AddSearchState>? = null,
+    confirmationResult: StateFlow<BookSearchResult?>? = null,
     onClearSearch: () -> Unit = {},
+    onConfirmSelection: () -> Unit = {},
+    onCancelSelection: () -> Unit = {},
     httpClient: HttpClient? = null,
     logger: Logger = AppLogger,
 ) {
     var isbnInput by remember { mutableStateOf("") }
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    val currentConfirmationResult by confirmationResult?.collectAsStateWithLifecycle() ?: remember {
+        mutableStateOf(null)
+    }
 
     Scaffold(
         topBar = {
@@ -240,6 +249,31 @@ fun AddBookScreen(
                         )
                 }
             }
+        }
+
+        currentConfirmationResult?.let { result ->
+            AlertDialog(
+                onDismissRequest = onCancelSelection,
+                title = { Text(stringResource(R.string.add_book_search_confirm_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.add_book_search_confirm_message,
+                            result.title,
+                        ),
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = onConfirmSelection) {
+                        Text(stringResource(R.string.add_book_search_confirm_button))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onCancelSelection) {
+                        Text(stringResource(R.string.cancel_button))
+                    }
+                },
+            )
         }
     }
 }
@@ -607,12 +641,16 @@ private fun SearchResultThumbnail(
                                 .decodeByteArray(bytes, 0, bytes.size)
                                 ?.asImageBitmap()
                         } else {
-                            logger.warn(TAG) { "Failed to load thumbnail: $coverThumbnailUrl (status ${response.status.value})" }
+                            logger.warn(
+                                TAG,
+                            ) { "Failed to load thumbnail: $coverThumbnailUrl (status ${response.status.value})" }
                             null
                         }
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        logger.warn(TAG) { "Unexpected error loading thumbnail: $coverThumbnailUrl (${e::class.simpleName})" }
+                        logger.warn(
+                            TAG,
+                        ) { "Unexpected error loading thumbnail: $coverThumbnailUrl (${e::class.simpleName})" }
                         null
                     }
                 }
