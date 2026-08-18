@@ -131,9 +131,6 @@ public class AddBookViewModel(
             return
         }
 
-        // Clear the search UI so the result is no longer visible while resolution is in flight.
-        clearSearch()
-
         _searchState.value = AddSearchState.Searching
         viewModelScope.launch {
             val isbnResult = searchProvider.resolveEditionToIsbn(editionKey)
@@ -148,6 +145,7 @@ public class AddBookViewModel(
                             )
                     } else {
                         // Successfully resolved — now add the book.
+                        _searchState.value = AddSearchState.Idle
                         addBook(isbn)
                     }
                 }

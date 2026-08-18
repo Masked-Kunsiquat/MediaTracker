@@ -276,22 +276,31 @@ class AddBookViewModelTest {
     @Test
     fun selectSearchResult_resolvesEditionToIsbn_andAddBook() =
         runTest {
+            val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val addFake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider(isbn = "9780547928227")
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
-            val result =
-                bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
+            // Populate search results first
+            viewModel.search("hobbit")
+            advanceUntilIdle()
+            assertEquals(1, viewModel.searchResults.value.size)
 
             viewModel.selectSearchResult(result)
+            advanceUntilIdle()
 
             // After selection and resolution, addBook should have been called
-            assertEquals(1, addFake.callCount)
+            assertEquals(1, addFake.callCount, "addBook should have been called once")
 
             // Verify the edition key was resolved
-            assertEquals(1, providerFake.resolveCallCount)
-            assertEquals("OL51711263M", providerFake.lastResolvedEditionKey)
+            assertEquals(1, providerFake.resolveCallCount, "resolveEditionToIsbn should have been called once")
+            assertEquals("OL51711263M", providerFake.lastResolvedEditionKey, "resolved edition key mismatch")
+
+            // Search state should be reset to Idle after resolution, but results kept
+            // until the screen clears them on success.
+            assertEquals(AddSearchState.Idle, viewModel.searchState.value, "searchState should be Idle")
+            assertEquals(1, viewModel.searchResults.value.size, "searchResults should not be cleared yet")
         }
 
     @Test
@@ -306,6 +315,7 @@ class AddBookViewModelTest {
                 bookSearchResult("The Hobbit").copy(coverEditionKey = null)
 
             viewModel.selectSearchResult(result)
+            advanceUntilIdle()
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value)
             val errorState = viewModel.searchState.value as AddSearchState.Error
@@ -315,34 +325,44 @@ class AddBookViewModelTest {
     @Test
     fun selectSearchResult_resolutionFails_setsError() =
         runTest {
+            val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
             val providerFake =
                 FakeBookSearchProvider(error = Resource.Error("Open Library failed"))
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
-            val result =
-                bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
+            // Populate search results first
+            viewModel.search("hobbit")
+            advanceUntilIdle()
+            assertEquals(1, viewModel.searchResults.value.size)
 
             viewModel.selectSearchResult(result)
+            advanceUntilIdle()
 
-            assertIs<AddSearchState.Error>(viewModel.searchState.value)
+            assertIs<AddSearchState.Error>(viewModel.searchState.value, "expected Error state")
             val errorState = viewModel.searchState.value as AddSearchState.Error
-            assertEquals("Open Library failed", errorState.message)
+            assertEquals("Open Library failed", errorState.message, "error message mismatch")
+
+            // Results must NOT be cleared on failure (ROADMAP Task 9 Phase B2 PR review)
+            assertEquals(1, viewModel.searchResults.value.size, "searchResults should NOT be cleared on failure")
         }
 
     @Test
     fun selectSearchResult_editionHasNoIsbn_setsError() =
         runTest {
+            val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider(isbn = null)
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
-            val result =
-                bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
+            // Populate search results first
+            viewModel.search("hobbit")
+            advanceUntilIdle()
 
             viewModel.selectSearchResult(result)
+            advanceUntilIdle()
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value)
             val errorState = viewModel.searchState.value as AddSearchState.Error
@@ -350,6 +370,9 @@ class AddBookViewModelTest {
                 "Selected edition has no ISBN in Open Library; cannot add this book this way",
                 errorState.message,
             )
+
+            // Results must NOT be cleared on failure (ROADMAP Task 9 Phase B2 PR review)
+            assertEquals(1, viewModel.searchResults.value.size)
         }
 
     @Test
