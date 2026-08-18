@@ -5,6 +5,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.warn
+import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchDocDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchResponseDto
 import io.ktor.client.HttpClient
@@ -14,6 +15,7 @@ import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
 import kotlin.coroutines.cancellation.CancellationException
 
+private const val OPEN_LIBRARY_BASE_URL = "https://openlibrary.org"
 private const val OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json"
 private const val OPEN_LIBRARY_COVERS_BASE_URL = "https://covers.openlibrary.org/b"
 
@@ -84,11 +86,52 @@ private fun Throwable.typeName(): String = this::class.simpleName ?: "unknown"
  * so every catch in this file rethrows [CancellationException] ahead of the general handler —
  * otherwise the log would fill with provider failures at typing speed, which is exactly the noise
  * Task 15 Phase C spent its time removing from the ISBN paths.
+ *
+ * Also implements edition-to-ISBN resolution (ROADMAP Task 9 Phase B2): search results carry an
+ * edition key but no ISBN, so selecting a result means resolving that key to a concrete ISBN
+ * that can be passed to [AddBookByIsbnUseCase].
  */
+/** Log tag for edition resolution adoption sites. */
+private const val TAG_EDITION = "OpenLibraryEditionResolver"
+
 public class OpenLibrarySearchClient(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
 ) : BookSearchProvider {
+    override suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?> {
+        val trimmed = editionKey.trim()
+        if (trimmed.isEmpty()) {
+            return Resource.Error("Edition key cannot be empty")
+        }
+
+        return try {
+            val response = client.get("$OPEN_LIBRARY_BASE_URL/books/$trimmed.json")
+            if (!response.status.isSuccess()) {
+                logger.warn(TAG_EDITION) { "Open Library edition lookup returned ${response.status.value} for edition_key=$trimmed" }
+                return Resource.Error("Open Library edition lookup failed with status ${response.status.value}")
+            }
+
+            val dto =
+                try {
+                    response.body<OpenLibraryEditionDto>()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(TAG_EDITION) { "Open Library returned malformed JSON for edition_key=$trimmed (${e.typeName()})" }
+                    return Resource.Error("Open Library returned malformed JSON for edition $trimmed")
+                }
+
+            // Try ISBN-13 first, then ISBN-10, then null if neither is present.
+            val isbn = dto.isbn13?.firstOrNull() ?: dto.isbn10?.firstOrNull()
+            Resource.Success(isbn)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG_EDITION) { "Open Library edition lookup failed for edition_key=$trimmed (${e.typeName()})" }
+            Resource.Error("Open Library edition lookup failed for edition $trimmed")
+        }
+    }
+
     override suspend fun searchByTitleOrAuthor(
         query: String,
         limit: Int,

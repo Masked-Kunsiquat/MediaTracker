@@ -180,6 +180,14 @@ public class AppContainer(
         )
 
     /**
+     * Edition-level search client backing [searchBooksUseCase]. Exposed separately (in addition to
+     * [searchBooksUseCase]) so [AddBookViewModel] can call [com.hub.media.features.books.network.BookSearchProvider.resolveEditionToIsbn]
+     * on the result of a search — resolving the work-level search hit to a concrete ISBN
+     * (ROADMAP Task 9 Phase B2).
+     */
+    private val openLibrarySearchClient = OpenLibrarySearchClient(httpClient)
+
+    /**
      * Title/author type-ahead search (ROADMAP Task 9 Phase B1).
      *
      * A single instance on purpose: the LRU inside it is the cache, so a per-screen instance would
@@ -194,8 +202,16 @@ public class AppContainer(
      */
     public val searchBooksUseCase: SearchBooksUseCase =
         SearchBooksUseCase(
-            OpenLibrarySearchClient(httpClient),
+            openLibrarySearchClient,
         )
+
+    /**
+     * Edition-to-ISBN resolver for search result selection (ROADMAP Task 9 Phase B2).
+     * Exposed to [AddBookViewModel] so it can resolve a search result's [BookSearchResult.coverEditionKey]
+     * to a concrete ISBN, which is then passed to [addBookByIsbnUseCase].
+     */
+    public val searchProvider: com.hub.media.features.books.network.BookSearchProvider =
+        openLibrarySearchClient
 
     /**
      * Bulk cover-and-author backfill across the whole library (ROADMAP Task 14 Phase A), consumed

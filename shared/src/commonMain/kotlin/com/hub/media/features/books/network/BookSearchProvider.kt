@@ -36,4 +36,22 @@ public interface BookSearchProvider {
         query: String,
         limit: Int,
     ): Resource<List<BookSearchResult>>
+
+    /**
+     * Resolves an edition key to a concrete ISBN (ROADMAP Task 9 Phase B2).
+     *
+     * A search result carries a `coverEditionKey` but no ISBN; selecting that result means resolving
+     * the edition to an ISBN so it can be passed to [com.hub.media.features.books.domain.AddBookByIsbnUseCase].
+     * This method is the bridge from work-level search results to edition-level metadata.
+     *
+     * @param editionKey The provider-native edition identifier (e.g. `OL51711263M` for Open Library).
+     * @return [Resource.Success] with an ISBN string (either `isbn_10` or `isbn_13`), or `null` if
+     *   the edition is found but carries no ISBN in the provider's index — this is not an error,
+     *   merely the case where this edition cannot be added (it legitimately has no ISBN). [Resource.Error]
+     *   means the lookup itself failed (network, parse, status).
+     *
+     * Implementations must never throw out of this method — the same [Resource.Error] contract as
+     * [searchByTitleOrAuthor] applies.
+     */
+    public suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?>
 }
