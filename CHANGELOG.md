@@ -5,18 +5,38 @@ All notable changes to the Local-First Personal Media Hub will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.13.0] - 2026-08-18
+
+This release completes the search-and-discovery infrastructure for adding books by title or
+author, significantly reducing the friction of populating a library.
 
 ### Added
 
-- **Task 9 Phase B2 — Title/author type-ahead search** (in progress): adds a search tab to the add-book flow, letting you discover books by title or author instead of typing ISBNs. Search queries hit Open Library's public API (no key required, 3-character minimum), results are cached in-memory to avoid re-querying the same prefix, and selecting a result resolves the edition to an ISBN and feeds it to the existing add-by-ISBN pipeline.
-  - Search UI: two-tab layout (Search | ISBN), dropdown results showing cover thumbnail, title + author(s), publication year, and edition count.
-  - Infrastructure: 300ms debounce on keystroke, cancellation of in-flight requests when you keep typing, separate search error state so failures don't leak into the add flow.
-  - Edition-to-ISBN resolver: Open Library API bridge to fetch the ISBN for a selected edition, since search results are works (many editions) rather than concrete ISBNs.
-- **Refined Add Book screen search and state management** — Updated query-length checks to use trimmed query consistently, cleared terminal add failure state when starting a new search, and switched to `rememberSaveable` for UI state persistence across configuration changes.
-- **Improved search result keying** — Switched to indexed item keys in search results list to prevent duplicate LazyColumn keys when multiple editions have the same title.
-- **Enhanced search and resolution error handling** — Replaced raw error strings with typed error reasons in `AddSearchState`, mapped to localized strings in the UI. Introduced `resolveJob` tracking to ensure abandoned selections cannot resolve and trigger stale ingestion.
-- **Infrastructure improvements** — Updated `BookSearchProvider` contract and `OpenLibrarySearchClient` to propagate `CancellationException` and prefer ISBN-13 during resolution. Cleaned up `AppContainer` documentation and imports.
+- **Title/author type-ahead search (ROADMAP Task 9 Phase B2)** — Discover books by name directly
+  from the add-book screen. Search queries hit Open Library's public API (no key required,
+  3-character minimum) with as-you-type results.
+  - **Search UI**: A new two-tab layout (Search | ISBN) on the Add Book screen, with a dropdown
+    of results showing cover thumbnails, titles, authors, and edition metadata.
+  - **Performance**: 300ms debounce and automatic cancellation of superseded keystrokes minimize
+    network load; in-memory caching serves repeated prefixes instantly.
+  - **Selection → ISBN Resolution**: Tapping a result resolves its work-level candidate to a
+    concrete edition and its ISBN, which is then fed to the existing ingestion pipeline.
+  - **Search Recovery**: Starting a new search automatically clears previous terminal add
+    failures, allowing for immediate retry with a different book.
+- **Instrumented behavioral tests** — 5 new instrumented tests cover the Add Book screen's
+  UI-to-ViewModel wiring, including search input, tab switching, and dialog interactions.
+### Changed
+
+- **Refined Add Book state management** — Updated query-length checks to use trimmed query
+  consistently and switched to `rememberSaveable` for UI state persistence across configuration
+  changes.
+- **Improved search result keying** — Switched to indexed item keys in search results list to
+  prevent duplicate LazyColumn keys for works with multiple editions.
+- **Enhanced search and resolution error handling** — Replaced raw error strings with typed
+  error reasons, mapped to localized, action-oriented messages in the UI.
+- **Infrastructure improvements** — Updated `BookSearchProvider` contract and
+  `OpenLibrarySearchClient` to propagate `CancellationException` and prefer ISBN-13 during
+  resolution. Cleaned up `AppContainer` documentation and imports.
 
 ### Internal
 
