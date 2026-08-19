@@ -335,8 +335,9 @@ class AddBookViewModelTest {
 
             viewModel.selectEdition(edition)
 
-            // With UnconfinedTestDispatcher, ingestion happens eagerly.
-            assertIs<AddBookUiState.Success>(viewModel.uiState.value)
+            // Await success state instead of reading .value immediately (AGENTS.md §7)
+            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
+            assertIs<AddBookUiState.Success>(finalState)
             assertEquals(1, addFake.callCount)
         }
 

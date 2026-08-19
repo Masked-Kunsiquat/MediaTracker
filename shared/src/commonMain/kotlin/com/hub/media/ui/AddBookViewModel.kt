@@ -155,6 +155,7 @@ public class AddBookViewModel(
                         }
 
                         is Resource.Error -> {
+                            _confirmationResult.value = null
                             _searchState.value =
                                 AddSearchState.Error(AddSearchErrorReason.Generic(editionsResult.message))
                         }

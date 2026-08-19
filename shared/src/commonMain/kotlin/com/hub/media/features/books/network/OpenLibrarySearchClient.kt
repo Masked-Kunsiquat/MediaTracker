@@ -145,31 +145,42 @@ public class OpenLibrarySearchClient(
         }
 
         return try {
-            val response =
-                client.get("$OPEN_LIBRARY_BASE_URL$trimmed/editions.json") {
-                    parameter("limit", 50)
-                }
-            if (!response.status.isSuccess()) {
-                logger.warn(
-                    TAG_EDITION,
-                ) { "Open Library editions lookup returned ${response.status.value} for work_key=$trimmed" }
-                return Resource.Error("Open Library editions lookup failed with status ${response.status.value}")
-            }
+            val allEditions = mutableListOf<BookEditionSearchResult>()
+            var offset = 0
+            val limit = 50
 
-            val dto =
-                try {
-                    response.body<OpenLibraryWorkEditionsResponseDto>()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
+            do {
+                val response =
+                    client.get("$OPEN_LIBRARY_BASE_URL$trimmed/editions.json") {
+                        parameter("limit", limit)
+                        parameter("offset", offset)
+                    }
+                if (!response.status.isSuccess()) {
                     logger.warn(
                         TAG_EDITION,
-                    ) { "Open Library returned malformed JSON for editions of work_key=$trimmed (${e.typeName()})" }
-                    return Resource.Error("Open Library returned malformed JSON for editions of $trimmed")
+                    ) { "Open Library editions lookup returned ${response.status.value} for work_key=$trimmed" }
+                    return Resource.Error("Open Library editions lookup failed with status ${response.status.value}")
                 }
 
-            val editions = dto.entries.orEmpty().mapNotNull { it.toEditionSearchResult() }
-            Resource.Success(editions)
+                val dto =
+                    try {
+                        response.body<OpenLibraryWorkEditionsResponseDto>()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logger.warn(
+                            TAG_EDITION,
+                        ) { "Open Library returned malformed JSON for editions of work_key=$trimmed (${e.typeName()})" }
+                        return Resource.Error("Open Library returned malformed JSON for editions of $trimmed")
+                    }
+
+                val entries = dto.entries.orEmpty()
+                allEditions.addAll(entries.mapNotNull { it.toEditionSearchResult() })
+                offset += limit
+                val totalSize = dto.size ?: 0
+            } while (offset < totalSize)
+
+            Resource.Success(allEditions)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -269,13 +280,16 @@ private fun OpenLibrarySearchDocDto.toSearchResult(): BookSearchResult? {
  */
 private fun OpenLibraryEditionDto.toEditionSearchResult(): BookEditionSearchResult? {
     val title = title?.takeIf { it.isNotBlank() } ?: return null
-    val isbn = isbn13?.firstOrNull() ?: isbn10?.firstOrNull() ?: return null
-    val key = key ?: return null
+    val isbn =
+        isbn13?.firstNotNullOfOrNull { it.trim().takeIf { s -> s.isNotBlank() } }
+            ?: isbn10?.firstNotNullOfOrNull { it.trim().takeIf { s -> s.isNotBlank() } }
+            ?: return null
+    val key = key?.trim()?.takeIf { it.isNotBlank() } ?: return null
 
     return BookEditionSearchResult(
         title = title,
-        publisher = publishers?.firstOrNull(),
-        publishDate = publishDate,
+        publisher = publishers?.firstOrNull()?.trim()?.takeIf { it.isNotBlank() },
+        publishDate = publishDate?.trim()?.takeIf { it.isNotBlank() },
         isbn = isbn,
         pageCount = numberOfPages,
         coverThumbnailUrl = covers?.firstOrNull()?.let { "$OPEN_LIBRARY_COVERS_BASE_URL/id/$it-M.jpg" },
