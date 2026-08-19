@@ -20,6 +20,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddSearchState
@@ -56,11 +57,13 @@ class AddBookScreenTest {
         searchResults: List<BookSearchResult> = emptyList(),
         searchState: AddSearchState = AddSearchState.Idle,
         confirmationResult: BookSearchResult? = null,
+        editions: List<BookEditionSearchResult> = emptyList(),
         onSubmitIsbn: (String) -> Unit = {},
         onSearchQueryChange: (String) -> Unit = {},
         onSelectSearchResult: (BookSearchResult) -> Unit = {},
         onConfirmSelection: () -> Unit = {},
         onCancelSelection: () -> Unit = {},
+        onSelectEdition: (BookEditionSearchResult) -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -70,6 +73,7 @@ class AddBookScreenTest {
                     searchResults = searchResults,
                     searchState = searchState,
                     confirmationResult = confirmationResult,
+                    editions = editions,
                     onNavigateBack = {},
                     onSubmitIsbn = onSubmitIsbn,
                     onSearchQueryChange = onSearchQueryChange,
@@ -77,6 +81,7 @@ class AddBookScreenTest {
                     onClearSearch = {},
                     onConfirmSelection = onConfirmSelection,
                     onCancelSelection = onCancelSelection,
+                    onSelectEdition = onSelectEdition,
                 )
             }
         }
@@ -210,6 +215,84 @@ class AddBookScreenTest {
         composeRule.onNode(hasText(tabText) and hasRole(Role.Tab)).performClick()
 
         composeRule.onNodeWithText("Network Timeout").assertIsDisplayed()
+    }
+
+    @Test
+    fun whenResolvingEditions_showsLoadingInEditionDialog() {
+        setContent(
+            confirmationResult = sampleResult,
+            searchState = AddSearchState.ResolvingEditions,
+        )
+
+        val title = context.getString(R.string.add_book_search_select_edition_title)
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+
+        val loadingText = context.getString(R.string.add_book_search_resolving_editions_hint)
+        composeRule.onNodeWithText(loadingText).assertIsDisplayed()
+    }
+
+    @Test
+    fun whenEditionsArePresent_showsEditionList() {
+        val sampleEdition =
+            BookEditionSearchResult(
+                title = "The Hobbit",
+                publisher = "Allen & Unwin",
+                publishDate = "1937",
+                isbn = "9780547928227",
+                pageCount = 310,
+                coverThumbnailUrl = null,
+                editionKey = "OL51711263M",
+                provider = IdentifierProvider.OPEN_LIBRARY,
+            )
+
+        setContent(
+            confirmationResult = sampleResult,
+            editions = listOf(sampleEdition),
+        )
+
+        val title = context.getString(R.string.add_book_search_select_edition_title)
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+
+        // Verify edition details
+        composeRule.onNodeWithText("Allen & Unwin", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("9780547928227", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun selectingAnEdition_invokesSelectEdition() {
+        val sampleEdition =
+            BookEditionSearchResult(
+                title = "The Hobbit",
+                publisher = "Allen & Unwin",
+                publishDate = "1937",
+                isbn = "9780547928227",
+                pageCount = 310,
+                coverThumbnailUrl = null,
+                editionKey = "OL51711263M",
+                provider = IdentifierProvider.OPEN_LIBRARY,
+            )
+        var selected: BookEditionSearchResult? = null
+        setContent(
+            confirmationResult = sampleResult,
+            editions = listOf(sampleEdition),
+            onSelectEdition = { selected = it },
+        )
+
+        composeRule.onNodeWithText("9780547928227", substring = true).performClick()
+
+        assertEquals(sampleEdition, selected)
+    }
+
+    @Test
+    fun whenNoEditionsFound_showsHintInEditionDialog() {
+        setContent(
+            confirmationResult = sampleResult,
+            editions = emptyList(),
+            searchState = AddSearchState.Idle, // Not loading anymore
+        )
+
+        val hint = context.getString(R.string.add_book_search_no_editions_found_hint)
+        composeRule.onNodeWithText(hint).assertIsDisplayed()
     }
 
     @Test
