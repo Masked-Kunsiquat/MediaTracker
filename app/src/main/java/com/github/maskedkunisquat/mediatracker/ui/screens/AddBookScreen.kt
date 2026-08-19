@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -62,6 +63,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.domain.MIN_SEARCH_QUERY_LENGTH
+import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddBookViewModel
@@ -109,6 +111,7 @@ fun AddBookScreenRoute(
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
     val confirmationResult by viewModel.confirmationResult.collectAsStateWithLifecycle()
+    val editions by viewModel.editions.collectAsStateWithLifecycle()
 
     // When the submission succeeds, navigate back to library, clear search, and reset the ViewModel.
     LaunchedEffect(uiState) {
@@ -125,6 +128,7 @@ fun AddBookScreenRoute(
         searchResults = searchResults,
         searchState = searchState,
         confirmationResult = confirmationResult,
+        editions = editions,
         onNavigateBack = onNavigateBack,
         onSubmitIsbn = { isbn -> viewModel.addBook(isbn) },
         onSearchQueryChange = { query -> viewModel.search(query) },
@@ -132,6 +136,7 @@ fun AddBookScreenRoute(
         onClearSearch = { viewModel.clearSearch() },
         onConfirmSelection = { viewModel.confirmSelection() },
         onCancelSelection = { viewModel.cancelSelection() },
+        onSelectEdition = { edition -> viewModel.selectEdition(edition) },
         httpClient = appContainer.httpClient,
     )
 }
@@ -171,6 +176,7 @@ fun AddBookScreen(
     searchResults: List<BookSearchResult>,
     searchState: AddSearchState,
     confirmationResult: BookSearchResult?,
+    editions: List<BookEditionSearchResult> = emptyList(),
     onNavigateBack: () -> Unit,
     onSubmitIsbn: (String) -> Unit,
     onSearchQueryChange: (String) -> Unit = {},
@@ -178,6 +184,7 @@ fun AddBookScreen(
     onClearSearch: () -> Unit = {},
     onConfirmSelection: () -> Unit = {},
     onCancelSelection: () -> Unit = {},
+    onSelectEdition: (BookEditionSearchResult) -> Unit = {},
     httpClient: HttpClient? = null,
     logger: Logger = AppLogger,
 ) {
@@ -256,28 +263,45 @@ fun AddBookScreen(
         }
 
         confirmationResult?.let { result ->
-            AlertDialog(
-                onDismissRequest = onCancelSelection,
-                title = { Text(stringResource(R.string.add_book_search_confirm_title)) },
-                text = {
-                    Text(
-                        stringResource(
-                            R.string.add_book_search_confirm_message,
-                            result.title,
-                        ),
-                    )
-                },
-                confirmButton = {
-                    Button(onClick = onConfirmSelection) {
-                        Text(stringResource(R.string.add_book_search_confirm_button))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = onCancelSelection) {
-                        Text(stringResource(R.string.cancel_button))
-                    }
-                },
-            )
+            val isEditionFlow =
+                !result.workKey.isNullOrBlank() ||
+                    searchState is AddSearchState.ResolvingEditions ||
+                    editions.isNotEmpty()
+
+            if (isEditionFlow) {
+                EditionSelectionDialog(
+                    work = result,
+                    editions = editions,
+                    isResolving = searchState is AddSearchState.ResolvingEditions,
+                    onSelectEdition = onSelectEdition,
+                    onCancel = onCancelSelection,
+                    httpClient = httpClient,
+                    logger = logger,
+                )
+            } else {
+                AlertDialog(
+                    onDismissRequest = onCancelSelection,
+                    title = { Text(stringResource(R.string.add_book_search_confirm_title)) },
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.add_book_search_confirm_message,
+                                result.title,
+                            ),
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = onConfirmSelection) {
+                            Text(stringResource(R.string.add_book_search_confirm_button))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = onCancelSelection) {
+                            Text(stringResource(R.string.cancel_button))
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -766,6 +790,152 @@ private fun SearchTabEmptyPreview() {
             httpClient = null,
             logger = AppLogger,
         )
+    }
+}
+
+/**
+ * Dialog for selecting a specific edition of a work (GitHub Issue #63).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditionSelectionDialog(
+    work: BookSearchResult,
+    editions: List<BookEditionSearchResult>,
+    isResolving: Boolean,
+    onSelectEdition: (BookEditionSearchResult) -> Unit,
+    onCancel: () -> Unit,
+    httpClient: HttpClient?,
+    logger: Logger,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = {
+            Column {
+                Text(stringResource(R.string.add_book_search_select_edition_title))
+                Text(
+                    text = work.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        text = {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .sizeIn(minHeight = 100.dp, maxHeight = 400.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isResolving) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            stringResource(R.string.add_book_search_resolving_editions_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                } else if (editions.isEmpty()) {
+                    Text(
+                        stringResource(R.string.add_book_search_no_editions_found_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(editions) { edition ->
+                            EditionResultRow(
+                                edition = edition,
+                                onClick = { onSelectEdition(edition) },
+                                httpClient = httpClient,
+                                logger = logger,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.cancel_button))
+            }
+        },
+    )
+}
+
+/**
+ * One row in the edition selection list.
+ */
+@Composable
+private fun EditionResultRow(
+    edition: BookEditionSearchResult,
+    onClick: () -> Unit,
+    httpClient: HttpClient?,
+    logger: Logger,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onClick() }
+                .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Thumbnail
+        SearchResultThumbnail(
+            coverThumbnailUrl = edition.coverThumbnailUrl,
+            httpClient = httpClient,
+            logger = logger,
+            modifier =
+                Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+        )
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            val metadata =
+                buildString {
+                    edition.publisher?.let { publisher ->
+                        append(stringResource(R.string.add_book_search_edition_publisher_format, publisher))
+                    }
+                    edition.publishDate?.let { date ->
+                        if (isNotEmpty()) append(" • ")
+                        append(date)
+                    }
+                }
+            if (metadata.isNotEmpty()) {
+                Text(
+                    text = metadata,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Text(
+                text = stringResource(R.string.add_book_search_edition_isbn_format, edition.isbn),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            edition.pageCount?.let { pages ->
+                Text(
+                    text = stringResource(R.string.add_book_search_edition_pages_format, pages),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 

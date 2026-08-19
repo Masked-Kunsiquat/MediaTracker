@@ -4,7 +4,9 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BookIngestionUseCase
 import com.hub.media.features.books.domain.FakeSearchBooksUseCase
+import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
 import com.hub.media.features.books.domain.SearchBooksUseCase
+import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.features.books.network.FakeBookSearchProvider
@@ -55,7 +57,15 @@ class AddBookViewModelTest {
         useCase: BookIngestionUseCase,
         searchUseCase: SearchBooksUseCase,
         searchProvider: BookSearchProvider,
-    ) = viewModels.track(AddBookViewModel(useCase, searchUseCase, searchProvider))
+        resolveWorkToEditionsUseCase: ResolveWorkToEditionsUseCase? = null,
+    ) = viewModels.track(
+        AddBookViewModel(
+            addBookByIsbnUseCase = useCase,
+            searchBooksUseCase = searchUseCase,
+            searchProvider = searchProvider,
+            resolveWorkToEditionsUseCase = resolveWorkToEditionsUseCase,
+        ),
+    )
 
     @Test
     fun initialState_isIdle() {
@@ -275,6 +285,60 @@ class AddBookViewModelTest {
             assertEquals("", viewModel.searchQuery.value)
             assertEquals(emptyList(), viewModel.searchResults.value)
             assertEquals(AddSearchState.Idle, viewModel.searchState.value)
+        }
+
+    @Test
+    fun selectSearchResult_withWorkKey_resolvesToEditions() =
+        runTest {
+            val result =
+                bookSearchResult("The Hobbit").copy(
+                    workKey = "/works/OL27482W",
+                    coverEditionKey = null,
+                )
+            val addFake = FakeAddBookByIsbnUseCase()
+            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val providerFake = FakeBookSearchProvider()
+            val resolveUseCase = ResolveWorkToEditionsUseCase(providerFake)
+            val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake, resolveUseCase)
+
+            viewModel.search("hobbit")
+            advanceUntilIdle()
+
+            viewModel.selectSearchResult(result)
+
+            // With UnconfinedTestDispatcher, the resolution happens eagerly.
+            // So we check the final state.
+            assertEquals(AddSearchState.Idle, viewModel.searchState.value)
+            assertEquals(emptyList(), viewModel.editions.value)
+            assertEquals(result, viewModel.confirmationResult.value)
+        }
+
+    @Test
+    fun selectEdition_initiatesIngestion() =
+        runTest {
+            val addFake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
+            val searchFake = FakeSearchBooksUseCase()
+            val providerFake = FakeBookSearchProvider()
+            val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
+
+            val edition =
+                BookEditionSearchResult(
+                    title = "The Hobbit",
+                    publisher = "Allen & Unwin",
+                    publishDate = "1937",
+                    isbn = "9780547928227",
+                    pageCount = 310,
+                    coverThumbnailUrl = null,
+                    editionKey = "OL51711263M",
+                    provider = IdentifierProvider.OPEN_LIBRARY,
+                )
+
+            viewModel.selectEdition(edition)
+
+            // Await success state instead of reading .value immediately (AGENTS.md §7)
+            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
+            assertIs<AddBookUiState.Success>(finalState)
+            assertEquals(1, addFake.callCount)
         }
 
     @Test

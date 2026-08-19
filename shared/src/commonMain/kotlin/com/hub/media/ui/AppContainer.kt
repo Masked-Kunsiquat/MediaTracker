@@ -13,6 +13,7 @@ import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RealSearchBooksUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
+import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
 import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
@@ -218,6 +219,12 @@ public class AppContainer(
      */
     public val searchProvider: BookSearchProvider =
         openLibrarySearchClient
+
+    /**
+     * Resolve a work key to its available editions (GitHub Issue #63).
+     */
+    public val resolveWorkToEditionsUseCase: ResolveWorkToEditionsUseCase =
+        ResolveWorkToEditionsUseCase(openLibrarySearchClient)
 
     /**
      * Bulk cover-and-author backfill across the whole library (ROADMAP Task 14 Phase A), consumed

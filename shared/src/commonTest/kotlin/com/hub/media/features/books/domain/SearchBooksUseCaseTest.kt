@@ -2,6 +2,7 @@ package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.BookSearchResult
 import kotlinx.coroutines.test.runTest
@@ -35,6 +36,9 @@ class SearchBooksUseCaseTest {
         }
 
         override suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?> = Resource.Success(null)
+
+        override suspend fun fetchEditionsForWork(workKey: String): Resource<List<BookEditionSearchResult>> =
+            Resource.Success(emptyList())
     }
 
     private companion object {

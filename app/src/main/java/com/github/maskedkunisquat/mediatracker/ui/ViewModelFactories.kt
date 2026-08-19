@@ -51,6 +51,7 @@ class AddBookViewModelFactory(
                     addBookByIsbnUseCase = appContainer.addBookByIsbnUseCase,
                     searchBooksUseCase = appContainer.searchBooksUseCase,
                     searchProvider = appContainer.searchProvider,
+                    resolveWorkToEditionsUseCase = appContainer.resolveWorkToEditionsUseCase,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")

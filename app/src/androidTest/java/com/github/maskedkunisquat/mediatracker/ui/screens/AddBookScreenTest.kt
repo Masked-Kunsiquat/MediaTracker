@@ -20,6 +20,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddSearchState
@@ -40,12 +41,21 @@ class AddBookScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private val sampleResult =
+    private val olSampleResult =
         BookSearchResult(
             title = "The Hobbit",
             authors = listOf("J.R.R. Tolkien"),
             provider = IdentifierProvider.OPEN_LIBRARY,
             workKey = "/works/OL27482W",
+        )
+
+    private val genericSampleResult =
+        BookSearchResult(
+            title = "Generic Book",
+            authors = listOf("Some Author"),
+            provider = IdentifierProvider.ISBN, // Or any non-OL provider if we had one
+            coverEditionKey = "OL123M",
+            workKey = null,
         )
 
     private fun hasRole(role: Role) = SemanticsMatcher.expectValue(SemanticsProperties.Role, role)
@@ -56,11 +66,13 @@ class AddBookScreenTest {
         searchResults: List<BookSearchResult> = emptyList(),
         searchState: AddSearchState = AddSearchState.Idle,
         confirmationResult: BookSearchResult? = null,
+        editions: List<BookEditionSearchResult> = emptyList(),
         onSubmitIsbn: (String) -> Unit = {},
         onSearchQueryChange: (String) -> Unit = {},
         onSelectSearchResult: (BookSearchResult) -> Unit = {},
         onConfirmSelection: () -> Unit = {},
         onCancelSelection: () -> Unit = {},
+        onSelectEdition: (BookEditionSearchResult) -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -70,6 +82,7 @@ class AddBookScreenTest {
                     searchResults = searchResults,
                     searchState = searchState,
                     confirmationResult = confirmationResult,
+                    editions = editions,
                     onNavigateBack = {},
                     onSubmitIsbn = onSubmitIsbn,
                     onSearchQueryChange = onSearchQueryChange,
@@ -77,6 +90,7 @@ class AddBookScreenTest {
                     onClearSearch = {},
                     onConfirmSelection = onConfirmSelection,
                     onCancelSelection = onCancelSelection,
+                    onSelectEdition = onSelectEdition,
                 )
             }
         }
@@ -100,30 +114,30 @@ class AddBookScreenTest {
         var selected: BookSearchResult? = null
         setContent(
             searchQuery = "hobbit",
-            searchResults = listOf(sampleResult),
+            searchResults = listOf(olSampleResult),
             onSelectSearchResult = { selected = it },
         )
 
         composeRule.onNodeWithText("The Hobbit").performClick()
 
-        assertEquals(sampleResult, selected)
+        assertEquals(olSampleResult, selected)
     }
 
     @Test
     fun whenConfirmationResultIsPresent_showsConfirmationDialog() {
-        setContent(confirmationResult = sampleResult)
+        setContent(confirmationResult = genericSampleResult)
 
         val title = context.getString(R.string.add_book_search_confirm_title)
         // Dialog title
         composeRule.onNodeWithText(title).assertIsDisplayed()
         // Message contains title
-        composeRule.onNodeWithText("The Hobbit", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Generic Book", substring = true).assertIsDisplayed()
     }
 
     @Test
     fun confirmingTheDialog_invokesConfirmSelection() {
         var confirmed = 0
-        setContent(confirmationResult = sampleResult, onConfirmSelection = { confirmed++ })
+        setContent(confirmationResult = genericSampleResult, onConfirmSelection = { confirmed++ })
 
         val buttonText = context.getString(R.string.add_book_search_confirm_button)
         // Ambiguity: AppBar title is "Add Book" (add_book_screen_title), Dialog button is also "Add Book" (add_book_search_confirm_button)
@@ -136,7 +150,7 @@ class AddBookScreenTest {
     @Test
     fun cancellingTheDialog_invokesCancelSelection() {
         var cancelled = 0
-        setContent(confirmationResult = sampleResult, onCancelSelection = { cancelled++ })
+        setContent(confirmationResult = genericSampleResult, onCancelSelection = { cancelled++ })
 
         val buttonText = context.getString(R.string.cancel_button)
         composeRule.onNodeWithText(buttonText).performClick()
@@ -210,6 +224,84 @@ class AddBookScreenTest {
         composeRule.onNode(hasText(tabText) and hasRole(Role.Tab)).performClick()
 
         composeRule.onNodeWithText("Network Timeout").assertIsDisplayed()
+    }
+
+    @Test
+    fun whenResolvingEditions_showsLoadingInEditionDialog() {
+        setContent(
+            confirmationResult = olSampleResult,
+            searchState = AddSearchState.ResolvingEditions,
+        )
+
+        val title = context.getString(R.string.add_book_search_select_edition_title)
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+
+        val loadingText = context.getString(R.string.add_book_search_resolving_editions_hint)
+        composeRule.onNodeWithText(loadingText).assertIsDisplayed()
+    }
+
+    @Test
+    fun whenEditionsArePresent_showsEditionList() {
+        val sampleEdition =
+            BookEditionSearchResult(
+                title = "The Hobbit",
+                publisher = "Allen & Unwin",
+                publishDate = "1937",
+                isbn = "9780547928227",
+                pageCount = 310,
+                coverThumbnailUrl = null,
+                editionKey = "OL51711263M",
+                provider = IdentifierProvider.OPEN_LIBRARY,
+            )
+
+        setContent(
+            confirmationResult = olSampleResult,
+            editions = listOf(sampleEdition),
+        )
+
+        val title = context.getString(R.string.add_book_search_select_edition_title)
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+
+        // Verify edition details
+        composeRule.onNodeWithText("Allen & Unwin", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("9780547928227", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun selectingAnEdition_invokesSelectEdition() {
+        val sampleEdition =
+            BookEditionSearchResult(
+                title = "The Hobbit",
+                publisher = "Allen & Unwin",
+                publishDate = "1937",
+                isbn = "9780547928227",
+                pageCount = 310,
+                coverThumbnailUrl = null,
+                editionKey = "OL51711263M",
+                provider = IdentifierProvider.OPEN_LIBRARY,
+            )
+        var selected: BookEditionSearchResult? = null
+        setContent(
+            confirmationResult = olSampleResult,
+            editions = listOf(sampleEdition),
+            onSelectEdition = { selected = it },
+        )
+
+        composeRule.onNodeWithText("9780547928227", substring = true).performClick()
+
+        assertEquals(sampleEdition, selected)
+    }
+
+    @Test
+    fun whenNoEditionsFound_showsHintInEditionDialog() {
+        setContent(
+            confirmationResult = olSampleResult,
+            editions = emptyList(),
+            searchState = AddSearchState.Idle, // Not loading anymore
+        )
+
+        val hint = context.getString(R.string.add_book_search_no_editions_found_hint)
+        composeRule.onNodeWithText(hint).assertIsDisplayed()
     }
 
     @Test

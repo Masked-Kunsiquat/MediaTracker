@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BookIngestionUseCase
+import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
 import com.hub.media.features.books.domain.SearchBooksUseCase
+import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.BookSearchResult
 import kotlinx.coroutines.Job
@@ -34,11 +36,13 @@ import kotlinx.coroutines.launch
  * @param searchBooksUseCase The search orchestrator (min-length checks, query normalization,
  *   LRU result cache). Injected so tests can provide a fake.
  * @param searchProvider Resolves selected search results to ISBNs. Injected so tests can provide a fake.
+ * @param resolveWorkToEditionsUseCase Resolves a work key to its available editions (GitHub Issue #63).
  */
 public class AddBookViewModel(
     private val addBookByIsbnUseCase: BookIngestionUseCase,
     private val searchBooksUseCase: SearchBooksUseCase? = null,
     private val searchProvider: BookSearchProvider? = null,
+    private val resolveWorkToEditionsUseCase: ResolveWorkToEditionsUseCase? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<AddBookUiState>(AddBookUiState.Idle)
     public val uiState: StateFlow<AddBookUiState> = _uiState.asStateFlow()
@@ -54,6 +58,9 @@ public class AddBookViewModel(
 
     private val _confirmationResult = MutableStateFlow<BookSearchResult?>(null)
     public val confirmationResult: StateFlow<BookSearchResult?> = _confirmationResult.asStateFlow()
+
+    private val _editions = MutableStateFlow<List<BookEditionSearchResult>>(emptyList())
+    public val editions: StateFlow<List<BookEditionSearchResult>> = _editions.asStateFlow()
 
     private var searchJob: Job? = null
     private var resolveJob: Job? = null
@@ -122,10 +129,44 @@ public class AddBookViewModel(
      * Selects a search result, initiating a confirmation request.
      *
      * Selectable only when no add is already in flight. Result is stored in [confirmationResult];
-     * callers should show a confirmation dialog and then call [confirmSelection] or [cancelSelection].
+     * if the result carries a [BookSearchResult.workKey], this method initiates a resolution to
+     * its editions (GitHub Issue #63), which are surfaced in [editions].
+     *
+     * Callers should show a confirmation dialog or edition selection modal, then call
+     * [confirmSelection], [selectEdition], or [cancelSelection].
      */
     public fun selectSearchResult(result: BookSearchResult) {
         if (_uiState.value is AddBookUiState.Loading || searchProvider == null) return
+
+        val workKey = result.workKey
+        if (!workKey.isNullOrBlank() && resolveWorkToEditionsUseCase != null) {
+            _confirmationResult.value = result
+            _searchState.value = AddSearchState.ResolvingEditions
+            _editions.value = emptyList()
+
+            resolveJob?.cancel()
+            resolveJob =
+                viewModelScope.launch {
+                    val editionsResult = resolveWorkToEditionsUseCase.execute(workKey)
+                    when (editionsResult) {
+                        is Resource.Success -> {
+                            _editions.value = editionsResult.data
+                            _searchState.value = AddSearchState.Idle
+                        }
+
+                        is Resource.Error -> {
+                            _confirmationResult.value = null
+                            _searchState.value =
+                                AddSearchState.Error(AddSearchErrorReason.Generic(editionsResult.message))
+                        }
+                    }
+                    // Only clear resolveJob if it still points to this job.
+                    if (resolveJob === coroutineContext[Job]) {
+                        resolveJob = null
+                    }
+                }
+            return
+        }
 
         val editionKey = result.coverEditionKey
         if (editionKey.isNullOrBlank()) {
@@ -135,6 +176,15 @@ public class AddBookViewModel(
         }
 
         _confirmationResult.value = result
+    }
+
+    /**
+     * Selects a specific edition from [editions], initiating ingestion.
+     */
+    public fun selectEdition(edition: BookEditionSearchResult) {
+        _confirmationResult.value = null
+        _editions.value = emptyList()
+        addBook(edition.isbn)
     }
 
     /**
@@ -184,17 +234,19 @@ public class AddBookViewModel(
         resolveJob = job
     }
 
-    /** Discards the current [confirmationResult]. */
+    /** Discards the current [confirmationResult] and any resolved [editions]. */
     public fun cancelSelection() {
         _confirmationResult.value = null
+        _editions.value = emptyList()
         resolveJob?.cancel()
         resolveJob = null
     }
 
-    /** Clears the search state, results, and query. */
+    /** Clears the search state, results, query, and [editions]. */
     public fun clearSearch() {
         _searchQuery.value = ""
         _searchResults.value = emptyList()
+        _editions.value = emptyList()
         _searchState.value = AddSearchState.Idle
         searchJob?.cancel()
         resolveJob?.cancel()
