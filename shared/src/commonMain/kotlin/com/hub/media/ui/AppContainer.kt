@@ -11,11 +11,13 @@ import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
 import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
+import com.hub.media.features.books.domain.RealSearchBooksUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
+import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.portability.data.ImportWriteRepository
@@ -28,6 +30,7 @@ import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.stats.data.StatsRepository
+import io.ktor.client.HttpClient
 
 /**
  * Manual composition root for the shared layer (AGENTS.md §5 "No Unnecessary Dependencies" —
@@ -80,7 +83,11 @@ public class AppContainer(
     public val logFileStore: LogFileStore,
     public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
-    private val httpClient = createHttpClient()
+    /**
+     * Shared [HttpClient] for all outbound requests. Configured with a [com.hub.media.core.network.USER_AGENT]
+     * and timeouts per AGENTS.md §4.
+     */
+    public val httpClient: HttpClient = createHttpClient()
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
@@ -180,6 +187,11 @@ public class AppContainer(
         )
 
     /**
+     * Edition-level search client backing [searchBooksUseCase].
+     */
+    private val openLibrarySearchClient = OpenLibrarySearchClient(httpClient)
+
+    /**
      * Title/author type-ahead search (ROADMAP Task 9 Phase B1).
      *
      * A single instance on purpose: the LRU inside it is the cache, so a per-screen instance would
@@ -193,9 +205,19 @@ public class AppContainer(
      * query length in [SearchBooksUseCase] and its caller instead.
      */
     public val searchBooksUseCase: SearchBooksUseCase =
-        SearchBooksUseCase(
-            OpenLibrarySearchClient(httpClient),
+        RealSearchBooksUseCase(
+            openLibrarySearchClient,
         )
+
+    /**
+     * Edition-to-ISBN resolver for search result selection (ROADMAP Task 9 Phase B2).
+     *
+     * Exposed separately (in addition to [searchBooksUseCase]) so [AddBookViewModel] can resolve a
+     * search result's [BookSearchResult.coverEditionKey] to a concrete ISBN, which is then passed
+     * to [addBookByIsbnUseCase].
+     */
+    public val searchProvider: BookSearchProvider =
+        openLibrarySearchClient
 
     /**
      * Bulk cover-and-author backfill across the whole library (ROADMAP Task 14 Phase A), consumed

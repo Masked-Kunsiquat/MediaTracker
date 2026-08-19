@@ -35,8 +35,10 @@ class LibraryViewModelFactory(
 }
 
 /**
- * Factory for creating [AddBookViewModel] with its [com.hub.media.features.books.domain.AddBookByIsbnUseCase]
- * dependency from the [AppContainer].
+ * Factory for creating [AddBookViewModel] with its dependencies from the [AppContainer]:
+ * [com.hub.media.features.books.domain.AddBookByIsbnUseCase] (primary add flow),
+ * [com.hub.media.features.books.domain.SearchBooksUseCase] (title/author type-ahead),
+ * and [com.hub.media.features.books.network.BookSearchProvider] (edition-to-ISBN resolution).
  */
 class AddBookViewModelFactory(
     private val appContainer: AppContainer,
@@ -45,7 +47,11 @@ class AddBookViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         when {
             modelClass.isAssignableFrom(AddBookViewModel::class.java) -> {
-                AddBookViewModel(appContainer.addBookByIsbnUseCase) as T
+                AddBookViewModel(
+                    addBookByIsbnUseCase = appContainer.addBookByIsbnUseCase,
+                    searchBooksUseCase = appContainer.searchBooksUseCase,
+                    searchProvider = appContainer.searchProvider,
+                ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

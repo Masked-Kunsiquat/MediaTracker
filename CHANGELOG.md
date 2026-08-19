@@ -5,6 +5,26 @@ All notable changes to the Local-First Personal Media Hub will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Task 9 Phase B2 — Title/author type-ahead search** (in progress): adds a search tab to the add-book flow, letting you discover books by title or author instead of typing ISBNs. Search queries hit Open Library's public API (no key required, 3-character minimum), results are cached in-memory to avoid re-querying the same prefix, and selecting a result resolves the edition to an ISBN and feeds it to the existing add-by-ISBN pipeline.
+  - Search UI: two-tab layout (Search | ISBN), dropdown results showing cover thumbnail, title + author(s), publication year, and edition count.
+  - Infrastructure: 300ms debounce on keystroke, cancellation of in-flight requests when you keep typing, separate search error state so failures don't leak into the add flow.
+  - Edition-to-ISBN resolver: Open Library API bridge to fetch the ISBN for a selected edition, since search results are works (many editions) rather than concrete ISBNs.
+- **Refined Add Book screen search and state management** — Updated query-length checks to use trimmed query consistently, cleared terminal add failure state when starting a new search, and switched to `rememberSaveable` for UI state persistence across configuration changes.
+- **Improved search result keying** — Switched to indexed item keys in search results list to prevent duplicate LazyColumn keys when multiple editions have the same title.
+- **Enhanced search and resolution error handling** — Replaced raw error strings with typed error reasons in `AddSearchState`, mapped to localized strings in the UI. Introduced `resolveJob` tracking to ensure abandoned selections cannot resolve and trigger stale ingestion.
+- **Infrastructure improvements** — Updated `BookSearchProvider` contract and `OpenLibrarySearchClient` to propagate `CancellationException` and prefer ISBN-13 during resolution. Cleaned up `AppContainer` documentation and imports.
+
+### Internal
+
+- **Fixed search integration tests** — Added missing `advanceUntilIdle()` calls in `AddBookViewModelTest` to account for the new 300ms search debounce delay.
+- **Refactored `SearchBooksUseCase` for testability** — Extracted `SearchBooksUseCase` as an interface to support hand-rolled fakes in ViewModel tests, moving the logic and caching into `RealSearchBooksUseCase`.
+- **Fixed `OpenLibraryEditionResolverTest` and `SearchBooksUseCaseTest`** — Updated tests to match recent API changes in `BookSearchProvider` and fixed Ktor `MockEngine` helper usage.
+- **Lint and style fixes** — Resolved ktlint violations in both modules, including an over-length line in `AddBookScreen.kt`.
+
 ## [0.12.0] - 2026-08-17
 
 This release introduces project-specific skills to improve how AI agents collaborate on the

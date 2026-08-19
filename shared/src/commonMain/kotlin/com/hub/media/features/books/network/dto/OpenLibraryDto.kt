@@ -4,9 +4,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Response shape of `GET https://openlibrary.org/isbn/{isbn}.json` (an Open Library "edition"
- * record). Only the fields [OpenLibraryClient][com.hub.media.features.books.network.OpenLibraryClient]
- * needs are modeled; everything else is dropped via `ignoreUnknownKeys`.
+ * Response shape of `GET https://openlibrary.org/isbn/{isbn}.json` or
+ * `GET https://openlibrary.org/books/{edition_key}.json` (an Open Library "edition" record).
+ * Only the fields [OpenLibraryClient][com.hub.media.features.books.network.OpenLibraryClient]
+ * and [OpenLibrarySearchClient] need are modeled; everything else is dropped via `ignoreUnknownKeys`.
  */
 @Serializable
 internal data class OpenLibraryEditionDto(
@@ -23,6 +24,18 @@ internal data class OpenLibraryEditionDto(
      * [com.hub.media.features.books.network.OpenLibraryClient].
      */
     val works: List<OpenLibraryWorkRefDto>? = null,
+    /**
+     * 10-digit ISBN, when available in the edition record. Falls back to [isbn13] if not present.
+     */
+    @SerialName("isbn_10")
+    val isbn10: List<String>? = null,
+    /**
+     * 13-digit ISBN, when available in the edition record. Prefer over [isbn10] when both are
+     * present, matching the resolution order in
+     * [com.hub.media.features.books.network.OpenLibrarySearchClient.resolveEditionToIsbn].
+     */
+    @SerialName("isbn_13")
+    val isbn13: List<String>? = null,
 )
 
 /** An author reference embedded in an edition response, e.g. `{"key": "/authors/OL26320A"}`. */
