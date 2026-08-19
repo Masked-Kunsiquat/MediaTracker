@@ -263,9 +263,10 @@ fun AddBookScreen(
         }
 
         confirmationResult?.let { result ->
-            val isEditionFlow = !result.workKey.isNullOrBlank() ||
-                searchState is AddSearchState.ResolvingEditions ||
-                editions.isNotEmpty()
+            val isEditionFlow =
+                !result.workKey.isNullOrBlank() ||
+                    searchState is AddSearchState.ResolvingEditions ||
+                    editions.isNotEmpty()
 
             if (isEditionFlow) {
                 EditionSelectionDialog(
