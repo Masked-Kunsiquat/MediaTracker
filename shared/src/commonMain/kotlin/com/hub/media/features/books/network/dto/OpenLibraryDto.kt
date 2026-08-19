@@ -15,6 +15,7 @@ internal data class OpenLibraryEditionDto(
     @SerialName("number_of_pages") val numberOfPages: Int? = null,
     @SerialName("publish_date") val publishDate: String? = null,
     val authors: List<OpenLibraryAuthorRefDto>? = null,
+    val publishers: List<String>? = null,
     val covers: List<Int>? = null,
     val key: String? = null,
     /**

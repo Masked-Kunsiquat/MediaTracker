@@ -8,6 +8,7 @@ import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchDocDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchResponseDto
+import com.hub.media.features.books.network.dto.OpenLibraryWorkEditionsResponseDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -137,6 +138,46 @@ public class OpenLibrarySearchClient(
         }
     }
 
+    override suspend fun fetchEditionsForWork(workKey: String): Resource<List<BookEditionSearchResult>> {
+        val trimmed = workKey.trim()
+        if (trimmed.isEmpty()) {
+            return Resource.Error("Work key cannot be empty")
+        }
+
+        return try {
+            val response =
+                client.get("$OPEN_LIBRARY_BASE_URL$trimmed/editions.json") {
+                    parameter("limit", 50)
+                }
+            if (!response.status.isSuccess()) {
+                logger.warn(
+                    TAG_EDITION,
+                ) { "Open Library editions lookup returned ${response.status.value} for work_key=$trimmed" }
+                return Resource.Error("Open Library editions lookup failed with status ${response.status.value}")
+            }
+
+            val dto =
+                try {
+                    response.body<OpenLibraryWorkEditionsResponseDto>()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(
+                        TAG_EDITION,
+                    ) { "Open Library returned malformed JSON for editions of work_key=$trimmed (${e.typeName()})" }
+                    return Resource.Error("Open Library returned malformed JSON for editions of $trimmed")
+                }
+
+            val editions = dto.entries.orEmpty().mapNotNull { it.toEditionSearchResult() }
+            Resource.Success(editions)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG_EDITION) { "Open Library editions lookup failed for work_key=$trimmed (${e.typeName()})" }
+            Resource.Error("Open Library editions lookup failed for $trimmed")
+        }
+    }
+
     override suspend fun searchByTitleOrAuthor(
         query: String,
         limit: Int,
@@ -220,5 +261,25 @@ private fun OpenLibrarySearchDocDto.toSearchResult(): BookSearchResult? {
         provider = IdentifierProvider.OPEN_LIBRARY,
         workKey = key,
         coverEditionKey = coverEditionKey,
+    )
+}
+
+/**
+ * Maps one edition DTO to a [BookEditionSearchResult], or null if it lacks an ISBN or title.
+ */
+private fun OpenLibraryEditionDto.toEditionSearchResult(): BookEditionSearchResult? {
+    val title = title?.takeIf { it.isNotBlank() } ?: return null
+    val isbn = isbn13?.firstOrNull() ?: isbn10?.firstOrNull() ?: return null
+    val key = key ?: return null
+
+    return BookEditionSearchResult(
+        title = title,
+        publisher = publishers?.firstOrNull(),
+        publishDate = publishDate,
+        isbn = isbn,
+        pageCount = numberOfPages,
+        coverThumbnailUrl = covers?.firstOrNull()?.let { "$OPEN_LIBRARY_COVERS_BASE_URL/id/$it-M.jpg" },
+        editionKey = key,
+        provider = IdentifierProvider.OPEN_LIBRARY,
     )
 }

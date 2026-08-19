@@ -14,6 +14,9 @@ public sealed class AddSearchState {
     /** A search is in flight; results are stale or unavailable. */
     public data object Searching : AddSearchState()
 
+    /** A work key is being resolved to its editions (GitHub Issue #63). */
+    public data object ResolvingEditions : AddSearchState()
+
     /**
      * The most recent search completed without error but found no matches. Distinct from
      * [Error] so the UI can show "no results" rather than a failure message.

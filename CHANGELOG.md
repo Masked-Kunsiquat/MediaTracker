@@ -5,6 +5,20 @@ All notable changes to the Local-First Personal Media Hub will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Work-to-Editions selection flow (GitHub Issue #63)** — Search results for Open Library works now allow selecting a specific edition from a list, improving metadata accuracy and cover consistency.
+  - **Edition Modal**: Displays publisher, year, ISBN, and page count for all valid ISBN-backed editions of a work.
+  - **Filtering**: Automatically hides editions without ISBNs, ensuring only ingestible books are shown.
+
+### Internal
+
+- **New Use Case**: `ResolveWorkToEditionsUseCase` for handling work-to-edition resolution.
+- **DTO Updates**: Added `OpenLibraryWorkEditionsResponseDto` and updated `OpenLibraryEditionDto` to support the Open Library editions endpoint.
+- **Unit Testing**: Added `OpenLibraryWorkEditionsResolverTest` and `ResolveWorkToEditionsUseCaseTest`; updated `AddBookViewModelTest` for the new selection flow.
+
 ## [0.13.0] - 2026-08-18
 
 This release completes the search-and-discovery infrastructure for adding books by title or

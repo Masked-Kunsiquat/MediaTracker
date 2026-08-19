@@ -54,4 +54,15 @@ public interface BookSearchProvider {
      * [kotlinx.coroutines.CancellationException] propagation rule as [searchByTitleOrAuthor] apply.
      */
     public suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?>
+
+    /**
+     * Fetches all editions for a given [workKey] (GitHub Issue #63).
+     *
+     * This method allows the user to select a specific edition from a list when a work-level search
+     * result is selected. The result is filtered to only include editions with valid ISBNs.
+     *
+     * @param workKey The provider-native work identifier (e.g. `/works/OL27482W`).
+     * @return [Resource.Success] with a list of [BookEditionSearchResult]s, or [Resource.Error].
+     */
+    public suspend fun fetchEditionsForWork(workKey: String): Resource<List<BookEditionSearchResult>>
 }

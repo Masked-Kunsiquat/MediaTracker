@@ -30,4 +30,7 @@ internal class FakeBookSearchProvider(
         lastResolvedEditionKey = editionKey
         return error ?: Resource.Success(isbn)
     }
+
+    override suspend fun fetchEditionsForWork(workKey: String): Resource<List<BookEditionSearchResult>> =
+        error ?: Resource.Success(emptyList())
 }
