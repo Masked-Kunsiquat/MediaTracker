@@ -13,9 +13,9 @@ import com.hub.media.core.storage.createTestTempDir
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
-import com.hub.media.features.books.domain.BulkDeleteUseCase
-import com.hub.media.features.books.domain.DeleteMediaSummary
-import com.hub.media.features.books.domain.DeleteMediaUseCase
+import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.media.domain.DeleteMediaSummary
+import com.hub.media.features.media.domain.DeleteMediaUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -57,7 +57,7 @@ class LibraryViewModelTest {
         repository = BookRepository(db)
         mediaRepository = MediaRepository(db)
         // A real storage directory rather than a fake: the bulk delete's cover cleanup is
-        // exercised properly in DeleteBooksUseCaseTest, but wiring the real thing here means these
+        // exercised properly in DeleteMediaUseCaseTest, but wiring the real thing here means these
         // tests fail if the two ever stop fitting together.
         tempDir = runBlocking { createTestTempDir() }
         viewModel =
@@ -65,7 +65,7 @@ class LibraryViewModelTest {
                 LibraryViewModel(
                     mediaRepository = mediaRepository,
                     bookRepository = repository,
-                    deleteBooksUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
+                    deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
                 ),
             )
     }
@@ -109,7 +109,7 @@ class LibraryViewModelTest {
         }
 
     @Test
-    fun deleteBook_removesBookFromUiStateAndRestoresIsEmpty() =
+    fun deleteMediaItem_removesItemFromUiStateAndRestoresIsEmpty() =
         runTest {
             val addResult = repository.addBook(title = "Foundation", format = BookFormat.PHYSICAL)
             assertIs<Resource.Success<String>>(addResult)
@@ -118,7 +118,7 @@ class LibraryViewModelTest {
             val withBook = viewModel.uiState.first { it.media.isNotEmpty() }
             assertEquals(1, withBook.media.size)
 
-            viewModel.deleteBook(mediaId)
+            viewModel.deleteMediaItem(mediaId)
 
             val afterDelete = viewModel.uiState.first { it.media.isEmpty() }
             assertTrue(afterDelete.isEmpty)

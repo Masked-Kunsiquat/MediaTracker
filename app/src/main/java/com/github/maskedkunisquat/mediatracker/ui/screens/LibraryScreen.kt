@@ -78,7 +78,7 @@ import kotlin.time.Instant
  * @param appContainer The dependency container for creating ViewModels.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Callback to navigate to the add-book screen.
- * @param onNavigateToBookDetail Callback invoked with a media item's id when its card is tapped.
+ * @param onNavigateToMediaDetail Callback invoked with a media item's id when its card is tapped.
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
  * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase B).
  */
@@ -87,7 +87,7 @@ fun LibraryScreenRoute(
     appContainer: AppContainer,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
-    onNavigateToBookDetail: (String) -> Unit,
+    onNavigateToMediaDetail: (String) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
@@ -101,7 +101,7 @@ fun LibraryScreenRoute(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
         onNavigateToAddBook = onNavigateToAddBook,
-        onMediaClick = onNavigateToBookDetail,
+        onMediaClick = onNavigateToMediaDetail,
         onNavigateToStats = onNavigateToStats,
         onNavigateToSettings = onNavigateToSettings,
         onStatusFilterChange = viewModel::setStatusFilter,

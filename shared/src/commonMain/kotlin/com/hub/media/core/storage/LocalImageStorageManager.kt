@@ -53,7 +53,7 @@ public class LocalImageStorageManager(
  * content-addressed (AGENTS.md §4), so a file is shared by every book with identical cover
  * artwork -- this class cannot tell whether that is one book or five, and deleting on behalf of
  * one of five would blank the other four. The reference check lives with the database, in
- * [com.hub.media.features.books.domain.DeleteBooksUseCase] (ROADMAP Task 14 Phase B).
+ * [com.hub.media.features.media.domain.DeleteMediaUseCase] (ROADMAP Task 14 Phase B).
  *
  * @return `true` if a file was present and removed; `false` if there was nothing to delete or the
  *   delete failed. Both are non-fatal to the caller: a cover that outlives its last reference is

@@ -47,7 +47,7 @@ interface MediaItemDao {
      * at a partially deleted selection (ROADMAP Task 14 Phase B).
      *
      * @return The number of rows actually removed, which can be lower than `ids.size` if an id no
-     *   longer exists -- see [com.hub.media.features.books.domain.DeleteBooksUseCase] for why that
+     *   longer exists -- see [com.hub.media.features.media.domain.DeleteMediaUseCase] for why that
      *   is reported rather than treated as an error.
      */
     @Query("DELETE FROM media_items WHERE id IN (:ids)")

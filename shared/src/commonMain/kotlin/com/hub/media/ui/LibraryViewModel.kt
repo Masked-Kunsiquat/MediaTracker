@@ -6,7 +6,7 @@ import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
-import com.hub.media.features.books.domain.BulkDeleteUseCase
+import com.hub.media.features.media.domain.BulkDeleteUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,12 +23,12 @@ import kotlin.time.Duration.Companion.seconds
  *
  * @param mediaRepository Source of universal media operations.
  * @param bookRepository Source of reactive book list with details.
- * @param deleteBooksUseCase Bulk delete with reference-aware cover cleanup.
+ * @param deleteMediaUseCase Bulk delete with reference-aware cover cleanup.
  */
 public class LibraryViewModel(
     private val mediaRepository: MediaRepository,
     private val bookRepository: BookRepository,
-    private val deleteBooksUseCase: BulkDeleteUseCase,
+    private val deleteMediaUseCase: BulkDeleteUseCase,
 ) : ViewModel() {
     private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
     private val searchQuery = MutableStateFlow("")
@@ -96,7 +96,7 @@ public class LibraryViewModel(
         }
         viewModelScope.launch {
             // Selection is cleared only on success.
-            when (val result = deleteBooksUseCase.execute(ids)) {
+            when (val result = deleteMediaUseCase.execute(ids)) {
                 is Resource.Success -> clearSelection()
                 is Resource.Error ->
                     deleteError.value = DeleteErrorEvent(++deleteErrorSeq, result.message)
@@ -107,7 +107,7 @@ public class LibraryViewModel(
     /**
      * Deletes the item identified by [id].
      */
-    public fun deleteBook(id: String) {
+    public fun deleteMediaItem(id: String) {
         viewModelScope.launch {
             mediaRepository.deleteMediaItem(id)
         }

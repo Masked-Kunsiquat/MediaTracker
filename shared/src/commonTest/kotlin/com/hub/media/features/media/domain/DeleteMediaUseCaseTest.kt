@@ -1,4 +1,4 @@
-package com.hub.media.features.books.domain
+package com.hub.media.features.media.domain
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.MediaType

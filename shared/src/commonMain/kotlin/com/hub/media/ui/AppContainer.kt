@@ -10,19 +10,17 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
-import com.hub.media.features.books.domain.BulkDeleteUseCase
-import com.hub.media.features.books.domain.DeleteMediaUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
-import com.hub.media.features.books.domain.RealSearchBooksUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
-import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
+import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.media.domain.RealSearchMediaUseCase
 import com.hub.media.features.media.domain.SearchMediaUseCase
 import com.hub.media.features.portability.data.ImportWriteRepository
@@ -100,7 +98,7 @@ public class AppContainer(
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
      */
-    public val bulkDeleteUseCase: BulkDeleteUseCase =
+    public val deleteMediaUseCase: BulkDeleteUseCase =
         DeleteMediaUseCase(
             database = database,
             imageStorage = imageStorage,
@@ -156,7 +154,7 @@ public class AppContainer(
      * Handed to every path that talks to Google Books ([addBookByIsbnUseCase],
      * [refetchCoverUseCase], [bulkBackfillUseCase]), for the same reason [coverRateLimiter] is
      * shared: a quota is a property of the device, not of the call site. Not handed to
-     * [searchBooksUseCase] -- type-ahead is Open Library only by design (see its KDoc), and Open
+     * [searchMediaUseCase] -- type-ahead is Open Library only by design (see its KDoc), and Open
      * Library issues no keys.
      */
     private val googleBooksApiKeyProvider: suspend () -> String? = {
@@ -190,7 +188,7 @@ public class AppContainer(
         )
 
     /**
-     * Edition-level search client backing [searchBooksUseCase].
+     * Edition-level search client backing [searchMediaUseCase].
      */
     private val openLibrarySearchClient = OpenLibrarySearchClient(httpClient)
 
@@ -202,17 +200,11 @@ public class AppContainer(
             openLibrarySearchClient,
         )
 
-    /** Deprecated book-specific search use case. */
-    public val searchBooksUseCase: SearchBooksUseCase =
-        RealSearchBooksUseCase(
-            openLibrarySearchClient,
-        )
-
     /**
      * Edition-to-ISBN resolver for search result selection (ROADMAP Task 9 Phase B2).
      *
-     * Exposed separately (in addition to [searchBooksUseCase]) so [AddBookViewModel] can resolve a
-     * search result's [BookSearchResult.coverEditionKey] to a concrete ISBN, which is then passed
+     * Exposed separately (in addition to [searchMediaUseCase]) so [AddBookViewModel] can resolve a
+     * search result's [com.hub.media.features.media.network.MediaSearchResult.coverEditionKey] to a concrete ISBN, which is then passed
      * to [addBookByIsbnUseCase].
      */
     public val searchProvider: BookSearchProvider =

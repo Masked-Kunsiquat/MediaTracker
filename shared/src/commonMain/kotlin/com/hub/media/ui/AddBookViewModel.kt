@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
  * - **Add flow:** [uiState] models terminal outcomes (Idle/Loading/Success/Error) of the ISBN
  *   ingestion pipeline.
  * - **Search flow:** [searchState], [searchResults], [searchQuery] model the title/author type-ahead
- *   discovery pipeline, including debounce, cancellation, and result caching (via [SearchBooksUseCase]).
+ *   discovery pipeline, including debounce, cancellation, and result caching (via [SearchMediaUseCase]).
  *   Selecting a result ([selectSearchResult]) bridges from search to add: it resolves the edition
  *   key to an ISBN (via [searchProvider]) and, if successful, feeds that ISBN to the add flow.
  *

@@ -473,7 +473,7 @@ sequenced deliberately rather than taken in the order they happen to be listed:
   task's stated bottleneck: today a book can only be added with its ISBN in hand. Split in two, so
   the half that can be proven by tests is not entangled with the half that cannot:
   - **B1 (shared module — done).** `BookSearchProvider.searchByTitleOrAuthor` over Open Library's
-    keyless search API (`OpenLibrarySearchClient`), `BookSearchResult`, `SearchBooksUseCase` with
+    keyless search API (`OpenLibrarySearchClient`), `BookSearchResult`, `SearchMediaUseCase` with
     an in-memory `LruCache`, and `AppContainer` wiring. Entirely `commonTest`-able with
     `MockEngine`, exactly as the ISBN clients are. The cancellation rule applied from the start
     (Task 15 Phase C) and is verified by mutation: deleting the rethrow fails exactly one test.
@@ -495,7 +495,7 @@ sequenced deliberately rather than taken in the order they happen to be listed:
     typed result styling. Needs device verification, not just instrumented tests: debounce and
     cancellation are exactly the kind of behaviour that passes a test and still feels wrong in the
     hand. Also owns **selection → ISBN → `AddBookByIsbnUseCase`**, which B1 stops short of. The
-    minimum query length already lives in `SearchBooksUseCase.MIN_SEARCH_QUERY_LENGTH` (3), with
+    minimum query length already lives in `SearchMediaUseCase.MIN_SEARCH_QUERY_LENGTH` (3), with
     `isQueryLongEnough` exposed so the UI can say "keep typing" rather than "no matches" without
     re-deriving the normalization rules.
 - **Phase C — manual entry and paste-to-add.** Second because it needs no permissions and no new
@@ -764,7 +764,7 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
       orphaned-cover-files backlog item rather than growing it.
     - **Or explicitly defer** cleanup, and document the resulting disk growth as accepted — but
       then say it in the release notes, because "deleted books still cost storage" is surprising.
-    - **Decided: reference-aware removal.** `DeleteBooksUseCase` reads the candidate hashes, deletes
+    - **Decided: reference-aware removal.** `DeleteMediaUseCase` reads the candidate hashes, deletes
       the rows, then counts remaining references per hash and removes only the files that reach
       zero. **This retires the orphaned-cover-files backlog item.** Ordering is the load-bearing
       part and is documented in that class: counting *after* the delete is what makes zero

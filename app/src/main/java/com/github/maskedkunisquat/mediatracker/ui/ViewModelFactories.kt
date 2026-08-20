@@ -31,7 +31,7 @@ class LibraryViewModelFactory(
                 LibraryViewModel(
                     mediaRepository = appContainer.mediaRepository,
                     bookRepository = appContainer.bookRepository,
-                    deleteBooksUseCase = appContainer.bulkDeleteUseCase,
+                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
@@ -41,7 +41,7 @@ class LibraryViewModelFactory(
 /**
  * Factory for creating [AddBookViewModel] with its dependencies from the [AppContainer]:
  * [com.hub.media.features.books.domain.AddBookByIsbnUseCase] (primary add flow),
- * [com.hub.media.features.books.domain.SearchBooksUseCase] (title/author type-ahead),
+ * [com.hub.media.features.media.domain.SearchMediaUseCase] (title/author type-ahead),
  * and [com.hub.media.features.books.network.BookSearchProvider] (edition-to-ISBN resolution).
  */
 class AddBookViewModelFactory(

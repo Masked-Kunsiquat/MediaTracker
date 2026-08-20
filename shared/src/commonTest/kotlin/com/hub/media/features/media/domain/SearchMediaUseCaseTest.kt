@@ -1,10 +1,9 @@
-package com.hub.media.features.books.domain
+package com.hub.media.features.media.domain
 
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
-import com.hub.media.features.books.network.BookEditionSearchResult
-import com.hub.media.features.books.network.BookSearchProvider
+import com.hub.media.features.media.network.MediaSearchProvider
 import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.cancellation.CancellationException
@@ -14,7 +13,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class SearchBooksUseCaseTest {
+class SearchMediaUseCaseTest {
     /**
      * Records every query it is handed, which is what most of these tests actually assert on:
      * the point of this class is *which requests never happen*.
@@ -23,11 +22,11 @@ class SearchBooksUseCaseTest {
         private val response: (String) -> Resource<List<MediaSearchResult>> = {
             Resource.Success(listOf(hit("The Hobbit")))
         },
-    ) : BookSearchProvider {
+    ) : MediaSearchProvider {
         val queries = mutableListOf<String>()
         val limits = mutableListOf<Int>()
 
-        override suspend fun searchByTitleOrAuthor(
+        override suspend fun search(
             query: String,
             limit: Int,
         ): Resource<List<MediaSearchResult>> {
@@ -35,11 +34,6 @@ class SearchBooksUseCaseTest {
             limits.add(limit)
             return response(query)
         }
-
-        override suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?> = Resource.Success(null)
-
-        override suspend fun fetchEditionsForWork(workKey: String): Resource<List<BookEditionSearchResult>> =
-            Resource.Success(emptyList())
     }
 
     private companion object {
@@ -55,7 +49,7 @@ class SearchBooksUseCaseTest {
     fun query_shorterThanTheMinimum_neverReachesTheNetwork() =
         runTest {
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             val result = useCase.execute("ho")
 
@@ -70,7 +64,7 @@ class SearchBooksUseCaseTest {
             // "  h  " is 5 characters but one letter. Counting before trimming would let a single
             // keystroke plus stray spaces trigger a catalogue-wide search.
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             useCase.execute("  h  ")
 
@@ -81,7 +75,7 @@ class SearchBooksUseCaseTest {
     fun query_atTheMinimum_isSearched() =
         runTest {
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             useCase.execute("hob")
 
@@ -94,7 +88,7 @@ class SearchBooksUseCaseTest {
             // The reason the cache exists: typing is not monotonic. A user types forward, backspaces,
             // and types forward again over the same prefixes constantly.
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             val first = useCase.execute("hobbit")
             val second = useCase.execute("hobbit")
@@ -111,7 +105,7 @@ class SearchBooksUseCaseTest {
     fun queriesDifferingOnlyInCaseOrSpacing_shareOneRequest() =
         runTest {
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             useCase.execute("The Hobbit")
             useCase.execute("the hobbit")
@@ -131,7 +125,7 @@ class SearchBooksUseCaseTest {
                     attempt++
                     if (attempt == 1) Resource.Error("offline") else Resource.Success(listOf(hit(query)))
                 }
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             val failed = useCase.execute("hobbit")
             val retried = useCase.execute("hobbit")
@@ -147,7 +141,7 @@ class SearchBooksUseCaseTest {
             // "Found nothing" is a real, correct answer. Re-asking the provider for it on every
             // keystroke would spend the budget the cache exists to protect.
             val provider = RecordingProvider { Resource.Success(emptyList()) }
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             useCase.execute("zzzzqqqq")
             useCase.execute("zzzzqqqq")
@@ -159,7 +153,7 @@ class SearchBooksUseCaseTest {
     fun leastRecentlyUsedQuery_isEvictedFirst() =
         runTest {
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider, cacheSize = 2)
+            val useCase = RealSearchMediaUseCase(provider, cacheSize = 2)
 
             useCase.execute("aaa")
             useCase.execute("bbb")
@@ -175,7 +169,7 @@ class SearchBooksUseCaseTest {
     fun cancellation_propagatesRatherThanBecomingAnError() =
         runTest {
             val provider = RecordingProvider { throw CancellationException("superseded") }
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             assertFailsWith<CancellationException> { useCase.execute("hobbit") }
         }
@@ -194,7 +188,7 @@ class SearchBooksUseCaseTest {
                     }
                     Resource.Success(listOf(hit(query)))
                 }
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             assertFailsWith<CancellationException> { useCase.execute("hobbit") }
             val retried = useCase.execute("hobbit")
@@ -207,7 +201,7 @@ class SearchBooksUseCaseTest {
     fun limit_isForwardedToTheProvider() =
         runTest {
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider, limit = 5)
+            val useCase = RealSearchMediaUseCase(provider, limit = 5)
 
             useCase.execute("hobbit")
 
@@ -220,7 +214,7 @@ class SearchBooksUseCaseTest {
             // Exposed so the UI can say "keep typing" instead of "no matches" without re-implementing
             // normalization -- and it is only useful if it cannot drift from execute().
             val provider = RecordingProvider()
-            val useCase = RealSearchBooksUseCase(provider)
+            val useCase = RealSearchMediaUseCase(provider)
 
             listOf("", "  ", "h", "ho", "  ho  ").forEach { query ->
                 assertFalse(useCase.isQueryLongEnough(query), "expected too short: '$query'")

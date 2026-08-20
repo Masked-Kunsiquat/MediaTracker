@@ -49,7 +49,7 @@ fun AppNavigation(
                 onNavigateToAddBook = {
                     navController.navigate(Route.AddBook.route)
                 },
-                onNavigateToBookDetail = { bookId ->
+                onNavigateToMediaDetail = { bookId ->
                     navController.navigate(Route.BookDetail.createRoute(bookId))
                 },
                 onNavigateToStats = {
