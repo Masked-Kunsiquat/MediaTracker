@@ -1,11 +1,10 @@
 package com.hub.media.features.portability.domain
 
-import com.hub.media.core.database.dao.ImportBookInsert
-import com.hub.media.core.database.dao.ImportBookUpdate
+import com.hub.media.core.database.dao.ImportMediaInsert
+import com.hub.media.core.database.dao.ImportMediaUpdate
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
-import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -491,8 +490,8 @@ public class ImportDataUseCase(
 
     /** Outcome of [resolveBookRows] -- everything [execute]/[executeGoodreads] need to finish the job. */
     private data class BookRowResolution(
-        val inserts: List<ImportBookInsert>,
-        val updates: List<ImportBookUpdate>,
+        val inserts: List<ImportMediaInsert>,
+        val updates: List<ImportMediaUpdate>,
         val rejections: List<ImportRejection>,
         val imported: Int,
         val skipped: Int,
@@ -563,8 +562,8 @@ public class ImportDataUseCase(
         val reviewNotes = mutableListOf<String>()
 
         val rejections = mutableListOf<ImportRejection>()
-        val inserts = mutableListOf<ImportBookInsert>()
-        val updates = mutableListOf<ImportBookUpdate>()
+        val inserts = mutableListOf<ImportMediaInsert>()
+        val updates = mutableListOf<ImportMediaUpdate>()
         var imported = 0
         var skipped = 0
         var merged = 0
@@ -692,11 +691,11 @@ public class ImportDataUseCase(
             "imported: ${importedYear?.toString() ?: "unknown"}). Please verify this is the same book and not " +
             "an accidental duplicate/incorrect merge before trusting the result."
 
-    private fun buildInsert(row: ParsedLibraryRow): ImportBookInsert {
+    private fun buildInsert(row: ParsedLibraryRow): ImportMediaInsert {
         val mediaItem =
             MediaItemEntity(
                 id = row.mediaId,
-                type = MediaType.BOOK,
+                type = row.type,
                 title = row.title,
                 releaseYear = row.releaseYear,
                 purchasePrice = row.purchasePrice,
@@ -719,16 +718,17 @@ public class ImportDataUseCase(
             row.externalIdentifiers.map { (provider, id) ->
                 ExternalIdentifierEntity(mediaId = row.mediaId, provider = provider, externalId = id)
             }
-        return ImportBookInsert(mediaItem, details, identifiers)
+        return ImportMediaInsert(mediaItem, details, identifiers)
     }
 
     private fun buildReplace(
         existing: MediaWithDetails.Book,
         row: ParsedLibraryRow,
-    ): ImportBookUpdate {
+    ): ImportMediaUpdate {
         val mediaId = existing.item.id
         val mediaItem =
             existing.item.copy(
+                type = row.type,
                 title = row.title,
                 releaseYear = row.releaseYear,
                 purchasePrice = row.purchasePrice,
@@ -749,20 +749,20 @@ public class ImportDataUseCase(
             row.externalIdentifiers.map { (provider, id) ->
                 ExternalIdentifierEntity(mediaId = mediaId, provider = provider, externalId = id)
             }
-        return ImportBookUpdate(mediaItem, details, identifiers, replaceIdentifiers = true)
+        return ImportMediaUpdate(mediaItem, details, identifiers, replaceIdentifiers = true)
     }
 
     private fun buildMerge(
         existing: MediaWithDetails.Book,
         row: ParsedLibraryRow,
         existingIdentifiers: List<ExternalIdentifierEntity>,
-    ): ImportBookUpdate {
+    ): ImportMediaUpdate {
         val mediaId = existing.item.id
         val mediaItem =
             existing.item.copy(
                 releaseYear = existing.item.releaseYear ?: row.releaseYear,
                 purchasePrice = existing.item.purchasePrice ?: row.purchasePrice,
-                // title/createdAt/coverImageHash never backfilled -- identity/local-owned fields.
+                // type/title/createdAt/coverImageHash never backfilled -- identity/local-owned fields.
             )
         val existingDetails = existing.details
         val details =
@@ -783,7 +783,7 @@ public class ImportDataUseCase(
                 .map { (provider, id) ->
                     ExternalIdentifierEntity(mediaId = mediaId, provider = provider, externalId = id)
                 }
-        return ImportBookUpdate(mediaItem, details, newIdentifiers, replaceIdentifiers = false)
+        return ImportMediaUpdate(mediaItem, details, newIdentifiers, replaceIdentifiers = false)
     }
 
     private fun toSessionEntity(

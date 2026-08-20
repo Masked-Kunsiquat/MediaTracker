@@ -11,6 +11,7 @@ import kotlin.time.Instant
 /** One successfully parsed `library_export.csv` data row -- mirrors [LibraryCsvExporter]'s column set. */
 public data class ParsedLibraryRow(
     public val mediaId: String,
+    public val type: MediaType,
     public val title: String,
     /**
      * [com.hub.media.core.database.entities.BookDetailsEntity.authors]' stored form, passed
@@ -167,6 +168,7 @@ public object LibraryCsvImporter {
 
         return ParsedLibraryRow(
             mediaId = mediaId,
+            type = type,
             title = title,
             authors = authors,
             releaseYear = releaseYear,

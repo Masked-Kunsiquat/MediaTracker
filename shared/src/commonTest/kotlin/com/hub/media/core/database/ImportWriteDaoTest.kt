@@ -1,7 +1,7 @@
 package com.hub.media.core.database
 
-import com.hub.media.core.database.dao.ImportBookInsert
-import com.hub.media.core.database.dao.ImportBookUpdate
+import com.hub.media.core.database.dao.ImportMediaInsert
+import com.hub.media.core.database.dao.ImportMediaUpdate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -39,7 +39,7 @@ class ImportWriteDaoTest {
             val inserts =
                 (1..3).map { i ->
                     val mediaId = "media-$i"
-                    ImportBookInsert(
+                    ImportMediaInsert(
                         mediaItem = sampleMediaItem(id = mediaId, title = "Book $i"),
                         details = sampleBookDetails(mediaId = mediaId),
                         identifiers = emptyList(),
@@ -70,18 +70,18 @@ class ImportWriteDaoTest {
 
             val inserts =
                 listOf(
-                    ImportBookInsert(
+                    ImportMediaInsert(
                         mediaItem = sampleMediaItem(id = "media-1", title = "Book 1"),
                         details = sampleBookDetails(mediaId = "media-1"),
                         identifiers = emptyList(),
                     ),
-                    ImportBookInsert(
+                    ImportMediaInsert(
                         // Duplicate primary key against the pre-existing row -- forces a mid-batch failure.
                         mediaItem = sampleMediaItem(id = "media-2", title = "Colliding book"),
                         details = sampleBookDetails(mediaId = "media-2"),
                         identifiers = emptyList(),
                     ),
-                    ImportBookInsert(
+                    ImportMediaInsert(
                         mediaItem = sampleMediaItem(id = "media-3", title = "Book 3"),
                         details = sampleBookDetails(mediaId = "media-3"),
                         identifiers = emptyList(),
@@ -113,13 +113,13 @@ class ImportWriteDaoTest {
             // method return normally and ImportDataUseCase's summary over-report the row as "updated"
             // when nothing was actually written.
             val insert =
-                ImportBookInsert(
+                ImportMediaInsert(
                     mediaItem = sampleMediaItem(id = "media-1", title = "Fresh Book"),
                     details = sampleBookDetails(mediaId = "media-1"),
                     identifiers = emptyList(),
                 )
             val updateForMissingBook =
-                ImportBookUpdate(
+                ImportMediaUpdate(
                     mediaItem = sampleMediaItem(id = "media-missing", title = "Ghost"),
                     details = sampleBookDetails(mediaId = "media-missing"),
                     identifiers = emptyList(),
@@ -145,7 +145,7 @@ class ImportWriteDaoTest {
         runTest {
             // Same race as above, for a reading-session update rather than a book update.
             val bookInsert =
-                ImportBookInsert(
+                ImportMediaInsert(
                     mediaItem = sampleMediaItem(id = "media-1", title = "Fresh Book"),
                     details = sampleBookDetails(mediaId = "media-1"),
                     identifiers = emptyList(),
