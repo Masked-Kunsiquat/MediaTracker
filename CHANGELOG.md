@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Generalized Portability**: `LibraryCsvExporter` and `ImportDataUseCase` now support mixed media types via a generalized infrastructure, ensuring consistent data safety and duplicate matching across the library.
+- **Generalized Portability**: `LibraryCsvExporter` was generalized to the polymorphic `MediaWithDetails` model, laying the infrastructure for mixed-media export. `ImportDataUseCase` remains book-only (`BookRepository`/`observeAllBooksWithDetails`/`resolveBookRows`), but its duplicate matching now keys every title-based tier on media type so it stays correct once other types are importable.
 - **Heterogeneous Library UI**: The library screen now displays mixed media types with type-specific release labels and consolidated bulk actions.
 
 ### Internal
