@@ -1,6 +1,7 @@
 package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.sampleBookDetails
@@ -43,6 +44,7 @@ class RefetchCoverUseCaseTest {
     private lateinit var db: AppDatabase
     private lateinit var tempDir: String
     private lateinit var repository: BookRepository
+    private lateinit var mediaRepository: MediaRepository
     private lateinit var mediaId: String
 
     @BeforeTest
@@ -51,6 +53,7 @@ class RefetchCoverUseCaseTest {
             db = testAppDatabase()
             tempDir = createTestTempDir()
             repository = BookRepository(db)
+            mediaRepository = MediaRepository(db)
             mediaId = newId()
         }
 
@@ -100,6 +103,7 @@ class RefetchCoverUseCaseTest {
             coverDownloader = CoverImageDownloader(createHttpClient(engine)),
             imageStorage = LocalImageStorageManager(tempDir),
             bookRepository = repository,
+            mediaRepository = mediaRepository,
         )
 
     @Test

@@ -1,7 +1,7 @@
 package com.hub.media.features.books.domain
 
 import com.hub.media.core.util.Resource
-import com.hub.media.features.books.network.BookSearchResult
+import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.delay
 
 /**
@@ -14,7 +14,7 @@ import kotlinx.coroutines.delay
  * [minLengthIsEnough] can be toggled per instance.
  */
 internal class FakeSearchBooksUseCase(
-    private val results: List<BookSearchResult> = emptyList(),
+    private val results: List<MediaSearchResult> = emptyList(),
     private val error: Resource.Error? = null,
     private val delay: Long = 0,
     private val minLengthIsEnough: Boolean = true,
@@ -22,13 +22,15 @@ internal class FakeSearchBooksUseCase(
     var executeCallCount: Int = 0
         private set
 
-    override suspend fun execute(query: String): Resource<List<BookSearchResult>> {
+    override suspend fun execute(query: String): Resource<List<MediaSearchResult>> {
         executeCallCount++
         if (delay > 0) {
             delay(delay)
         }
         return error ?: Resource.Success(results)
     }
+
+    override suspend fun searchBooks(query: String): Resource<List<MediaSearchResult>> = execute(query)
 
     override fun isQueryLongEnough(query: String): Boolean = minLengthIsEnough
 }

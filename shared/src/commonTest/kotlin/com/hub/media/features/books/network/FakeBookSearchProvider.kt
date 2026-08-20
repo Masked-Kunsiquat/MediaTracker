@@ -1,6 +1,7 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.util.Resource
+import com.hub.media.features.media.network.MediaSearchResult
 
 /**
  * Hand-rolled fake [BookSearchProvider] for ViewModel tests (AGENTS.md §5 "No Unnecessary
@@ -23,7 +24,7 @@ internal class FakeBookSearchProvider(
     override suspend fun searchByTitleOrAuthor(
         query: String,
         limit: Int,
-    ): Resource<List<BookSearchResult>> = Resource.Success(emptyList())
+    ): Resource<List<MediaSearchResult>> = Resource.Success(emptyList())
 
     override suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?> {
         resolveCallCount++

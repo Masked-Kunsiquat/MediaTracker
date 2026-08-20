@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
@@ -67,6 +68,7 @@ class BookDetailViewModelTest {
     }
 
     private lateinit var db: AppDatabase
+    private lateinit var mediaRepository: MediaRepository
     private lateinit var bookRepository: BookRepository
     private lateinit var sessionRepository: ReadingSessionRepository
     private lateinit var useCase: LogReadingSessionUseCase
@@ -78,6 +80,7 @@ class BookDetailViewModelTest {
     fun setUp() {
         viewModels.installMain()
         db = testAppDatabase()
+        mediaRepository = MediaRepository(db)
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
         useCase = LogReadingSessionUseCase(sessionRepository)
@@ -99,6 +102,7 @@ class BookDetailViewModelTest {
                     ),
                 imageStorage = LocalImageStorageManager("unused"),
                 bookRepository = bookRepository,
+                mediaRepository = mediaRepository,
             )
         mediaId = newId()
     }
@@ -170,6 +174,7 @@ class BookDetailViewModelTest {
         viewModels.track(
             BookDetailViewModel(
                 bookId = id,
+                mediaRepository = mediaRepository,
                 bookRepository = bookRepository,
                 readingSessionRepository = sessionRepository,
                 logReadingSessionUseCase = useCase,

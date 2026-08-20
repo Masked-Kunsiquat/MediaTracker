@@ -14,8 +14,8 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.domain.BulkDeleteUseCase
-import com.hub.media.features.books.domain.DeleteBooksSummary
-import com.hub.media.features.books.domain.DeleteBooksUseCase
+import com.hub.media.features.books.domain.DeleteMediaSummary
+import com.hub.media.features.books.domain.DeleteMediaUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -65,7 +65,7 @@ class LibraryViewModelTest {
                 LibraryViewModel(
                     mediaRepository = mediaRepository,
                     bookRepository = repository,
-                    deleteBooksUseCase = DeleteBooksUseCase(db, LocalImageStorageManager(tempDir)),
+                    deleteBooksUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
                 ),
             )
     }
@@ -170,7 +170,7 @@ class LibraryViewModelTest {
     private class FailingBulkDelete(
         private val message: String,
     ) : BulkDeleteUseCase {
-        override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> = Resource.Error(message)
+        override suspend fun execute(ids: List<String>): Resource<DeleteMediaSummary> = Resource.Error(message)
     }
 
     /** Rebuilds the ViewModel with a delete that always fails, tracked for teardown like the rest. */
@@ -182,9 +182,9 @@ class LibraryViewModelTest {
     private class RecordingBulkDelete : BulkDeleteUseCase {
         val calls = mutableListOf<List<String>>()
 
-        override suspend fun execute(ids: List<String>): Resource<DeleteBooksSummary> {
+        override suspend fun execute(ids: List<String>): Resource<DeleteMediaSummary> {
             calls += ids
-            return Resource.Success(DeleteBooksSummary(ids.size, 0, 0))
+            return Resource.Success(DeleteMediaSummary(ids.size, 0, 0))
         }
     }
 

@@ -1,10 +1,11 @@
 package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
-import com.hub.media.features.books.network.BookSearchResult
+import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
@@ -19,7 +20,7 @@ class SearchBooksUseCaseTest {
      * the point of this class is *which requests never happen*.
      */
     private class RecordingProvider(
-        private val response: (String) -> Resource<List<BookSearchResult>> = {
+        private val response: (String) -> Resource<List<MediaSearchResult>> = {
             Resource.Success(listOf(hit("The Hobbit")))
         },
     ) : BookSearchProvider {
@@ -29,7 +30,7 @@ class SearchBooksUseCaseTest {
         override suspend fun searchByTitleOrAuthor(
             query: String,
             limit: Int,
-        ): Resource<List<BookSearchResult>> {
+        ): Resource<List<MediaSearchResult>> {
             queries.add(query)
             limits.add(limit)
             return response(query)
@@ -43,8 +44,9 @@ class SearchBooksUseCaseTest {
 
     private companion object {
         fun hit(title: String) =
-            BookSearchResult(
+            MediaSearchResult(
                 title = title,
+                type = MediaType.BOOK,
                 provider = IdentifierProvider.OPEN_LIBRARY,
             )
     }

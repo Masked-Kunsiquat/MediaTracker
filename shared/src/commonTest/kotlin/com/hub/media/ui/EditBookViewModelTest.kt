@@ -345,10 +345,10 @@ class EditBookViewModelTest {
             val persisted =
                 bookRepository
                     .observeBookDetail(mediaId)
-                    .first { it?.mediaItem?.title != "Project Hail Mary" }
+                    .first { it?.item?.title != "Project Hail Mary" }
             assertEquals(
                 "First Call Title",
-                persisted?.mediaItem?.title,
+                persisted?.item?.title,
                 "the in-flight guard must have dropped the second save; found instead",
             )
         }
