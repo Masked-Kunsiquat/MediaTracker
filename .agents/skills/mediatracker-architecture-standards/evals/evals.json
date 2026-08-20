@@ -5,7 +5,7 @@
       "id": 0,
       "name": "new-media-type-modeling",
       "prompt": "I want to add a Movie entity to the project. How should I define the table and its primary key?",
-      "expected_output": "The response should mandate a UUID string for the primary key and recommend a polymorphic schema: universal metadata in MediaItems and movie-specific fields in a MovieDetails table linked by media_id. Explicitly distinguish the Room entity property 'mediaId' (PascalCase/camelCase) from the external CSV identifier 'media_id' (snake_case)."
+      "expected_output": "The response should mandate a UUID string for the primary key and recommend a polymorphic schema: universal metadata in MediaItems and movie-specific fields in a MovieDetails table. Names must be used precisely: 'MediaItemEntity.id' is the universal primary key, a details table's own primary key and foreign key back to it is 'mediaId' (as on BookDetailsEntity), and 'media_id' is the external CSV column. 'mediaId' is the details-table key, not the universal Room property."
     },
     {
       "id": 1,
