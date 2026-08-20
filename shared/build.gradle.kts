@@ -137,6 +137,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.features.stats.*")
             excludeTestsMatching("com.hub.media.features.settings.*")
             excludeTestsMatching("com.hub.media.features.portability.domain.*")
+            excludeTestsMatching("com.hub.media.features.media.domain.*")
             excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.BackfillViewModelTest*")

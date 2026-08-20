@@ -59,12 +59,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.warn
-import com.hub.media.core.database.entities.MediaType
-import com.hub.media.features.media.domain.MIN_SEARCH_QUERY_LENGTH
 import com.hub.media.features.books.network.BookEditionSearchResult
+import com.hub.media.features.media.domain.MIN_SEARCH_QUERY_LENGTH
 import com.hub.media.features.media.network.MediaSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddBookViewModel
