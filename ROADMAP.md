@@ -50,6 +50,7 @@ the same edit. Note the `(done)` suffixes are part of the anchor for exactly tha
 | [Task 14 — Bulk operations & cover backfill](#task-14--bulk-operations--cover-backfill) | done |
 | [Task 15 — Logging](#task-15--logging) | done |
 | [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned |
+| [Task 17 — Data-layer error contract](#task-17--data-layer-error-contract) | planned, unsequenced |
 | [Blocked on external changes](#blocked-on-external-changes) | — |
 | [Backlog / tech debt](#backlog--tech-debt) | — |
 | [Unscheduled features](#unscheduled-features) | — |
@@ -1141,6 +1142,71 @@ for the same reasons.
 The signing half can be pulled forward independently of the CI and update-check work, and there is
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
+
+## Task 17 — Data-layer error contract
+
+Make the data layer's error handling uniform. AGENTS.md §5 requires database operations to be
+wrapped in `Resource`/`Result` "to prevent UI crashes on offline/error states"; today that is
+honoured for writes and for exactly one read, while every reactive read and most one-shot reads
+return bare values and throw.
+
+**Not scheduled against a feature** — it blocks nothing and nothing blocks it. Raised here rather
+than left in the backlog because it is past that section's "small" bar: it spans two repositories,
+roughly six flows, their ViewModels, and at least one screen's error state.
+
+### What is actually inconsistent
+
+- **Writes are wrapped.** `addBook`, `updateBookMetadata`, `updateReadingStatus`,
+  `applyBackfilledMetadata`, `DeleteMediaUseCase.execute` all return `Resource` and catch.
+- **One read is wrapped.** `BookRepository.getBookWithDetails` returns
+  `Resource<MediaWithDetails.Book?>` — added during the Issue #67 review round.
+- **The rest are not.** `getAllBooksWithDetails` and `getMediaIdsWithIdentifier` return bare values
+  two methods below a wrapped one, and every `observe*` returns a raw `Flow`:
+  `observeAllBooks`, `observeBookDetail`, `observeAllBooksWithDetails`,
+  `observeAllExternalIdentifiers`, `MediaRepository.observeAllMediaWithDetails`.
+
+### The failure it leaves open
+
+A Room flow that throws mid-stream cancels the collecting scope. `LibraryViewModel.uiState` is a
+`combine(...).stateIn(viewModelScope, ...)` with nothing catching, so the failure kills
+`viewModelScope` and the screen freezes on its last good state — no error, no retry, no crash to
+report. **A frozen screen is the worst of the three outcomes**, because it is the only one that
+produces no signal at all.
+
+This predates Issue #67 — `observeAllBooksWithDetails`, which `observeAllMediaWithDetails`
+replaced, had exactly the same property. It is not a regression, which is precisely why it needs
+scheduling rather than a drive-by fix.
+
+### Why the one-shot reads look less urgent than they are
+
+`BulkBackfillUseCase.execute` calls `seedState()` *outside* its own try block, so a DB failure in
+`getMediaIdsWithIdentifier`/`getAllBooksWithDetails` propagates straight out. It does not crash
+today only because `BackfillViewModel` happens to wrap both call sites in
+`try/catch (e: Exception)`. That is real protection at the wrong layer: it holds by the accident of
+one consumer being careful, and the next consumer inherits nothing.
+
+### The decision this task has to make first
+
+**Do not start by converting signatures.** `Resource`-per-emission is not obviously right for a
+reactive read — `Flow<Resource<List<T>>>` forces every consumer to unwrap on every emission, and
+the error is terminal anyway. Two candidates, and the task should pick one and apply it everywhere:
+- `Flow<Resource<T>>` — uniform with the suspend/write side, verbose at each collection site.
+- Bare `Flow<T>` plus a shared `.catch {}` operator at the ViewModel seam, converting to an error
+  state on the existing UI state class — cheaper, keeps the repository API as-is, but the
+  discipline is then per-ViewModel again, which is the failure mode this task exists to close.
+
+Whichever is chosen, **doing it piecemeal is worse than not doing it.** One `Resource`-typed flow
+among five bare ones, with one screen rendering an error state no other screen has, is harder to
+reason about than the current uniform gap.
+
+### Scope
+
+- Both repositories' read APIs, decided per the section above.
+- `LibraryViewModel` / `LibraryScreen` — the first screen needing a real error state for a *read*.
+- `BulkBackfillUseCase.seedState` and the backfill UI contract, so failures propagate before the
+  processing loop rather than relying on the consumer's `catch`.
+- Tests: a failing-DAO fake asserting the UI reaches an error state rather than silently stopping.
+  The current suite cannot fail on any of this, which is why it has stayed invisible.
 
 ## Blocked on external changes
 
