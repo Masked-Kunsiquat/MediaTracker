@@ -27,3 +27,9 @@ local.properties
 *.keystore
 *.p12
 keystore.properties
+
+# Scratch output from the Gemini coding tool (one opaque UUID-named directory per session). Local
+# working state, not project state -- nothing in the build, the app or the docs reads it. Ignored
+# rather than merely left untracked so it cannot ride along on an over-broad `git add`, which is
+# what would otherwise happen eventually given it reappears on every session.
+/.artifacts/
