@@ -22,11 +22,16 @@ This skill ensures that MediaTracker's promise of "first-class data portability"
 ## Library Export Structure (`library_export.csv`)
 1. `csv_schema_version` (2)
 2. `media_id` (UUID)
-3. `type` (`BOOK`)
+3. `type` (e.g., `BOOK`, `MOVIE`, `TV_SHOW`)
 4. `title`
-5. `authors` (joined by `"; "`)
+5. `authors` (joined by `"; "`, empty for non-book types)
 6. `release_year` (1450-2100)
 ... (see `CSV_FORMAT.md` for full 16-column list)
+
+## Import Logic & Duplicate Matching
+- **Precedence**: `media_id` -> `isbn` (for books) -> `title` + `release_year` -> `title` only (with Review Note).
+- **Heterogeneous Support**: `ImportDataUseCase` and `LibraryCsvExporter` MUST support mixed media types uniformly.
+- **In-File Duplicates**: Later rows in the same file MUST resolve against earlier rows from the SAME file.
 
 ## Reading Log Structure (`reading_logs_export.csv`)
 1. `csv_schema_version` (2)
