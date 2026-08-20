@@ -18,8 +18,8 @@ import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
 
 /**
- * Factory for creating [LibraryViewModel] with its [com.hub.media.features.books.data.BookRepository]
- * dependency from the [AppContainer].
+ * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
+ * and bulk-delete dependencies from the [AppContainer].
  */
 class LibraryViewModelFactory(
     private val appContainer: AppContainer,
@@ -30,7 +30,6 @@ class LibraryViewModelFactory(
             modelClass.isAssignableFrom(LibraryViewModel::class.java) -> {
                 LibraryViewModel(
                     mediaRepository = appContainer.mediaRepository,
-                    bookRepository = appContainer.bookRepository,
                     deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 ) as T
             }

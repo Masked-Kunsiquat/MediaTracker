@@ -64,7 +64,6 @@ class LibraryViewModelTest {
             viewModels.track(
                 LibraryViewModel(
                     mediaRepository = mediaRepository,
-                    bookRepository = repository,
                     deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
                 ),
             )
@@ -175,7 +174,7 @@ class LibraryViewModelTest {
 
     /** Rebuilds the ViewModel with a delete that always fails, tracked for teardown like the rest. */
     private fun useFailingDelete(message: String = "Database unavailable") {
-        viewModel = viewModels.track(LibraryViewModel(mediaRepository, repository, FailingBulkDelete(message)))
+        viewModel = viewModels.track(LibraryViewModel(mediaRepository, FailingBulkDelete(message)))
     }
 
     /** Records the ids it was handed, so a test can assert on the request rather than the outcome. */
@@ -191,7 +190,7 @@ class LibraryViewModelTest {
     /** Rebuilds the ViewModel with a recording delete and returns the recorder. */
     private fun useRecordingDelete(): RecordingBulkDelete =
         RecordingBulkDelete().also {
-            viewModel = viewModels.track(LibraryViewModel(mediaRepository, repository, it))
+            viewModel = viewModels.track(LibraryViewModel(mediaRepository, it))
         }
 
     /**

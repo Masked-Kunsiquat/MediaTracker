@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
-import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,13 +20,13 @@ import kotlin.time.Duration.Companion.seconds
  *
  * Consolidated from book-only version per Issue #67.
  *
- * @param mediaRepository Source of universal media operations.
- * @param bookRepository Source of reactive book list with details.
+ * @param mediaRepository Source of the reactive, all-types media list and universal media
+ *   operations. Deliberately not a `BookRepository`: the library list is polymorphic per Issue #67,
+ *   so it must not depend on book-specific data access.
  * @param deleteMediaUseCase Bulk delete with reference-aware cover cleanup.
  */
 public class LibraryViewModel(
     private val mediaRepository: MediaRepository,
-    private val bookRepository: BookRepository,
     private val deleteMediaUseCase: BulkDeleteUseCase,
 ) : ViewModel() {
     private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
