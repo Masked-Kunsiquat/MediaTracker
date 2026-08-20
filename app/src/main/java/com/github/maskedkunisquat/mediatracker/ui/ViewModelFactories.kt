@@ -31,7 +31,7 @@ class LibraryViewModelFactory(
                 LibraryViewModel(
                     mediaRepository = appContainer.mediaRepository,
                     bookRepository = appContainer.bookRepository,
-                    deleteBooksUseCase = appContainer.deleteBooksUseCase,
+                    deleteBooksUseCase = appContainer.bulkDeleteUseCase,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
@@ -53,7 +53,7 @@ class AddBookViewModelFactory(
             modelClass.isAssignableFrom(AddBookViewModel::class.java) -> {
                 AddBookViewModel(
                     addBookByIsbnUseCase = appContainer.addBookByIsbnUseCase,
-                    searchBooksUseCase = appContainer.searchBooksUseCase,
+                    searchMediaUseCase = appContainer.searchMediaUseCase,
                     searchProvider = appContainer.searchProvider,
                     resolveWorkToEditionsUseCase = appContainer.resolveWorkToEditionsUseCase,
                 ) as T
