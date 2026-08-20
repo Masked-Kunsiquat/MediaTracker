@@ -15,6 +15,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.BookMetadataValidation
+import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlin.coroutines.cancellation.CancellationException
@@ -48,53 +49,37 @@ public class BookRepository(
 ) {
     /**
      * Observes all books in the database as a reactive stream, ordered by title.
-     * No [Resource] wrapper on Flow-based reads per AGENTS.md §5 conventions.
      */
     public fun observeAllBooks(): Flow<List<MediaItemEntity>> = db.mediaItemDao().observeByType(MediaType.BOOK)
 
     /**
-     * Observes a single book by ID as a reactive stream via an indexed primary-key query.
-     * Emits null if the book does not exist (or after it is deleted).
-     */
-    public fun observeBook(id: String): Flow<MediaItemEntity?> = db.mediaItemDao().observeById(id)
-
-    /**
-     * Observes a single book together with its [BookDetailsEntity] as a reactive stream (ROADMAP
-     * Task 4 Phase B: `BookDetailViewModel` metadata). Combines [observeBook] with
-     * [com.hub.media.core.database.dao.BookDetailsDao.observeByMediaId] rather than a Room
-     * `@Relation` query (no DAO changes per the Room schema freeze) — [BookWithDetails] is reused
-     * as the wrapper shape purely because it already exists.
+     * Observes a single book together with its details as a reactive stream (ROADMAP
+     * Task 4 Phase B: `BookDetailViewModel` metadata). Replaces the old `BookWithDetails`
+     * with the polymorphic [MediaWithDetails.Book] per Issue #67.
      *
-     * Emits null once [id]'s [MediaItemEntity] is missing (never created, or deleted), matching
-     * [observeBook]'s null-on-delete semantics; [BookWithDetails.details] itself may independently
-     * be null if no [BookDetailsEntity] row exists for the media id (data-integrity edge case,
-     * never expected via [addBook]'s atomic insert).
+     * Emits null once [id]'s [MediaItemEntity] is missing (never created, or deleted).
      */
-    public fun observeBookDetail(id: String): Flow<BookWithDetails?> =
+    public fun observeBookDetail(id: String): Flow<MediaWithDetails.Book?> =
         combine(
             db.mediaItemDao().observeById(id),
             db.bookDetailsDao().observeByMediaId(id),
         ) { mediaItem, details ->
-            mediaItem?.let { BookWithDetails(mediaItem = it, details = details) }
+            mediaItem?.let { MediaWithDetails.Book(item = it, details = details) }
         }
 
     /**
-     * Observes every book together with its [BookDetailsEntity] as a reactive stream (ROADMAP
-     * Task 6 Phase C: library status filtering needs each book's [BookDetailsEntity.status], which
-     * [observeAllBooks]'s bare [MediaItemEntity] list can't expose). Joins [observeAllBooks]'s
-     * title-ordered list with [com.hub.media.core.database.dao.BookDetailsDao.observeAll] by
-     * `mediaId`, preserving [observeAllBooks]'s title order — the join itself never reorders, it
-     * only attaches each item's details (or `null`, the same data-integrity edge case
-     * [observeBookDetail] documents) alongside it.
+     * Observes every book together with its details as a reactive stream (ROADMAP
+     * Task 6 Phase C: library status filtering needs status, which
+     * [observeAllBooks]'s bare [MediaItemEntity] list can't expose).
      */
-    public fun observeAllBooksWithDetails(): Flow<List<BookWithDetails>> =
+    public fun observeAllBooksWithDetails(): Flow<List<MediaWithDetails.Book>> =
         combine(
             observeAllBooks(),
             db.bookDetailsDao().observeAll(),
         ) { mediaItems, allDetails ->
             val detailsByMediaId = allDetails.associateBy { it.mediaId }
             mediaItems.map { mediaItem ->
-                BookWithDetails(mediaItem = mediaItem, details = detailsByMediaId[mediaItem.id])
+                MediaWithDetails.Book(item = mediaItem, details = detailsByMediaId[mediaItem.id])
             }
         }
 
@@ -217,27 +202,36 @@ public class BookRepository(
         }
 
     /**
-     * Deletes a book and all associated data (cascades via FK constraints).
-     *
-     * @param id The media ID of the book to delete.
-     * @return [Resource.Success] if deleted, or [Resource.Error] on failure.
+     * One-shot (non-reactive) fetch of [MediaWithDetails.Book] for [mediaId].
+     * Null if [mediaId] does not resolve to a [MediaItemEntity].
      */
-    public suspend fun deleteBook(id: String): Resource<Unit> =
-        try {
-            db.mediaItemDao().deleteById(id)
-            Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious ERROR every
-            // time a screen is closed mid-write.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to delete book: id=$id" }
-            Resource.Error(
-                message = "Failed to delete book: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
+    public suspend fun getBookWithDetails(mediaId: String): MediaWithDetails.Book? {
+        val mediaItem = db.mediaItemDao().getById(mediaId) ?: return null
+        val details = db.bookDetailsDao().getByMediaId(mediaId)
+        return MediaWithDetails.Book(item = mediaItem, details = details)
+    }
+
+    /**
+     * The set of mediaIds that already hold an identifier for [provider] (ROADMAP Task 14 Phase A's
+     * candidate seed, widened to the Open Library work key). Returned as a `Set` because the only
+     * caller asks "is this book in it?" once per library row.
+     */
+    public suspend fun getMediaIdsWithIdentifier(provider: IdentifierProvider): Set<String> =
+        db.externalIdentifierDao().getMediaIdsForProvider(provider).toSet()
+
+    /** Whether [mediaId] already holds an identifier for [provider]. */
+    public suspend fun hasIdentifier(
+        mediaId: String,
+        provider: IdentifierProvider,
+    ): Boolean = db.externalIdentifierDao().getByKey(mediaId, provider) != null
+
+    public suspend fun getAllBooksWithDetails(): List<MediaWithDetails.Book> {
+        val mediaItems = db.mediaItemDao().getAllByType(MediaType.BOOK)
+        val detailsByMediaId = db.bookDetailsDao().getAll().associateBy { it.mediaId }
+        return mediaItems.map { mediaItem ->
+            MediaWithDetails.Book(item = mediaItem, details = detailsByMediaId[mediaItem.id])
         }
+    }
 
     /**
      * Atomically corrects an existing book's metadata (ROADMAP Task 6 Phase A): title,
@@ -264,7 +258,7 @@ public class BookRepository(
      * - [releaseYear], if non-null, must fall within [MIN_RELEASE_YEAR]..[MAX_RELEASE_YEAR].
      *
      * ### No existing [BookDetailsEntity] row (data-integrity edge case)
-     * [observeBookDetail]'s KDoc documents that [BookWithDetails.details] can independently be
+     * [observeBookDetail]'s KDoc documents that [MediaWithDetails.Book.details] can independently be
      * null even though [addBook] always inserts both rows atomically (a hand-rolled or corrupted
      * row could still produce this). If [mediaId] resolves to a [MediaItemEntity] but has no
      * [BookDetailsEntity] row, this method self-heals: it still updates [MediaItemEntity] as
@@ -354,110 +348,17 @@ public class BookRepository(
     }
 
     /**
-     * One-shot (non-reactive) fetch of [BookWithDetails] for [mediaId], for callers that need a
-     * single current snapshot rather than [observeBookDetail]'s ongoing [Flow] — namely
-     * [com.hub.media.features.books.domain.RefetchCoverUseCase] (ROADMAP Task 6 Phase E), which
-     * only needs the book's current ISBN once per invocation, not a live subscription. Null if
-     * [mediaId] does not resolve to a [MediaItemEntity] (never created, or deleted) — same
-     * null-on-delete semantics as [observeBookDetail].
-     */
-    public suspend fun getBookWithDetails(mediaId: String): BookWithDetails? {
-        val mediaItem = db.mediaItemDao().getById(mediaId) ?: return null
-        val details = db.bookDetailsDao().getByMediaId(mediaId)
-        return BookWithDetails(mediaItem = mediaItem, details = details)
-    }
-
-    /**
-     * One-shot (non-reactive) counterpart of [observeAllBooksWithDetails] (ROADMAP Task 14 Phase
-     * A), for [com.hub.media.features.books.domain.BulkBackfillUseCase] to scan the whole library
-     * exactly once when seeding a fresh backfill's candidate list -- a bulk pass has no use for an
-     * ongoing [Flow] subscription the way library-screen UI does. Same join semantics as
-     * [observeAllBooksWithDetails] (title order, `details` independently nullable per that method's
-     * KDoc), backed by [com.hub.media.core.database.dao.MediaItemDao.getAllByType]/
-     * [com.hub.media.core.database.dao.BookDetailsDao.getAll].
-     */
-
-    /**
-     * The set of mediaIds that already hold an identifier for [provider] (ROADMAP Task 14 Phase A's
-     * candidate seed, widened to the Open Library work key). Returned as a `Set` because the only
-     * caller asks "is this book in it?" once per library row.
-     */
-    public suspend fun getMediaIdsWithIdentifier(provider: IdentifierProvider): Set<String> =
-        db.externalIdentifierDao().getMediaIdsForProvider(provider).toSet()
-
-    /** Whether [mediaId] already holds an identifier for [provider]. */
-    public suspend fun hasIdentifier(
-        mediaId: String,
-        provider: IdentifierProvider,
-    ): Boolean = db.externalIdentifierDao().getByKey(mediaId, provider) != null
-
-    public suspend fun getAllBooksWithDetails(): List<BookWithDetails> {
-        val mediaItems = db.mediaItemDao().getAllByType(MediaType.BOOK)
-        val detailsByMediaId = db.bookDetailsDao().getAll().associateBy { it.mediaId }
-        return mediaItems.map { mediaItem ->
-            BookWithDetails(mediaItem = mediaItem, details = detailsByMediaId[mediaItem.id])
-        }
-    }
-
-    /**
-     * Updates only [MediaItemEntity.coverImageHash] for [mediaId] (ROADMAP Task 6 Phase E's
-     * re-fetch-cover affordance — see [com.hub.media.features.books.domain.RefetchCoverUseCase]).
-     * Deliberately narrower than [updateBookMetadata]: every other [MediaItemEntity] field and all
-     * of [BookDetailsEntity] are left completely untouched, so a cover refetch can never have a
-     * side effect on any user-edited field beyond the cover itself.
-     *
-     * @param mediaId The book whose cover is being updated.
-     * @param coverImageHash The new `<sha256>.jpg` filename (from
-     *   [com.hub.media.core.storage.LocalImageStorageManager.saveImage]).
-     * @return [Resource.Success] if updated, or [Resource.Error] if [mediaId] does not resolve to
-     *   a [MediaItemEntity] (never expected in practice — [RefetchCoverUseCase] only calls this
-     *   right after successfully reading the same row via [getBookWithDetails]) or the underlying
-     *   DB write throws.
-     *
-     * Uses [com.hub.media.core.database.dao.MediaItemDao.updateCoverImageHash], a targeted
-     * single-column `UPDATE`, rather than reading the row, `.copy()`-ing it, and writing the whole
-     * row back: that read-modify-write shape is only as fresh as the read, so any other field
-     * changed by a concurrent writer (e.g. [updateBookMetadata] editing title/releaseYear/
-     * purchasePrice) in between would be silently reverted. The targeted `UPDATE`'s own
-     * affected-row count (`0` vs `1`) is now how "no such book" is detected, since this no longer
-     * reads the row first to check.
-     */
-    public suspend fun updateCoverImageHash(
-        mediaId: String,
-        coverImageHash: String,
-    ): Resource<Unit> =
-        try {
-            val rowsAffected = db.mediaItemDao().updateCoverImageHash(mediaId, coverImageHash)
-            if (rowsAffected == 0) {
-                Resource.Error("Book with id=$mediaId not found")
-            } else {
-                Resource.Success(Unit)
-            }
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious ERROR every
-            // time a screen is closed mid-write.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update the cover hash for book: id=$mediaId" }
-            Resource.Error(
-                message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
-        }
-
-    /**
      * Atomically writes the cover and/or authors a single bulk-backfill pass resolved for
      * [mediaId] (ROADMAP Task 14 Phase A —
      * see [com.hub.media.features.books.domain.BulkBackfillUseCase]), via
      * [com.hub.media.core.database.dao.BookWriteDao.applyBackfilledMetadata]'s one-transaction
-     * write. Deliberately a single entry point for *both* fields rather than two separate calls
-     * ([updateCoverImageHash] plus a hypothetical `updateAuthors]): the whole point of the bulk
+     * write. Deliberately a single entry point for *both* fields rather than two separate calls:
+     * the whole point of the bulk
      * backfill is that one rate-limited provider lookup
      * ([com.hub.media.features.books.network.BookMetadata]) carries both pieces of data, so writing
      * them separately would reintroduce the "two crawls over the same rate-limited API" problem
      * this phase exists to avoid, and would also reopen the same partial-write race
-     * [updateBookMetadataAtomically] already guards against for the edit-metadata flow.
+     * [updateBookMetadata] already guards against for the edit-metadata flow.
      *
      * @param mediaId The book being backfilled.
      * @param coverImageHash The newly resolved `<sha256>.jpg` cover filename, or `null` if this

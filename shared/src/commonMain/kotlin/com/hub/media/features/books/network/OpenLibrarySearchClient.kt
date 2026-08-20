@@ -1,6 +1,7 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -9,6 +10,7 @@ import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchDocDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchResponseDto
 import com.hub.media.features.books.network.dto.OpenLibraryWorkEditionsResponseDto
+import com.hub.media.features.media.network.MediaSearchResult
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -192,7 +194,7 @@ public class OpenLibrarySearchClient(
     override suspend fun searchByTitleOrAuthor(
         query: String,
         limit: Int,
-    ): Resource<List<BookSearchResult>> {
+    ): Resource<List<MediaSearchResult>> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) {
             // Open Library answers an empty q with 200 and an empty docs list, so this is purely to
@@ -249,15 +251,16 @@ public class OpenLibrarySearchClient(
 }
 
 /**
- * Maps one search document to a [BookSearchResult], or null to drop it.
+ * Maps one search document to a [MediaSearchResult], or null to drop it.
  *
  * A hit with no usable title is dropped rather than rendered as a blank row — the user cannot act
  * on a result they cannot read, and one missing title should not fail the whole search.
  */
-private fun OpenLibrarySearchDocDto.toSearchResult(): BookSearchResult? {
+private fun OpenLibrarySearchDocDto.toSearchResult(): MediaSearchResult? {
     val title = title?.takeIf { it.isNotBlank() } ?: return null
-    return BookSearchResult(
+    return MediaSearchResult(
         title = title,
+        type = MediaType.BOOK,
         // The index returns author names inline, so unlike the ISBN edition path this costs no
         // secondary /authors/{key} round-trip -- which is what makes search affordable per
         // keystroke at all. Blank entries are dropped; Open Library does emit the occasional one.

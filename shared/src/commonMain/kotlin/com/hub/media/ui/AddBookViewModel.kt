@@ -5,10 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BookIngestionUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
-import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
-import com.hub.media.features.books.network.BookSearchResult
+import com.hub.media.features.media.domain.SearchMediaUseCase
+import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,14 +33,14 @@ import kotlinx.coroutines.launch
  *   [com.hub.media.features.books.domain.AddBookByIsbnUseCase]) so tests can hand-roll a fake
  *   with no Ktor/Room/disk dependencies (AGENTS.md §5 "No Unnecessary Dependencies" — no mocking
  *   library).
- * @param searchBooksUseCase The search orchestrator (min-length checks, query normalization,
+ * @param searchMediaUseCase The search orchestrator (min-length checks, query normalization,
  *   LRU result cache). Injected so tests can provide a fake.
  * @param searchProvider Resolves selected search results to ISBNs. Injected so tests can provide a fake.
  * @param resolveWorkToEditionsUseCase Resolves a work key to its available editions (GitHub Issue #63).
  */
 public class AddBookViewModel(
     private val addBookByIsbnUseCase: BookIngestionUseCase,
-    private val searchBooksUseCase: SearchBooksUseCase? = null,
+    private val searchMediaUseCase: SearchMediaUseCase? = null,
     private val searchProvider: BookSearchProvider? = null,
     private val resolveWorkToEditionsUseCase: ResolveWorkToEditionsUseCase? = null,
 ) : ViewModel() {
@@ -50,14 +50,14 @@ public class AddBookViewModel(
     private val _searchQuery = MutableStateFlow("")
     public val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<BookSearchResult>>(emptyList())
-    public val searchResults: StateFlow<List<BookSearchResult>> = _searchResults.asStateFlow()
+    private val _searchResults = MutableStateFlow<List<MediaSearchResult>>(emptyList())
+    public val searchResults: StateFlow<List<MediaSearchResult>> = _searchResults.asStateFlow()
 
     private val _searchState = MutableStateFlow<AddSearchState>(AddSearchState.Idle)
     public val searchState: StateFlow<AddSearchState> = _searchState.asStateFlow()
 
-    private val _confirmationResult = MutableStateFlow<BookSearchResult?>(null)
-    public val confirmationResult: StateFlow<BookSearchResult?> = _confirmationResult.asStateFlow()
+    private val _confirmationResult = MutableStateFlow<MediaSearchResult?>(null)
+    public val confirmationResult: StateFlow<MediaSearchResult?> = _confirmationResult.asStateFlow()
 
     private val _editions = MutableStateFlow<List<BookEditionSearchResult>>(emptyList())
     public val editions: StateFlow<List<BookEditionSearchResult>> = _editions.asStateFlow()
@@ -68,10 +68,10 @@ public class AddBookViewModel(
     /**
      * Initiates a search for [query], with debounce (300ms) and previous-query cancellation.
      *
-     * Queries shorter than [SearchBooksUseCase.MIN_SEARCH_QUERY_LENGTH] are answered immediately
+     * Queries shorter than [SearchMediaUseCase.MIN_SEARCH_QUERY_LENGTH] are answered immediately
      * with an empty result (from the cache, spending no network budget), distinguishing them from
      * zero-match searches (which report [AddSearchState.NoResults] instead). Call
-     * [SearchBooksUseCase.isQueryLongEnough] before showing "keep typing" prompts to the user
+     * [SearchMediaUseCase.isQueryLongEnough] before showing "keep typing" prompts to the user
      * without duplicating the length rules.
      *
      * Per ROADMAP Task 9 Phase B2: cancel-on-keystroke, debounce is 300ms per ROADMAP line 495.
@@ -83,7 +83,7 @@ public class AddBookViewModel(
         searchJob?.cancel()
 
         // Guard: search requires both use case and provider to be injected.
-        if (searchBooksUseCase == null || searchProvider == null) return
+        if (searchMediaUseCase == null || searchProvider == null) return
 
         // If the add flow is in a terminal error state, clear it so searching can resume.
         if (_uiState.value is AddBookUiState.Error) {
@@ -96,7 +96,7 @@ public class AddBookViewModel(
         }
 
         // A too-short query immediately returns empty results without hitting the network.
-        if (!searchBooksUseCase.isQueryLongEnough(query)) {
+        if (!searchMediaUseCase.isQueryLongEnough(query)) {
             _searchState.value = AddSearchState.Idle
             _searchResults.value = emptyList()
             return
@@ -110,7 +110,7 @@ public class AddBookViewModel(
                 // this delay and starts the count over.
                 delay(SEARCH_DEBOUNCE_MS)
 
-                val result = searchBooksUseCase.execute(query)
+                val result = searchMediaUseCase.execute(query)
                 when (result) {
                     is Resource.Success -> {
                         _searchResults.value = result.data
@@ -129,13 +129,13 @@ public class AddBookViewModel(
      * Selects a search result, initiating a confirmation request.
      *
      * Selectable only when no add is already in flight. Result is stored in [confirmationResult];
-     * if the result carries a [BookSearchResult.workKey], this method initiates a resolution to
+     * if the result carries a [MediaSearchResult.workKey], this method initiates a resolution to
      * its editions (GitHub Issue #63), which are surfaced in [editions].
      *
      * Callers should show a confirmation dialog or edition selection modal, then call
      * [confirmSelection], [selectEdition], or [cancelSelection].
      */
-    public fun selectSearchResult(result: BookSearchResult) {
+    public fun selectSearchResult(result: MediaSearchResult) {
         if (_uiState.value is AddBookUiState.Loading || searchProvider == null) return
 
         val workKey = result.workKey

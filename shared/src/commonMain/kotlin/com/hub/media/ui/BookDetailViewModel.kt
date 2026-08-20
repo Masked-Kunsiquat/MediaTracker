@@ -2,6 +2,7 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
@@ -11,6 +12,7 @@ import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.timer.ReadingTimer
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
+import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,7 @@ import kotlin.time.Instant
  * row), so a UI double-fire can never crash the screen.
  *
  * @param bookId The media id this screen was opened for.
+ * @param mediaRepository Source of universal media operations.
  * @param bookRepository Source of reactive book metadata.
  * @param readingSessionRepository Source of reactive session history and [deleteSession].
  * @param logReadingSessionUseCase Persists both the timer-backed ([saveSession]) and manual
@@ -64,6 +67,7 @@ import kotlin.time.Instant
  */
 public class BookDetailViewModel(
     private val bookId: String,
+    private val mediaRepository: MediaRepository,
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
     private val logReadingSessionUseCase: LogReadingSessionUseCase,
@@ -108,7 +112,7 @@ public class BookDetailViewModel(
                 BookDetailUiState.NotFound
             } else {
                 BookDetailUiState.Ready(
-                    book = bookDetail.mediaItem,
+                    book = bookDetail.item,
                     details = bookDetail.details,
                     sessions = sessions,
                     pendingSession = local.pendingSession,
@@ -380,19 +384,11 @@ public class BookDetailViewModel(
     }
 
     /**
-     * Deletes [bookId] itself (the book this screen was opened for). On [Resource.Success],
-     * fire-and-forget: [uiState] reflects the removal reactively once
-     * [BookRepository.observeBookDetail] emits null for the now-gone media id, transitioning to
-     * [BookDetailUiState.NotFound] — which [BookDetailScreenRoute]'s existing `LaunchedEffect`
-     * already turns into an automatic navigate-back, so no separate post-delete navigation is
-     * needed here. On [Resource.Error] (e.g. a DB failure), sets
-     * [BookDetailUiState.Ready.errorMessage] using the same surfacing convention as
-     * [deleteSession]/[saveSession]/[logManualSession] so a failed delete isn't silently
-     * swallowed and the user gets feedback instead of a confirm tap that appears to do nothing.
+     * Deletes [bookId] itself (the book this screen was opened for).
      */
     public fun deleteBook() {
         viewModelScope.launch {
-            when (val result = bookRepository.deleteBook(bookId)) {
+            when (val result = mediaRepository.deleteMediaItem(bookId)) {
                 is Resource.Success -> Unit
                 is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
             }

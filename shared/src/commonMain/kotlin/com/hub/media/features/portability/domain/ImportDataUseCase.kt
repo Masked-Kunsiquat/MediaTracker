@@ -14,8 +14,8 @@ import com.hub.media.core.util.error
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.data.BookRepository
-import com.hub.media.features.books.data.BookWithDetails
 import com.hub.media.features.books.data.ReadingSessionRepository
+import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.portability.csv.CsvTableReader
 import com.hub.media.features.portability.csv.CsvTableResult
 import com.hub.media.features.portability.csv.LibraryCsvExporter
@@ -531,7 +531,7 @@ public class ImportDataUseCase(
      * extracted here, only where it lives.
      */
     private fun resolveBookRows(
-        existingBooks: List<BookWithDetails>,
+        existingBooks: List<MediaWithDetails.Book>,
         existingIdentifiersByMediaId: Map<String, List<ExternalIdentifierEntity>>,
         parseResults: List<LibraryRowParseResult>,
         duplicatePolicy: DuplicatePolicy,
@@ -539,7 +539,7 @@ public class ImportDataUseCase(
         // Seeded from the pre-existing library, then kept current as each row below resolves, so a
         // later row in *this same file* matches an earlier one too -- see class KDoc, "In-file
         // duplicates" -- not only rows already in the database before this import started.
-        val byMediaId = existingBooks.associateByTo(mutableMapOf()) { it.mediaItem.id }
+        val byMediaId = existingBooks.associateByTo(mutableMapOf()) { it.item.id }
         val byIsbn =
             existingBooks
                 .mapNotNull { book ->
@@ -550,15 +550,15 @@ public class ImportDataUseCase(
                 }.toMap(mutableMapOf())
         val byTitleYear =
             existingBooks.associateByTo(mutableMapOf()) {
-                titleYearKey(it.mediaItem.title, it.mediaItem.releaseYear)
+                titleYearKey(it.item.title, it.item.releaseYear)
             }
         // Tier 4 (title only, ignoring release_year) -- see class KDoc. Deliberately last resort:
         // two different pre-existing books sharing a title would collide here (the later one wins
         // the map entry), a strictly higher collision risk than tier 3's title+year pairing. Every
         // match resolved *through this map* is reported via reviewNotes below, never applied silently.
-        val byTitleOnly = existingBooks.associateByTo(mutableMapOf()) { titleOnlyKey(it.mediaItem.title) }
+        val byTitleOnly = existingBooks.associateByTo(mutableMapOf()) { titleOnlyKey(it.item.title) }
         val currentIdentifiersByMediaId = existingIdentifiersByMediaId.toMutableMap()
-        val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.mediaItem.id }
+        val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.item.id }
         val resolvedMediaId = mutableMapOf<String, String>()
         val reviewNotes = mutableListOf<String>()
 
@@ -579,7 +579,7 @@ public class ImportDataUseCase(
             details: BookDetailsEntity,
             identifiers: List<ExternalIdentifierEntity>,
         ) {
-            val state = BookWithDetails(mediaItem, details)
+            val state = MediaWithDetails.Book(mediaItem, details)
             byMediaId[id] = state
             details.isbn?.takeIf { it.isNotBlank() }?.let { byIsbn[it] = state }
             byTitleYear[titleYearKey(mediaItem.title, mediaItem.releaseYear)] = state
@@ -610,7 +610,7 @@ public class ImportDataUseCase(
                                 rowNumber,
                                 row.title,
                                 row.releaseYear,
-                                titleOnlyMatch.mediaItem.releaseYear,
+                                titleOnlyMatch.item.releaseYear,
                             )
                     }
 
@@ -622,7 +622,7 @@ public class ImportDataUseCase(
                         resolvedMediaId[row.mediaId] = row.mediaId
                         registerCurrentState(row.mediaId, insert.mediaItem, insert.details, insert.identifiers)
                     } else {
-                        val matchedId = match.mediaItem.id
+                        val matchedId = match.item.id
                         // Both ids are "known": the book's real id, and this row's own media_id,
                         // which may differ from it (isbn/title+year/title-only tier) -- a session
                         // referencing either must not be treated as an orphan (Finding 2).
@@ -723,12 +723,12 @@ public class ImportDataUseCase(
     }
 
     private fun buildReplace(
-        existing: BookWithDetails,
+        existing: MediaWithDetails.Book,
         row: ParsedLibraryRow,
     ): ImportBookUpdate {
-        val mediaId = existing.mediaItem.id
+        val mediaId = existing.item.id
         val mediaItem =
-            existing.mediaItem.copy(
+            existing.item.copy(
                 title = row.title,
                 releaseYear = row.releaseYear,
                 purchasePrice = row.purchasePrice,
@@ -753,15 +753,15 @@ public class ImportDataUseCase(
     }
 
     private fun buildMerge(
-        existing: BookWithDetails,
+        existing: MediaWithDetails.Book,
         row: ParsedLibraryRow,
         existingIdentifiers: List<ExternalIdentifierEntity>,
     ): ImportBookUpdate {
-        val mediaId = existing.mediaItem.id
+        val mediaId = existing.item.id
         val mediaItem =
-            existing.mediaItem.copy(
-                releaseYear = existing.mediaItem.releaseYear ?: row.releaseYear,
-                purchasePrice = existing.mediaItem.purchasePrice ?: row.purchasePrice,
+            existing.item.copy(
+                releaseYear = existing.item.releaseYear ?: row.releaseYear,
+                purchasePrice = existing.item.purchasePrice ?: row.purchasePrice,
                 // title/createdAt/coverImageHash never backfilled -- identity/local-owned fields.
             )
         val existingDetails = existing.details

@@ -3,7 +3,8 @@ package com.hub.media.features.books.domain
 import com.hub.media.core.util.LruCache
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.BookSearchProvider
-import com.hub.media.features.books.network.BookSearchResult
+import com.hub.media.features.media.domain.SearchMediaUseCase
+import com.hub.media.features.media.network.MediaSearchResult
 
 /**
  * Minimum number of characters before a search is worth sending.
@@ -25,8 +26,10 @@ private const val SEARCH_CACHE_SIZE = 32
  * "Search books by title or author" as a single call, owning the policy that keeps a type-ahead
  * from abusing the provider: a minimum query length, query normalization, and an in-memory LRU of
  * recent results (ROADMAP Task 9 Phase B1).
+ *
+ * Consolidated and generalized to [SearchMediaUseCase] per Issue #67.
  */
-public interface SearchBooksUseCase {
+public interface SearchBooksUseCase : SearchMediaUseCase {
     /**
      * Searches for [query], answering from cache when the same normalized query was seen recently.
      *
@@ -35,13 +38,11 @@ public interface SearchBooksUseCase {
      *   need to tell "keep typing" apart from "no matches" should ask [isQueryLongEnough] rather
      *   than re-deriving the normalization rules. [Resource.Error] means the search itself failed.
      */
-    public suspend fun execute(query: String): Resource<List<BookSearchResult>>
+    public suspend fun searchBooks(query: String): Resource<List<MediaSearchResult>>
 
-    /**
-     * Whether [query] is long enough to search at all, using the same normalization [execute] does.
-     * Exposed so the UI can prompt "keep typing" without duplicating the rules.
-     */
-    public fun isQueryLongEnough(query: String): Boolean
+    /** Bridge implementation for generalized [SearchMediaUseCase]. */
+    override suspend fun execute(query: String): Resource<List<MediaSearchResult>> =
+        searchBooks(query)
 
     public companion object {
         public const val MIN_SEARCH_QUERY_LENGTH: Int = com.hub.media.features.books.domain.MIN_SEARCH_QUERY_LENGTH
@@ -56,9 +57,9 @@ public class RealSearchBooksUseCase(
     private val limit: Int = DEFAULT_SEARCH_LIMIT,
     cacheSize: Int = SEARCH_CACHE_SIZE,
 ) : SearchBooksUseCase {
-    private val cache = LruCache<String, List<BookSearchResult>>(cacheSize)
+    private val cache = LruCache<String, List<MediaSearchResult>>(cacheSize)
 
-    public override suspend fun execute(query: String): Resource<List<BookSearchResult>> {
+    public override suspend fun searchBooks(query: String): Resource<List<MediaSearchResult>> {
         val normalized = normalize(query)
         if (normalized.length < MIN_SEARCH_QUERY_LENGTH) {
             return Resource.Success(emptyList())

@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
@@ -35,16 +36,13 @@ import kotlin.test.assertTrue
 
 /**
  * [LibraryViewModel] tests against a real in-memory [AppDatabase] (via [testAppDatabase], the
- * same builder the DAO/repository tests use) so the [BookRepository.observeAllBooks] -> `map` ->
- * `stateIn` wiring is exercised end to end, not just mocked. Because it needs a real database,
- * this class is excluded from the android unit-test variant by exact class name in
- * shared/build.gradle.kts, same as the DAO/repository/use-case tests — `:shared:jvmTest` is the
- * authoritative gate.
+ * same builder the DAO/repository tests use). Consolidated from book-only version per Issue #67.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: BookRepository
+    private lateinit var mediaRepository: MediaRepository
     private lateinit var viewModel: LibraryViewModel
     private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
@@ -57,13 +55,18 @@ class LibraryViewModelTest {
         viewModels.installMain()
         db = testAppDatabase()
         repository = BookRepository(db)
+        mediaRepository = MediaRepository(db)
         // A real storage directory rather than a fake: the bulk delete's cover cleanup is
         // exercised properly in DeleteBooksUseCaseTest, but wiring the real thing here means these
         // tests fail if the two ever stop fitting together.
         tempDir = runBlocking { createTestTempDir() }
         viewModel =
             viewModels.track(
-                LibraryViewModel(repository, DeleteBooksUseCase(db, LocalImageStorageManager(tempDir))),
+                LibraryViewModel(
+                    mediaRepository = mediaRepository,
+                    bookRepository = repository,
+                    deleteBooksUseCase = DeleteBooksUseCase(db, LocalImageStorageManager(tempDir)),
+                ),
             )
     }
 
@@ -81,7 +84,7 @@ class LibraryViewModelTest {
     @Test
     fun uiState_initialValue_isEmpty() {
         assertTrue(
-            viewModel.uiState.value.books
+            viewModel.uiState.value.media
                 .isEmpty(),
         )
         assertTrue(viewModel.uiState.value.isEmpty)
@@ -93,14 +96,14 @@ class LibraryViewModelTest {
             val result = repository.addBook(title = "Dune", format = BookFormat.PHYSICAL)
             assertIs<Resource.Success<String>>(result)
 
-            val updated = viewModel.uiState.first { it.books.isNotEmpty() }
+            val updated = viewModel.uiState.first { it.media.isNotEmpty() }
 
-            assertEquals(1, updated.books.size)
+            assertEquals(1, updated.media.size)
             assertEquals(
                 "Dune",
-                updated.books
+                updated.media
                     .first()
-                    .mediaItem.title,
+                    .item.title,
             )
             assertEquals(false, updated.isEmpty)
         }
@@ -112,17 +115,17 @@ class LibraryViewModelTest {
             assertIs<Resource.Success<String>>(addResult)
             val mediaId = addResult.data
 
-            val withBook = viewModel.uiState.first { it.books.isNotEmpty() }
-            assertEquals(1, withBook.books.size)
+            val withBook = viewModel.uiState.first { it.media.isNotEmpty() }
+            assertEquals(1, withBook.media.size)
 
             viewModel.deleteBook(mediaId)
 
-            val afterDelete = viewModel.uiState.first { it.books.isEmpty() }
+            val afterDelete = viewModel.uiState.first { it.media.isEmpty() }
             assertTrue(afterDelete.isEmpty)
         }
 
     @Test
-    fun setStatusFilter_narrowsFilteredBooksButNotBooks() =
+    fun setStatusFilter_narrowsFilteredMediaButNotMedia() =
         runTest {
             val toReadResult = repository.addBook(title = "To Read Book", format = BookFormat.PHYSICAL)
             assertIs<Resource.Success<String>>(toReadResult)
@@ -136,36 +139,33 @@ class LibraryViewModelTest {
                 sampleMediaItem(id = noDetailsMediaId, type = MediaType.BOOK, title = "No Details Book"),
             )
 
-            viewModel.uiState.first { it.books.size == 3 }
+            viewModel.uiState.first { it.media.size == 3 }
 
             viewModel.setStatusFilter(ReadingStatus.READING)
 
             val filtered = viewModel.uiState.first { it.statusFilter == ReadingStatus.READING }
-            assertEquals(3, filtered.books.size, "the unfiltered books list must be untouched by the filter")
-            assertEquals(1, filtered.filteredBooks.size, "a book with no details row must not match a non-null filter")
+            assertEquals(3, filtered.media.size, "the unfiltered media list must be untouched by the filter")
+            assertEquals(1, filtered.filteredMedia.size, "a book with no details row must not match a non-null filter")
             assertEquals(
                 "Reading Book",
-                filtered.filteredBooks
+                filtered.filteredMedia
                     .first()
-                    .mediaItem.title,
+                    .item.title,
             )
             assertTrue(
-                filtered.books.any {
-                    it.mediaItem.title == "No Details Book"
+                filtered.media.any {
+                    it.item.title == "No Details Book"
                 },
-                "book without details must be in unfiltered list",
+                "item without details must be in unfiltered list",
             )
 
             viewModel.setStatusFilter(null)
             val unfiltered = viewModel.uiState.first { it.statusFilter == null }
-            assertEquals(3, unfiltered.filteredBooks.size, "all books must be in filteredBooks when filter is null")
+            assertEquals(3, unfiltered.filteredMedia.size, "all items must be in filteredMedia when filter is null")
         }
 
     /**
-     * Bulk delete that fails on demand. The real use case cannot be made to fail from a test --
-     * closing the database yields CancellationException, which it rethrows by design -- so the
-     * error surface would otherwise be untestable. Mirrors this codebase's existing hand-rolled
-     * fakes (FakeExportDataUseCase and friends); AGENTS.md section 5 rules out a mocking library.
+     * Bulk delete that fails on demand.
      */
     private class FailingBulkDelete(
         private val message: String,
@@ -175,7 +175,7 @@ class LibraryViewModelTest {
 
     /** Rebuilds the ViewModel with a delete that always fails, tracked for teardown like the rest. */
     private fun useFailingDelete(message: String = "Database unavailable") {
-        viewModel = viewModels.track(LibraryViewModel(repository, FailingBulkDelete(message)))
+        viewModel = viewModels.track(LibraryViewModel(mediaRepository, repository, FailingBulkDelete(message)))
     }
 
     /** Records the ids it was handed, so a test can assert on the request rather than the outcome. */
@@ -191,7 +191,7 @@ class LibraryViewModelTest {
     /** Rebuilds the ViewModel with a recording delete and returns the recorder. */
     private fun useRecordingDelete(): RecordingBulkDelete =
         RecordingBulkDelete().also {
-            viewModel = viewModels.track(LibraryViewModel(repository, it))
+            viewModel = viewModels.track(LibraryViewModel(mediaRepository, repository, it))
         }
 
     /**
@@ -214,7 +214,7 @@ class LibraryViewModelTest {
     fun toggleSelection_firstAndLast_entersAndLeavesSelectionMode() =
         runTest {
             val id = insertBook("Dune")
-            viewModel.uiState.first { it.books.isNotEmpty() }
+            viewModel.uiState.first { it.media.isNotEmpty() }
 
             assertFalse(viewModel.uiState.value.isSelectionMode, "not selecting until asked")
 
@@ -227,7 +227,7 @@ class LibraryViewModelTest {
             viewModel.toggleSelection(id)
             assertFalse(
                 viewModel.uiState.first { it.selectedIds.isEmpty() }.isSelectionMode,
-                "deselecting the last book must leave the mode, or there is no way out of it",
+                "deselecting the last item must leave the mode, or there is no way out of it",
             )
         }
 
@@ -236,7 +236,7 @@ class LibraryViewModelTest {
         runTest {
             val a = insertBook("A")
             val b = insertBook("B")
-            viewModel.uiState.first { it.books.size == 2 }
+            viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(a)
             viewModel.toggleSelection(b)
             assertEquals(
@@ -252,11 +252,11 @@ class LibraryViewModelTest {
         }
 
     @Test
-    fun deleteSelected_removesOnlyTheSelectedBooksAndLeavesSelectionMode() =
+    fun deleteSelected_removesOnlyTheSelectedItemsAndLeavesSelectionMode() =
         runTest {
             val doomed = insertBook("Doomed")
             val keeper = insertBook("Keeper")
-            viewModel.uiState.first { it.books.size == 2 }
+            viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(doomed)
 
             viewModel.deleteSelected()
@@ -266,8 +266,8 @@ class LibraryViewModelTest {
             // invalidation -- so the emission with one book can legitimately arrive before the one
             // with an empty selection. Waiting only for the count and then asserting the mode was a
             // real race, and CI caught it on a loaded runner where the local machine never did.
-            val after = viewModel.uiState.first { it.books.size == 1 && !it.isSelectionMode }
-            assertEquals(listOf("Keeper"), after.books.map { it.mediaItem.title })
+            val after = viewModel.uiState.first { it.media.size == 1 && !it.isSelectionMode }
+            assertEquals(listOf("Keeper"), after.media.map { it.item.title })
             assertFalse(after.isSelectionMode, "selection must not survive the delete that consumed it")
         }
 
@@ -281,7 +281,7 @@ class LibraryViewModelTest {
             // confirmation naming each title is what keeps it honest.
             val visible = insertBook("Visible", status = ReadingStatus.READING)
             val hidden = insertBook("Hidden", status = ReadingStatus.FINISHED)
-            viewModel.uiState.first { it.books.size == 2 }
+            viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(visible)
             viewModel.toggleSelection(hidden)
             viewModel.setStatusFilter(ReadingStatus.READING)
@@ -289,22 +289,22 @@ class LibraryViewModelTest {
 
             viewModel.deleteSelected()
 
-            val after = viewModel.uiState.first { it.books.isEmpty() && !it.isSelectionMode }
+            val after = viewModel.uiState.first { it.media.isEmpty() && !it.isSelectionMode }
             assertEquals(
                 emptyList(),
-                after.books.map { it.mediaItem.title },
-                "a book hidden by the filter is still selected, so it goes too",
+                after.media.map { it.item.title },
+                "an item hidden by the filter is still selected, so it goes too",
             )
         }
 
     @Test
-    fun selectedBooks_areUnaffectedByTheActiveFilter() =
+    fun selectedMedia_areUnaffectedByTheActiveFilter() =
         runTest {
             // What the contextual bar counts and the confirmation lists. Scoping this to the filter is
             // what produced the disappearing-count confusion.
             val visible = insertBook("Visible", status = ReadingStatus.READING)
             val hidden = insertBook("Hidden", status = ReadingStatus.FINISHED)
-            viewModel.uiState.first { it.books.size == 2 }
+            viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(visible)
             viewModel.toggleSelection(hidden)
 
@@ -317,42 +317,39 @@ class LibraryViewModelTest {
                 viewModel.uiState.first {
                     it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2
                 }
-            assertEquals(1, state.filteredBooks.size, "the filter still narrows what is *shown*")
+            assertEquals(1, state.filteredMedia.size, "the filter still narrows what is *shown*")
             assertEquals(
                 listOf("Hidden", "Visible"),
-                state.selectedBooks.map { it.mediaItem.title }.sorted(),
+                state.selectedMedia.map { it.item.title }.sorted(),
                 "but the selection itself is not narrowed by it",
             )
         }
 
     @Test
-    fun selection_bookDeletedElsewhere_dropsOutOfTheSelection() =
+    fun selection_itemDeletedElsewhere_dropsOutOfTheSelection() =
         runTest {
-            // A selected book can be deleted from Book Detail while selection is active. A stale id
+            // A selected item can be deleted from Detail while selection is active. A stale id
             // would keep inflating the contextual bar's count and be handed to a delete that can do
             // nothing with it.
             val a = insertBook("A")
             val b = insertBook("B")
-            viewModel.uiState.first { it.books.size == 2 }
+            viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(a)
             viewModel.toggleSelection(b)
 
-            repository.deleteBook(a)
+            mediaRepository.deleteMediaItem(a)
 
-            val after = viewModel.uiState.first { it.books.size == 1 }
-            assertEquals(setOf(b), after.selectedIds, "the vanished book must not linger in selection")
+            val after = viewModel.uiState.first { it.media.size == 1 }
+            assertEquals(setOf(b), after.selectedIds, "the vanished item must not linger in selection")
         }
 
     @Test
     fun deleteSelected_withNothingSelected_isANoOp() =
         runTest {
-            // Asserts the delete is never invoked, rather than that the book survives. The previous
-            // form awaited `books.size == 1` when the state already held one book, so it was satisfied
-            // by the stale replay and returned before the delete could have propagated -- it would have
-            // passed just as happily if the guard were gone and the book deleted.
+            // Asserts the delete is never invoked, rather than that the item survives.
             val recorder = useRecordingDelete()
             insertBook("Untouched")
-            viewModel.uiState.first { it.books.isNotEmpty() }
+            viewModel.uiState.first { it.media.isNotEmpty() }
 
             viewModel.deleteSelected()
             runCurrent()
@@ -367,11 +364,11 @@ class LibraryViewModelTest {
     @Test
     fun deleteSelected_whenTheDeleteFails_reportsAnErrorAndKeepsTheSelection() =
         runTest {
-            // Closing the database makes the delete fail. Without a reported error the books stay, the
+            // Closing the database makes the delete fail. Without a reported error the items stay, the
             // selection stays, and nothing appears -- indistinguishable from the button being ignored.
             val id = insertBook("Doomed")
             useFailingDelete("Database unavailable")
-            viewModel.uiState.first { it.books.isNotEmpty() }
+            viewModel.uiState.first { it.media.isNotEmpty() }
             viewModel.toggleSelection(id)
 
             viewModel.deleteSelected()
@@ -379,7 +376,7 @@ class LibraryViewModelTest {
             val state = viewModel.uiState.first { it.deleteError != null }
             assertEquals("Database unavailable", state.deleteError?.message)
             assertEquals(setOf(id), state.selectedIds, "selection must survive so a retry is possible")
-            assertEquals(1, state.books.size, "a failed delete must not remove anything")
+            assertEquals(1, state.media.size, "a failed delete must not remove anything")
         }
 
     @Test
@@ -387,11 +384,10 @@ class LibraryViewModelTest {
         runTest {
             val id = insertBook("Doomed")
             useFailingDelete()
-            viewModel.uiState.first { it.books.isNotEmpty() }
+            viewModel.uiState.first { it.media.isNotEmpty() }
             viewModel.toggleSelection(id)
             viewModel.deleteSelected()
-            // Use the state `first` returned rather than re-reading .value: awaiting and then reading
-            // separately is the habit that causes the race even when it happens to be safe here.
+            // Use the state `first` returned rather than re-reading .value.
             val shown = viewModel.uiState.first { it.deleteError != null }.deleteError!!
 
             viewModel.consumeDeleteError(shown.id)
@@ -405,17 +401,6 @@ class LibraryViewModelTest {
     @Test
     fun deleteSelected_withNothingCollectingUiState_stillDeletesTheWholeSelection() =
         runTest {
-            // Deliberately never collects uiState. That is the whole point: deleteSelected() used to
-            // read uiState.value.selectedIds, and stateIn(WhileSubscribed) does not recompute that
-            // value with no subscriber -- so the selection was invisible, `ids` came back empty, and
-            // the delete silently no-opped. On a device the screen is normally collecting, which is
-            // why this survived every other test here (they all await uiState first) and surfaced only
-            // as a CI hang in the failure test below, where the delete that never ran produced no
-            // error to await.
-            //
-            // Asserts on the ids handed to the use case rather than on the rows being gone: the real
-            // delete completes on Room's own dispatcher, so an outcome assertion would need an await
-            // that simply hangs when the regression returns -- a 60s timeout instead of this message.
             val recorder = useRecordingDelete()
             val id = insertBook("Doomed")
 
@@ -433,12 +418,9 @@ class LibraryViewModelTest {
     @Test
     fun deleteSelected_failingTwiceWithTheSameMessage_producesTwoDistinctEvents() =
         runTest {
-            // The case the id exists for. A repeated retry against the same broken state yields an
-            // identical message, and keyed on text alone the UI would see no change and swallow the
-            // second failure -- leaving a delete that appears to have quietly succeeded.
             val id = insertBook("Doomed")
             useFailingDelete("Database unavailable")
-            viewModel.uiState.first { it.books.isNotEmpty() }
+            viewModel.uiState.first { it.media.isNotEmpty() }
             viewModel.toggleSelection(id)
 
             viewModel.deleteSelected()
@@ -446,11 +428,6 @@ class LibraryViewModelTest {
             viewModel.consumeDeleteError(first.id)
 
             viewModel.deleteSelected()
-            // Awaits an event with a *different* id rather than awaiting null in between and then any
-            // non-null. Each `first` subscribes and unsubscribes from a WhileSubscribed flow, and this
-            // test had four such cycles -- one of them failed to complete on CI (UncompletedCoroutines-
-            // Error). Fewer awaits, and a condition that cannot be satisfied by the stale event, is
-            // both more robust and a sharper assertion.
             val second =
                 viewModel.uiState
                     .first { it.deleteError != null && it.deleteError?.id != first.id }
@@ -465,16 +442,13 @@ class LibraryViewModelTest {
         runTest {
             val id = insertBook("Doomed")
             useFailingDelete()
-            viewModel.uiState.first { it.books.isNotEmpty() }
+            viewModel.uiState.first { it.media.isNotEmpty() }
             viewModel.toggleSelection(id)
             viewModel.deleteSelected()
             val current = viewModel.uiState.first { it.deleteError != null }.deleteError!!
 
             viewModel.consumeDeleteError(current.id - 1)
 
-            // A no-op: the ids do not match, so nothing changes and there is no new state to await.
-            // Drain instead, or this asserts before the call has been processed at all and would pass
-            // whether the id check works or not.
             runCurrent()
             assertNotNull(
                 viewModel.uiState.value.deleteError,

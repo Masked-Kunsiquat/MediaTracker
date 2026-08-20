@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
@@ -9,7 +10,8 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
-import com.hub.media.features.books.domain.DeleteBooksUseCase
+import com.hub.media.features.books.domain.BulkDeleteUseCase
+import com.hub.media.features.books.domain.DeleteMediaUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RealSearchBooksUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
@@ -21,6 +23,8 @@ import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
+import com.hub.media.features.media.domain.RealSearchMediaUseCase
+import com.hub.media.features.media.domain.SearchMediaUseCase
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
@@ -84,23 +88,20 @@ public class AppContainer(
     public val logFileStore: LogFileStore,
     public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
-    /**
-     * Shared [HttpClient] for all outbound requests. Configured with a [com.hub.media.core.network.USER_AGENT]
-     * and timeouts per AGENTS.md §4.
-     */
+    /** Shared [HttpClient] for all outbound requests. */
     public val httpClient: HttpClient = createHttpClient()
+
+    /** Universal media repository (ROADMAP foundation for Task 13). */
+    public val mediaRepository: MediaRepository = MediaRepository(database)
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
 
     /**
-     * Bulk delete with reference-aware cover cleanup (ROADMAP Task 14 Phase B), consumed by
-     * [LibraryViewModel]'s selection mode. Needs [imageStorage] as well as the database because
-     * deleting a book can leave its content-addressed cover unreferenced -- see that use case's
-     * KDoc for why the file cannot simply be deleted alongside the row.
+     * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
      */
-    public val deleteBooksUseCase: DeleteBooksUseCase =
-        DeleteBooksUseCase(
+    public val bulkDeleteUseCase: BulkDeleteUseCase =
+        DeleteMediaUseCase(
             database = database,
             imageStorage = imageStorage,
         )
@@ -183,6 +184,7 @@ public class AppContainer(
             httpClient = httpClient,
             imageStorage = imageStorage,
             bookRepository = bookRepository,
+            mediaRepository = mediaRepository,
             coverRateLimiter = coverRateLimiter,
             googleBooksApiKeyProvider = googleBooksApiKeyProvider,
         )
@@ -194,17 +196,13 @@ public class AppContainer(
 
     /**
      * Title/author type-ahead search (ROADMAP Task 9 Phase B1).
-     *
-     * A single instance on purpose: the LRU inside it is the cache, so a per-screen instance would
-     * throw the results away every time the Add Book screen closed and re-request them on the next
-     * visit. Open Library only — Google Books is consulted on selection or as a fallback, never
-     * per keystroke, since its keyless per-IP quota is limited and 429s have already been observed
-     * against it.
-     *
-     * Not wired through [coverRateLimiter]: that limiter tracks the ISBN-keyed *cover* quota, a
-     * different endpoint with a different budget. Search is throttled by the debounce and minimum
-     * query length in [SearchBooksUseCase] and its caller instead.
      */
+    public val searchMediaUseCase: SearchMediaUseCase =
+        RealSearchMediaUseCase(
+            openLibrarySearchClient,
+        )
+
+    /** Deprecated book-specific search use case. */
     public val searchBooksUseCase: SearchBooksUseCase =
         RealSearchBooksUseCase(
             openLibrarySearchClient,

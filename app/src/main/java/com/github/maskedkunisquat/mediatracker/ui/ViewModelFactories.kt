@@ -28,7 +28,11 @@ class LibraryViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         when {
             modelClass.isAssignableFrom(LibraryViewModel::class.java) -> {
-                LibraryViewModel(appContainer.bookRepository, appContainer.deleteBooksUseCase) as T
+                LibraryViewModel(
+                    mediaRepository = appContainer.mediaRepository,
+                    bookRepository = appContainer.bookRepository,
+                    deleteBooksUseCase = appContainer.deleteBooksUseCase,
+                ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }
@@ -75,6 +79,7 @@ class BookDetailViewModelFactory(
             modelClass.isAssignableFrom(BookDetailViewModel::class.java) -> {
                 BookDetailViewModel(
                     bookId = bookId,
+                    mediaRepository = appContainer.mediaRepository,
                     bookRepository = appContainer.bookRepository,
                     readingSessionRepository = appContainer.readingSessionRepository,
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,

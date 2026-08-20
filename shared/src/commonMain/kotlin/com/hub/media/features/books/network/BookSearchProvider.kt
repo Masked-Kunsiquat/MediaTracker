@@ -1,19 +1,15 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.util.Resource
+import com.hub.media.features.media.network.MediaSearchProvider
+import com.hub.media.features.media.network.MediaSearchResult
 
 /**
  * A source of book *candidates* for a free-text title/author query (ROADMAP Task 9 Phase B1).
  *
- * Separate from [BookMetadataProvider] rather than a method on it, because the two have different
- * shapes and different costs: that one resolves exactly one known edition by ISBN, this one
- * returns a ranked list of guesses for text a user is still typing. The fallback chain also
- * differs — Google Books is consulted only on selection or as a fallback, never per keystroke,
- * since its keyless per-IP quota is limited and 429s have already been observed against it
- * (ROADMAP Task 9). Folding both into one interface would have forced every implementation to
- * answer a question it has no business answering.
+ * Consolidated and generalized to [MediaSearchProvider] per Issue #67.
  */
-public interface BookSearchProvider {
+public interface BookSearchProvider : MediaSearchProvider {
     /**
      * Searches for works matching free-text [query], which may be a title, an author, or both.
      *
@@ -27,7 +23,7 @@ public interface BookSearchProvider {
      *
      * @param query Raw user input. Implementations are responsible for their own trimming and
      *   encoding, but **not** for the minimum-length and debounce policy — that belongs to
-     *   [com.hub.media.features.books.domain.SearchBooksUseCase], so a caller cannot bypass it.
+     *   [com.hub.media.features.media.domain.SearchMediaUseCase], so a caller cannot bypass it.
      * @param limit Maximum number of hits to return.
      * @return [Resource.Success] with zero or more hits — an empty list is a successful search that
      *   found nothing, not an error — or [Resource.Error] describing why the search failed.
@@ -35,7 +31,11 @@ public interface BookSearchProvider {
     public suspend fun searchByTitleOrAuthor(
         query: String,
         limit: Int,
-    ): Resource<List<BookSearchResult>>
+    ): Resource<List<MediaSearchResult>>
+
+    /** Bridge implementation for generalized [MediaSearchProvider]. */
+    override suspend fun search(query: String, limit: Int): Resource<List<MediaSearchResult>> =
+        searchByTitleOrAuthor(query, limit)
 
     /**
      * Resolves an edition key to a concrete ISBN (ROADMAP Task 9 Phase B2).

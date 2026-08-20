@@ -22,23 +22,14 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Covers [DeleteBooksUseCase] (ROADMAP Task 14 Phase B), against a real database and real files.
- *
- * ### Why both directions are tested, deliberately
- * The ROADMAP calls this out and it is worth restating: a cleanup that only proves "unreferenced
- * files are removed" passes while silently breaking every book that shares a cover, and a cleanup
- * that only proves "shared files survive" passes while never deleting anything at all. Each failure
- * mode is invisible in the other's test, so neither test is sufficient alone.
- *
- * Real files rather than a fake storage layer, because the thing under test is whether a file is
- * still on disk afterwards -- a fake would only prove the use case called the method it was always
- * going to call.
+ * Covers [DeleteMediaUseCase] against a real database and real files.
+ * Consolidated and generalized per Issue #67.
  */
-class DeleteBooksUseCaseTest {
+class DeleteMediaUseCaseTest {
     private lateinit var db: AppDatabase
     private lateinit var tempDir: String
     private lateinit var imageStorage: LocalImageStorageManager
-    private lateinit var useCase: DeleteBooksUseCase
+    private lateinit var useCase: DeleteMediaUseCase
 
     @BeforeTest
     fun setUp() =
@@ -46,7 +37,7 @@ class DeleteBooksUseCaseTest {
             db = testAppDatabase()
             tempDir = createTestTempDir()
             imageStorage = LocalImageStorageManager(tempDir)
-            useCase = DeleteBooksUseCase(db, imageStorage)
+            useCase = DeleteMediaUseCase(db, imageStorage)
         }
 
     @AfterTest
@@ -57,7 +48,7 @@ class DeleteBooksUseCaseTest {
         }
 
     /** Inserts a book, optionally pointing at [coverHash], and returns its media id. */
-    private suspend fun insertBook(
+    private suspend fun insertMedia(
         title: String,
         coverHash: String? = null,
     ): String {
@@ -70,25 +61,15 @@ class DeleteBooksUseCaseTest {
     }
 
     /** Unwraps a successful result, failing loudly rather than silently skipping assertions. */
-    private fun requireSuccess(result: Resource<DeleteBooksSummary>): DeleteBooksSummary {
-        assertIs<Resource.Success<DeleteBooksSummary>>(result, "expected a successful delete")
+    private fun requireSuccess(result: Resource<DeleteMediaSummary>): DeleteMediaSummary {
+        assertIs<Resource.Success<DeleteMediaSummary>>(result, "expected a successful delete")
         return result.data
     }
 
     @Test
     fun execute_againstAClosedDatabase_propagatesCancellationRatherThanSwallowingIt() =
         runTest {
-            // Room throws CancellationException from a closed database rather than a SQL exception --
-            // the discovery ROADMAP Task 15 records from the PR #16 investigation, and the reason this
-            // use case rethrows cancellation before its generic catch. Swallowing it would turn a
-            // cancelled coroutine into a silently "successful" delete.
-            //
-            // Non-cancellation database failures return Resource.Error instead (see execute), which
-            // matters because this runs from viewModelScope where an escaping exception takes the whole
-            // scope down. That branch is deliberately not tested here: every failure this suite can
-            // actually provoke from a real Room instance arrives as cancellation, and a fake database
-            // would only prove the catch block catches what it was written to catch.
-            val id = insertBook("Doomed")
+            val id = insertMedia("Doomed")
             db.close()
 
             assertFailsWith<CancellationException> { useCase.execute(listOf(id)) }
@@ -102,50 +83,44 @@ class DeleteBooksUseCaseTest {
             .fileExists("$tempDir/$fileName")
 
     @Test
-    fun execute_coverReferencedOnlyByTheDeletedBook_removesTheFile() =
+    fun execute_coverReferencedOnlyByTheDeletedItem_removesTheFile() =
         runTest {
             val hash = storeCover(byteArrayOf(1, 2, 3))
-            val id = insertBook("Solo", coverHash = hash)
-            // Positive control: the file is genuinely there first, so its absence below means it was
-            // deleted rather than never written.
+            val id = insertMedia("Solo", coverHash = hash)
             assertTrue(coverExists(hash), "cover must exist before the delete")
 
             val summary = requireSuccess(useCase.execute(listOf(id)))
 
-            assertEquals(1, summary.booksDeleted)
+            assertEquals(1, summary.itemsDeleted)
             assertEquals(1, summary.coversRemoved)
             assertFalse(coverExists(hash), "nothing references this cover any more, so it must be gone")
         }
 
     @Test
-    fun execute_coverSharedWithASurvivingBook_keepsTheFile() =
+    fun execute_coverSharedWithASurvivingItem_keepsTheFile() =
         runTest {
-            // The failure this exists to catch: identical artwork is stored once, so deleting one of
-            // two books that share it must not blank the other's cover. Invisible in the test above.
             val hash = storeCover(byteArrayOf(9, 9, 9))
-            val doomed = insertBook("Doomed", coverHash = hash)
-            insertBook("Survivor", coverHash = hash)
+            val doomed = insertMedia("Doomed", coverHash = hash)
+            insertMedia("Survivor", coverHash = hash)
 
             val summary = requireSuccess(useCase.execute(listOf(doomed)))
 
-            assertEquals(1, summary.booksDeleted)
+            assertEquals(1, summary.itemsDeleted)
             assertEquals(0, summary.coversRemoved)
             assertEquals(1, summary.coversKept)
-            assertTrue(coverExists(hash), "a surviving book still shows this cover")
+            assertTrue(coverExists(hash), "a surviving item still shows this cover")
         }
 
     @Test
-    fun execute_deletingEveryBookSharingACover_removesTheFileOnceTheLastOneGoes() =
+    fun execute_deletingEveryItemSharingACover_removesTheFileOnceTheLastOneGoes() =
         runTest {
-            // The other half of sharing: keeping the file forever would be just as wrong. Deleting all
-            // referencing books in one call must still reclaim it.
             val hash = storeCover(byteArrayOf(4, 5, 6))
-            val first = insertBook("First", coverHash = hash)
-            val second = insertBook("Second", coverHash = hash)
+            val first = insertMedia("First", coverHash = hash)
+            val second = insertMedia("Second", coverHash = hash)
 
             val summary = requireSuccess(useCase.execute(listOf(first, second)))
 
-            assertEquals(2, summary.booksDeleted)
+            assertEquals(2, summary.itemsDeleted)
             assertEquals(1, summary.coversRemoved, "one shared file, counted once")
             assertFalse(coverExists(hash))
         }
@@ -155,13 +130,13 @@ class DeleteBooksUseCaseTest {
         runTest {
             val sharedHash = storeCover(byteArrayOf(1))
             val loneHash = storeCover(byteArrayOf(2))
-            val doomedShared = insertBook("Doomed shared", coverHash = sharedHash)
-            insertBook("Surviving shared", coverHash = sharedHash)
-            val doomedLone = insertBook("Doomed lone", coverHash = loneHash)
+            val doomedShared = insertMedia("Doomed shared", coverHash = sharedHash)
+            insertMedia("Surviving shared", coverHash = sharedHash)
+            val doomedLone = insertMedia("Doomed lone", coverHash = loneHash)
 
             val summary = requireSuccess(useCase.execute(listOf(doomedShared, doomedLone)))
 
-            assertEquals(2, summary.booksDeleted)
+            assertEquals(2, summary.itemsDeleted)
             assertEquals(1, summary.coversRemoved)
             assertEquals(1, summary.coversKept)
             assertTrue(coverExists(sharedHash), "still referenced by the survivor")
@@ -169,44 +144,41 @@ class DeleteBooksUseCaseTest {
         }
 
     @Test
-    fun execute_bookWithNoCover_deletesCleanlyWithNothingToCleanUp() =
+    fun execute_itemWithNoCover_deletesCleanlyWithNothingToCleanUp() =
         runTest {
-            val id = insertBook("Coverless", coverHash = null)
+            val id = insertMedia("Coverless", coverHash = null)
 
             val summary = requireSuccess(useCase.execute(listOf(id)))
 
-            assertEquals(DeleteBooksSummary(booksDeleted = 1, coversRemoved = 0, coversKept = 0), summary)
+            assertEquals(DeleteMediaSummary(itemsDeleted = 1, coversRemoved = 0, coversKept = 0), summary)
         }
 
     @Test
     fun execute_emptySelection_isANoOpRatherThanAnError() =
         runTest {
-            // A selection can be emptied between opening the confirmation and confirming it.
-            insertBook("Untouched")
+            insertMedia("Untouched")
 
             val summary = requireSuccess(useCase.execute(emptyList()))
 
-            assertEquals(DeleteBooksSummary(0, 0, 0), summary)
+            assertEquals(DeleteMediaSummary(0, 0, 0), summary)
             assertEquals(1, db.mediaItemDao().getAllByType(MediaType.BOOK).size, "nothing was deleted")
         }
 
     @Test
     fun execute_idThatNoLongerExists_isReportedInTheCountRatherThanFailing() =
         runTest {
-            val real = insertBook("Real")
+            val real = insertMedia("Real")
 
             val summary = requireSuccess(useCase.execute(listOf(real, newId())))
 
-            assertEquals(1, summary.booksDeleted, "the requested end state holds; this is not an error")
+            assertEquals(1, summary.itemsDeleted, "the requested end state holds; this is not an error")
         }
 
     @Test
-    fun execute_deletesTheBookRowsThemselves() =
+    fun execute_deletesTheItemRowsThemselves() =
         runTest {
-            // Guards against a cover-cleanup regression that quietly stops deleting books: every other
-            // assertion here is about files, and would still pass if the rows survived.
-            val keep = insertBook("Keep")
-            val drop = insertBook("Drop")
+            val keep = insertMedia("Keep")
+            val drop = insertMedia("Drop")
 
             useCase.execute(listOf(drop))
 
