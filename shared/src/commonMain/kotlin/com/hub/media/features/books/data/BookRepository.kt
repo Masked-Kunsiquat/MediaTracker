@@ -64,7 +64,11 @@ public class BookRepository(
             db.mediaItemDao().observeById(id),
             db.bookDetailsDao().observeByMediaId(id),
         ) { mediaItem, details ->
-            mediaItem?.let { MediaWithDetails.Book(item = it, details = details) }
+            if (mediaItem != null && mediaItem.type == MediaType.BOOK) {
+                MediaWithDetails.Book(item = mediaItem, details = details)
+            } else {
+                null
+            }
         }
 
     /**
@@ -203,13 +207,26 @@ public class BookRepository(
 
     /**
      * One-shot (non-reactive) fetch of [MediaWithDetails.Book] for [mediaId].
-     * Null if [mediaId] does not resolve to a [MediaItemEntity].
+     * Returns [Resource.Success] with null if [mediaId] is missing or is not a book.
      */
-    public suspend fun getBookWithDetails(mediaId: String): MediaWithDetails.Book? {
-        val mediaItem = db.mediaItemDao().getById(mediaId) ?: return null
-        val details = db.bookDetailsDao().getByMediaId(mediaId)
-        return MediaWithDetails.Book(item = mediaItem, details = details)
-    }
+    public suspend fun getBookWithDetails(mediaId: String): Resource<MediaWithDetails.Book?> =
+        try {
+            val mediaItem = db.mediaItemDao().getById(mediaId)
+            if (mediaItem == null || mediaItem.type != MediaType.BOOK) {
+                Resource.Success(null)
+            } else {
+                val details = db.bookDetailsDao().getByMediaId(mediaId)
+                Resource.Success(MediaWithDetails.Book(item = mediaItem, details = details))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to get book with details: id=$mediaId" }
+            Resource.Error(
+                message = "Failed to fetch book: ${e.message ?: "Unknown error"}",
+                cause = e,
+            )
+        }
 
     /**
      * The set of mediaIds that already hold an identifier for [provider] (ROADMAP Task 14 Phase A's

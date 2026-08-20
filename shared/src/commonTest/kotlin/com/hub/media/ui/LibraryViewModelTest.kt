@@ -336,10 +336,13 @@ class LibraryViewModelTest {
             viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(a)
             viewModel.toggleSelection(b)
+            // Wait for selection to propagate fully (fixes flake).
+            viewModel.uiState.first { it.selectedIds == setOf(a, b) }
 
             mediaRepository.deleteMediaItem(a)
 
-            val after = viewModel.uiState.first { it.media.size == 1 }
+            // Wait for both conditions: item gone AND selection updated.
+            val after = viewModel.uiState.first { it.media.size == 1 && it.selectedIds == setOf(b) }
             assertEquals(setOf(b), after.selectedIds, "the vanished item must not linger in selection")
         }
 

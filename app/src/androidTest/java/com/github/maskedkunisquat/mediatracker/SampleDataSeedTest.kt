@@ -66,6 +66,7 @@ class SampleDataSeedTest {
     fun sampleData_importsIntoTheDebugAppsLibrary() =
         runBlocking {
             val container = application.appContainer
+            container.clearAllData()
             val booksBefore = container.bookRepository.getAllBooksWithDetails().size
 
             val result =

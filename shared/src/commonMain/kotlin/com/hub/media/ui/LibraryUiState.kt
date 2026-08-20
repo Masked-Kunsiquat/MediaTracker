@@ -55,6 +55,9 @@ public data class LibraryUiState(
                     media.filter { mediaItem ->
                         when (mediaItem) {
                             is MediaWithDetails.Book -> mediaItem.details?.status == statusFilter
+                            is MediaWithDetails.Movie,
+                            is MediaWithDetails.TVShow,
+                            -> false
                         }
                     }
                 }
@@ -67,6 +70,9 @@ public data class LibraryUiState(
                         is MediaWithDetails.Book ->
                             mediaItem.details?.authors?.contains(query, ignoreCase = true) ==
                                 true
+                        is MediaWithDetails.Movie,
+                        is MediaWithDetails.TVShow,
+                        -> false
                     }
                 titleMatch || creatorMatch
             }

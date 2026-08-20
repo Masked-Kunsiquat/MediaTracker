@@ -29,9 +29,9 @@ This skill ensures that MediaTracker's promise of "first-class data portability"
 ... (see `CSV_FORMAT.md` for full 16-column list)
 
 ## Import Logic & Duplicate Matching
-- **Precedence**: `media_id` -> `isbn` (for books) -> `title` + `release_year` -> `title` only (with Review Note).
+- **Precedence**: `media_id` -> `isbn` (for books) -> `type` + `title` + `release_year` -> `type` + `title` only (with Review Note).
 - **Heterogeneous Support**: `ImportDataUseCase` and `LibraryCsvExporter` MUST support mixed media types uniformly.
-- **In-File Duplicates**: Later rows in the same file MUST resolve against earlier rows from the SAME file.
+- **In-File Duplicates**: Later rows in the same file MUST resolve against earlier rows from the SAME file using these same typed keys.
 
 ## Reading Log Structure (`reading_logs_export.csv`)
 1. `csv_schema_version` (2)
@@ -40,6 +40,6 @@ This skill ensures that MediaTracker's promise of "first-class data portability"
 ... (see `CSV_FORMAT.md` for full 10-column list)
 
 ## Database Backup Protocol
-- **Vacuum Into**: Use SQLite's `VACUUM INTO` for backups to ensure a consistent snapshot of a WAL-mode database.
+- **Vacuum Into**: Use SQLite's `VACUUM INTO` for backups to ensure a consistent snapshot of a WAL-mode database (not an atomic publication to the final destination).
 - **Verification**: Restoring a database MUST validate the first 100 bytes (magic string + `user_version`) and run `PRAGMA integrity_check` before swapping files.
 - **Credential Scrubbing**: The backup use case MUST scrub API keys (e.g., `google_books_api_key`) from the snapshot before the file is handed to the user.

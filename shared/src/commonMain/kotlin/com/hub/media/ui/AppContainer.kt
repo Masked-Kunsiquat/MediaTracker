@@ -283,6 +283,15 @@ public class AppContainer(
         )
 
     /**
+     * Clears all tables in the database (ROADMAP Task 14 Phase B test isolation).
+     * Only intended for use in instrumented tests.
+     */
+    public suspend fun clearAllData() {
+        database.mediaItemDao().deleteAll()
+        database.appSettingsDao().deleteAll()
+    }
+
+    /**
      * Releases resources owned by this container: cancels [logFileStore]'s background flush loop
      * (see [LogFileStore.shutdown]), closes the internally-created [io.ktor.client.HttpClient], and
      * closes the [database] it was constructed with. Safe to call at most once (per the underlying

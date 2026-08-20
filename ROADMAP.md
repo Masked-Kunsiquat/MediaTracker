@@ -751,28 +751,28 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
 - **Library multi-select and bulk delete (Phase B — done).** Long-press a library card to enter selection mode,
   with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
   bulk reading-status change is the obvious companion and probably cheap once selection exists.
-  Deletion of several books at once deserves the same confirmation care the single-book delete
+  Deletion of several media items at once deserves the same confirmation care the single-item delete
   already has.
   - **Cover cleanup must be decided explicitly, not left implicit.** Covers are stored
-    content-addressed (SHA-256 of the image bytes), so two books with the same cover share **one
-    file** — deleting a book therefore cannot simply delete its cover file without checking whether
+    content-addressed (SHA-256 of the image bytes), so two media items with the same cover share **one
+    file** — deleting a media item therefore cannot simply delete its cover file without checking whether
     anything else still references it. Bulk delete multiplies both the risk and the waste: delete
-    the file naively and a surviving book loses its cover; delete nothing and a bulk purge strands
+    the file naively and a surviving item loses its cover; delete nothing and a bulk purge strands
     that many files forever. Pick one and say so:
     - **Reference-aware removal** through `LocalImageStorageManager`: delete a cover only when no
       remaining `MediaItemEntity` references that hash. This also retires the standing
       orphaned-cover-files backlog item rather than growing it.
     - **Or explicitly defer** cleanup, and document the resulting disk growth as accepted — but
-      then say it in the release notes, because "deleted books still cost storage" is surprising.
+      then say it in the release notes, because "deleted items still cost storage" is surprising.
     - **Decided: reference-aware removal.** `DeleteMediaUseCase` reads the candidate hashes, deletes
       the rows, then counts remaining references per hash and removes only the files that reach
       zero. **This retires the orphaned-cover-files backlog item.** Ordering is the load-bearing
       part and is documented in that class: counting *after* the delete is what makes zero
-      trustworthy (counting before always includes the books being deleted, so nothing would ever
+      trustworthy (counting before always includes the items being deleted, so nothing would ever
       be cleaned up), and deleting rows before files means a crash between them leaks disk rather
-      than leaving surviving books pointing at artwork that is gone.
+      than leaving surviving items pointing at artwork that is gone.
     - **Known consequence, accepted:** restoring a `.sqlite` backup taken *before* a deletion brings
-      those books back pointing at files now removed, so their covers show as missing until a
+      those items back pointing at files now removed, so their covers show as missing until a
       backfill re-fetches them. Recoverable, not data loss, and the same situation a CSV import onto
       a new device already produces — for which the Task 14 Phase A backfill is the documented
       remedy.
@@ -781,8 +781,8 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
       selection, reasoned as "never act on something the user cannot see" -- and in practice the
       count moved as filters moved, which reads as the selection being silently lost, and the
       delete then half-finished leaving the rest selected and invisible with nothing to explain it.
-      Selection is a property of the books, not of the current view.
-      - What replaces the safety argument is the **confirmation naming each book it will remove**,
+      Selection is a property of the media items, not of the current view.
+      - What replaces the safety argument is the **confirmation naming each item it will remove**,
         so "something you cannot see" no longer applies -- it is listed in the dialog. Long
         selections name the first eight and state the remainder as a count rather than truncating
         silently, since a silent truncation would recreate the problem the listing exists to solve.

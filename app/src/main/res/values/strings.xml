@@ -119,6 +119,10 @@
 
     <!-- LibraryScreen status filter -->
     <string name="library_filter_all">All</string>
+    <string name="library_empty_title">Your library is empty</string>
+    <string name="library_empty_subtitle">Add your first item to get started</string>
+    <string name="library_released_label">Released: </string>
+    <string name="library_year_label">Year: </string>
 
     <!-- LibraryScreen local search (ROADMAP Task 9 Phase A) -->
     <string name="library_search_placeholder">Search by title or author</string>

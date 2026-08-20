@@ -329,7 +329,9 @@ public class BulkBackfillUseCase(
         quotaExhausted: Boolean,
         knownRetryAfter: Duration?,
     ): StepOutcome {
-        val bookWithDetails = bookRepository.getBookWithDetails(mediaId) ?: return StepOutcome.Removed
+        val bookResult = bookRepository.getBookWithDetails(mediaId)
+        if (bookResult is Resource.Error) return StepOutcome.DeferredTransient
+        val bookWithDetails = (bookResult as Resource.Success).data ?: return StepOutcome.Removed
         val details = bookWithDetails.details
         val isbn = details?.isbn
         if (isbn.isNullOrBlank()) return StepOutcome.Removed // guarded at seed time; never expected

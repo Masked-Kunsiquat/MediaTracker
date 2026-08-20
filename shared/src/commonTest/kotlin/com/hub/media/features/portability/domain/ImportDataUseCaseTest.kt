@@ -438,7 +438,7 @@ class ImportDataUseCaseTest {
     fun execute_duplicateByMediaId_skipPolicy_leavesExistingBookUnchanged() =
         runTest {
             val mediaId = addBook(title = "Original Title", repository = bookRepository)
-            val existingBefore = bookRepository.getBookWithDetails(mediaId)
+            val existingBefore = getDetails(mediaId)
 
             val incomingMedia =
                 listOf(
@@ -454,7 +454,7 @@ class ImportDataUseCaseTest {
             assertEquals(1, result.data.booksSkipped)
             assertEquals(0, result.data.booksImported)
 
-            assertEquals(existingBefore, bookRepository.getBookWithDetails(mediaId))
+            assertEquals(existingBefore, getDetails(mediaId))
         }
 
     @Test
@@ -480,7 +480,7 @@ class ImportDataUseCaseTest {
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.booksReplaced)
 
-            val updated = bookRepository.getBookWithDetails(mediaId)
+            val updated = getDetails(mediaId)
             assertEquals("Replaced Title", updated?.item?.title)
             assertEquals(1999, updated?.item?.releaseYear)
             assertEquals("9789999999999", updated?.details?.isbn)
@@ -491,7 +491,7 @@ class ImportDataUseCaseTest {
     fun execute_duplicateByMediaId_replacePolicy_neverTouchesCreatedAtOrCoverImageHash() =
         runTest {
             val mediaId = addBook(title = "Original Title", repository = bookRepository)
-            val before = bookRepository.getBookWithDetails(mediaId)!!
+            val before = getDetails(mediaId)!!
 
             val incomingMedia =
                 listOf(
@@ -511,7 +511,7 @@ class ImportDataUseCaseTest {
             val result = useCase.execute(libraryCsv, null, DuplicatePolicy.REPLACE)
             assertIs<Resource.Success<ImportSummary>>(result)
 
-            val after = bookRepository.getBookWithDetails(mediaId)
+            val after = getDetails(mediaId)
             assertEquals(before.item.createdAt, after?.item?.createdAt)
             assertEquals(before.item.coverImageHash, after?.item?.coverImageHash)
         }
@@ -547,7 +547,7 @@ class ImportDataUseCaseTest {
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.booksMerged)
 
-            val merged = bookRepository.getBookWithDetails(mediaId)
+            val merged = getDetails(mediaId)
             assertEquals("Existing Title", merged?.item?.title)
             assertEquals(2015, merged?.item?.releaseYear)
             assertEquals(14.99, merged?.item?.purchasePrice)
@@ -646,8 +646,8 @@ class ImportDataUseCaseTest {
             assertEquals(1, result.data.booksSkipped)
             assertEquals(0, result.data.booksImported)
 
-            assertEquals(null, bookRepository.getBookWithDetails("a-completely-different-media-id"))
-            assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+            assertEquals(null, getDetails("a-completely-different-media-id"))
+            assertTrue(getDetails(existingMediaId) != null)
         }
 
     @Test
@@ -673,7 +673,7 @@ class ImportDataUseCaseTest {
             val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.booksSkipped)
-            assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+            assertTrue(getDetails(existingMediaId) != null)
         }
 
     @Test
@@ -706,7 +706,7 @@ class ImportDataUseCaseTest {
             assertEquals(1, result.data.booksMerged)
             assertEquals(0, result.data.booksImported)
 
-            val merged = bookRepository.getBookWithDetails(existingMediaId)
+            val merged = getDetails(existingMediaId)
             assertEquals(2026, merged?.item?.releaseYear)
 
             assertEquals(1, result.data.notes.size)
@@ -742,7 +742,7 @@ class ImportDataUseCaseTest {
             assertEquals(0, result.data.booksImported)
             assertEquals(1, result.data.notes.size)
 
-            assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+            assertTrue(getDetails(existingMediaId) != null)
         }
 
     @Test
@@ -771,7 +771,7 @@ class ImportDataUseCaseTest {
             assertEquals(0, result.data.booksImported)
             assertEquals(1, result.data.notes.size)
 
-            assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+            assertTrue(getDetails(existingMediaId) != null)
         }
 
     @Test
@@ -805,7 +805,7 @@ class ImportDataUseCaseTest {
             assertEquals(0, result.data.booksImported)
             assertTrue(result.data.notes.isEmpty())
 
-            assertTrue(bookRepository.getBookWithDetails(existingMediaId) != null)
+            assertTrue(getDetails(existingMediaId) != null)
         }
 
     @Test
@@ -890,7 +890,7 @@ class ImportDataUseCaseTest {
             val items = bookRepository.observeAllBooksWithDetails().first()
             assertEquals(1, items.size)
             assertEquals("media-1", items.single().item.id)
-            assertEquals(null, bookRepository.getBookWithDetails("media-2"))
+            assertEquals(null, getDetails("media-2"))
         }
 
     @Test
@@ -1006,8 +1006,8 @@ class ImportDataUseCaseTest {
                     .contains("Title"),
             )
 
-            assertTrue(bookRepository.getBookWithDetails("media-good") != null)
-            assertTrue(bookRepository.getBookWithDetails("media-bad") == null)
+            assertTrue(getDetails("media-good") != null)
+            assertTrue(getDetails("media-bad") == null)
         }
 
     @Test
@@ -1282,4 +1282,10 @@ class ImportDataUseCaseTest {
             assertEquals("Backfill Candidate", merged.item.title)
             assertEquals(1987, merged.item.releaseYear)
         }
+
+    private suspend fun getDetails(id: String): MediaWithDetails.Book? {
+        val result = bookRepository.getBookWithDetails(id)
+        assertIs<Resource.Success<MediaWithDetails.Book?>>(result)
+        return result.data
+    }
 }

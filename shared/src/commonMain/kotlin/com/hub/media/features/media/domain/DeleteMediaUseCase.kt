@@ -2,7 +2,6 @@ package com.hub.media.features.media.domain
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.storage.LocalImageStorageManager
-import com.hub.media.core.storage.deleteImage
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -52,15 +51,16 @@ public class DeleteMediaUseCase(
 
             var removed = 0
             var kept = 0
-            for (hash in candidateHashes) {
-                if (dao.countByCoverHash(hash) > 0) {
-                    kept++
-                    continue
-                }
-                if (imageStorage.deleteImage(hash)) {
-                    removed++
-                } else {
-                    logger.error(TAG) { "Failed to delete unreferenced cover file: $hash" }
+            for (filename in candidateHashes) {
+                val hash = filename.removeSuffix(".jpg")
+                imageStorage.withLock(hash) {
+                    if (dao.countByCoverHash(filename) > 0) {
+                        kept++
+                    } else if (imageStorage.deleteImage(filename, useLock = false)) {
+                        removed++
+                    } else {
+                        logger.error(TAG) { "Failed to delete unreferenced cover file: $filename" }
+                    }
                 }
             }
             Resource.Success(

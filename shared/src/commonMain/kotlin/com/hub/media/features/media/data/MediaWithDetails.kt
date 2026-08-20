@@ -15,5 +15,11 @@ public sealed class MediaWithDetails {
         val details: BookDetailsEntity?,
     ) : MediaWithDetails()
 
-    // Planned: Movie, TVShow
+    public data class Movie(
+        override val item: MediaItemEntity,
+    ) : MediaWithDetails()
+
+    public data class TVShow(
+        override val item: MediaItemEntity,
+    ) : MediaWithDetails()
 }

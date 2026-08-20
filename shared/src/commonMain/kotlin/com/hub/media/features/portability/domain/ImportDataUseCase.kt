@@ -5,6 +5,7 @@ import com.hub.media.core.database.dao.ImportMediaUpdate
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -549,13 +550,13 @@ public class ImportDataUseCase(
                 }.toMap(mutableMapOf())
         val byTitleYear =
             existingBooks.associateByTo(mutableMapOf()) {
-                titleYearKey(it.item.title, it.item.releaseYear)
+                titleYearKey(it.item.type, it.item.title, it.item.releaseYear)
             }
         // Tier 4 (title only, ignoring release_year) -- see class KDoc. Deliberately last resort:
         // two different pre-existing books sharing a title would collide here (the later one wins
         // the map entry), a strictly higher collision risk than tier 3's title+year pairing. Every
         // match resolved *through this map* is reported via reviewNotes below, never applied silently.
-        val byTitleOnly = existingBooks.associateByTo(mutableMapOf()) { titleOnlyKey(it.item.title) }
+        val byTitleOnly = existingBooks.associateByTo(mutableMapOf()) { titleOnlyKey(it.item.type, it.item.title) }
         val currentIdentifiersByMediaId = existingIdentifiersByMediaId.toMutableMap()
         val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.item.id }
         val resolvedMediaId = mutableMapOf<String, String>()
@@ -581,8 +582,8 @@ public class ImportDataUseCase(
             val state = MediaWithDetails.Book(mediaItem, details)
             byMediaId[id] = state
             details.isbn?.takeIf { it.isNotBlank() }?.let { byIsbn[it] = state }
-            byTitleYear[titleYearKey(mediaItem.title, mediaItem.releaseYear)] = state
-            byTitleOnly[titleOnlyKey(mediaItem.title)] = state
+            byTitleYear[titleYearKey(mediaItem.type, mediaItem.title, mediaItem.releaseYear)] = state
+            byTitleOnly[titleOnlyKey(mediaItem.type, mediaItem.title)] = state
             currentIdentifiersByMediaId[id] = identifiers
         }
 
@@ -597,10 +598,10 @@ public class ImportDataUseCase(
                     val strongMatch =
                         byMediaId[row.mediaId]
                             ?: row.isbn?.let(byIsbn::get)
-                            ?: byTitleYear[titleYearKey(row.title, row.releaseYear)]
+                            ?: byTitleYear[titleYearKey(row.type, row.title, row.releaseYear)]
                     // Tier 4 only runs when tiers 1-3 all failed -- reached when the release years
                     // disagree (edition year vs. work year, Finding 2) or either side is missing one.
-                    val titleOnlyMatch = if (strongMatch == null) byTitleOnly[titleOnlyKey(row.title)] else null
+                    val titleOnlyMatch = if (strongMatch == null) byTitleOnly[titleOnlyKey(row.type, row.title)] else null
                     val match = strongMatch ?: titleOnlyMatch
 
                     if (titleOnlyMatch != null) {
@@ -669,11 +670,15 @@ public class ImportDataUseCase(
     }
 
     private fun titleYearKey(
+        type: MediaType,
         title: String,
         releaseYear: Int?,
-    ): String = "${title.trim().lowercase()}::${releaseYear ?: ""}"
+    ): String = "${type.name}::${title.trim().lowercase()}::${releaseYear ?: ""}"
 
-    private fun titleOnlyKey(title: String): String = title.trim().lowercase()
+    private fun titleOnlyKey(
+        type: MediaType,
+        title: String
+    ): String = "${type.name}::${title.trim().lowercase()}"
 
     /**
      * Human-readable note for a book-row resolved only by tier 4 (title-only, see class KDoc) --

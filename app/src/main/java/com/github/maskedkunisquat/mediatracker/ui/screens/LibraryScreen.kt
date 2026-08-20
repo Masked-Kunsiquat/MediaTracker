@@ -219,11 +219,11 @@ fun LibraryScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = "Your library is empty",
+                        text = stringResource(R.string.library_empty_title),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(
-                        text = "Add your first item to get started",
+                        text = stringResource(R.string.library_empty_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
@@ -515,6 +515,9 @@ private fun MediaCard(
             val creator =
                 when (media) {
                     is MediaWithDetails.Book -> media.details?.authors
+                    is MediaWithDetails.Movie,
+                    is MediaWithDetails.TVShow,
+                    -> null
                 }
             if (!creator.isNullOrBlank()) {
                 Text(
@@ -528,8 +531,8 @@ private fun MediaCard(
             if (mediaItem.releaseYear != null) {
                 val label =
                     when (mediaItem.type) {
-                        MediaType.BOOK -> "Released: "
-                        MediaType.MOVIE, MediaType.TV_SHOW -> "Year: "
+                        MediaType.BOOK -> stringResource(R.string.library_released_label)
+                        MediaType.MOVIE, MediaType.TV_SHOW -> stringResource(R.string.library_year_label)
                     }
                 Text(
                     text = "$label${mediaItem.releaseYear}",
@@ -540,6 +543,9 @@ private fun MediaCard(
             val status =
                 when (media) {
                     is MediaWithDetails.Book -> media.details?.status
+                    is MediaWithDetails.Movie,
+                    is MediaWithDetails.TVShow,
+                    -> null
                 }
             if (status != null) {
                 Text(

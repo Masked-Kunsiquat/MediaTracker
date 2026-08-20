@@ -94,4 +94,7 @@ interface MediaItemDao {
      */
     @Query("SELECT * FROM media_items WHERE type = :type ORDER BY title ASC")
     suspend fun getAllByType(type: MediaType): List<MediaItemEntity>
+
+    @Query("DELETE FROM media_items")
+    suspend fun deleteAll()
 }

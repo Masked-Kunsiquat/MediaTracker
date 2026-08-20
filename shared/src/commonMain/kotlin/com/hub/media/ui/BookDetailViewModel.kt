@@ -12,6 +12,7 @@ import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.timer.ReadingTimer
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
+import com.hub.media.features.media.domain.BulkDeleteUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -71,6 +72,7 @@ public class BookDetailViewModel(
     private val readingSessionRepository: ReadingSessionRepository,
     private val logReadingSessionUseCase: LogReadingSessionUseCase,
     private val refetchCoverUseCase: RefetchCoverUseCase,
+    private val deleteMediaUseCase: BulkDeleteUseCase,
     clock: Clock = Clock.System,
 ) : ViewModel() {
     private val timer = ReadingTimer(clock = clock, scope = viewModelScope)
@@ -383,11 +385,12 @@ public class BookDetailViewModel(
     }
 
     /**
-     * Deletes [bookId] itself (the book this screen was opened for).
+     * Deletes [bookId] itself (the book this screen was opened for) via [BulkDeleteUseCase]
+     * to ensure reference-aware cover cleanup (ROADMAP Task 14 Phase B).
      */
     public fun deleteBook() {
         viewModelScope.launch {
-            when (val result = mediaRepository.deleteMediaItem(bookId)) {
+            when (val result = deleteMediaUseCase.execute(listOf(bookId))) {
                 is Resource.Success -> Unit
                 is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
             }

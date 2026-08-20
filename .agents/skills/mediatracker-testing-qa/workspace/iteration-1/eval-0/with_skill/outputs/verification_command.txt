@@ -3,5 +3,5 @@ Recommended Verification Command:
 
 Rationale:
 1. Authoritative Data Layer Run: This command is the only one that ensures the entire data layer—including Room DAOs, migrations, and repositories—is actually tested.
-2. Avoids Silent Skips: The standard `./gradlew test` command (which resolves to :app:testDebugUnitTest and :shared:testDebugUnitTest) silently skips Room-touching tests in the shared module. These tests are explicitly excluded from the Android unit test variants because they require a real JVM environment to obtain a Room context, which only :shared:jvmTest provides.
-3. Comprehensive Coverage: Running both :shared:jvmTest and :shared:testDebugUnitTest ensures that both JVM-specific data logic and common shared logic are verified.
+2. Avoids Silent Skips: The standard `./gradlew test` command (which resolves to :app:testDebugUnitTest and :shared:testDebugUnitTest) silently skips Room-touching tests in the shared module. These tests are explicitly excluded from the Android unit test variants because they require a real database environment (handled via :shared:jvmTest) rather than the Android stubs in :shared:testDebugUnitTest.
+3. Comprehensive Coverage: Running both :shared:jvmTest and :shared:testDebugUnitTest ensures that both Room-backed logic and common shared logic are verified. `shared/jvmTest` is the separate target covering Room and other JVM-specific tests, while `shared:testDebugUnitTest` runs on the host JVM with Android stubs but excludes Room tests.

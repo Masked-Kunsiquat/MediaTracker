@@ -6,7 +6,9 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
+import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Log tag for [MediaRepository] (ROADMAP Task 15 Phase C). */
@@ -34,6 +36,27 @@ public class MediaRepository(
      * Observes a single media item by ID as a reactive stream.
      */
     public fun observeMediaItem(id: String): Flow<MediaItemEntity?> = db.mediaItemDao().observeById(id)
+
+    /**
+     * Observes every media item together with its details as a reactive stream.
+     */
+    public fun observeAllMediaWithDetails(): Flow<List<MediaWithDetails>> =
+        combine(
+            observeAllMedia(),
+            db.bookDetailsDao().observeAll(),
+        ) { mediaItems, bookDetails ->
+            val bookDetailsByMediaId = bookDetails.associateBy { it.mediaId }
+            mediaItems.map { mediaItem ->
+                when (mediaItem.type) {
+                    MediaType.BOOK -> MediaWithDetails.Book(
+                        item = mediaItem,
+                        details = bookDetailsByMediaId[mediaItem.id],
+                    )
+                    MediaType.MOVIE -> MediaWithDetails.Movie(item = mediaItem)
+                    MediaType.TV_SHOW -> MediaWithDetails.TVShow(item = mediaItem)
+                }
+            }
+        }
 
     /**
      * Deletes a media item and all associated data (cascades via FK constraints).

@@ -103,10 +103,16 @@ public object LibraryCsvExporter {
         val authors =
             when (media) {
                 is MediaWithDetails.Book -> media.details?.authors.orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
         val isbn =
             when (media) {
                 is MediaWithDetails.Book -> media.details?.isbn.orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
         val format =
             when (media) {
@@ -115,6 +121,9 @@ public object LibraryCsvExporter {
                         ?.format
                         ?.name
                         .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
         val totalPages =
             when (media) {
@@ -123,6 +132,9 @@ public object LibraryCsvExporter {
                         ?.totalPages
                         ?.toString()
                         .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
         val status =
             when (media) {
@@ -131,6 +143,9 @@ public object LibraryCsvExporter {
                         ?.status
                         ?.name
                         .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
         val finishedAt =
             when (media) {
@@ -139,6 +154,9 @@ public object LibraryCsvExporter {
                         ?.finishedAt
                         ?.toString()
                         .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
         val trackingMode =
             when (media) {
@@ -147,6 +165,9 @@ public object LibraryCsvExporter {
                         ?.trackingMode
                         ?.name
                         .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
             }
 
         return listOf(

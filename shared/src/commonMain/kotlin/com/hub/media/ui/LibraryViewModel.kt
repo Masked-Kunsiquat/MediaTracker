@@ -38,7 +38,7 @@ public class LibraryViewModel(
 
     public val uiState: StateFlow<LibraryUiState> =
         combine(
-            bookRepository.observeAllBooksWithDetails(),
+            mediaRepository.observeAllMediaWithDetails(),
             statusFilter,
             searchQuery,
             selectedIds,
@@ -105,11 +105,16 @@ public class LibraryViewModel(
     }
 
     /**
-     * Deletes the item identified by [id].
+     * Deletes the item identified by [id] via [BulkDeleteUseCase] to ensure
+     * reference-aware cover cleanup (ROADMAP Task 14 Phase B).
      */
     public fun deleteMediaItem(id: String) {
         viewModelScope.launch {
-            mediaRepository.deleteMediaItem(id)
+            when (val result = deleteMediaUseCase.execute(listOf(id))) {
+                is Resource.Success -> Unit
+                is Resource.Error ->
+                    deleteError.value = DeleteErrorEvent(++deleteErrorSeq, result.message)
+            }
         }
     }
 

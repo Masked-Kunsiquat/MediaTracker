@@ -31,5 +31,5 @@ To avoid flaky tests in ViewModels that use `stateIn` or `combine`:
 ## General Quality Rules
 - **No assumption of existing data**: Tests must be self-seeding. Instrumented tests uninstall the app after running.
 - **Positive & Negative Controls**: Assert that the forbidden thing is absent AND that the expected thing is present.
-- **Polymorphic Test Data**: When testing generalized components (like `LibraryViewModel`), ensure the test data includes a mix of media types (e.g., `MediaWithDetails.Book`) to exercise polymorphic logic.
+- **Polymorphic Test Data**: When testing generalized components (like `LibraryViewModel`), ensure the test data includes a mix of media types (e.g., `MediaWithDetails.Book` and a non-book variant like a planned `MediaWithDetails.Movie`) to exercise polymorphic behavior.
 - **Unique Anchors**: When script-editing tests, anchor on unique literals to avoid patching the wrong test body.

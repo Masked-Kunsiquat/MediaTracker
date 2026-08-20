@@ -4,7 +4,7 @@ Instead, the project mandates the SQLite VACUUM INTO protocol for all backups.
 
 ### Recommended Backup Protocol
 
-1. Use VACUUM INTO: Always use the VACUUM INTO 'path/to/backup.db' command. This creates a consistent, atomic, and defragmented single-file snapshot of the database, even while it is actively being written to.
+1. Use VACUUM INTO: Always use the VACUUM INTO 'path/to/backup.db' command. This creates a consistent, defragmented single-file snapshot of the database, even while it is actively being written to. It provides a consistent snapshot at the moment the command runs, though it is not an atomic publication to the final destination unless explicitly moved there after validation.
 2. Google Books Key Scrubbing: Before the backup file is handed to the user or exported, DatabaseBackupUseCase must remove the Google Books API-key row from the staged snapshot to maintain privacy.
 3. Verification on Restore: When restoring a backup, the app must:
     * Validate the first 100 bytes of the file (SQLite magic string and user_version).

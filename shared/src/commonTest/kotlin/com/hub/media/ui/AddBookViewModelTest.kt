@@ -14,6 +14,7 @@ import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -242,17 +243,21 @@ class AddBookViewModelTest {
     fun search_newQueryCancelsPrevious() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchMediaUseCase(delay = 100)
+            val searchFake = FakeSearchMediaUseCase(delay = 1000)
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
             viewModel.search("hob")
-            viewModel.search("hobbit") // Cancel the first, start the second
+            // Pass the 300ms debounce; searchFake.execute("hob") starts and suspends on delay(1000)
+            advanceTimeBy(400)
+            assertEquals(1, searchFake.executeCallCount)
 
+            viewModel.search("hobbit") // Cancel the first, start the second
             advanceUntilIdle()
 
-            // The first search (with delay) is cancelled; only the second call counts
-            assertEquals(1, searchFake.executeCallCount)
+            // Both were started (execute() reached its increment), matching AGENTS.md §7's
+            // requirement to exercise the cancellation.
+            assertEquals(2, searchFake.executeCallCount)
         }
 
     @Test
