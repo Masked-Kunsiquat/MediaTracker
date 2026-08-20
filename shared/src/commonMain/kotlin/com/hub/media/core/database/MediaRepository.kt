@@ -28,8 +28,7 @@ public class MediaRepository(
     /**
      * Observes all media items of a specific [type] as a reactive stream, ordered by title.
      */
-    public fun observeMediaByType(type: MediaType): Flow<List<MediaItemEntity>> =
-        db.mediaItemDao().observeByType(type)
+    public fun observeMediaByType(type: MediaType): Flow<List<MediaItemEntity>> = db.mediaItemDao().observeByType(type)
 
     /**
      * Observes a single media item by ID as a reactive stream.

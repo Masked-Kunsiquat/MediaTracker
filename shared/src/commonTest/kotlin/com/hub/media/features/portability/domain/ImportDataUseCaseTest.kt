@@ -3,7 +3,6 @@ package com.hub.media.features.portability.domain
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
-import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleExternalIdentifier
@@ -13,7 +12,6 @@ import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.media.data.MediaWithDetails
@@ -995,8 +993,18 @@ class ImportDataUseCaseTest {
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.booksImported)
             assertEquals(1, result.data.rejections.size)
-            assertEquals(ImportRowSource.BOOK, result.data.rejections.single().source)
-            assertTrue(result.data.rejections.single().reason.contains("Title"))
+            assertEquals(
+                ImportRowSource.BOOK,
+                result.data.rejections
+                    .single()
+                    .source,
+            )
+            assertTrue(
+                result.data.rejections
+                    .single()
+                    .reason
+                    .contains("Title"),
+            )
 
             assertTrue(bookRepository.getBookWithDetails("media-good") != null)
             assertTrue(bookRepository.getBookWithDetails("media-bad") == null)
@@ -1197,8 +1205,15 @@ class ImportDataUseCaseTest {
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.booksImported)
             assertEquals(1, result.data.rejections.size)
-            assertEquals(ImportRowSource.BOOK, result.data.rejections.single().source)
-            assertTrue(bookRepository.observeAllBooksWithDetails().first().any { it.item.title == "Valid Goodreads Book" })
+            assertEquals(
+                ImportRowSource.BOOK,
+                result.data.rejections
+                    .single()
+                    .source,
+            )
+            assertTrue(
+                bookRepository.observeAllBooksWithDetails().first().any { it.item.title == "Valid Goodreads Book" },
+            )
         }
 
     @Test
@@ -1240,7 +1255,14 @@ class ImportDataUseCaseTest {
             val first = useCase.executeGoodreads(firstCsv, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(first)
             assertEquals(1, first.data.booksImported)
-            assertEquals(null, bookRepository.observeAllBooksWithDetails().first().single().item.releaseYear)
+            assertEquals(
+                null,
+                bookRepository
+                    .observeAllBooksWithDetails()
+                    .first()
+                    .single()
+                    .item.releaseYear,
+            )
 
             val secondCsv =
                 goodreadsCsv(

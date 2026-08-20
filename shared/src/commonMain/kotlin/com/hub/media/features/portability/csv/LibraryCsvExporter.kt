@@ -110,23 +110,43 @@ public object LibraryCsvExporter {
             }
         val format =
             when (media) {
-                is MediaWithDetails.Book -> media.details?.format?.name.orEmpty()
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.format
+                        ?.name
+                        .orEmpty()
             }
         val totalPages =
             when (media) {
-                is MediaWithDetails.Book -> media.details?.totalPages?.toString().orEmpty()
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.totalPages
+                        ?.toString()
+                        .orEmpty()
             }
         val status =
             when (media) {
-                is MediaWithDetails.Book -> media.details?.status?.name.orEmpty()
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.status
+                        ?.name
+                        .orEmpty()
             }
         val finishedAt =
             when (media) {
-                is MediaWithDetails.Book -> media.details?.finishedAt?.toString().orEmpty()
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.finishedAt
+                        ?.toString()
+                        .orEmpty()
             }
         val trackingMode =
             when (media) {
-                is MediaWithDetails.Book -> media.details?.trackingMode?.name.orEmpty()
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.trackingMode
+                        ?.name
+                        .orEmpty()
             }
 
         return listOf(

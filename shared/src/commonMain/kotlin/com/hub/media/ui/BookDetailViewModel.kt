@@ -12,7 +12,6 @@ import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.timer.ReadingTimer
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
-import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow

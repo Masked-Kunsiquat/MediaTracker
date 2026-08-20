@@ -4,11 +4,11 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BookIngestionUseCase
-import com.hub.media.features.media.domain.FakeSearchMediaUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
 import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.FakeBookSearchProvider
+import com.hub.media.features.media.domain.FakeSearchMediaUseCase
 import com.hub.media.features.media.domain.SearchMediaUseCase
 import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.Dispatchers

@@ -34,8 +34,10 @@ public interface BookSearchProvider : MediaSearchProvider {
     ): Resource<List<MediaSearchResult>>
 
     /** Bridge implementation for generalized [MediaSearchProvider]. */
-    override suspend fun search(query: String, limit: Int): Resource<List<MediaSearchResult>> =
-        searchByTitleOrAuthor(query, limit)
+    override suspend fun search(
+        query: String,
+        limit: Int,
+    ): Resource<List<MediaSearchResult>> = searchByTitleOrAuthor(query, limit)
 
     /**
      * Resolves an edition key to a concrete ISBN (ROADMAP Task 9 Phase B2).

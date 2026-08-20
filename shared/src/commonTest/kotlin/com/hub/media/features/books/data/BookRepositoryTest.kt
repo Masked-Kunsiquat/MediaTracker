@@ -17,7 +17,6 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
-import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.cancellation.CancellationException

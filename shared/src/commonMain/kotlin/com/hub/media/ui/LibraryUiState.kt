@@ -64,7 +64,9 @@ public data class LibraryUiState(
                 val titleMatch = mediaItem.item.title.contains(query, ignoreCase = true)
                 val creatorMatch =
                     when (mediaItem) {
-                        is MediaWithDetails.Book -> mediaItem.details?.authors?.contains(query, ignoreCase = true) == true
+                        is MediaWithDetails.Book ->
+                            mediaItem.details?.authors?.contains(query, ignoreCase = true) ==
+                                true
                     }
                 titleMatch || creatorMatch
             }
