@@ -17,10 +17,14 @@ public class FileLockRegistry {
     /**
      * Executes [block] while holding a [Mutex] unique to [hash].
      */
-    public suspend fun <T> withLock(hash: String, block: suspend () -> T): T {
-        val lock = registryMutex.withLock {
-            locks.getOrPut(hash) { Mutex() }
-        }
+    public suspend fun <T> withLock(
+        hash: String,
+        block: suspend () -> T,
+    ): T {
+        val lock =
+            registryMutex.withLock {
+                locks.getOrPut(hash) { Mutex() }
+            }
         return lock.withLock { block() }
     }
 }

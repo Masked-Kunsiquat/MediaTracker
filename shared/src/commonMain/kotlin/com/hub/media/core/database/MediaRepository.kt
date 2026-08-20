@@ -48,10 +48,11 @@ public class MediaRepository(
             val bookDetailsByMediaId = bookDetails.associateBy { it.mediaId }
             mediaItems.map { mediaItem ->
                 when (mediaItem.type) {
-                    MediaType.BOOK -> MediaWithDetails.Book(
-                        item = mediaItem,
-                        details = bookDetailsByMediaId[mediaItem.id],
-                    )
+                    MediaType.BOOK ->
+                        MediaWithDetails.Book(
+                            item = mediaItem,
+                            details = bookDetailsByMediaId[mediaItem.id],
+                        )
                     MediaType.MOVIE -> MediaWithDetails.Movie(item = mediaItem)
                     MediaType.TV_SHOW -> MediaWithDetails.TVShow(item = mediaItem)
                 }

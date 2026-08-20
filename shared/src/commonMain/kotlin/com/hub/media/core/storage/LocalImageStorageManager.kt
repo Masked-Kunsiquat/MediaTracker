@@ -48,8 +48,10 @@ public class LocalImageStorageManager(
      * Used by [com.hub.media.features.media.domain.DeleteMediaUseCase] to coordinate reference-aware
      * deletion with concurrent [saveImage] calls.
      */
-    public suspend fun <T> withLock(hash: String, block: suspend () -> T): T =
-        lockRegistry.withLock(hash, block)
+    public suspend fun <T> withLock(
+        hash: String,
+        block: suspend () -> T,
+    ): T = lockRegistry.withLock(hash, block)
 
     /**
      * Removes the stored image named [fileName] from this manager's directory, if it is there.
@@ -67,7 +69,10 @@ public class LocalImageStorageManager(
      *   delete failed. Both are non-fatal to the caller: a cover that outlives its last reference is
      *   wasted disk, not broken state, which is why this reports rather than throws.
      */
-    public suspend fun deleteImage(fileName: String, useLock: Boolean = true): Boolean {
+    public suspend fun deleteImage(
+        fileName: String,
+        useLock: Boolean = true,
+    ): Boolean {
         if (!useLock) return deleteImageFile(baseDirectoryPath, fileName)
         val hash = fileName.removeSuffix(".jpg")
         return lockRegistry.withLock(hash) {

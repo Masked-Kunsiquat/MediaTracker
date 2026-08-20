@@ -70,8 +70,9 @@ public class RefetchCoverUseCase(
     public suspend fun execute(mediaId: String): Resource<String> {
         val bookResult = bookRepository.getBookWithDetails(mediaId)
         if (bookResult is Resource.Error) return Resource.Error(bookResult.message, bookResult.cause)
-        val bookWithDetails = (bookResult as Resource.Success).data
-            ?: return Resource.Error("Book with id=$mediaId not found")
+        val bookWithDetails =
+            (bookResult as Resource.Success).data
+                ?: return Resource.Error("Book with id=$mediaId not found")
         val isbn = bookWithDetails.details?.isbn
         if (isbn.isNullOrBlank()) {
             return Resource.Error("This book has no ISBN on record, so a cover can't be looked up")

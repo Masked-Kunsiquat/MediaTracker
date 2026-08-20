@@ -601,7 +601,12 @@ public class ImportDataUseCase(
                             ?: byTitleYear[titleYearKey(row.type, row.title, row.releaseYear)]
                     // Tier 4 only runs when tiers 1-3 all failed -- reached when the release years
                     // disagree (edition year vs. work year, Finding 2) or either side is missing one.
-                    val titleOnlyMatch = if (strongMatch == null) byTitleOnly[titleOnlyKey(row.type, row.title)] else null
+                    val titleOnlyMatch =
+                        if (strongMatch == null) {
+                            byTitleOnly[titleOnlyKey(row.type, row.title)]
+                        } else {
+                            null
+                        }
                     val match = strongMatch ?: titleOnlyMatch
 
                     if (titleOnlyMatch != null) {
@@ -677,7 +682,7 @@ public class ImportDataUseCase(
 
     private fun titleOnlyKey(
         type: MediaType,
-        title: String
+        title: String,
     ): String = "${type.name}::${title.trim().lowercase()}"
 
     /**
