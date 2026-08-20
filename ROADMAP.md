@@ -686,6 +686,20 @@ and never implemented: there is no genre column, table, or UI anywhere today.
   spending, active timers, an "Up Next" queue). Not separately scheduled; it only makes sense
   once a second media type exists.
 - Library/media-type UI generalization (type filter, non-book detail screens).
+  - **Library navigation is still type-blind, and this task owns the fix.** Issue #67 generalized
+    the library *list* — `LibraryUiState.media` is `List<MediaWithDetails>` and `LibraryScreen`
+    already branches on `MediaType` for the release-year label — but the tap target did not follow:
+    `onNavigateToMediaDetail` is `(String) -> Unit`, an id and nothing else, so every card routes to
+    Book Detail. It was left that way deliberately rather than overlooked: there is no correct
+    destination for a movie tap until this task builds one, so widening the callback earlier would
+    have been a signature churn with no second branch to justify it.
+  - Unreachable today, and it fails safely if it ever is reached: nothing writes a `MOVIE` or
+    `TV_SHOW` row, and `observeBookDetail` returns null for a non-`BOOK` item, which
+    `BookDetailViewModel` renders as `BookDetailUiState.NotFound` — a "not found" screen, not a
+    crash and not a movie rendered as a book. **The trap is that it stays quiet.** The first commit
+    that can create a non-book row makes this a live bug in navigation code that commit never
+    touched, so widen the callback to carry the media type (or the `MediaWithDetails`) *with* that
+    change, not after it.
 
 ## Task 14 — Bulk operations & cover backfill
 
