@@ -3,6 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.hub.media.ui.AddBookViewModel
+import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackfillViewModel
 import com.hub.media.ui.BackupViewModel
@@ -13,6 +14,7 @@ import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.LogViewerViewModel
+import com.hub.media.ui.MovieDetailViewModel
 import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
@@ -286,6 +288,48 @@ class ChangelogViewModelFactory(
         when {
             modelClass.isAssignableFrom(ChangelogViewModel::class.java) -> {
                 ChangelogViewModel(currentVersion, readChangelog) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+}
+
+/**
+ * Factory for [AddMovieViewModel] (ROADMAP Task 13 Phase B). Manual entry needs only the
+ * repository — no provider client, no rate limiter, no cover storage.
+ */
+class AddMovieViewModelFactory(
+    private val appContainer: AppContainer,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        when {
+            modelClass.isAssignableFrom(AddMovieViewModel::class.java) -> {
+                AddMovieViewModel(movieRepository = appContainer.movieRepository) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+}
+
+/**
+ * Factory for [MovieDetailViewModel] with its [movieId] (ROADMAP Task 13 Phase B).
+ *
+ * Takes [AppContainer.deleteMediaUseCase] rather than the repository's own delete for the same
+ * reason [BookDetailViewModelFactory] does: deletion must go through the reference-aware path so a
+ * poster shared with another item is not removed out from under it.
+ */
+class MovieDetailViewModelFactory(
+    private val appContainer: AppContainer,
+    private val movieId: String,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        when {
+            modelClass.isAssignableFrom(MovieDetailViewModel::class.java) -> {
+                MovieDetailViewModel(
+                    movieId = movieId,
+                    movieRepository = appContainer.movieRepository,
+                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
+                ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }

@@ -25,10 +25,14 @@ public sealed class AddMovieUiState {
     public data object Saving : AddMovieUiState()
 
     /** Saved. [mediaId] is the new movie, so the caller can navigate straight to its detail screen. */
-    public data class Saved(val mediaId: String) : AddMovieUiState()
+    public data class Saved(
+        val mediaId: String,
+    ) : AddMovieUiState()
 
     /** The save was rejected or failed. [message] is already user-facing. */
-    public data class Error(val message: String) : AddMovieUiState()
+    public data class Error(
+        val message: String,
+    ) : AddMovieUiState()
 }
 
 /**

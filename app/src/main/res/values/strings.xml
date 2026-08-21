@@ -118,6 +118,31 @@
     <string name="edit_total_pages_suffix">pages</string>
 
     <!-- LibraryScreen status filter -->
+    <!-- Movie status, shown on the movie detail screen and the add-movie form. Type-specific by
+         design: a detail screen shows one item of known type, so it uses that type's vocabulary. -->
+    <string name="watch_status_watchlist">Watchlist</string>
+    <string name="watch_status_watching">Watching</string>
+    <string name="watch_status_watched">Watched</string>
+    <string name="watch_status_abandoned">Abandoned</string>
+
+    <!-- Manual movie entry (Task 13 Phase B) -->
+    <string name="add_movie_title">Add movie</string>
+    <string name="add_book_menu_item">Add book</string>
+    <string name="add_media_content_description">Add to library</string>
+    <string name="add_movie_field_title">Title</string>
+    <string name="add_movie_field_year">Release year</string>
+    <string name="add_movie_field_runtime">Runtime (minutes)</string>
+    <string name="add_movie_field_price">Purchase price</string>
+    <string name="add_movie_status_label">Status</string>
+    <string name="add_movie_save">Save movie</string>
+    <string name="add_movie_fab_content_description">Add movie</string>
+
+    <!-- Movie detail (Task 13 Phase B) -->
+    <string name="movie_detail_not_found">Movie not found</string>
+    <string name="movie_detail_runtime">Runtime: %1$d min</string>
+    <string name="movie_detail_runtime_unknown">Runtime unknown</string>
+    <string name="movie_detail_delete">Delete movie</string>
+    <string name="movie_detail_delete_confirm">Delete this movie? This cannot be undone.</string>
     <string name="library_filter_all">All</string>
     <!-- Library status filter chips. Deliberately media-neutral: the same chip must read
          correctly for a book and a film, so these are not the book-specific reading_status_*

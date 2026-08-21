@@ -20,10 +20,10 @@ import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.media.domain.BulkDeleteUseCase
-import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.media.domain.RealSearchMediaUseCase
 import com.hub.media.features.media.domain.SearchMediaUseCase
+import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
