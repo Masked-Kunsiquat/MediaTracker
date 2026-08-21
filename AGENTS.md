@@ -226,5 +226,8 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   | v3 | `v0.5.0` | `MIGRATION_2_3` |
   | v4 | `v0.6.0` | `MIGRATION_3_4` — adds the `app_settings` key-value table |
   | v5 | `v0.8.0` | `MIGRATION_4_5` — nullable author column on `BookDetailsEntity` |
+  | v6 | **not yet frozen** | `MIGRATION_5_6` — `movie_details`, `tv_details`, `episodes`, `watch_logs` |
 
-  Current: `APP_DATABASE_VERSION = 5` (`shared/.../core/database/AppDatabase.kt`). Migrations live in `Migrations.kt`; each is registered through the `loggedMigration` wrapper and covered by `MigrationTest` (`jvmTest`). `v0.2.0`, `v0.3.0` and `v0.7.0` shipped no schema change.
+  Current: `APP_DATABASE_VERSION = 6` (`shared/.../core/database/AppDatabase.kt`). Migrations live in `Migrations.kt`; each is registered through the `loggedMigration` wrapper and covered by `MigrationTest` (`jvmTest`). `v0.2.0`, `v0.3.0` and `v0.7.0` shipped no schema change.
+
+  **v6 is the one row above that is not yet immutable**, and the distinction is the rule rather than an exception to it: the freeze attaches to *shipping in a tag*, not to the version existing. Until v6 ships, `6.json` and `MIGRATION_5_6` may still be edited in place — which is exactly the window in which to correct anything wrong with them, because after the tag the only remedy is a v7 with its own migration. The row is appended now, unfrozen, because the rule requires it in the same commit as the `APP_DATABASE_VERSION` bump: a version absent from this table is a version nobody can tell is frozen, and adding it later is the step that gets forgotten. **Change "not yet frozen" to the tag in the release that ships it.**
