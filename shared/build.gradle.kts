@@ -128,11 +128,17 @@ dependencies {
 // com.hub.media.features.books.domain.* above). CsvUtilTest/LibraryCsvExporterTest/
 // ReadingLogCsvExporterTest live under com.hub.media.features.portability.csv -- pure Kotlin, no
 // Room, so that package is deliberately NOT excluded and keeps running on every variant.
+// MovieRepositoryTest (ROADMAP Task 13 Phase B) is Room-backed for the same reason
+// BookRepositoryTest is -- it builds a real AppDatabase via testAppDatabase() -- so
+// com.hub.media.features.movies.data.* is excluded by package, mirroring
+// com.hub.media.features.books.data.* above. Without this the android unit-test variants would
+// try to run it against the stub android.jar with no Robolectric and fail.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
             excludeTestsMatching("com.hub.media.core.database.*")
             excludeTestsMatching("com.hub.media.features.books.data.*")
+            excludeTestsMatching("com.hub.media.features.movies.data.*")
             excludeTestsMatching("com.hub.media.features.books.domain.*")
             excludeTestsMatching("com.hub.media.features.stats.*")
             excludeTestsMatching("com.hub.media.features.settings.*")

@@ -15,7 +15,7 @@ import com.hub.media.ui.LibraryStatusFilter
 @Composable
 internal fun LibraryStatusFilter.filterLabel(): String =
     when (this) {
-        LibraryStatusFilter.BACKLOG -> stringResource(R.string.library_filter_backlog)
+        LibraryStatusFilter.NOT_STARTED -> stringResource(R.string.library_filter_not_started)
         LibraryStatusFilter.IN_PROGRESS -> stringResource(R.string.library_filter_in_progress)
         LibraryStatusFilter.FINISHED -> stringResource(R.string.library_filter_finished)
         LibraryStatusFilter.ABANDONED -> stringResource(R.string.library_filter_abandoned)

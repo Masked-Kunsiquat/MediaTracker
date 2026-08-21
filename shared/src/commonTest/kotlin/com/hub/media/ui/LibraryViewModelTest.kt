@@ -250,13 +250,13 @@ class LibraryViewModelTest {
                 "a READING book and a WATCHING movie are both 'in progress'",
             )
 
-            viewModel.setStatusFilter(LibraryStatusFilter.BACKLOG)
+            viewModel.setStatusFilter(LibraryStatusFilter.NOT_STARTED)
             val backlog =
-                viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.BACKLOG }
+                viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.NOT_STARTED }
             assertEquals(
                 listOf("Solaris"),
                 backlog.filteredMedia.map { it.item.title },
-                "the watchlisted movie alone is in the backlog",
+                "the watchlisted movie alone is not started",
             )
         }
 

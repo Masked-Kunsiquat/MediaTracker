@@ -22,7 +22,7 @@ import com.hub.media.features.media.data.MediaWithDetails
  */
 public enum class LibraryStatusFilter {
     /** Tracked but not started: [ReadingStatus.TO_READ] / [WatchStatus.WATCHLIST]. */
-    BACKLOG,
+    NOT_STARTED,
 
     /** Started, not finished: [ReadingStatus.READING] / [WatchStatus.WATCHING]. */
     IN_PROGRESS,
@@ -57,7 +57,7 @@ public enum class LibraryStatusFilter {
         /** Maps a book's stored status onto the shared filter vocabulary. */
         public fun of(status: ReadingStatus): LibraryStatusFilter =
             when (status) {
-                ReadingStatus.TO_READ -> BACKLOG
+                ReadingStatus.TO_READ -> NOT_STARTED
                 ReadingStatus.READING -> IN_PROGRESS
                 ReadingStatus.FINISHED -> FINISHED
                 ReadingStatus.DNF -> ABANDONED
@@ -66,7 +66,7 @@ public enum class LibraryStatusFilter {
         /** Maps a movie's stored status onto the shared filter vocabulary. */
         public fun of(status: WatchStatus): LibraryStatusFilter =
             when (status) {
-                WatchStatus.WATCHLIST -> BACKLOG
+                WatchStatus.WATCHLIST -> NOT_STARTED
                 WatchStatus.WATCHING -> IN_PROGRESS
                 WatchStatus.WATCHED -> FINISHED
                 WatchStatus.ABANDONED -> ABANDONED
