@@ -13,8 +13,10 @@ single list below and reordering is a one-line edit there.
 ## Execution order
 
 1. **Task 9 — Search & discovery** ← next. *Partially done*: Phase A (authors + local library
-   search) shipped; still outstanding: external title/author type-ahead, barcode scanning,
-   manual entry, and paste-to-add. It was paused in favour of Task 14, and that dependency has
+   search) and Phase B (title/author type-ahead, plus work-to-editions selection) have both
+   shipped, in `v0.13.0` and `v0.14.0`; still outstanding: manual entry and paste-to-add
+   (Phase C), barcode scanning (Phase D, blocked on a decision that is the user's), and advanced
+   search filters (Phase E, [#66](https://github.com/Masked-Kunsiquat/MediaTracker/issues/66)). It was paused in favour of Task 14, and that dependency has
    since been paid off — Task 14's backfill re-queries providers for `BookMetadata`, which carries
    **both** the cover URL and the authors, so the one rate-limited crawl that repaired the covers
    also filled the authors Phase A could not add retroactively for books predating it. Nothing
@@ -470,8 +472,9 @@ obviously pointless without an author to search stored anywhere first.
 **Phase plan for what remains (decided, not yet started).** The four outstanding pieces below are
 sequenced deliberately rather than taken in the order they happen to be listed:
 
-- **Phase B — title/author type-ahead.** First, because it is the one that actually retires this
-  task's stated bottleneck: today a book can only be added with its ISBN in hand. Split in two, so
+- **Phase B — title/author type-ahead (done).** Shipped across `v0.13.0` (B1/B2) and `v0.14.0`
+  (work-to-editions selection, Issue #63). First, because it is the one that actually retired this
+  task's stated bottleneck: a book could previously only be added with its ISBN in hand. Split in two, so
   the half that can be proven by tests is not entangled with the half that cannot:
   - **B1 (shared module — done).** `BookSearchProvider.searchByTitleOrAuthor` over Open Library's
     keyless search API (`OpenLibrarySearchClient`), `BookSearchResult`, `SearchMediaUseCase` with
@@ -519,7 +522,19 @@ sequenced deliberately rather than taken in the order they happen to be listed:
   + CameraX avoids Play Services at the cost of the CAMERA permission, a preview implementation and
   ~2.2MB. Both are recorded in full below. Sequenced last so the other three are not held up by it.
 
-- Title/author type-ahead search of external providers when adding a book (not yet done): Open
+- **Phase E — advanced search filters ([#66](https://github.com/Masked-Kunsiquat/MediaTracker/issues/66)).** Structured queries on the Add Book screen — title,
+  author, year, publisher as separate fields against Open Library's typed parameters, rather than
+  one generic `q=`. Added as its own letter rather than folded into an existing one because
+  **issue #66 was filed as "Task 9 Phase C" and that is not what Phase C is.** Phase C is manual
+  entry and paste-to-add; the two features share nothing but a label. Phase letters are stable
+  identifiers for the same reason task numbers are (see this file's header) — renaming C would
+  break every reference to it — so the newcomer takes the next free letter instead.
+  - Sequenced after C and D by default but genuinely independent of both: it touches
+    `OpenLibrarySearchClient` and `SearchMediaUseCase`'s cache keys, neither of which C or D go
+    near. Pull it forward freely if structured search is what is actually wanted first.
+
+- Title/author type-ahead search of external providers when adding a book (**shipped in `v0.13.0`**
+  as Phase B; kept for the design detail, which is what carried): Open
   Library's search API (keyless) for as-you-type results with a ~300ms debounce, a 2-3 character
   minimum before querying, cancel-previous-request-on-new-keystroke, and an in-memory LRU
   cache for repeated prefixes (typing then backspacing shouldn't re-hit the network). Google
@@ -623,6 +638,52 @@ and never implemented: there is no genre column, table, or UI anywhere today.
   keep the taxonomy purely user-authored.
 
 ## Task 13 — Movies & TV
+
+### Phase plan (added 2026-08-20)
+
+Split into phases because the task as originally written bundles the provider with the tracking,
+and those are separable — the expensive half is TMDB (key entry, storage, scrubbing on backup, a
+new Ktor client, rate limits), while the thing actually wanted is a movie or a show in the library.
+
+**Episode-level tracking is a hard requirement — owner's decision, not a later phase.** A show is
+tracked by individual episodes watched. A show-level status, or a "currently on S2E4" pair of
+integers, is explicitly not acceptable as an interim step. Recorded here because it is a
+constraint on the schema, not a preference about the UI.
+
+**What that constraint forces, and it is worth stating before anyone plans around it.** Manual
+entry cannot carry TV the way it carries film. A movie is one row someone can type in fifteen
+seconds; a five-season show is sixty-odd episode rows, and nobody is typing those. So the two
+types diverge on how rows get *created* even though they share the library, the schema shape and
+the bulk actions. Any plan that says "manual entry first, provider later" works for movies and
+quietly does not work for shows.
+
+- **Phase A — schema.** `MovieDetails`, `TVDetails`, `Episodes` (show id + season + episode number
+  + watched state) and `WatchLogs`. Schema v6: a `MIGRATION_5_6`, a row appended to §8's frozen
+  ledger, and `MigrationTest` coverage, per the Room Schema Freeze Rule. No UI.
+- **Phase B — movies, end to end, manual.** Add form with a type picker, movie detail screen, and
+  **type-aware navigation** — which closes the loose end recorded under this task's
+  "Library/media-type UI generalization" bullet. Movies are the cheap half and are worth doing
+  first precisely because they prove the Issue #67 plumbing against a real second type without
+  the episode question attached.
+- **Phase C — shows, episode-level.** Blocked on one decision, which is the owner's:
+  - **(i) TMDB first**, so adding a show fetches its real season/episode structure. Correct, and
+    makes Phase C wait on Phase D.
+  - **(ii) Season/episode-count quick-fill.** The user enters "Season 1: 10 episodes" and the app
+    generates ten numbered episode rows with blank titles, ticked off individually. Real
+    episode-level tracking with no provider, and TMDB later backfills titles and air dates onto
+    rows that already exist.
+  - Recommendation: **(ii), then TMDB**. It satisfies the hard requirement without making the
+    whole feature wait on the API-key plumbing, and it degrades well — a show added by quick-fill
+    is not a second-class row, just one with blank episode titles.
+- **Phase D — TMDB.** Everything in the existing bullets below: client, key entry, backup
+  scrubbing. Also the backfill path that fills episode titles and art onto quick-filled shows.
+
+**Blocker to resolve in Phase A, not discovered later:** `ReadingStatus` is book-named and
+book-shaped (`TO_READ`/`READING`/`FINISHED`), and `LibraryUiState.filteredMedia` currently returns
+`false` for `Movie` and `TVShow` in the status filter. **The moment a movie row exists, filtering
+by status hides every one of them.** Phase A has to either generalize that enum across media types
+or give non-book types their own status; either way it is a schema-adjacent decision and belongs
+with the schema, not bolted on once the filter visibly breaks.
 
 - TMDB client (primary API per AGENTS.md §4); TMDB requires an API key even on the free
   tier and keys must never be hardcoded — plan is a user-supplied key entered in settings.
