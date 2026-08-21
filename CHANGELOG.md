@@ -17,21 +17,18 @@ than choosing one automatically.
 
 ### Added
 
-- **Unified Media Architecture (Issue #67)** — Foundation for supporting heterogeneous media types (Books, Movies, TV Shows) uniformly across the app.
-  - **Polymorphic Metadata**: Introduced `MediaWithDetails` sealed class and `MediaType` enum to handle domain-specific metadata while sharing universal traits.
-  - **Universal Repository**: `MediaRepository` handles universal operations (deletion, cover updates) for all media types.
-  - **Generalized Discovery**: `MediaSearchProvider` and `MediaSearchResult` abstractions allow the discovery pipeline to be media-agnostic.
 - **Work-to-Editions selection flow (GitHub Issue #63)** — Search results for Open Library works now allow selecting a specific edition from a list, improving metadata accuracy and cover consistency.
   - **Edition Modal**: Displays publisher, year, ISBN, and page count for all valid ISBN-backed editions of a work.
   - **Filtering**: Automatically hides editions without ISBNs, ensuring only ingestible books are shown.
 
-### Changed
-
-- **Generalized Portability**: `LibraryCsvExporter` was generalized to the polymorphic `MediaWithDetails` model, laying the infrastructure for mixed-media export. `ImportDataUseCase` remains book-only (`BookRepository`/`observeAllBooksWithDetails`/`resolveBookRows`), but its duplicate matching now keys every title-based tier on media type so it stays correct once other types are importable.
-- **Heterogeneous Library UI**: The library screen now displays mixed media types with type-specific release labels and consolidated bulk actions.
-
 ### Internal
 
+- **Unified Media Architecture (Issue #67)** — Foundation for supporting heterogeneous media types (Books, Movies, TV Shows) uniformly across the app. No user-visible effect in this release: nothing yet creates a movie or TV row, so every polymorphic branch is groundwork.
+  - **Polymorphic Metadata**: Introduced `MediaWithDetails` sealed class and `MediaType` enum to handle domain-specific metadata while sharing universal traits.
+  - **Universal Repository**: `MediaRepository` handles universal operations (deletion, cover updates) for all media types.
+  - **Generalized Discovery**: `MediaSearchProvider` and `MediaSearchResult` abstractions allow the discovery pipeline to be media-agnostic.
+- **Generalized Portability**: `LibraryCsvExporter` was generalized to the polymorphic `MediaWithDetails` model, laying the infrastructure for mixed-media export. `ImportDataUseCase` remains book-only (`BookRepository`/`observeAllBooksWithDetails`/`resolveBookRows`), but its duplicate matching now keys every title-based tier on media type so it stays correct once other types are importable.
+- **Heterogeneous Library UI**: The library screen renders mixed media types with type-specific release labels and consolidated bulk actions. Not reachable by a user yet, for the same reason as above.
 - **Alignment Renames**: Renamed several variables and parameters (e.g., `deleteBooksUseCase` → `deleteMediaUseCase`) to reflect generalized capabilities.
 - **Code Organization**: Moved generalized use cases to `com.hub.media.features.media.domain`.
 - **Unit Testing**: Updated existing tests to verify polymorphic matching and generalized deletion logic.
