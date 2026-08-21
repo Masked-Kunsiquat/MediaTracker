@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "1727ecb0a9d106f0b6e2c581e9b97544",
+    "identityHash": "b387fbb3db911bc03ba59605f78bac78",
     "entities": [
       {
         "tableName": "media_items",
@@ -440,6 +440,16 @@
             ],
             "orders": [],
             "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_episodes_mediaId_seasonNumber_episodeNumber` ON `${TABLE_NAME}` (`mediaId`, `seasonNumber`, `episodeNumber`)"
+          },
+          {
+            "name": "index_episodes_id_mediaId",
+            "unique": true,
+            "columnNames": [
+              "id",
+              "mediaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_episodes_id_mediaId` ON `${TABLE_NAME}` (`id`, `mediaId`)"
           }
         ],
         "foreignKeys": [
@@ -458,7 +468,7 @@
       },
       {
         "tableName": "watch_logs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`episodeId`) REFERENCES `episodes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`episodeId`, `mediaId`) REFERENCES `episodes`(`id`, `mediaId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -506,13 +516,14 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_logs_mediaId` ON `${TABLE_NAME}` (`mediaId`)"
           },
           {
-            "name": "index_watch_logs_episodeId",
+            "name": "index_watch_logs_episodeId_mediaId",
             "unique": false,
             "columnNames": [
-              "episodeId"
+              "episodeId",
+              "mediaId"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId` ON `${TABLE_NAME}` (`episodeId`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId_mediaId` ON `${TABLE_NAME}` (`episodeId`, `mediaId`)"
           }
         ],
         "foreignKeys": [
@@ -532,10 +543,12 @@
             "onDelete": "CASCADE",
             "onUpdate": "NO ACTION",
             "columns": [
-              "episodeId"
+              "episodeId",
+              "mediaId"
             ],
             "referencedColumns": [
-              "id"
+              "id",
+              "mediaId"
             ]
           }
         ]
@@ -543,7 +556,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1727ecb0a9d106f0b6e2c581e9b97544')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b387fbb3db911bc03ba59605f78bac78')"
     ]
   }
 }

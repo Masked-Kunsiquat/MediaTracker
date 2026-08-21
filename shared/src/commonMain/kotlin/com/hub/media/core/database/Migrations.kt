@@ -334,18 +334,23 @@ public val MIGRATION_5_6: Migration =
                         "ON `episodes` (`mediaId`, `seasonNumber`, `episodeNumber`)",
                 )
                 connection.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_episodes_id_mediaId` " +
+                        "ON `episodes` (`id`, `mediaId`)",
+                )
+                connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `watch_logs` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
                         "`episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, " +
                         "PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
                         "ON UPDATE NO ACTION ON DELETE CASCADE , " +
-                        "FOREIGN KEY(`episodeId`) REFERENCES `episodes`(`id`) " +
+                        "FOREIGN KEY(`episodeId`, `mediaId`) REFERENCES `episodes`(`id`, `mediaId`) " +
                         "ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
                 connection.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_watch_logs_mediaId` ON `watch_logs` (`mediaId`)",
                 )
                 connection.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId` ON `watch_logs` (`episodeId`)",
+                    "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId_mediaId` " +
+                        "ON `watch_logs` (`episodeId`, `mediaId`)",
                 )
             }
     }

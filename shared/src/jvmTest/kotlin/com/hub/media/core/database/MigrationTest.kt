@@ -898,6 +898,81 @@ class MigrationTest {
     }
 
     /**
+     * A watch log cannot pair one show's `mediaId` with another show's episode.
+     *
+     * `watch_logs.mediaId` is denormalized — derivable from `episodeId` for a TV watch, but
+     * required anyway because a film has no episode. Two *independent* foreign keys would let show
+     * A's id sit beside an episode of show B: each key is satisfied on its own, and the row is
+     * still nonsense. The composite `(episodeId, mediaId)` → `episodes (id, mediaId)` key makes it
+     * unrepresentable instead.
+     *
+     * The negative control matters more than usual here, because the positive case passes either
+     * way — with two separate keys this insert succeeds and nothing looks wrong until a query
+     * attributes a watch to the wrong show. Only the rejection distinguishes the two designs.
+     *
+     * The film case is asserted alongside it: `MATCH SIMPLE` skips a composite key when any child
+     * column is `NULL`, so a `null` `episodeId` must still be accepted rather than caught by the
+     * pair.
+     */
+    @Test
+    fun migrate5To6_watchLogCompositeKey_rejectsEpisodeFromAnotherShow() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('show-a', 'TV_SHOW', 'Show A', 2015, NULL, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('show-b', 'TV_SHOW', 'Show B', 2016, NULL, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('film', 'MOVIE', 'A Film', 2020, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            // Required in this harness -- see migrate5To6_cascadeDelete_removesEpisodesAndWatchLogs.
+            db.execSQL("PRAGMA foreign_keys = ON")
+
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('ep-of-b', 'show-b', 1, 1, 'Pilot', NULL, NULL)",
+            )
+
+            val exception =
+                assertFailsWith<SQLiteException> {
+                    db.execSQL(
+                        "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                            "VALUES ('log-1', 'show-a', 'ep-of-b', 1700000000000, NULL)",
+                    )
+                }
+            assertTrue(
+                exception.message.orEmpty().contains("FOREIGN KEY", ignoreCase = true),
+                "the failure must be the composite foreign key, not some other error: ${exception.message}",
+            )
+
+            // Positive control: the same episode under its own show is accepted, so the rejection
+            // above is the mismatch being caught and not the constraint rejecting everything.
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-2', 'show-b', 'ep-of-b', 1700000000000, NULL)",
+            )
+
+            // A film's log carries no episode; MATCH SIMPLE must let it through.
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-3', 'film', NULL, 1700000000000, 7200)",
+            )
+
+            db.prepare("SELECT COUNT(*) FROM watch_logs").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(2, stmt.getInt(0), "only the two valid logs may exist")
+            }
+        }
+    }
+
+    /**
      * `ON DELETE CASCADE` works for both new relationships -- `episodes` -> `media_items` and
      * `watch_logs` -> `episodes` -- when SQLite foreign key enforcement is turned on for the
      * connection.

@@ -45,6 +45,11 @@ import kotlin.time.Instant
         // Unique so quick-fill cannot generate the same episode twice (e.g. a user correcting a
         // season's count from 10 to 12 must add two rows, never re-create all twelve).
         Index(value = ["mediaId", "seasonNumber", "episodeNumber"], unique = true),
+        // Redundant on its own -- `id` is already the primary key, so this pair cannot repeat --
+        // but SQLite requires a composite FK's parent columns to carry a unique index, and
+        // [WatchLogEntity] points (episodeId, mediaId) here to guarantee a watch log cannot pair
+        // one show's id with another show's episode. See that entity's KDoc.
+        Index(value = ["id", "mediaId"], unique = true),
     ],
 )
 public data class EpisodeEntity(
