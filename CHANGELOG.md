@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-20
+
+This release rebuilds the library around a single polymorphic media model, so that books, movies
+and TV shows can share one library, one export format and one set of bulk actions. Book tracking
+behaves exactly as before — the architecture is the deliverable here — alongside one visible
+addition: searching by title or author now offers the specific editions behind a result, rather
+than choosing one automatically.
+
 ### Added
 
 - **Unified Media Architecture (Issue #67)** — Foundation for supporting heterogeneous media types (Books, Movies, TV Shows) uniformly across the app.
