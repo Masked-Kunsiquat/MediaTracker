@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Movies (ROADMAP Task 13 Phase B)** — Films can now be added, viewed, edited and deleted alongside books. Entry is manual: title, release year, runtime and purchase price, with a Watchlist/Watching/Watched/Abandoned status. No provider lookup is involved yet.
+  - **Add from the library**: the add button now offers a choice of book or movie.
+  - **Editing**: a movie's details can be corrected after the fact. Manual entry has no provider to re-fetch from, so this is the only way to fix a typo.
+  - **Only the title is required.** A blank year, runtime or price means "unknown" and is stored as such, rather than as zero.
+
+### Changed
+
+- **Library status filter now covers every media type.** The chips read "Not started", "In progress", "Finished" and "Abandoned" instead of the book-specific "To read", "Reading" and "Did not finish" — one chip has to match a book and a film at once. Book detail keeps its own wording.
+- **Movies and shows without artwork** show a film or television icon instead of a book.
+
+### Fixed
+
+- **Movies were missing from CSV exports.** The library export read a book-only source, so a film in the library was silently absent from the backup file — data that would have been lost on device loss with nothing to warn the user. Exports now include every media type. Note that re-importing a movie row is not supported yet; it is reported as a rejected row rather than being silently dropped.
+- **Release year rendered without a space** ("Year:2016") on library cards.
+
 ### Internal
 
 - **Schema v6 (ROADMAP Task 13 Phase A)** — Adds the database half of the polymorphic media model: `movie_details`, `tv_details`, `episodes` and `watch_logs`, via `MIGRATION_5_6`. Purely additive — four tables created, none altered, so no existing book data is read or rewritten. No user-visible effect yet; nothing creates a movie or TV row until Phase B.

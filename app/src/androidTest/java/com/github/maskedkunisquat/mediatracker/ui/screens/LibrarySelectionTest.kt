@@ -10,7 +10,6 @@ import androidx.compose.ui.test.performTouchInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
-import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.LibraryUiState

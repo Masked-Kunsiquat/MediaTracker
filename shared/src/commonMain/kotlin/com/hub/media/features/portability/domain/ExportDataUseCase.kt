@@ -1,5 +1,6 @@
 package com.hub.media.features.portability.domain
 
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -60,6 +61,7 @@ public interface ExportUseCase {
  * content into this path would fail that test immediately.
  */
 public class ExportDataUseCase(
+    private val mediaRepository: MediaRepository,
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
     private val logger: Logger = AppLogger,
@@ -74,7 +76,15 @@ public class ExportDataUseCase(
      */
     public override suspend fun execute(): Resource<CsvExportBundle> =
         try {
-            val books = bookRepository.observeAllBooksWithDetails().first()
+            // Every media type, not just books. This read used to go through
+            // BookRepository.observeAllBooksWithDetails(), which filters to MediaType.BOOK at the
+            // DAO -- so a movie was silently absent from the backup rather than failing loudly.
+            // LibraryCsvExporter has handled the polymorphic list since Issue #67; only its source
+            // was still book-shaped.
+            val media = mediaRepository.observeAllMediaWithDetails().first()
+            // Still via BookRepository, which is where this lives today even though it reads every
+            // identifier regardless of media type. Moving it to MediaRepository is the tidier home
+            // and is deliberately not done here.
             val identifiersByMediaId =
                 bookRepository
                     .observeAllExternalIdentifiers()
@@ -88,11 +98,11 @@ public class ExportDataUseCase(
             // already logged "Export completed" moments earlier.
             val bundle =
                 CsvExportBundle(
-                    libraryCsv = LibraryCsvExporter.export(books, identifiersByMediaId),
+                    libraryCsv = LibraryCsvExporter.export(media, identifiersByMediaId),
                     readingLogsCsv = ReadingLogCsvExporter.export(sessions),
                 )
             logger.info(TAG) {
-                "Export completed: ${books.size} book(s), ${sessions.size} session(s)"
+                "Export completed: ${media.size} item(s), ${sessions.size} session(s)"
             }
             Resource.Success(bundle)
         } catch (e: CancellationException) {

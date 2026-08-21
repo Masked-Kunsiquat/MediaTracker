@@ -243,6 +243,7 @@ public class AppContainer(
      */
     public val exportDataUseCase: ExportDataUseCase =
         ExportDataUseCase(
+            mediaRepository = mediaRepository,
             bookRepository = bookRepository,
             readingSessionRepository = readingSessionRepository,
         )
