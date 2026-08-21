@@ -44,8 +44,10 @@ public class MediaRepository(
         combine(
             observeAllMedia(),
             db.bookDetailsDao().observeAll(),
-        ) { mediaItems, bookDetails ->
+            db.movieDetailsDao().observeAll(),
+        ) { mediaItems, bookDetails, movieDetails ->
             val bookDetailsByMediaId = bookDetails.associateBy { it.mediaId }
+            val movieDetailsByMediaId = movieDetails.associateBy { it.mediaId }
             mediaItems.map { mediaItem ->
                 when (mediaItem.type) {
                     MediaType.BOOK ->
@@ -53,7 +55,11 @@ public class MediaRepository(
                             item = mediaItem,
                             details = bookDetailsByMediaId[mediaItem.id],
                         )
-                    MediaType.MOVIE -> MediaWithDetails.Movie(item = mediaItem)
+                    MediaType.MOVIE ->
+                        MediaWithDetails.Movie(
+                            item = mediaItem,
+                            details = movieDetailsByMediaId[mediaItem.id],
+                        )
                     MediaType.TV_SHOW -> MediaWithDetails.TVShow(item = mediaItem)
                 }
             }
