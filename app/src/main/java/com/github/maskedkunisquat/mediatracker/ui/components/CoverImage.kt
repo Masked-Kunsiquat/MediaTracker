@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import com.github.maskedkunisquat.mediatracker.R
+import com.hub.media.core.database.entities.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -66,9 +67,10 @@ fun CoverImage(
     coverImageHash: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    mediaType: MediaType = MediaType.BOOK,
 ) {
     if (coverImageHash == null) {
-        CoverPlaceholder(modifier = modifier)
+        CoverPlaceholder(modifier = modifier, mediaType = mediaType)
         return
     }
 
@@ -102,7 +104,7 @@ fun CoverImage(
             contentScale = contentScale,
         )
     } else {
-        CoverPlaceholder(modifier = modifier)
+        CoverPlaceholder(modifier = modifier, mediaType = mediaType)
     }
 }
 
@@ -111,7 +113,10 @@ fun CoverImage(
  * Shows a book-like placeholder text centered in a light background.
  */
 @Composable
-private fun CoverPlaceholder(modifier: Modifier = Modifier) {
+private fun CoverPlaceholder(
+    modifier: Modifier = Modifier,
+    mediaType: MediaType = MediaType.BOOK,
+) {
     Box(
         modifier =
             modifier
@@ -119,7 +124,13 @@ private fun CoverPlaceholder(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "📖",
+            // Typed, so a movie with no poster does not sit in the library wearing a book icon.
+            text =
+                when (mediaType) {
+                    MediaType.BOOK -> "📖"
+                    MediaType.MOVIE -> "🎬"
+                    MediaType.TV_SHOW -> "📺"
+                },
             style = MaterialTheme.typography.displayLarge,
         )
     }

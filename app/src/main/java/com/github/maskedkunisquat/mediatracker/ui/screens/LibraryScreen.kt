@@ -532,6 +532,7 @@ private fun MediaCard(
                 coverDir = coverStorageDir,
                 coverImageHash = mediaItem.coverImageHash,
                 modifier = Modifier.fillMaxSize(),
+                mediaType = mediaItem.type,
             )
         }
 
@@ -566,14 +567,19 @@ private fun MediaCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (mediaItem.releaseYear != null) {
+            val releaseYear = mediaItem.releaseYear
+            if (releaseYear != null) {
+                // Formatted rather than concatenated: these strings used to end in a trailing
+                // space, which XML strips, so the card rendered "Year:2016".
                 val label =
                     when (mediaItem.type) {
-                        MediaType.BOOK -> stringResource(R.string.library_released_label)
-                        MediaType.MOVIE, MediaType.TV_SHOW -> stringResource(R.string.library_year_label)
+                        MediaType.BOOK ->
+                            stringResource(R.string.library_released_label, releaseYear)
+                        MediaType.MOVIE, MediaType.TV_SHOW ->
+                            stringResource(R.string.library_year_label, releaseYear)
                     }
                 Text(
-                    text = "$label${mediaItem.releaseYear}",
+                    text = label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

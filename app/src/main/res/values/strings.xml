@@ -153,8 +153,8 @@
     <string name="library_filter_abandoned">Abandoned</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_empty_subtitle">Add your first item to get started</string>
-    <string name="library_released_label">Released: </string>
-    <string name="library_year_label">Year: </string>
+    <string name="library_released_label">Released: %1$s</string>
+    <string name="library_year_label">Year: %1$s</string>
 
     <!-- LibraryScreen local search (ROADMAP Task 9 Phase A) -->
     <string name="library_search_placeholder">Search by title or author</string>

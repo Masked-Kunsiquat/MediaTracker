@@ -167,7 +167,7 @@ fun MovieDetailScreen(
                     val movie = uiState.movie
                     movie.item.releaseYear?.let { year ->
                         Text(
-                            text = stringResource(R.string.library_year_label) + year,
+                            text = stringResource(R.string.library_year_label, year),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
