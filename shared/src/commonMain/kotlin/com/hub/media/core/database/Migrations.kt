@@ -271,3 +271,81 @@ public val MIGRATION_4_5: Migration =
                 )
             }
     }
+
+/**
+ * Schema v5 -> v6 (ROADMAP Task 13 Phase A): adds the movie/TV half of the polymorphic media model.
+ * Creates four tables and alters none.
+ *
+ * ### Purely additive, and that is load-bearing rather than incidental
+ * Every prior migration in this file touched existing rows: v1->v2 rebuilt `reading_sessions`,
+ * v2->v3 backfilled `status` from session history, v3->v4 derived `trackingMode`, v4->v5 added a
+ * column to `book_details`. This one reads nothing and rewrites nothing, so no existing book can
+ * be damaged by it however it fails — a failure leaves a v5 database that still works.
+ *
+ * That property is *why* [com.hub.media.core.database.entities.WatchStatus] is a second enum
+ * rather than a generalization of
+ * [com.hub.media.core.database.entities.ReadingStatus]: renaming that enum's constants would have
+ * meant rewriting the `status` column of every existing `book_details` row here, since enums are
+ * persisted by `name` (see [com.hub.media.core.database.converters.Converters]). See
+ * [com.hub.media.core.database.entities.WatchStatus]'s KDoc for the full reasoning.
+ *
+ * ### The SQL is Room's own, copied rather than composed
+ * Each statement below is the `createSql` Room exported into
+ * `shared/schemas/com.hub.media.core.database.AppDatabase/6.json`, with `${'$'}{TABLE_NAME}`
+ * substituted. Hand-written equivalents drift from Room's expectations in ways
+ * `runMigrationsAndValidate` rejects for reasons that read as inscrutable hash mismatches —
+ * copying the exported DDL is the only reliable way to keep the migration and the entity
+ * definitions in agreement.
+ *
+ * ### No data to migrate into these tables
+ * Nothing in a v5 database can become a movie, show or episode: `media_items` only ever held
+ * `BOOK` rows, because no code path has ever written another type. Creating the tables empty is
+ * therefore complete, not a deferred backfill.
+ *
+ * See `MigrationTest` (jvmTest) for the seeded v5 -> v6 test asserting existing book data survives
+ * untouched and the new tables accept rows.
+ */
+public val MIGRATION_5_6: Migration =
+    object : Migration(5, 6) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(5, 6) {
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `movie_details` (`mediaId` TEXT NOT NULL, " +
+                        "`runtimeMinutes` INTEGER, `status` TEXT NOT NULL, `watchedAt` INTEGER, " +
+                        "PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tv_details` (`mediaId` TEXT NOT NULL, " +
+                        "`totalSeasons` INTEGER, `status` TEXT NOT NULL, PRIMARY KEY(`mediaId`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `episodes` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                        "`seasonNumber` INTEGER NOT NULL, `episodeNumber` INTEGER NOT NULL, `title` TEXT, " +
+                        "`airDate` INTEGER, `watchedAt` INTEGER, PRIMARY KEY(`id`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_episodes_mediaId_seasonNumber_episodeNumber` " +
+                        "ON `episodes` (`mediaId`, `seasonNumber`, `episodeNumber`)",
+                )
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `watch_logs` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                        "`episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, " +
+                        "PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`episodeId`) REFERENCES `episodes`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_watch_logs_mediaId` ON `watch_logs` (`mediaId`)",
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId` ON `watch_logs` (`episodeId`)",
+                )
+            }
+    }

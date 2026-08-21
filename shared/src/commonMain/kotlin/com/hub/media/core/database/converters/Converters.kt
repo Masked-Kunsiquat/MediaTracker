@@ -6,6 +6,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.database.entities.WatchStatus
 import kotlin.time.Instant
 
 /**
@@ -51,4 +52,10 @@ object Converters {
 
     @TypeConverter
     fun nameToTrackingMode(value: String): TrackingMode = TrackingMode.valueOf(value)
+
+    @TypeConverter
+    fun watchStatusToName(value: WatchStatus): String = value.name
+
+    @TypeConverter
+    fun nameToWatchStatus(value: String): WatchStatus = WatchStatus.valueOf(value)
 }

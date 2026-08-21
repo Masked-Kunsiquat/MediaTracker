@@ -16,9 +16,13 @@ import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
 import com.hub.media.core.database.entities.AppSettingEntity
 import com.hub.media.core.database.entities.BookDetailsEntity
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 
 /**
  * The current Room schema version, as a named constant rather than a bare literal in the
@@ -30,7 +34,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * here and by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase]) means the
  * two can never silently drift apart the way two independent literals could.
  */
-public const val APP_DATABASE_VERSION: Int = 5
+public const val APP_DATABASE_VERSION: Int = 6
 
 /**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,
@@ -64,6 +68,17 @@ public const val APP_DATABASE_VERSION: Int = 5
  * Version 5 (ROADMAP Task 9 Phase A) adds [BookDetailsEntity.authors] -- see that property's KDoc
  * for the denormalized-column-vs-authors-table rationale -- via [MIGRATION_4_5] (`Migrations.kt`),
  * wired in by [com.hub.media.core.database.buildAppDatabase].
+ *
+ * Version 6 (ROADMAP Task 13 Phase A) adds the movie/TV half of the polymorphic model Issue #67
+ * built the Kotlin side of: [MovieDetailsEntity] and [TVDetailsEntity] (the
+ * [BookDetailsEntity]-shaped one-to-one detail tables), [EpisodeEntity] (the unit TV progress is
+ * tracked in -- see [TVDetailsEntity]'s KDoc for why no progress counter accompanies it), and
+ * [WatchLogEntity] (the [ReadingSessionEntity] counterpart). Via [MIGRATION_5_6]
+ * (`Migrations.kt`), wired in by [com.hub.media.core.database.buildAppDatabase].
+ *
+ * This version is **purely additive**: it creates four new tables and alters none, so no
+ * pre-existing row in any table is read, rewritten, or at risk. See [MIGRATION_5_6]'s KDoc for why
+ * that mattered to how the status columns were modelled.
  */
 @Database(
     entities = [
@@ -72,6 +87,10 @@ public const val APP_DATABASE_VERSION: Int = 5
         ExternalIdentifierEntity::class,
         ReadingSessionEntity::class,
         AppSettingEntity::class,
+        MovieDetailsEntity::class,
+        TVDetailsEntity::class,
+        EpisodeEntity::class,
+        WatchLogEntity::class,
     ],
     version = APP_DATABASE_VERSION,
     exportSchema = true,
