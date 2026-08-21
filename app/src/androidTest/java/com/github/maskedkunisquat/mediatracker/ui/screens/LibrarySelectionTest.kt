@@ -12,6 +12,7 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.LibraryUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -51,7 +52,7 @@ class LibrarySelectionTest {
         onToggleSelection: (String) -> Unit = {},
         onClearSelection: () -> Unit = {},
         onDeleteSelected: () -> Unit = {},
-        onMediaClick: (String) -> Unit = {},
+        onMediaClick: (String, MediaType) -> Unit = { _, _ -> },
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -59,6 +60,7 @@ class LibrarySelectionTest {
                     uiState = uiState,
                     coverStorageDir = "unused",
                     onNavigateToAddBook = {},
+                    onNavigateToAddMovie = {},
                     onMediaClick = onMediaClick,
                     onNavigateToStats = {},
                     onNavigateToSettings = {},
@@ -89,7 +91,7 @@ class LibrarySelectionTest {
         setContent(
             LibraryUiState(media = mediaList, selectedIds = setOf("id-a")),
             onToggleSelection = { toggled += it },
-            onMediaClick = { opened += it },
+            onMediaClick = { id, _ -> opened += id },
         )
 
         composeRule.onNodeWithText("Bravo Title").performClick()
@@ -101,7 +103,7 @@ class LibrarySelectionTest {
     @Test
     fun tappingACard_whenNotSelecting_stillOpensTheItem() {
         val opened = mutableListOf<String>()
-        setContent(LibraryUiState(media = mediaList), onMediaClick = { opened += it })
+        setContent(LibraryUiState(media = mediaList), onMediaClick = { id, _ -> opened += id })
 
         composeRule.onNodeWithText("Alpha Title").performClick()
 
@@ -177,7 +179,7 @@ class LibrarySelectionTest {
             LibraryUiState(
                 media = mediaList,
                 selectedIds = setOf("id-a", "id-b"),
-                statusFilter = ReadingStatus.READING,
+                statusFilter = LibraryStatusFilter.IN_PROGRESS,
             )
         setContent(filtered)
 
