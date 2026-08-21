@@ -12,18 +12,18 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 
 /**
- * A brand-new book to insert as part of a bulk CSV import (ROADMAP Task 8 Phase B): this book's
+ * A brand-new item to insert as part of a bulk CSV import (ROADMAP Task 8 Phase B): this item's
  * `media_id` did not match anything already in the database, so [mediaItem]/[details] are fresh
  * rows and [identifiers] are inserted as-is.
  */
-public data class ImportBookInsert(
+public data class ImportMediaInsert(
     public val mediaItem: MediaItemEntity,
     public val details: BookDetailsEntity,
     public val identifiers: List<ExternalIdentifierEntity>,
 )
 
 /**
- * An existing book to update as part of a bulk CSV import. [mediaItem]/[details] are the full
+ * An existing item to update as part of a bulk CSV import. [mediaItem]/[details] are the full
  * replacement rows -- already resolved by
  * [com.hub.media.features.portability.domain.ImportDataUseCase] according to the chosen duplicate
  * policy (REPLACE overwrites every field this importer manages; MERGE only backfills fields the
@@ -35,7 +35,7 @@ public data class ImportBookInsert(
  *   first (MERGE policy: [identifiers] here is pre-filtered by the use case to only providers the
  *   book didn't already have, so merge can never overwrite an existing provider mapping).
  */
-public data class ImportBookUpdate(
+public data class ImportMediaUpdate(
     public val mediaItem: MediaItemEntity,
     public val details: BookDetailsEntity,
     public val identifiers: List<ExternalIdentifierEntity>,
@@ -121,8 +121,8 @@ public interface ImportWriteDao {
      */
     @Transaction
     public suspend fun importAtomically(
-        bookInserts: List<ImportBookInsert>,
-        bookUpdates: List<ImportBookUpdate>,
+        bookInserts: List<ImportMediaInsert>,
+        bookUpdates: List<ImportMediaUpdate>,
         sessionInserts: List<ReadingSessionEntity>,
         sessionUpdates: List<ReadingSessionEntity>,
     ) {

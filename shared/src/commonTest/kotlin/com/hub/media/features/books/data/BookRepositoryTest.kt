@@ -3,6 +3,7 @@ package com.hub.media.features.books.data
 import androidx.room.execSQL
 import androidx.room.useWriterConnection
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
@@ -33,11 +34,13 @@ import kotlin.time.Instant
 class BookRepositoryTest {
     private lateinit var db: AppDatabase
     private lateinit var repo: BookRepository
+    private lateinit var mediaRepo: MediaRepository
 
     @BeforeTest
     fun setUp() {
         db = testAppDatabase()
         repo = BookRepository(db)
+        mediaRepo = MediaRepository(db)
     }
 
     @AfterTest
@@ -211,11 +214,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<String>>(result)
             val mediaId = result.data
 
-            val observed = repo.observeBook(mediaId).first()
+            val observed = mediaRepo.observeMediaItem(mediaId).first()
             assertEquals("Observed Book", observed?.title)
 
-            repo.deleteBook(mediaId)
-            val afterDelete = repo.observeBook(mediaId).first { it == null }
+            mediaRepo.deleteMediaItem(mediaId)
+            val afterDelete = mediaRepo.observeMediaItem(mediaId).first { it == null }
             assertEquals(null, afterDelete)
         }
 
@@ -249,7 +252,7 @@ class BookRepositoryTest {
             db.bookDetailsDao().insert(bookDetails)
             db.externalIdentifierDao().insert(externalId)
 
-            val result = repo.deleteBook(mediaId)
+            val result = mediaRepo.deleteMediaItem(mediaId)
             assertIs<Resource.Success<Unit>>(result)
 
             // Verify cascade delete removed all rows
@@ -275,8 +278,8 @@ class BookRepositoryTest {
             val mediaId = result.data
 
             val detail = repo.observeBookDetail(mediaId).first { it != null }
-            assertEquals("Project Hail Mary", detail?.mediaItem?.title)
-            assertEquals(2021, detail?.mediaItem?.releaseYear)
+            assertEquals("Project Hail Mary", detail?.item?.title)
+            assertEquals(2021, detail?.item?.releaseYear)
             assertEquals(mediaId, detail?.details?.mediaId)
             assertEquals("9780593135204", detail?.details?.isbn)
             assertEquals(496, detail?.details?.totalPages)
@@ -291,7 +294,7 @@ class BookRepositoryTest {
 
             repo.observeBookDetail(mediaId).first { it != null }
 
-            repo.deleteBook(mediaId)
+            mediaRepo.deleteMediaItem(mediaId)
 
             val afterDelete = repo.observeBookDetail(mediaId).first { it == null }
             assertEquals(null, afterDelete)
@@ -308,7 +311,7 @@ class BookRepositoryTest {
             db.mediaItemDao().insert(sampleMediaItem(id = mediaId, type = MediaType.BOOK, title = "Orphan Media Item"))
 
             val detail = repo.observeBookDetail(mediaId).first { it != null }
-            assertEquals("Orphan Media Item", detail?.mediaItem?.title)
+            assertEquals("Orphan Media Item", detail?.item?.title)
             assertEquals(null, detail?.details)
         }
 
@@ -355,9 +358,9 @@ class BookRepositoryTest {
 
             val detail =
                 repo.observeBookDetail(mediaId).first {
-                    it?.mediaItem?.title == "Corrected Title"
+                    it?.item?.title == "Corrected Title"
                 }
-            assertEquals(2020, detail?.mediaItem?.releaseYear)
+            assertEquals(2020, detail?.item?.releaseYear)
             assertEquals(366, detail?.details?.totalPages)
             assertEquals(BookFormat.HARDCOVER, detail?.details?.format)
         }
@@ -977,7 +980,7 @@ class BookRepositoryTest {
             val all = repo.getAllBooksWithDetails()
 
             assertEquals(2, all.size)
-            val ids = all.map { it.mediaItem.id }.toSet()
+            val ids = all.map { it.item.id }.toSet()
             assertTrue(ids.contains(first.data))
             assertTrue(ids.contains(second.data))
             assertTrue(all.all { it.details != null })
@@ -997,7 +1000,7 @@ class BookRepositoryTest {
             val all = repo.getAllBooksWithDetails()
 
             assertEquals(3, all.size)
-            val titles = all.map { it.mediaItem.title }
+            val titles = all.map { it.item.title }
             assertEquals(listOf("Alpha", "Beta", "Zebra"), titles)
         }
 
@@ -1018,8 +1021,8 @@ class BookRepositoryTest {
 
             assertEquals(1, all.size)
             val bookWithDetails = all.single()
-            assertEquals(mediaId, bookWithDetails.mediaItem.id)
-            assertEquals("Book Without Details", bookWithDetails.mediaItem.title)
+            assertEquals(mediaId, bookWithDetails.item.id)
+            assertEquals("Book Without Details", bookWithDetails.item.title)
             assertEquals(null, bookWithDetails.details)
         }
 }

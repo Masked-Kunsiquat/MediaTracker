@@ -1,18 +1,20 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BookIngestionUseCase
-import com.hub.media.features.books.domain.FakeSearchBooksUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
-import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.books.network.BookSearchProvider
-import com.hub.media.features.books.network.BookSearchResult
 import com.hub.media.features.books.network.FakeBookSearchProvider
+import com.hub.media.features.media.domain.FakeSearchMediaUseCase
+import com.hub.media.features.media.domain.SearchMediaUseCase
+import com.hub.media.features.media.network.MediaSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -55,13 +57,13 @@ class AddBookViewModelTest {
 
     private fun newViewModelWithSearch(
         useCase: BookIngestionUseCase,
-        searchUseCase: SearchBooksUseCase,
+        searchMediaUseCase: SearchMediaUseCase,
         searchProvider: BookSearchProvider,
         resolveWorkToEditionsUseCase: ResolveWorkToEditionsUseCase? = null,
     ) = viewModels.track(
         AddBookViewModel(
             addBookByIsbnUseCase = useCase,
-            searchBooksUseCase = searchUseCase,
+            searchMediaUseCase = searchMediaUseCase,
             searchProvider = searchProvider,
             resolveWorkToEditionsUseCase = resolveWorkToEditionsUseCase,
         ),
@@ -162,7 +164,7 @@ class AddBookViewModelTest {
     fun initialSearchState_isIdle() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -175,7 +177,7 @@ class AddBookViewModelTest {
     fun search_queryTooShort_returnsEmptyWithoutHittingProvider() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase(minLengthIsEnough = false)
+            val searchFake = FakeSearchMediaUseCase(minLengthIsEnough = false)
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -191,7 +193,7 @@ class AddBookViewModelTest {
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
             val result = bookSearchResult("The Hobbit")
-            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -207,7 +209,7 @@ class AddBookViewModelTest {
     fun search_emptyResults_setsNoResultsState() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase(results = emptyList())
+            val searchFake = FakeSearchMediaUseCase(results = emptyList<MediaSearchResult>())
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -223,7 +225,7 @@ class AddBookViewModelTest {
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
             val searchFake =
-                FakeSearchBooksUseCase(error = Resource.Error("Network error"))
+                FakeSearchMediaUseCase(error = Resource.Error("Network error"))
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -241,24 +243,28 @@ class AddBookViewModelTest {
     fun search_newQueryCancelsPrevious() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase(delay = 100)
+            val searchFake = FakeSearchMediaUseCase(delay = 1000)
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
             viewModel.search("hob")
-            viewModel.search("hobbit") // Cancel the first, start the second
+            // Pass the 300ms debounce; searchFake.execute("hob") starts and suspends on delay(1000)
+            advanceTimeBy(400)
+            assertEquals(1, searchFake.executeCallCount)
 
+            viewModel.search("hobbit") // Cancel the first, start the second
             advanceUntilIdle()
 
-            // The first search (with delay) is cancelled; only the second call counts
-            assertEquals(1, searchFake.executeCallCount)
+            // Both were started (execute() reached its increment), matching AGENTS.md §7's
+            // requirement to exercise the cancellation.
+            assertEquals(2, searchFake.executeCallCount)
         }
 
     @Test
     fun search_queryUpdate_recorded() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -272,7 +278,7 @@ class AddBookViewModelTest {
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
             val result = bookSearchResult("The Hobbit")
-            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -296,7 +302,7 @@ class AddBookViewModelTest {
                     coverEditionKey = null,
                 )
             val addFake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider()
             val resolveUseCase = ResolveWorkToEditionsUseCase(providerFake)
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake, resolveUseCase)
@@ -317,7 +323,7 @@ class AddBookViewModelTest {
     fun selectEdition_initiatesIngestion() =
         runTest {
             val addFake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
@@ -346,7 +352,7 @@ class AddBookViewModelTest {
         runTest {
             val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val addFake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
-            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider(isbn = "9780547928227")
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
@@ -378,7 +384,7 @@ class AddBookViewModelTest {
     fun selectSearchResult_noEditionKey_setsError() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -398,7 +404,7 @@ class AddBookViewModelTest {
         runTest {
             val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(result))
             val providerFake =
                 FakeBookSearchProvider(error = Resource.Error("Open Library failed"))
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
@@ -427,7 +433,7 @@ class AddBookViewModelTest {
         runTest {
             val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase(results = listOf(result))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(result))
             val providerFake = FakeBookSearchProvider(isbn = null)
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -454,7 +460,7 @@ class AddBookViewModelTest {
                 FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
                     awaitGate = true
                 }
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider(isbn = "9780547928227")
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
@@ -478,7 +484,7 @@ class AddBookViewModelTest {
                 FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
                     awaitGate = true
                 }
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
@@ -497,7 +503,7 @@ class AddBookViewModelTest {
     fun search_afterAddFailure_clearsErrorAndProceeds() =
         runTest {
             val addFake = FakeAddBookByIsbnUseCase(result = Resource.Error("Add failed"))
-            val searchFake = FakeSearchBooksUseCase(results = listOf(bookSearchResult("Found")))
+            val searchFake = FakeSearchMediaUseCase(results = listOf(bookSearchResult("Found")))
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
@@ -518,7 +524,7 @@ class AddBookViewModelTest {
     fun cancelSelection_clearsConfirmationResult() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
-            val searchFake = FakeSearchBooksUseCase()
+            val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
@@ -534,8 +540,9 @@ class AddBookViewModelTest {
         fun bookSearchResult(
             title: String,
             editionKey: String = "OL51711263M",
-        ) = BookSearchResult(
+        ) = MediaSearchResult(
             title = title,
+            type = MediaType.BOOK,
             provider = IdentifierProvider.OPEN_LIBRARY,
             coverEditionKey = editionKey,
         )

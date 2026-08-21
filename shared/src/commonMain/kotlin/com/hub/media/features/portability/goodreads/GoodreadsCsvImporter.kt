@@ -2,6 +2,7 @@ package com.hub.media.features.portability.goodreads
 
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.entities.joinAuthors
@@ -211,6 +212,7 @@ public object GoodreadsCsvImporter {
 
         return ParsedLibraryRow(
             mediaId = newId(),
+            type = MediaType.BOOK,
             title = title,
             authors = authors,
             releaseYear = releaseYear,

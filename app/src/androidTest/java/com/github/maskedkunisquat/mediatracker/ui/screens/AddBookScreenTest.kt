@@ -20,8 +20,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.books.network.BookEditionSearchResult
-import com.hub.media.features.books.network.BookSearchResult
+import com.hub.media.features.media.network.MediaSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddSearchState
 import org.junit.Assert.assertEquals
@@ -42,7 +43,8 @@ class AddBookScreenTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     private val olSampleResult =
-        BookSearchResult(
+        MediaSearchResult(
+            type = MediaType.BOOK,
             title = "The Hobbit",
             authors = listOf("J.R.R. Tolkien"),
             provider = IdentifierProvider.OPEN_LIBRARY,
@@ -50,7 +52,8 @@ class AddBookScreenTest {
         )
 
     private val genericSampleResult =
-        BookSearchResult(
+        MediaSearchResult(
+            type = MediaType.BOOK,
             title = "Generic Book",
             authors = listOf("Some Author"),
             provider = IdentifierProvider.ISBN, // Or any non-OL provider if we had one
@@ -63,13 +66,13 @@ class AddBookScreenTest {
     private fun setContent(
         uiState: AddBookUiState = AddBookUiState.Idle,
         searchQuery: String = "",
-        searchResults: List<BookSearchResult> = emptyList(),
+        searchResults: List<MediaSearchResult> = emptyList(),
         searchState: AddSearchState = AddSearchState.Idle,
-        confirmationResult: BookSearchResult? = null,
+        confirmationResult: MediaSearchResult? = null,
         editions: List<BookEditionSearchResult> = emptyList(),
         onSubmitIsbn: (String) -> Unit = {},
         onSearchQueryChange: (String) -> Unit = {},
-        onSelectSearchResult: (BookSearchResult) -> Unit = {},
+        onSelectSearchResult: (MediaSearchResult) -> Unit = {},
         onConfirmSelection: () -> Unit = {},
         onCancelSelection: () -> Unit = {},
         onSelectEdition: (BookEditionSearchResult) -> Unit = {},
@@ -111,7 +114,7 @@ class AddBookScreenTest {
 
     @Test
     fun tappingASearchResult_invokesSelectSearchResult() {
-        var selected: BookSearchResult? = null
+        var selected: MediaSearchResult? = null
         setContent(
             searchQuery = "hobbit",
             searchResults = listOf(olSampleResult),

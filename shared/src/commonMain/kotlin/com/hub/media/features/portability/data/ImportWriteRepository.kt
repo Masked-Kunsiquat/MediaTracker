@@ -1,8 +1,8 @@
 package com.hub.media.features.portability.data
 
 import com.hub.media.core.database.AppDatabase
-import com.hub.media.core.database.dao.ImportBookInsert
-import com.hub.media.core.database.dao.ImportBookUpdate
+import com.hub.media.core.database.dao.ImportMediaInsert
+import com.hub.media.core.database.dao.ImportMediaUpdate
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -35,8 +35,8 @@ public class ImportWriteRepository(
      *   throws itself).
      */
     public suspend fun importAtomically(
-        bookInserts: List<ImportBookInsert>,
-        bookUpdates: List<ImportBookUpdate>,
+        bookInserts: List<ImportMediaInsert>,
+        bookUpdates: List<ImportMediaUpdate>,
         sessionInserts: List<ReadingSessionEntity>,
         sessionUpdates: List<ReadingSessionEntity>,
     ): Resource<Unit> =

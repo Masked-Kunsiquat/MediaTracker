@@ -1,0 +1,23 @@
+{
+  "skill_name": "mediatracker-architecture-standards",
+  "evals": [
+    {
+      "id": 0,
+      "name": "new-media-type-modeling",
+      "prompt": "I want to add a Movie entity to the project. How should I define the table and its primary key?",
+      "expected_output": "The response should mandate a UUID string for the primary key and recommend a polymorphic schema: universal metadata in MediaItems and movie-specific fields in a MovieDetails table. Names must be used precisely: 'MediaItemEntity.id' is the universal primary key, a details table's own primary key and foreign key back to it is 'mediaId' (as on BookDetailsEntity), and 'media_id' is the external CSV column. 'mediaId' is the details-table key, not the universal Room property."
+    },
+    {
+      "id": 1,
+      "name": "image-storage-protocol",
+      "prompt": "Write a Kotlin function for the shared module to download and save a movie poster from a URL.",
+      "expected_output": "The implementation must compute a SHA-256 hash of the image bytes, save the file as <hash>.jpg, and deduplicate by checking if the file already exists before writing."
+    },
+    {
+      "id": 2,
+      "name": "ktor-user-agent-enforcement",
+      "prompt": "Show me how to initialize a Ktor HttpClient for a new TMDB service in the shared module.",
+      "expected_output": "The setup must include installing the UserAgent plugin using the project's USER_AGENT constant from HttpClientFactory.kt."
+    }
+  ]
+}

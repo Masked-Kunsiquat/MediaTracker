@@ -1,12 +1,15 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.storage.cleanupTestTempDir
+import com.hub.media.core.storage.createTestTempDir
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
@@ -17,6 +20,8 @@ import com.hub.media.features.books.network.BookMetadata
 import com.hub.media.features.books.network.BookMetadataProvider
 import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.books.timer.ReadingTimerState
+import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.media.domain.DeleteMediaUseCase
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
@@ -25,6 +30,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
@@ -67,20 +73,26 @@ class BookDetailViewModelTest {
     }
 
     private lateinit var db: AppDatabase
+    private lateinit var mediaRepository: MediaRepository
     private lateinit var bookRepository: BookRepository
     private lateinit var sessionRepository: ReadingSessionRepository
     private lateinit var useCase: LogReadingSessionUseCase
     private lateinit var refetchCoverUseCase: RefetchCoverUseCase
+    private lateinit var deleteMediaUseCase: BulkDeleteUseCase
     private lateinit var mediaId: String
+    private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
 
     @BeforeTest
     fun setUp() {
         viewModels.installMain()
         db = testAppDatabase()
+        mediaRepository = MediaRepository(db)
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
         useCase = LogReadingSessionUseCase(sessionRepository)
+        tempDir = runBlocking { createTestTempDir() }
+        deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir))
         // One test in this file exercises refetchCover() on the error path
         // (see refetchCover_useCaseError_setsErrorMessageAndClearsInFlightFlag) -- this wiring
         // must support that. Detailed use-case-level coverage (happy path, no-ISBN, provider
@@ -97,8 +109,9 @@ class BookDetailViewModelTest {
                     CoverImageDownloader(
                         createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) }),
                     ),
-                imageStorage = LocalImageStorageManager("unused"),
+                imageStorage = LocalImageStorageManager(tempDir),
                 bookRepository = bookRepository,
+                mediaRepository = mediaRepository,
             )
         mediaId = newId()
     }
@@ -110,6 +123,7 @@ class BookDetailViewModelTest {
         // KDoc for why this order matters.
         viewModels.clearAll()
         db.close()
+        runBlocking { cleanupTestTempDir(tempDir) }
         Dispatchers.resetMain()
     }
 
@@ -170,10 +184,12 @@ class BookDetailViewModelTest {
         viewModels.track(
             BookDetailViewModel(
                 bookId = id,
+                mediaRepository = mediaRepository,
                 bookRepository = bookRepository,
                 readingSessionRepository = sessionRepository,
                 logReadingSessionUseCase = useCase,
                 refetchCoverUseCase = refetchCoverUseCase,
+                deleteMediaUseCase = deleteMediaUseCase,
             ),
         )
 

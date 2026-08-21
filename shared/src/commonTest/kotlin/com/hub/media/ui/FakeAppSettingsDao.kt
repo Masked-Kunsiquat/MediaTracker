@@ -31,4 +31,9 @@ internal class FakeAppSettingsDao : AppSettingsDao {
     override suspend fun deleteByKey(key: String) {
         flowFor(key).value = null
     }
+
+    override suspend fun deleteAll() {
+        rows.values.forEach { it.value = null }
+        rows.clear()
+    }
 }

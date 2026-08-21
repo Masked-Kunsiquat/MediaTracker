@@ -18,8 +18,8 @@ import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
 
 /**
- * Factory for creating [LibraryViewModel] with its [com.hub.media.features.books.data.BookRepository]
- * dependency from the [AppContainer].
+ * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
+ * and bulk-delete dependencies from the [AppContainer].
  */
 class LibraryViewModelFactory(
     private val appContainer: AppContainer,
@@ -28,7 +28,10 @@ class LibraryViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         when {
             modelClass.isAssignableFrom(LibraryViewModel::class.java) -> {
-                LibraryViewModel(appContainer.bookRepository, appContainer.deleteBooksUseCase) as T
+                LibraryViewModel(
+                    mediaRepository = appContainer.mediaRepository,
+                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
+                ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
         }
@@ -37,7 +40,7 @@ class LibraryViewModelFactory(
 /**
  * Factory for creating [AddBookViewModel] with its dependencies from the [AppContainer]:
  * [com.hub.media.features.books.domain.AddBookByIsbnUseCase] (primary add flow),
- * [com.hub.media.features.books.domain.SearchBooksUseCase] (title/author type-ahead),
+ * [com.hub.media.features.media.domain.SearchMediaUseCase] (title/author type-ahead),
  * and [com.hub.media.features.books.network.BookSearchProvider] (edition-to-ISBN resolution).
  */
 class AddBookViewModelFactory(
@@ -49,7 +52,7 @@ class AddBookViewModelFactory(
             modelClass.isAssignableFrom(AddBookViewModel::class.java) -> {
                 AddBookViewModel(
                     addBookByIsbnUseCase = appContainer.addBookByIsbnUseCase,
-                    searchBooksUseCase = appContainer.searchBooksUseCase,
+                    searchMediaUseCase = appContainer.searchMediaUseCase,
                     searchProvider = appContainer.searchProvider,
                     resolveWorkToEditionsUseCase = appContainer.resolveWorkToEditionsUseCase,
                 ) as T
@@ -75,10 +78,12 @@ class BookDetailViewModelFactory(
             modelClass.isAssignableFrom(BookDetailViewModel::class.java) -> {
                 BookDetailViewModel(
                     bookId = bookId,
+                    mediaRepository = appContainer.mediaRepository,
                     bookRepository = appContainer.bookRepository,
                     readingSessionRepository = appContainer.readingSessionRepository,
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,
                     refetchCoverUseCase = appContainer.refetchCoverUseCase,
+                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")

@@ -64,7 +64,7 @@ import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
-import com.hub.media.features.books.data.BookWithDetails
+import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.LibraryUiState
 import com.hub.media.ui.LibraryViewModel
@@ -78,19 +78,16 @@ import kotlin.time.Instant
  * @param appContainer The dependency container for creating ViewModels.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Callback to navigate to the add-book screen.
- * @param onNavigateToBookDetail Callback invoked with a book's id when its card is tapped, to
- *   navigate to the book detail screen (Task4 Phase C).
- * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C),
- *   wired to the TopAppBar's stats icon.
- * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase
- *   B), wired to the TopAppBar's settings icon.
+ * @param onNavigateToMediaDetail Callback invoked with a media item's id when its card is tapped.
+ * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
+ * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase B).
  */
 @Composable
 fun LibraryScreenRoute(
     appContainer: AppContainer,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
-    onNavigateToBookDetail: (String) -> Unit,
+    onNavigateToMediaDetail: (String) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
@@ -104,7 +101,7 @@ fun LibraryScreenRoute(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
         onNavigateToAddBook = onNavigateToAddBook,
-        onBookClick = onNavigateToBookDetail,
+        onMediaClick = onNavigateToMediaDetail,
         onNavigateToStats = onNavigateToStats,
         onNavigateToSettings = onNavigateToSettings,
         onStatusFilterChange = viewModel::setStatusFilter,
@@ -119,26 +116,16 @@ fun LibraryScreenRoute(
 /**
  * Stateless library screen composable (AGENTS.md §5 State Hoisting).
  *
- * Displays a list of all books in the library, or an empty-state message if the library
- * is empty. Each book is rendered as a card with cover thumbnail, title, and release year.
- * A FloatingActionButton navigates to the add-book screen. Tapping a card opens the book
- * detail screen, which is also where deletion now lives (Task4 Phase E) -- see
- * `BookDetailScreen`'s delete icon and confirmation dialog.
+ * Displays a list of all media items in the library. Consolidated from book-only version per Issue #67.
  *
- * @param uiState [LibraryUiState] containing the list of books, status filter, and isEmpty flag.
+ * @param uiState [LibraryUiState] containing the list of media, status filter, and isEmpty flag.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Called when the FAB is pressed.
- * @param onBookClick Called with the book ID when a card is tapped, to open the book detail
- *   screen.
- * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped, to open the stats
- *   screen (ROADMAP Task 5 Phase C).
- * @param onNavigateToSettings Called when the TopAppBar's settings icon is tapped, to open the
- *   Settings screen (ROADMAP Task 7 Phase B).
- * @param onStatusFilterChange Called with the newly selected filter (`null` for "All") when a
- *   filter chip is tapped (ROADMAP Task 6 Phase C).
- * @param onSearchQueryChange Called with the new search text on every edit of the search field
- *   (ROADMAP Task 9 Phase A) — filters [uiState.filteredBooks] by title or author, composing with
- *   [onStatusFilterChange]'s filter as an intersection (see [LibraryUiState.filteredBooks]'s KDoc).
+ * @param onMediaClick Called with the media ID when a card is tapped.
+ * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped.
+ * @param onNavigateToSettings Called when the TopAppBar's settings icon is tapped.
+ * @param onStatusFilterChange Called with the newly selected filter (`null` for "All").
+ * @param onSearchQueryChange Called with the new search text — filters [uiState.filteredMedia].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,7 +133,7 @@ fun LibraryScreen(
     uiState: LibraryUiState,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
-    onBookClick: (String) -> Unit,
+    onMediaClick: (String) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onStatusFilterChange: (ReadingStatus?) -> Unit,
@@ -207,7 +194,7 @@ fun LibraryScreen(
     ) { innerPadding ->
         if (showBulkDeleteConfirmation) {
             BulkDeleteConfirmationDialog(
-                titles = uiState.selectedBooks.map { it.mediaItem.title },
+                titles = uiState.selectedMedia.map { it.item.title },
                 onConfirm = {
                     showBulkDeleteConfirmation = false
                     onDeleteSelected()
@@ -232,11 +219,11 @@ fun LibraryScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = "Your library is empty",
+                        text = stringResource(R.string.library_empty_title),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(
-                        text = "Add your first book to get started",
+                        text = stringResource(R.string.library_empty_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
@@ -251,8 +238,8 @@ fun LibraryScreen(
                         selected = uiState.statusFilter,
                         onSelectedChange = onStatusFilterChange,
                     )
-                    val filteredBooks = uiState.filteredBooks
-                    if (filteredBooks.isEmpty()) {
+                    val filteredMedia = uiState.filteredMedia
+                    if (filteredMedia.isEmpty()) {
                         // The status filter and/or search query narrowed the (non-empty) library
                         // down to nothing -- distinct from the whole-library-empty case above
                         // (uiState.isEmpty). One shared message covers both filters (and their
@@ -280,16 +267,16 @@ fun LibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(
-                                filteredBooks,
-                                key = { it.mediaItem.id },
-                            ) { book ->
-                                BookCard(
-                                    book = book,
+                                filteredMedia,
+                                key = { it.item.id },
+                            ) { media ->
+                                MediaCard(
+                                    media = media,
                                     coverStorageDir = coverStorageDir,
-                                    onClick = { onBookClick(book.mediaItem.id) },
+                                    onClick = { onMediaClick(media.item.id) },
                                     selectionMode = uiState.isSelectionMode,
-                                    selected = book.mediaItem.id in uiState.selectedIds,
-                                    onToggleSelection = { onToggleSelection(book.mediaItem.id) },
+                                    selected = media.item.id in uiState.selectedIds,
+                                    onToggleSelection = { onToggleSelection(media.item.id) },
                                 )
                             }
                         }
@@ -302,34 +289,15 @@ fun LibraryScreen(
 
 /**
  * Local library search field (ROADMAP Task 9 Phase A): a plain [OutlinedTextField] filtering
- * [uiState.filteredBooks][LibraryUiState.filteredBooks] by title or author as the user types --
- * see that property's KDoc for the exact match rule and how it composes with [StatusFilterRow].
- * No debounce/minimum-length gate here (unlike the *external*-provider type-ahead search elsewhere
- * in ROADMAP Task 9): this filters an already-in-memory list with no network/DB round-trip per
- * keystroke, so there is nothing expensive to throttle.
- *
- * A trailing clear [IconButton] appears only once [query] is non-empty, mirroring the standard
- * Material search-field affordance.
- */
-/**
- * The contextual app bar shown while a selection is active (ROADMAP Task 14 Phase B).
- *
- * The count is the whole selection, not just the part the current filter happens to show. Scoping
- * it to the visible subset made the number change as filters changed, which read as the selection
- * being silently lost -- see [com.hub.media.ui.LibraryUiState.selectedBooks].
+ * [uiState.filteredMedia][LibraryUiState.filteredMedia] by title or creator as the user types.
  */
 
 /**
- * Confirmation for a bulk delete (ROADMAP Task 14 Phase B), naming the books it will remove.
- *
- * Listing them is what makes deleting the *whole* selection safe rather than alarming. A filter can
- * hide a selected book, so a count alone would ask the user to confirm removing things they cannot
- * currently see; the titles put them back in front of you at the moment it matters. That is also
- * why the list is not capped at some small number without saying so -- a silent truncation would
- * recreate exactly the problem it exists to solve.
- *
- * Long selections stay usable by scrolling rather than by hiding: [MAX_LISTED_TITLES] are named and
- * any remainder is stated explicitly as a count.
+ * The contextual app bar shown while a selection is active (ROADMAP Task 14 Phase B).
+ */
+
+/**
+ * Confirmation for a bulk delete (ROADMAP Task 14 Phase B), naming the items it will remove.
  */
 @Composable
 private fun BulkDeleteConfirmationDialog(
@@ -455,11 +423,7 @@ private fun LibrarySearchField(
 }
 
 /**
- * Status filter row (ROADMAP Task 6 Phase C): a scrollable row of Material 3 [FilterChip]s --
- * "All" plus one chip per [ReadingStatus] -- chosen over a dropdown since the option count is
- * small (five total) and fixed, so every option can stay visible and one-tap-selectable without
- * an extra open/close step a dropdown would add; [FilterChip]'s built-in selected/unselected
- * visual state also needs no extra styling to show which filter is active.
+ * Status filter row (ROADMAP Task 6 Phase C).
  */
 @Composable
 private fun StatusFilterRow(
@@ -491,29 +455,20 @@ private fun StatusFilterRow(
 }
 
 /**
- * A card displaying a single book.
- * Shows the cover thumbnail (left), title (top), and release year (bottom).
- * Tapping anywhere on the row calls [onClick] to open the book detail screen (where single-book
- * deletion lives -- Task4 Phase E).
- *
- * ### Selection (ROADMAP Task 14 Phase B)
- * Long-press enters selection mode. While [selectionMode] is active a plain tap toggles selection
- * instead of navigating -- deliberately, because a mode where tapping still opened a book would
- * make selecting several in a row an exercise in precision, and because navigating away mid
- * selection is almost never what was meant. Long-press keeps working while selecting, so the
- * gesture that started the mode is not suddenly inert.
+ * A card displaying a single media item.
+ * Consolidated from `BookCard` per Issue #67.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun BookCard(
-    book: BookWithDetails,
+private fun MediaCard(
+    media: MediaWithDetails,
     coverStorageDir: String,
     onClick: () -> Unit,
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onToggleSelection: () -> Unit = {},
 ) {
-    val mediaItem = book.mediaItem
+    val mediaItem = media.item
     Row(
         modifier =
             Modifier
@@ -528,11 +483,6 @@ private fun BookCard(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // Cover image (thumbnail). Width is bounded by fillMaxWidth(0.2f); height was previously
-        // unconstrained, so a cover's actual pixel aspect dictated row height and rows went
-        // ragged. aspectRatio(BOOK_COVER_ASPECT_RATIO) now pins every cover to the same 2:3
-        // footprint -- Crop is kept (not Fit) since a uniform card-grid look is the goal here,
-        // unlike the detail screen header (see BookHeader) where nothing should be cropped.
         Box(
             modifier =
                 Modifier
@@ -547,7 +497,7 @@ private fun BookCard(
             )
         }
 
-        // Book info (title, year, status)
+        // Media info (title, creator, year, status)
         Column(
             modifier =
                 Modifier
@@ -561,14 +511,17 @@ private fun BookCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            val authors = book.details?.authors
-            if (!authors.isNullOrBlank()) {
-                // Degrades cleanly when absent (ROADMAP Task 9 Phase A): most pre-existing books
-                // have no author on record yet (schema v5's MIGRATION_4_5 backfills NULL, honestly,
-                // rather than fabricating one) -- this row is simply omitted rather than showing a
-                // placeholder, the same pattern releaseYear/status already use below.
+
+            val creator =
+                when (media) {
+                    is MediaWithDetails.Book -> media.details?.authors
+                    is MediaWithDetails.Movie,
+                    is MediaWithDetails.TVShow,
+                    -> null
+                }
+            if (!creator.isNullOrBlank()) {
                 Text(
-                    text = authors,
+                    text = creator,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -576,13 +529,24 @@ private fun BookCard(
                 )
             }
             if (mediaItem.releaseYear != null) {
+                val label =
+                    when (mediaItem.type) {
+                        MediaType.BOOK -> stringResource(R.string.library_released_label)
+                        MediaType.MOVIE, MediaType.TV_SHOW -> stringResource(R.string.library_year_label)
+                    }
                 Text(
-                    text = "Released: ${mediaItem.releaseYear}",
+                    text = "$label${mediaItem.releaseYear}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            val status = book.details?.status
+            val status =
+                when (media) {
+                    is MediaWithDetails.Book -> media.details?.status
+                    is MediaWithDetails.Movie,
+                    is MediaWithDetails.TVShow,
+                    -> null
+                }
             if (status != null) {
                 Text(
                     text = stringResource(R.string.status_prefix, status.displayLabel()),
@@ -605,10 +569,10 @@ private fun LibraryScreenPreview() {
         LibraryScreen(
             uiState =
                 LibraryUiState(
-                    books =
+                    media =
                         listOf(
-                            BookWithDetails(
-                                mediaItem =
+                            MediaWithDetails.Book(
+                                item =
                                     MediaItemEntity(
                                         id = "1",
                                         type = MediaType.BOOK,
@@ -620,8 +584,8 @@ private fun LibraryScreenPreview() {
                                     ),
                                 details = null,
                             ),
-                            BookWithDetails(
-                                mediaItem =
+                            MediaWithDetails.Book(
+                                item =
                                     MediaItemEntity(
                                         id = "2",
                                         type = MediaType.BOOK,
@@ -638,7 +602,7 @@ private fun LibraryScreenPreview() {
                 ),
             coverStorageDir = "/fake/path",
             onNavigateToAddBook = {},
-            onBookClick = {},
+            onMediaClick = {},
             onNavigateToStats = {},
             onNavigateToSettings = {},
             onStatusFilterChange = {},

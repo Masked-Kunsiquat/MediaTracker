@@ -1,14 +1,13 @@
 package com.hub.media.features.portability.csv
 
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
-import com.hub.media.features.books.data.BookWithDetails
+import com.hub.media.features.media.data.MediaWithDetails
 
 /**
  * Produces `library_export.csv` (ROADMAP Task 8 Phase A / vision doc §"Data Portability"): one row
- * per [BookWithDetails], carrying every [com.hub.media.core.database.entities.MediaItemEntity] and
- * [com.hub.media.core.database.entities.BookDetailsEntity] column plus that book's
- * [ExternalIdentifierEntity] rows, so the file round-trips everything the schema holds for a book
- * (AGENTS.md §7 "round-trip completeness is the bar" per this phase's task brief).
+ * per [MediaWithDetails.Book], carrying every [com.hub.media.core.database.entities.MediaItemEntity] and
+ * [com.hub.media.core.database.entities.BookDetailsEntity] column plus that item's
+ * [ExternalIdentifierEntity] rows. Consolidated and generalized per Issue #67.
  *
  * Pure Kotlin/KMP-clean (no Android APIs) -- the app module is responsible for writing the
  * returned [String] to a file (SAF `ACTION_CREATE_DOCUMENT`), this object only ever produces text.
@@ -20,34 +19,20 @@ import com.hub.media.features.books.data.BookWithDetails
  *    (matches how [com.hub.media.core.database.converters.Converters] persists it).
  * 4. `title`
  * 5. `authors` (schema v5 / CSV `v2`, ROADMAP Task 9 Phase A) --
- *    [com.hub.media.core.database.entities.BookDetailsEntity.authors]'s stored form verbatim
- *    (already `"; "`-joined -- see that property's KDoc), empty when null or when
- *    [BookWithDetails.details] is null. Placed right after `title` rather than appended at the end,
- *    since author is the natural next fact about a book after its title, unlike the other v5
- *    additions.
+ *    [com.hub.media.core.database.entities.BookDetailsEntity.authors]'s stored form verbatim,
+ *    empty when null or when details are null.
  * 6. `release_year` -- empty when null.
  * 7. `purchase_price` -- empty when null.
- * 8. `created_at` -- ISO-8601 UTC (`kotlin.time.Instant.toString()`), never a locale-dependent
- *    format.
+ * 8. `created_at` -- ISO-8601 UTC.
  * 9. `cover_image_hash` -- empty when null (no cover downloaded).
- * 10. `isbn` -- empty when null, or when this book has no [BookWithDetails.details] row at all
- *    (the data-integrity edge case documented on
- *    [com.hub.media.features.books.data.BookRepository.observeBookDetail]).
- * 11. `format` -- by enum name; empty when [BookWithDetails.details] is null.
+ * 10. `isbn` -- empty when null, or when this book has no details row at all.
+ * 11. `format` -- by enum name; empty when details are null.
  * 12. `total_pages` -- empty when null.
- * 13. `status` -- by enum name; empty when [BookWithDetails.details] is null.
+ * 13. `status` -- by enum name; empty when details are null.
  * 14. `finished_at` -- ISO-8601 UTC; empty when null.
- * 15. `tracking_mode` -- by enum name; empty when [BookWithDetails.details] is null.
- * 16. `external_identifiers` -- every [ExternalIdentifierEntity] for this book packed into one
- *     field as `PROVIDER:externalId` pairs joined by `|` (e.g. `ISBN:9780143127796|OPEN_LIBRARY:
- *     OL123M`), empty when there are none. A book has at most a handful of these (one per
- *     provider, per AGENTS.md §3.3's composite-key model), so packing into a single field avoids
- *     either a variable-width column set or a second joined file for what is, in practice, 0-2
- *     rows per book today. The whole packed field still passes through
- *     [CsvUtil.escapeField] like any other, so a provider id that happened to contain a comma or
- *     quote would still be safely quoted -- only the `:`/`|` separators are assumed identifier-safe
- *     (true of every provider id this app currently produces: ISBN digits, Open Library `OL...`
- *     keys, Google Books volume ids).
+ * 15. `tracking_mode` -- by enum name; empty when details are null.
+ * 16. `external_identifiers` -- every [ExternalIdentifierEntity] for this item packed into one
+ *     field as `PROVIDER:externalId` pairs joined by `|`.
  */
 public object LibraryCsvExporter {
     /** Header row, in column order -- see class KDoc for what each column holds. */
@@ -72,13 +57,7 @@ public object LibraryCsvExporter {
         )
 
     /**
-     * The `csv_schema_version=1` header shape (ROADMAP Task 9 Phase A) -- every column [HEADER]
-     * has today, minus `authors` (which didn't exist yet). Never written by [export] (which always
-     * writes the current [HEADER]/`v2` shape) -- kept only so
-     * [com.hub.media.features.portability.domain.ImportDataUseCase] can register it as a
-     * [CsvTableReader] legacy header, letting a genuine pre-Task-9 export still import cleanly. See
-     * [LibraryCsvImporter.padLegacyV1Row] for the adapter that bridges a matched `v1` row into the
-     * current row shape.
+     * The `csv_schema_version=1` header shape (ROADMAP Task 9 Phase A).
      */
     public val HEADER_V1: List<String> =
         listOf(
@@ -100,48 +79,113 @@ public object LibraryCsvExporter {
         )
 
     /**
-     * Builds the complete CSV text for [books], including the header row.
+     * Builds the complete CSV text for [mediaItems], including the header row.
      *
-     * @param books Every book to export, in the order they should appear (callers typically pass
-     *   [com.hub.media.features.books.data.BookRepository.observeAllBooksWithDetails]'s
-     *   title-ordered snapshot).
-     * @param identifiersByMediaId Every [ExternalIdentifierEntity] in the library, grouped by
-     *   [ExternalIdentifierEntity.mediaId]. A book with no entry (or an empty list) exports an
-     *   empty `external_identifiers` field.
+     * @param mediaItems Every item to export.
+     * @param identifiersByMediaId Every [ExternalIdentifierEntity] in the library.
      */
     public fun export(
-        books: List<BookWithDetails>,
+        mediaItems: List<MediaWithDetails>,
         identifiersByMediaId: Map<String, List<ExternalIdentifierEntity>>,
     ): String =
         buildString {
             append(CsvUtil.buildLine(HEADER))
-            for (book in books) {
-                append(CsvUtil.buildLine(rowFor(book, identifiersByMediaId[book.mediaItem.id].orEmpty())))
+            for (media in mediaItems) {
+                append(CsvUtil.buildLine(rowFor(media, identifiersByMediaId[media.item.id].orEmpty())))
             }
         }
 
     private fun rowFor(
-        book: BookWithDetails,
+        media: MediaWithDetails,
         identifiers: List<ExternalIdentifierEntity>,
     ): List<String> {
-        val mediaItem = book.mediaItem
-        val details = book.details
+        val item = media.item
+        val authors =
+            when (media) {
+                is MediaWithDetails.Book -> media.details?.authors.orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val isbn =
+            when (media) {
+                is MediaWithDetails.Book -> media.details?.isbn.orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val format =
+            when (media) {
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.format
+                        ?.name
+                        .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val totalPages =
+            when (media) {
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.totalPages
+                        ?.toString()
+                        .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val status =
+            when (media) {
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.status
+                        ?.name
+                        .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val finishedAt =
+            when (media) {
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.finishedAt
+                        ?.toString()
+                        .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val trackingMode =
+            when (media) {
+                is MediaWithDetails.Book ->
+                    media.details
+                        ?.trackingMode
+                        ?.name
+                        .orEmpty()
+                is MediaWithDetails.Movie,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+
         return listOf(
             CSV_SCHEMA_VERSION.toString(),
-            mediaItem.id,
-            mediaItem.type.name,
-            mediaItem.title,
-            details?.authors.orEmpty(),
-            mediaItem.releaseYear?.toString().orEmpty(),
-            mediaItem.purchasePrice?.toString().orEmpty(),
-            mediaItem.createdAt.toString(),
-            mediaItem.coverImageHash.orEmpty(),
-            details?.isbn.orEmpty(),
-            details?.format?.name.orEmpty(),
-            details?.totalPages?.toString().orEmpty(),
-            details?.status?.name.orEmpty(),
-            details?.finishedAt?.toString().orEmpty(),
-            details?.trackingMode?.name.orEmpty(),
+            item.id,
+            item.type.name,
+            item.title,
+            authors,
+            item.releaseYear?.toString().orEmpty(),
+            item.purchasePrice?.toString().orEmpty(),
+            item.createdAt.toString(),
+            item.coverImageHash.orEmpty(),
+            isbn,
+            format,
+            totalPages,
+            status,
+            finishedAt,
+            trackingMode,
             packIdentifiers(identifiers),
         )
     }

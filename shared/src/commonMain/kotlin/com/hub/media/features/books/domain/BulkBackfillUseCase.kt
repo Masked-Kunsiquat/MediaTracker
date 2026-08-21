@@ -300,16 +300,16 @@ public class BulkBackfillUseCase(
         val haveWorkKey = bookRepository.getMediaIdsWithIdentifier(IdentifierProvider.OPEN_LIBRARY_WORK)
         val candidates =
             bookRepository.getAllBooksWithDetails().filter { book ->
-                val needsCover = book.mediaItem.coverImageHash == null
+                val needsCover = book.item.coverImageHash == null
                 val needsAuthors = book.details?.authors == null
-                val needsWorkKey = book.mediaItem.id !in haveWorkKey
+                val needsWorkKey = book.item.id !in haveWorkKey
                 needsCover || needsAuthors || needsWorkKey
             }
         val (withIsbn, withoutIsbn) = candidates.partition { !it.details?.isbn.isNullOrBlank() }
 
         val state =
             BulkBackfillState(
-                pendingMediaIds = withIsbn.map { it.mediaItem.id },
+                pendingMediaIds = withIsbn.map { it.item.id },
                 totalCandidates = withIsbn.size,
                 noIsbnSkipped = withoutIsbn.size,
                 updated = 0,
@@ -329,12 +329,14 @@ public class BulkBackfillUseCase(
         quotaExhausted: Boolean,
         knownRetryAfter: Duration?,
     ): StepOutcome {
-        val bookWithDetails = bookRepository.getBookWithDetails(mediaId) ?: return StepOutcome.Removed
+        val bookResult = bookRepository.getBookWithDetails(mediaId)
+        if (bookResult is Resource.Error) return StepOutcome.DeferredTransient
+        val bookWithDetails = (bookResult as Resource.Success).data ?: return StepOutcome.Removed
         val details = bookWithDetails.details
         val isbn = details?.isbn
         if (isbn.isNullOrBlank()) return StepOutcome.Removed // guarded at seed time; never expected
 
-        val needsCover = bookWithDetails.mediaItem.coverImageHash == null
+        val needsCover = bookWithDetails.item.coverImageHash == null
         val needsAuthors = details.authors == null
         val needsWorkKey = !bookRepository.hasIdentifier(mediaId, IdentifierProvider.OPEN_LIBRARY_WORK)
         if (!needsCover && !needsAuthors && !needsWorkKey) {

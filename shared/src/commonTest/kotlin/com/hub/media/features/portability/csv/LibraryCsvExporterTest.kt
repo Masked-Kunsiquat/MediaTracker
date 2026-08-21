@@ -8,15 +8,14 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
-import com.hub.media.features.books.data.BookWithDetails
+import com.hub.media.features.media.data.MediaWithDetails
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
 /**
- * Tests [LibraryCsvExporter] (ROADMAP Task 8 Phase A). Sample data below is entirely invented
- * (no real titles/people/ISBNs beyond made-up placeholders) per this phase's "no PII" constraint.
+ * Tests [LibraryCsvExporter] (ROADMAP Task 8 Phase A). Consolidated and generalized per Issue #67.
  */
 class LibraryCsvExporterTest {
     // Fixed, well-known epoch millis (avoids depending on any Instant string-parsing API existing
@@ -42,8 +41,8 @@ class LibraryCsvExporterTest {
 
     @Test
     fun export_everyDataRow_startsWithTheSchemaVersionValue() {
-        val book = bookWithDetails(mediaId = "m1")
-        val csv = LibraryCsvExporter.export(listOf(book), emptyMap())
+        val media = mediaWithDetails(mediaId = "m1")
+        val csv = LibraryCsvExporter.export(listOf(media), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         assertEquals(CSV_SCHEMA_VERSION.toString(), dataLine.split(",").first())
     }
@@ -79,7 +78,7 @@ class LibraryCsvExporterTest {
 
         val csv =
             LibraryCsvExporter.export(
-                books = listOf(BookWithDetails(mediaItem, details)),
+                mediaItems = listOf(MediaWithDetails.Book(mediaItem, details)),
                 identifiersByMediaId = mapOf("media-1" to identifiers),
             )
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
@@ -128,7 +127,7 @@ class LibraryCsvExporterTest {
                 trackingMode = TrackingMode.PERCENT,
             )
 
-        val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details)), emptyMap())
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Book(mediaItem, details)), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
 
@@ -156,7 +155,7 @@ class LibraryCsvExporterTest {
                 createdAt = createdAt,
                 coverImageHash = null,
             )
-        val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details = null)), emptyMap())
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Book(mediaItem, details = null)), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
 
@@ -184,7 +183,7 @@ class LibraryCsvExporterTest {
         val details =
             BookDetailsEntity(mediaId = "media-4", isbn = null, format = BookFormat.PHYSICAL, totalPages = null)
 
-        val csv = LibraryCsvExporter.export(listOf(BookWithDetails(mediaItem, details)), emptyMap())
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Book(mediaItem, details)), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
 
         assertTrue(dataLine.contains("\"The \"\"Best\"\" Book, Ever\""))
@@ -192,22 +191,22 @@ class LibraryCsvExporterTest {
 
     @Test
     fun export_bookWithNoExternalIdentifiers_producesEmptyIdentifiersField() {
-        val book = bookWithDetails(mediaId = "media-5")
-        val csv = LibraryCsvExporter.export(listOf(book), identifiersByMediaId = emptyMap())
+        val media = mediaWithDetails(mediaId = "media-5")
+        val csv = LibraryCsvExporter.export(listOf(media), identifiersByMediaId = emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         assertEquals("", dataLine.split(",").last())
     }
 
     @Test
     fun export_enumFields_exportByName() {
-        val book =
-            bookWithDetails(
+        val media =
+            mediaWithDetails(
                 mediaId = "media-6",
                 format = BookFormat.PAPERBACK,
                 status = ReadingStatus.DNF,
                 trackingMode = TrackingMode.PERCENT,
             )
-        val csv = LibraryCsvExporter.export(listOf(book), emptyMap())
+        val csv = LibraryCsvExporter.export(listOf(media), emptyMap())
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
         assertEquals(MediaType.BOOK.name, fields[2])
@@ -216,14 +215,14 @@ class LibraryCsvExporterTest {
         assertEquals(TrackingMode.PERCENT.name, fields[14])
     }
 
-    private fun bookWithDetails(
+    private fun mediaWithDetails(
         mediaId: String,
         format: BookFormat = BookFormat.PHYSICAL,
         status: ReadingStatus = ReadingStatus.TO_READ,
         trackingMode: TrackingMode = TrackingMode.PAGES,
-    ): BookWithDetails =
-        BookWithDetails(
-            mediaItem =
+    ): MediaWithDetails =
+        MediaWithDetails.Book(
+            item =
                 MediaItemEntity(
                     id = mediaId,
                     type = MediaType.BOOK,

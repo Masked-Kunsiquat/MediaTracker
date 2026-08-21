@@ -79,9 +79,9 @@ public class EditBookViewModel(
                 bookDetail == null -> EditBookUiState.NotFound
                 else ->
                     EditBookUiState.Ready(
-                        title = bookDetail.mediaItem.title,
-                        releaseYear = bookDetail.mediaItem.releaseYear,
-                        purchasePrice = bookDetail.mediaItem.purchasePrice,
+                        title = bookDetail.item.title,
+                        releaseYear = bookDetail.item.releaseYear,
+                        purchasePrice = bookDetail.item.purchasePrice,
                         totalPages = bookDetail.details?.totalPages,
                         format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
                         status = bookDetail.details?.status ?: ReadingStatus.TO_READ,

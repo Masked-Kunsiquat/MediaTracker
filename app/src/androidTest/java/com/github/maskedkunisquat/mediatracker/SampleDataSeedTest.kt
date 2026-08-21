@@ -66,6 +66,7 @@ class SampleDataSeedTest {
     fun sampleData_importsIntoTheDebugAppsLibrary() =
         runBlocking {
             val container = application.appContainer
+            container.clearAllData()
             val booksBefore = container.bookRepository.getAllBooksWithDetails().size
 
             val result =
@@ -91,7 +92,7 @@ class SampleDataSeedTest {
 
             // Named records rather than a count, for the same reason: a count is satisfied by whatever
             // happened to be on the device already.
-            val titles = container.bookRepository.getAllBooksWithDetails().map { it.mediaItem.title }
+            val titles = container.bookRepository.getAllBooksWithDetails().map { it.item.title }
             listOf("The Way of Kings", "Beowulf", "A Wizard of Earthsea").forEach { expected ->
                 assertTrue("fixture book missing after import: $expected (had $booksBefore before)", expected in titles)
             }

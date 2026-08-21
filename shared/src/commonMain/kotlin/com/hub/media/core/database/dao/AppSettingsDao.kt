@@ -38,4 +38,8 @@ public interface AppSettingsDao {
     /** Removes [key]'s row entirely, reverting reads of it to null (never-set). */
     @Query("DELETE FROM app_settings WHERE `key` = :key")
     public suspend fun deleteByKey(key: String)
+
+    /** Clears all settings (ROADMAP Task 14 Phase B test isolation). */
+    @Query("DELETE FROM app_settings")
+    public suspend fun deleteAll()
 }

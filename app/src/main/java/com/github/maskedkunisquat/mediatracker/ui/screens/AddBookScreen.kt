@@ -59,12 +59,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.warn
-import com.hub.media.features.books.domain.MIN_SEARCH_QUERY_LENGTH
 import com.hub.media.features.books.network.BookEditionSearchResult
-import com.hub.media.features.books.network.BookSearchResult
+import com.hub.media.features.media.domain.MIN_SEARCH_QUERY_LENGTH
+import com.hub.media.features.media.network.MediaSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AddSearchErrorReason
@@ -173,14 +174,14 @@ fun AddBookScreenRoute(
 fun AddBookScreen(
     uiState: AddBookUiState,
     searchQuery: String,
-    searchResults: List<BookSearchResult>,
+    searchResults: List<MediaSearchResult>,
     searchState: AddSearchState,
-    confirmationResult: BookSearchResult?,
+    confirmationResult: MediaSearchResult?,
     editions: List<BookEditionSearchResult> = emptyList(),
     onNavigateBack: () -> Unit,
     onSubmitIsbn: (String) -> Unit,
     onSearchQueryChange: (String) -> Unit = {},
-    onSelectSearchResult: (BookSearchResult) -> Unit = {},
+    onSelectSearchResult: (MediaSearchResult) -> Unit = {},
     onClearSearch: () -> Unit = {},
     onConfirmSelection: () -> Unit = {},
     onCancelSelection: () -> Unit = {},
@@ -313,10 +314,10 @@ fun AddBookScreen(
 private fun SearchTabContent(
     uiState: AddBookUiState,
     searchQuery: String,
-    searchResults: List<BookSearchResult>,
+    searchResults: List<MediaSearchResult>,
     searchState: AddSearchState,
     onSearchQueryChange: (String) -> Unit,
-    onSelectSearchResult: (BookSearchResult) -> Unit,
+    onSelectSearchResult: (MediaSearchResult) -> Unit,
     onClearSearch: () -> Unit,
     httpClient: HttpClient?,
     logger: Logger,
@@ -495,10 +496,10 @@ private fun HelpfulSearchText(
 @Composable
 private fun SearchResultsSection(
     query: String,
-    results: List<BookSearchResult>,
+    results: List<MediaSearchResult>,
     searchState: AddSearchState,
     isAddLoading: Boolean,
-    onSelectResult: (BookSearchResult) -> Unit,
+    onSelectResult: (MediaSearchResult) -> Unit,
     httpClient: HttpClient?,
     logger: Logger,
     modifier: Modifier = Modifier,
@@ -560,9 +561,9 @@ private fun SearchResultsSection(
  */
 @Composable
 private fun SearchResultRow(
-    result: BookSearchResult,
+    result: MediaSearchResult,
     enabled: Boolean,
-    onSelect: (BookSearchResult) -> Unit,
+    onSelect: (MediaSearchResult) -> Unit,
     httpClient: HttpClient?,
     logger: Logger,
 ) {
@@ -799,7 +800,7 @@ private fun SearchTabEmptyPreview() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditionSelectionDialog(
-    work: BookSearchResult,
+    work: MediaSearchResult,
     editions: List<BookEditionSearchResult>,
     isResolving: Boolean,
     onSelectEdition: (BookEditionSearchResult) -> Unit,
@@ -947,7 +948,8 @@ private fun EditionResultRow(
 private fun SearchTabWithResultsPreview() {
     val sampleResults =
         listOf(
-            BookSearchResult(
+            MediaSearchResult(
+                type = MediaType.BOOK,
                 title = "The Hobbit",
                 authors = listOf("J.R.R. Tolkien"),
                 firstPublishYear = 1937,
@@ -957,7 +959,8 @@ private fun SearchTabWithResultsPreview() {
                 workKey = "/works/OL27482W",
                 coverEditionKey = "OL51711263M",
             ),
-            BookSearchResult(
+            MediaSearchResult(
+                type = MediaType.BOOK,
                 title = "The Lord of the Rings",
                 authors = listOf("J.R.R. Tolkien", "Alan Lee"),
                 firstPublishYear = 1954,

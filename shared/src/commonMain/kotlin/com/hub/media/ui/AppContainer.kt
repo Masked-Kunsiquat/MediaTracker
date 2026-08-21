@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
@@ -9,18 +10,19 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
-import com.hub.media.features.books.domain.DeleteBooksUseCase
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
-import com.hub.media.features.books.domain.RealSearchBooksUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
-import com.hub.media.features.books.domain.SearchBooksUseCase
 import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.books.network.BookSearchProvider
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
+import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.media.domain.DeleteMediaUseCase
+import com.hub.media.features.media.domain.RealSearchMediaUseCase
+import com.hub.media.features.media.domain.SearchMediaUseCase
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
@@ -84,23 +86,20 @@ public class AppContainer(
     public val logFileStore: LogFileStore,
     public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
-    /**
-     * Shared [HttpClient] for all outbound requests. Configured with a [com.hub.media.core.network.USER_AGENT]
-     * and timeouts per AGENTS.md §4.
-     */
+    /** Shared [HttpClient] for all outbound requests. */
     public val httpClient: HttpClient = createHttpClient()
+
+    /** Universal media repository (ROADMAP foundation for Task 13). */
+    public val mediaRepository: MediaRepository = MediaRepository(database)
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
 
     /**
-     * Bulk delete with reference-aware cover cleanup (ROADMAP Task 14 Phase B), consumed by
-     * [LibraryViewModel]'s selection mode. Needs [imageStorage] as well as the database because
-     * deleting a book can leave its content-addressed cover unreferenced -- see that use case's
-     * KDoc for why the file cannot simply be deleted alongside the row.
+     * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
      */
-    public val deleteBooksUseCase: DeleteBooksUseCase =
-        DeleteBooksUseCase(
+    public val deleteMediaUseCase: BulkDeleteUseCase =
+        DeleteMediaUseCase(
             database = database,
             imageStorage = imageStorage,
         )
@@ -155,7 +154,7 @@ public class AppContainer(
      * Handed to every path that talks to Google Books ([addBookByIsbnUseCase],
      * [refetchCoverUseCase], [bulkBackfillUseCase]), for the same reason [coverRateLimiter] is
      * shared: a quota is a property of the device, not of the call site. Not handed to
-     * [searchBooksUseCase] -- type-ahead is Open Library only by design (see its KDoc), and Open
+     * [searchMediaUseCase] -- type-ahead is Open Library only by design (see its KDoc), and Open
      * Library issues no keys.
      */
     private val googleBooksApiKeyProvider: suspend () -> String? = {
@@ -183,38 +182,29 @@ public class AppContainer(
             httpClient = httpClient,
             imageStorage = imageStorage,
             bookRepository = bookRepository,
+            mediaRepository = mediaRepository,
             coverRateLimiter = coverRateLimiter,
             googleBooksApiKeyProvider = googleBooksApiKeyProvider,
         )
 
     /**
-     * Edition-level search client backing [searchBooksUseCase].
+     * Edition-level search client backing [searchMediaUseCase].
      */
     private val openLibrarySearchClient = OpenLibrarySearchClient(httpClient)
 
     /**
      * Title/author type-ahead search (ROADMAP Task 9 Phase B1).
-     *
-     * A single instance on purpose: the LRU inside it is the cache, so a per-screen instance would
-     * throw the results away every time the Add Book screen closed and re-request them on the next
-     * visit. Open Library only — Google Books is consulted on selection or as a fallback, never
-     * per keystroke, since its keyless per-IP quota is limited and 429s have already been observed
-     * against it.
-     *
-     * Not wired through [coverRateLimiter]: that limiter tracks the ISBN-keyed *cover* quota, a
-     * different endpoint with a different budget. Search is throttled by the debounce and minimum
-     * query length in [SearchBooksUseCase] and its caller instead.
      */
-    public val searchBooksUseCase: SearchBooksUseCase =
-        RealSearchBooksUseCase(
+    public val searchMediaUseCase: SearchMediaUseCase =
+        RealSearchMediaUseCase(
             openLibrarySearchClient,
         )
 
     /**
      * Edition-to-ISBN resolver for search result selection (ROADMAP Task 9 Phase B2).
      *
-     * Exposed separately (in addition to [searchBooksUseCase]) so [AddBookViewModel] can resolve a
-     * search result's [BookSearchResult.coverEditionKey] to a concrete ISBN, which is then passed
+     * Exposed separately (in addition to [searchMediaUseCase]) so [AddBookViewModel] can resolve a
+     * search result's [com.hub.media.features.media.network.MediaSearchResult.coverEditionKey] to a concrete ISBN, which is then passed
      * to [addBookByIsbnUseCase].
      */
     public val searchProvider: BookSearchProvider =
@@ -291,6 +281,15 @@ public class AppContainer(
         DefaultRestoreDatabaseUseCase(
             liveDatabaseFilePath = databaseFilePath,
         )
+
+    /**
+     * Clears all tables in the database (ROADMAP Task 14 Phase B test isolation).
+     * Only intended for use in instrumented tests.
+     */
+    public suspend fun clearAllData() {
+        database.mediaItemDao().deleteAll()
+        database.appSettingsDao().deleteAll()
+    }
 
     /**
      * Releases resources owned by this container: cancels [logFileStore]'s background flush loop

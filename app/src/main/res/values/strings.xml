@@ -119,12 +119,16 @@
 
     <!-- LibraryScreen status filter -->
     <string name="library_filter_all">All</string>
+    <string name="library_empty_title">Your library is empty</string>
+    <string name="library_empty_subtitle">Add your first item to get started</string>
+    <string name="library_released_label">Released: </string>
+    <string name="library_year_label">Year: </string>
 
     <!-- LibraryScreen local search (ROADMAP Task 9 Phase A) -->
     <string name="library_search_placeholder">Search by title or author</string>
     <string name="library_search_content_description">Search library</string>
     <string name="library_search_clear_content_description">Clear search</string>
-    <string name="library_filtered_empty">No books match the current filters</string>
+    <string name="library_filtered_empty">No items match the current filters</string>
 
     <!-- Author display (ROADMAP Task 9 Phase A) -->
     <string name="detail_label_authors">Author</string>
@@ -282,10 +286,10 @@
     <string name="library_selection_close">Leave selection</string>
     <string name="library_selection_delete">Delete selected</string>
     <plurals name="library_bulk_delete_title">
-        <item quantity="one">Delete %1$d book?</item>
-        <item quantity="other">Delete %1$d books?</item>
+        <item quantity="one">Delete %1$d item?</item>
+        <item quantity="other">Delete %1$d items?</item>
     </plurals>
-    <string name="library_bulk_delete_message">This permanently deletes these books and their reading history, including any hidden by the current filter. This cannot be undone.</string>
+    <string name="library_bulk_delete_message">This permanently deletes these items and their history, including any hidden by the current filter. This cannot be undone.</string>
     <string name="library_bulk_delete_more">…and %1$d more</string>
     <string name="library_bulk_delete_confirm">Delete</string>
     <string name="library_bulk_delete_cancel">Cancel</string>

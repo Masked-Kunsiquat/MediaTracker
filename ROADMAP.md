@@ -50,6 +50,7 @@ the same edit. Note the `(done)` suffixes are part of the anchor for exactly tha
 | [Task 14 — Bulk operations & cover backfill](#task-14--bulk-operations--cover-backfill) | done |
 | [Task 15 — Logging](#task-15--logging) | done |
 | [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned |
+| [Task 17 — Data-layer error contract](#task-17--data-layer-error-contract) | planned, unsequenced |
 | [Blocked on external changes](#blocked-on-external-changes) | — |
 | [Backlog / tech debt](#backlog--tech-debt) | — |
 | [Unscheduled features](#unscheduled-features) | — |
@@ -473,7 +474,7 @@ sequenced deliberately rather than taken in the order they happen to be listed:
   task's stated bottleneck: today a book can only be added with its ISBN in hand. Split in two, so
   the half that can be proven by tests is not entangled with the half that cannot:
   - **B1 (shared module — done).** `BookSearchProvider.searchByTitleOrAuthor` over Open Library's
-    keyless search API (`OpenLibrarySearchClient`), `BookSearchResult`, `SearchBooksUseCase` with
+    keyless search API (`OpenLibrarySearchClient`), `BookSearchResult`, `SearchMediaUseCase` with
     an in-memory `LruCache`, and `AppContainer` wiring. Entirely `commonTest`-able with
     `MockEngine`, exactly as the ISBN clients are. The cancellation rule applied from the start
     (Task 15 Phase C) and is verified by mutation: deleting the rethrow fails exactly one test.
@@ -495,7 +496,7 @@ sequenced deliberately rather than taken in the order they happen to be listed:
     typed result styling. Needs device verification, not just instrumented tests: debounce and
     cancellation are exactly the kind of behaviour that passes a test and still feels wrong in the
     hand. Also owns **selection → ISBN → `AddBookByIsbnUseCase`**, which B1 stops short of. The
-    minimum query length already lives in `SearchBooksUseCase.MIN_SEARCH_QUERY_LENGTH` (3), with
+    minimum query length already lives in `SearchMediaUseCase.MIN_SEARCH_QUERY_LENGTH` (3), with
     `isQueryLongEnough` exposed so the UI can say "keep typing" rather than "no matches" without
     re-deriving the normalization rules.
 - **Phase C — manual entry and paste-to-add.** Second because it needs no permissions and no new
@@ -686,6 +687,20 @@ and never implemented: there is no genre column, table, or UI anywhere today.
   spending, active timers, an "Up Next" queue). Not separately scheduled; it only makes sense
   once a second media type exists.
 - Library/media-type UI generalization (type filter, non-book detail screens).
+  - **Library navigation is still type-blind, and this task owns the fix.** Issue #67 generalized
+    the library *list* — `LibraryUiState.media` is `List<MediaWithDetails>` and `LibraryScreen`
+    already branches on `MediaType` for the release-year label — but the tap target did not follow:
+    `onNavigateToMediaDetail` is `(String) -> Unit`, an id and nothing else, so every card routes to
+    Book Detail. It was left that way deliberately rather than overlooked: there is no correct
+    destination for a movie tap until this task builds one, so widening the callback earlier would
+    have been a signature churn with no second branch to justify it.
+  - Unreachable today, and it fails safely if it ever is reached: nothing writes a `MOVIE` or
+    `TV_SHOW` row, and `observeBookDetail` returns null for a non-`BOOK` item, which
+    `BookDetailViewModel` renders as `BookDetailUiState.NotFound` — a "not found" screen, not a
+    crash and not a movie rendered as a book. **The trap is that it stays quiet.** The first commit
+    that can create a non-book row makes this a live bug in navigation code that commit never
+    touched, so widen the callback to carry the media type (or the `MediaWithDetails`) *with* that
+    change, not after it.
 
 ## Task 14 — Bulk operations & cover backfill
 
@@ -751,28 +766,28 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
 - **Library multi-select and bulk delete (Phase B — done).** Long-press a library card to enter selection mode,
   with a contextual app bar for actions across the selection. Bulk delete is the motivating case;
   bulk reading-status change is the obvious companion and probably cheap once selection exists.
-  Deletion of several books at once deserves the same confirmation care the single-book delete
+  Deletion of several media items at once deserves the same confirmation care the single-item delete
   already has.
   - **Cover cleanup must be decided explicitly, not left implicit.** Covers are stored
-    content-addressed (SHA-256 of the image bytes), so two books with the same cover share **one
-    file** — deleting a book therefore cannot simply delete its cover file without checking whether
+    content-addressed (SHA-256 of the image bytes), so two media items with the same cover share **one
+    file** — deleting a media item therefore cannot simply delete its cover file without checking whether
     anything else still references it. Bulk delete multiplies both the risk and the waste: delete
-    the file naively and a surviving book loses its cover; delete nothing and a bulk purge strands
+    the file naively and a surviving item loses its cover; delete nothing and a bulk purge strands
     that many files forever. Pick one and say so:
     - **Reference-aware removal** through `LocalImageStorageManager`: delete a cover only when no
       remaining `MediaItemEntity` references that hash. This also retires the standing
       orphaned-cover-files backlog item rather than growing it.
     - **Or explicitly defer** cleanup, and document the resulting disk growth as accepted — but
-      then say it in the release notes, because "deleted books still cost storage" is surprising.
-    - **Decided: reference-aware removal.** `DeleteBooksUseCase` reads the candidate hashes, deletes
+      then say it in the release notes, because "deleted items still cost storage" is surprising.
+    - **Decided: reference-aware removal.** `DeleteMediaUseCase` reads the candidate hashes, deletes
       the rows, then counts remaining references per hash and removes only the files that reach
       zero. **This retires the orphaned-cover-files backlog item.** Ordering is the load-bearing
       part and is documented in that class: counting *after* the delete is what makes zero
-      trustworthy (counting before always includes the books being deleted, so nothing would ever
+      trustworthy (counting before always includes the items being deleted, so nothing would ever
       be cleaned up), and deleting rows before files means a crash between them leaks disk rather
-      than leaving surviving books pointing at artwork that is gone.
+      than leaving surviving items pointing at artwork that is gone.
     - **Known consequence, accepted:** restoring a `.sqlite` backup taken *before* a deletion brings
-      those books back pointing at files now removed, so their covers show as missing until a
+      those items back pointing at files now removed, so their covers show as missing until a
       backfill re-fetches them. Recoverable, not data loss, and the same situation a CSV import onto
       a new device already produces — for which the Task 14 Phase A backfill is the documented
       remedy.
@@ -781,8 +796,8 @@ item here is a bugfix; both are missing capabilities, so this is a **minor** rel
       selection, reasoned as "never act on something the user cannot see" -- and in practice the
       count moved as filters moved, which reads as the selection being silently lost, and the
       delete then half-finished leaving the rest selected and invisible with nothing to explain it.
-      Selection is a property of the books, not of the current view.
-      - What replaces the safety argument is the **confirmation naming each book it will remove**,
+      Selection is a property of the media items, not of the current view.
+      - What replaces the safety argument is the **confirmation naming each item it will remove**,
         so "something you cannot see" no longer applies -- it is listed in the dialog. Long
         selections name the first eight and state the remainder as a count rather than truncating
         silently, since a silent truncation would recreate the problem the listing exists to solve.
@@ -1127,6 +1142,71 @@ for the same reasons.
 The signing half can be pulled forward independently of the CI and update-check work, and there is
 a mild argument for doing so: the cost of the first release-signed install is a backup-and-restore
 cycle, and that is easier to do deliberately now than to discover later, mid-something-else.
+
+## Task 17 — Data-layer error contract
+
+Make the data layer's error handling uniform. AGENTS.md §5 requires database operations to be
+wrapped in `Resource`/`Result` "to prevent UI crashes on offline/error states"; today that is
+honoured for writes and for exactly one read, while every reactive read and most one-shot reads
+return bare values and throw.
+
+**Not scheduled against a feature** — it blocks nothing and nothing blocks it. Raised here rather
+than left in the backlog because it is past that section's "small" bar: it spans two repositories,
+roughly six flows, their ViewModels, and at least one screen's error state.
+
+### What is actually inconsistent
+
+- **Writes are wrapped.** `addBook`, `updateBookMetadata`, `updateReadingStatus`,
+  `applyBackfilledMetadata`, `DeleteMediaUseCase.execute` all return `Resource` and catch.
+- **One read is wrapped.** `BookRepository.getBookWithDetails` returns
+  `Resource<MediaWithDetails.Book?>` — added during the Issue #67 review round.
+- **The rest are not.** `getAllBooksWithDetails` and `getMediaIdsWithIdentifier` return bare values
+  two methods below a wrapped one, and every `observe*` returns a raw `Flow`:
+  `observeAllBooks`, `observeBookDetail`, `observeAllBooksWithDetails`,
+  `observeAllExternalIdentifiers`, `MediaRepository.observeAllMediaWithDetails`.
+
+### The failure it leaves open
+
+A Room flow that throws mid-stream cancels the collecting scope. `LibraryViewModel.uiState` is a
+`combine(...).stateIn(viewModelScope, ...)` with nothing catching, so the failure kills
+`viewModelScope` and the screen freezes on its last good state — no error, no retry, no crash to
+report. **A frozen screen is the worst of the three outcomes**, because it is the only one that
+produces no signal at all.
+
+This predates Issue #67 — `observeAllBooksWithDetails`, which `observeAllMediaWithDetails`
+replaced, had exactly the same property. It is not a regression, which is precisely why it needs
+scheduling rather than a drive-by fix.
+
+### Why the one-shot reads look less urgent than they are
+
+`BulkBackfillUseCase.execute` calls `seedState()` *outside* its own try block, so a DB failure in
+`getMediaIdsWithIdentifier`/`getAllBooksWithDetails` propagates straight out. It does not crash
+today only because `BackfillViewModel` happens to wrap both call sites in
+`try/catch (e: Exception)`. That is real protection at the wrong layer: it holds by the accident of
+one consumer being careful, and the next consumer inherits nothing.
+
+### The decision this task has to make first
+
+**Do not start by converting signatures.** `Resource`-per-emission is not obviously right for a
+reactive read — `Flow<Resource<List<T>>>` forces every consumer to unwrap on every emission, and
+the error is terminal anyway. Two candidates, and the task should pick one and apply it everywhere:
+- `Flow<Resource<T>>` — uniform with the suspend/write side, verbose at each collection site.
+- Bare `Flow<T>` plus a shared `.catch {}` operator at the ViewModel seam, converting to an error
+  state on the existing UI state class — cheaper, keeps the repository API as-is, but the
+  discipline is then per-ViewModel again, which is the failure mode this task exists to close.
+
+Whichever is chosen, **doing it piecemeal is worse than not doing it.** One `Resource`-typed flow
+among five bare ones, with one screen rendering an error state no other screen has, is harder to
+reason about than the current uniform gap.
+
+### Scope
+
+- Both repositories' read APIs, decided per the section above.
+- `LibraryViewModel` / `LibraryScreen` — the first screen needing a real error state for a *read*.
+- `BulkBackfillUseCase.seedState` and the backfill UI contract, so failures propagate before the
+  processing loop rather than relying on the consumer's `catch`.
+- Tests: a failing-DAO fake asserting the UI reaches an error state rather than silently stopping.
+  The current suite cannot fail on any of this, which is why it has stayed invisible.
 
 ## Blocked on external changes
 
