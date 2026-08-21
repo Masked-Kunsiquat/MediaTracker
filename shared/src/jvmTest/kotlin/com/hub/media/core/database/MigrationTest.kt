@@ -594,6 +594,489 @@ class MigrationTest {
     }
 
     // ==========================================================================================
+    // MIGRATION_5_6 (ROADMAP Task 13 Phase A): purely additive -- creates `movie_details`,
+    // `tv_details`, `episodes`, and `watch_logs` (plus three indices), altering zero existing
+    // tables or columns. See that migration's KDoc (`Migrations.kt`) for the full `CREATE TABLE`/
+    // index rationale, and [com.hub.media.core.database.entities.MovieDetailsEntity]/
+    // [com.hub.media.core.database.entities.TVDetailsEntity]/
+    // [com.hub.media.core.database.entities.EpisodeEntity]/
+    // [com.hub.media.core.database.entities.WatchLogEntity] for the new entities' column shapes.
+    // ==========================================================================================
+
+    /**
+     * The core deliverable for a *purely additive* migration (task requirement): a v5 database
+     * seeded with one real row in every pre-existing table this migration claims not to touch
+     * (`media_items`, `book_details`, `reading_sessions`, `external_identifiers`) must, after
+     * migrating to v6, still have every one of those rows with every column value byte-identical
+     * -- not just present, but unchanged. This is the important assertion for this migration:
+     * unlike `MIGRATION_1_2` through `MIGRATION_4_5` (each of which altered some existing table),
+     * `MIGRATION_5_6` has no `ALTER TABLE`/derivation logic to test at all, so the only way it
+     * could misbehave is by damaging data it was never supposed to touch (e.g. a copy/paste
+     * mistake in one of its four `CREATE TABLE` statements accidentally colliding with, or
+     * otherwise corrupting, an existing table).
+     *
+     * This test is not vacuous: temporarily replacing `MIGRATION_5_6`'s first statement with
+     * `connection.execSQL("DELETE FROM book_details")` (a deliberate "quietly wipe a pre-existing
+     * table this migration shouldn't touch at all" break) makes this test's `book_details`
+     * `stmt.step()` assertion fail directly (no row left to step to), while
+     * `runMigrationsAndValidate`'s own schema validation stays green throughout (the table's
+     * *shape* never changed, only its contents) -- proving this test catches a class of bug schema
+     * validation alone would silently miss. Verified by hand while writing this test, then
+     * reverted.
+     */
+    @Test
+    fun migrate5To6_preservesExistingRows_valuesIntact() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-1', 'BOOK', 'Test Book', 2020, 9.99, 1700000000000, 'hash-abc')",
+            )
+            db.execSQL(
+                "INSERT INTO book_details " +
+                    "(mediaId, isbn, format, totalPages, status, finishedAt, trackingMode, authors) " +
+                    "VALUES ('media-1', '9780000000000', 'PHYSICAL', 300, 'FINISHED', 1700005000000, 'PAGES', " +
+                    "'Ann Sample Author; B. Other Author')",
+            )
+            db.execSQL(
+                "INSERT INTO reading_sessions " +
+                    "(id, mediaId, timestampStart, timestampEnd, durationSeconds, " +
+                    "startUnit, endUnit, deltaPages, notes) " +
+                    "VALUES ('session-1', 'media-1', 1700000000000, 1700000600000, 600, 10.0, 25.0, 15, 'Good progress')",
+            )
+            db.execSQL(
+                "INSERT INTO external_identifiers (mediaId, provider, externalId) " +
+                    "VALUES ('media-1', 'ISBN', '9780000000000')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            db
+                .prepare(
+                    "SELECT id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash " +
+                        "FROM media_items WHERE id = 'media-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the pre-existing media_items row must survive")
+                    assertEquals("media-1", stmt.getText(0))
+                    assertEquals("BOOK", stmt.getText(1))
+                    assertEquals("Test Book", stmt.getText(2))
+                    assertEquals(2020, stmt.getInt(3))
+                    assertEquals(9.99, stmt.getDouble(4))
+                    assertEquals(1700000000000L, stmt.getLong(5))
+                    assertEquals("hash-abc", stmt.getText(6))
+                }
+
+            db
+                .prepare(
+                    "SELECT isbn, format, totalPages, status, finishedAt, trackingMode, authors " +
+                        "FROM book_details WHERE mediaId = 'media-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the pre-existing book_details row must survive")
+                    assertEquals("9780000000000", stmt.getText(0))
+                    assertEquals("PHYSICAL", stmt.getText(1))
+                    assertEquals(300, stmt.getInt(2))
+                    assertEquals("FINISHED", stmt.getText(3))
+                    assertEquals(1700005000000L, stmt.getLong(4))
+                    assertEquals("PAGES", stmt.getText(5))
+                    assertEquals("Ann Sample Author; B. Other Author", stmt.getText(6))
+                }
+
+            db
+                .prepare(
+                    "SELECT timestampStart, timestampEnd, durationSeconds, startUnit, endUnit, deltaPages, notes " +
+                        "FROM reading_sessions WHERE id = 'session-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the pre-existing reading_sessions row must survive")
+                    assertEquals(1700000000000L, stmt.getLong(0))
+                    assertEquals(1700000600000L, stmt.getLong(1))
+                    assertEquals(600L, stmt.getLong(2))
+                    assertEquals(10.0, stmt.getDouble(3))
+                    assertEquals(25.0, stmt.getDouble(4))
+                    assertEquals(15, stmt.getInt(5))
+                    assertEquals("Good progress", stmt.getText(6))
+                }
+
+            db
+                .prepare(
+                    "SELECT provider, externalId FROM external_identifiers WHERE mediaId = 'media-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the pre-existing external_identifiers row must survive")
+                    assertEquals("ISBN", stmt.getText(0))
+                    assertEquals("9780000000000", stmt.getText(1))
+                }
+        }
+    }
+
+    /**
+     * The other core deliverable (task requirement): the four brand-new tables must exist and be
+     * writable after migrating, exercising every column with a real value -- including the
+     * `episodes` -> `watch_logs` relationship (a watch log referencing a specific episode, not
+     * just a bare mediaId).
+     */
+    @Test
+    fun migrate5To6_newTablesAcceptRows_withRealValues() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-movie', 'MOVIE', 'Test Movie', 1999, 14.99, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-tv', 'TV_SHOW', 'Test Show', 2015, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            db.execSQL(
+                "INSERT INTO movie_details (mediaId, runtimeMinutes, status, watchedAt) " +
+                    "VALUES ('media-movie', 148, 'WATCHED', 1700100000000)",
+            )
+            db
+                .prepare(
+                    "SELECT runtimeMinutes, status, watchedAt FROM movie_details WHERE mediaId = 'media-movie'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the inserted movie_details row must be queryable back")
+                    assertEquals(148, stmt.getInt(0))
+                    assertEquals("WATCHED", stmt.getText(1))
+                    assertEquals(1700100000000L, stmt.getLong(2))
+                }
+
+            db.execSQL(
+                "INSERT INTO tv_details (mediaId, totalSeasons, status) VALUES ('media-tv', 5, 'WATCHING')",
+            )
+            db.prepare("SELECT totalSeasons, status FROM tv_details WHERE mediaId = 'media-tv'").use { stmt ->
+                assertTrue(stmt.step(), "the inserted tv_details row must be queryable back")
+                assertEquals(5, stmt.getInt(0))
+                assertEquals("WATCHING", stmt.getText(1))
+            }
+
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('episode-1', 'media-tv', 1, 1, 'Pilot', 1420000000000, 1700200000000)",
+            )
+            db
+                .prepare(
+                    "SELECT seasonNumber, episodeNumber, title, airDate, watchedAt " +
+                        "FROM episodes WHERE id = 'episode-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the inserted episodes row must be queryable back")
+                    assertEquals(1, stmt.getInt(0))
+                    assertEquals(1, stmt.getInt(1))
+                    assertEquals("Pilot", stmt.getText(2))
+                    assertEquals(1420000000000L, stmt.getLong(3))
+                    assertEquals(1700200000000L, stmt.getLong(4))
+                }
+
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-1', 'media-tv', 'episode-1', 1700200000000, 1800)",
+            )
+            db
+                .prepare(
+                    "SELECT mediaId, episodeId, watchedAt, durationSeconds FROM watch_logs WHERE id = 'log-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the inserted watch_logs row must be queryable back")
+                    assertEquals("media-tv", stmt.getText(0))
+                    assertEquals("episode-1", stmt.getText(1))
+                    assertEquals(1700200000000L, stmt.getLong(2))
+                    assertEquals(1800L, stmt.getLong(3))
+                }
+        }
+    }
+
+    /**
+     * Proves every nullable column across all four new tables (`movie_details.runtimeMinutes`/
+     * `watchedAt`, `tv_details.totalSeasons`, `episodes.title`/`airDate`/`watchedAt`,
+     * `watch_logs.episodeId`/`durationSeconds`) really is nullable, not merely absent from
+     * [migrate5To6_newTablesAcceptRows_withRealValues]'s happy-path insert. This project treats
+     * `null` as "unknown" and is careful to keep it distinct from `0`/`""` (see
+     * [com.hub.media.core.database.entities.MovieDetailsEntity.runtimeMinutes]'s KDoc for the
+     * canonical statement of that rule, echoed on every one of these columns) -- a stray `NOT
+     * NULL` on any of them would silently corrupt a future stat that sums runtimes/durations, by
+     * forcing "unknown" to be recorded as some placeholder value instead of excluded.
+     */
+    @Test
+    fun migrate5To6_newTablesAcceptNulls_inEveryNullableColumn() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-movie-null', 'MOVIE', 'Unwatched Movie', NULL, NULL, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-tv-null', 'TV_SHOW', 'Unstarted Show', NULL, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            // status is NOT NULL on both movie_details and tv_details -- only the columns the task
+            // calls out (runtimeMinutes/watchedAt/totalSeasons/title/airDate/episodeId/
+            // durationSeconds) are exercised as NULL here.
+            db.execSQL(
+                "INSERT INTO movie_details (mediaId, runtimeMinutes, status, watchedAt) " +
+                    "VALUES ('media-movie-null', NULL, 'WATCHLIST', NULL)",
+            )
+            db
+                .prepare("SELECT runtimeMinutes, watchedAt FROM movie_details WHERE mediaId = 'media-movie-null'")
+                .use { stmt ->
+                    assertTrue(stmt.step())
+                    assertTrue(stmt.isNull(0), "runtimeMinutes must accept NULL")
+                    assertTrue(stmt.isNull(1), "watchedAt must accept NULL")
+                }
+
+            db.execSQL(
+                "INSERT INTO tv_details (mediaId, totalSeasons, status) VALUES ('media-tv-null', NULL, 'WATCHLIST')",
+            )
+            db.prepare("SELECT totalSeasons FROM tv_details WHERE mediaId = 'media-tv-null'").use { stmt ->
+                assertTrue(stmt.step())
+                assertTrue(stmt.isNull(0), "totalSeasons must accept NULL")
+            }
+
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('episode-null', 'media-tv-null', 1, 1, NULL, NULL, NULL)",
+            )
+            db.prepare("SELECT title, airDate, watchedAt FROM episodes WHERE id = 'episode-null'").use { stmt ->
+                assertTrue(stmt.step())
+                assertTrue(stmt.isNull(0), "title must accept NULL (the quick-fill default)")
+                assertTrue(stmt.isNull(1), "airDate must accept NULL")
+                assertTrue(stmt.isNull(2), "watchedAt must accept NULL (an unwatched episode)")
+            }
+
+            // A movie watch log: no episode to point at, and an unknown duration.
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-null', 'media-movie-null', NULL, 1700200000000, NULL)",
+            )
+            db.prepare("SELECT episodeId, durationSeconds FROM watch_logs WHERE id = 'log-null'").use { stmt ->
+                assertTrue(stmt.step())
+                assertTrue(stmt.isNull(0), "episodeId must accept NULL (a film watch, not an episode)")
+                assertTrue(stmt.isNull(1), "durationSeconds must accept NULL")
+            }
+        }
+    }
+
+    /**
+     * The `episodes` unique index (`index_episodes_mediaId_seasonNumber_episodeNumber`) must
+     * actually be enforced, not merely present in `sqlite_master` -- see
+     * [com.hub.media.core.database.entities.EpisodeEntity]'s KDoc for why duplicate (mediaId,
+     * seasonNumber, episodeNumber) rows would corrupt quick-fill (a season-count correction would
+     * silently duplicate every already-generated episode instead of erroring). Asserted by
+     * provoking the actual failure, not just checking that one insert succeeds.
+     */
+    @Test
+    fun migrate5To6_episodesUniqueIndex_rejectsDuplicateSeasonAndEpisodeNumber() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-tv', 'TV_SHOW', 'Test Show', 2015, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('episode-1', 'media-tv', 1, 1, 'Pilot', NULL, NULL)",
+            )
+
+            val exception =
+                assertFailsWith<SQLiteException> {
+                    db.execSQL(
+                        "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                            "VALUES ('episode-2', 'media-tv', 1, 1, 'Duplicate Pilot', NULL, NULL)",
+                    )
+                }
+            assertTrue(
+                exception.message.orEmpty().contains("UNIQUE", ignoreCase = true),
+                "the failure must be the unique-index violation, not some other error: ${exception.message}",
+            )
+
+            db.prepare("SELECT COUNT(*) FROM episodes WHERE mediaId = 'media-tv'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(1, stmt.getInt(0), "the rejected duplicate must not have been inserted")
+            }
+        }
+    }
+
+    /**
+     * A watch log cannot pair one show's `mediaId` with another show's episode.
+     *
+     * `watch_logs.mediaId` is denormalized — derivable from `episodeId` for a TV watch, but
+     * required anyway because a film has no episode. Two *independent* foreign keys would let show
+     * A's id sit beside an episode of show B: each key is satisfied on its own, and the row is
+     * still nonsense. The composite `(episodeId, mediaId)` → `episodes (id, mediaId)` key makes it
+     * unrepresentable instead.
+     *
+     * The negative control matters more than usual here, because the positive case passes either
+     * way — with two separate keys this insert succeeds and nothing looks wrong until a query
+     * attributes a watch to the wrong show. Only the rejection distinguishes the two designs.
+     *
+     * The film case is asserted alongside it: `MATCH SIMPLE` skips a composite key when any child
+     * column is `NULL`, so a `null` `episodeId` must still be accepted rather than caught by the
+     * pair.
+     */
+    @Test
+    fun migrate5To6_watchLogCompositeKey_rejectsEpisodeFromAnotherShow() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('show-a', 'TV_SHOW', 'Show A', 2015, NULL, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('show-b', 'TV_SHOW', 'Show B', 2016, NULL, 1700000000000, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('film', 'MOVIE', 'A Film', 2020, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            // Required in this harness -- see migrate5To6_cascadeDelete_removesEpisodesAndWatchLogs.
+            db.execSQL("PRAGMA foreign_keys = ON")
+
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('ep-of-b', 'show-b', 1, 1, 'Pilot', NULL, NULL)",
+            )
+
+            val exception =
+                assertFailsWith<SQLiteException> {
+                    db.execSQL(
+                        "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                            "VALUES ('log-1', 'show-a', 'ep-of-b', 1700000000000, NULL)",
+                    )
+                }
+            assertTrue(
+                exception.message.orEmpty().contains("FOREIGN KEY", ignoreCase = true),
+                "the failure must be the composite foreign key, not some other error: ${exception.message}",
+            )
+
+            // Positive control: the same episode under its own show is accepted, so the rejection
+            // above is the mismatch being caught and not the constraint rejecting everything.
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-2', 'show-b', 'ep-of-b', 1700000000000, NULL)",
+            )
+
+            // A film's log carries no episode; MATCH SIMPLE must let it through.
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-3', 'film', NULL, 1700000000000, 7200)",
+            )
+
+            db.prepare("SELECT COUNT(*) FROM watch_logs").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(2, stmt.getInt(0), "only the two valid logs may exist")
+            }
+        }
+    }
+
+    /**
+     * `ON DELETE CASCADE` works for both new relationships -- `episodes` -> `media_items` and
+     * `watch_logs` -> `episodes` -- when SQLite foreign key enforcement is turned on for the
+     * connection.
+     *
+     * ### Why this test enables `PRAGMA foreign_keys = ON` itself
+     * SQLite ships with foreign key enforcement off by default per connection, and
+     * [MigrationTestHelper] opens a bare one via [BundledSQLiteDriver] without turning it on. So
+     * this pragma is required **here**, in the migration harness, or the cascade silently would not
+     * fire and the test would prove nothing.
+     *
+     * **This is a fact about the migration helper, not about the app.** A database built the normal
+     * way does enforce these constraints, which is why
+     * `BookDetailsDaoTest.cascadeDelete_removesBookDetailsWhenMediaItemDeleted` passes: it deletes a
+     * `media_items` row through the DAO and asserts the `book_details` row goes with it, against a
+     * database from the ordinary builder. That test would fail outright if cascades were inert at
+     * runtime.
+     *
+     * Worth stating plainly because the opposite conclusion is easy to reach from reading Room's
+     * sources alone -- `RoomConnectionManager.configureConnection` sets `journal_mode`,
+     * `synchronous`, `busy_timeout`, `temp_store` and `recursive_triggers` with no `foreign_keys`
+     * among them -- and concluding from that absence that the app orphans rows on delete. It does
+     * not. The pragma below closes a gap in **this harness**; it is not evidence of one in
+     * production.
+     *
+     * What this test therefore proves is that `MIGRATION_5_6`'s DDL declares the cascades
+     * correctly. That the app exercises them is proved by the DAO test named above.
+     */
+    @Test
+    fun migrate5To6_cascadeDelete_removesEpisodesAndWatchLogs() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-tv', 'TV_SHOW', 'Test Show', 2015, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            db.execSQL("PRAGMA foreign_keys = ON")
+
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('episode-1', 'media-tv', 1, 1, 'Pilot', NULL, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt) " +
+                    "VALUES ('episode-2', 'media-tv', 1, 2, 'Second Episode', NULL, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-1', 'media-tv', 'episode-1', 1700200000000, 1800)",
+            )
+            db.execSQL(
+                "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                    "VALUES ('log-2', 'media-tv', 'episode-2', 1700200100000, 1200)",
+            )
+
+            // Deleting one episode must cascade to only the watch_logs row pointing at it.
+            db.execSQL("DELETE FROM episodes WHERE id = 'episode-1'")
+            db.prepare("SELECT id FROM watch_logs ORDER BY id").use { stmt ->
+                val remaining = mutableListOf<String>()
+                while (stmt.step()) remaining.add(stmt.getText(0))
+                assertEquals(
+                    listOf("log-2"),
+                    remaining,
+                    "deleting episode-1 must cascade-delete log-1 (which pointed at it) but leave log-2 alone",
+                )
+            }
+
+            // Deleting the media_items row must cascade to every remaining episode and watch log.
+            db.execSQL("DELETE FROM media_items WHERE id = 'media-tv'")
+            db.prepare("SELECT COUNT(*) FROM episodes").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0), "deleting media-tv must cascade-delete its remaining episodes")
+            }
+            db.prepare("SELECT COUNT(*) FROM watch_logs").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0), "deleting media-tv must cascade-delete its remaining watch_logs")
+            }
+        }
+    }
+
+    /**
+     * An empty v5 database still migrates cleanly and leaves the four new tables present but
+     * empty, same shape as [migrate4To5_emptyDatabase_validatesCleanly].
+     */
+    @Test
+    fun migrate5To6_emptyDatabase_validatesCleanly() {
+        helper.createDatabase(5).use { }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            listOf("movie_details", "tv_details", "episodes", "watch_logs").forEach { table ->
+                db.prepare("SELECT COUNT(*) FROM $table").use { stmt ->
+                    assertTrue(stmt.step())
+                    assertEquals(
+                        0,
+                        stmt.getInt(0),
+                        "$table must exist and be empty after migrating from an empty v5 database",
+                    )
+                }
+            }
+        }
+    }
+
+    // ==========================================================================================
     // ROADMAP Task 15: a migration failure must now be logged before it propagates.
     // ==========================================================================================
 
