@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **Schema v6 (ROADMAP Task 13 Phase A)** — Adds the database half of the polymorphic media model: `movie_details`, `tv_details`, `episodes` and `watch_logs`, via `MIGRATION_5_6`. Purely additive — four tables created, none altered, so no existing book data is read or rewritten. No user-visible effect yet; nothing creates a movie or TV row until Phase B.
+  - **`WatchStatus`**: movies and shows get their own status enum rather than generalizing `ReadingStatus`, which is persisted by name and would have required rewriting every existing book's stored status to gain naming symmetry.
+  - **Episode-level by construction**: watched state lives on `episodes.watchedAt` with progress derived by counting, so no stored counter can drift from the rows it summarizes.
+
 ## [0.14.0] - 2026-08-20
 
 This release rebuilds the library around a single polymorphic media model, so that books, movies
