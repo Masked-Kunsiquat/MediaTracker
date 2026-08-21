@@ -66,6 +66,7 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.LibraryUiState
 import com.hub.media.ui.LibraryViewModel
 import kotlin.time.ExperimentalTime
@@ -136,7 +137,7 @@ fun LibraryScreen(
     onMediaClick: (String) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onStatusFilterChange: (ReadingStatus?) -> Unit,
+    onStatusFilterChange: (LibraryStatusFilter?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onToggleSelection: (String) -> Unit = {},
     onClearSelection: () -> Unit = {},
@@ -427,8 +428,8 @@ private fun LibrarySearchField(
  */
 @Composable
 private fun StatusFilterRow(
-    selected: ReadingStatus?,
-    onSelectedChange: (ReadingStatus?) -> Unit,
+    selected: LibraryStatusFilter?,
+    onSelectedChange: (LibraryStatusFilter?) -> Unit,
 ) {
     LazyRow(
         modifier =
@@ -444,11 +445,11 @@ private fun StatusFilterRow(
                 label = { Text(stringResource(R.string.library_filter_all)) },
             )
         }
-        items(ReadingStatus.entries.toList()) { status ->
+        items(LibraryStatusFilter.entries.toList()) { status ->
             FilterChip(
                 selected = selected == status,
                 onClick = { onSelectedChange(status) },
-                label = { Text(status.displayLabel()) },
+                label = { Text(status.filterLabel()) },
             )
         }
     }

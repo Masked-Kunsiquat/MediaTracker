@@ -1,6 +1,5 @@
 package com.hub.media.ui
 
-import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.media.data.MediaWithDetails
 
 /**
@@ -26,7 +25,7 @@ public data class DeleteErrorEvent(
 
 public data class LibraryUiState(
     val media: List<MediaWithDetails> = emptyList(),
-    val statusFilter: ReadingStatus? = null,
+    val statusFilter: LibraryStatusFilter? = null,
     val searchQuery: String = "",
     val isEmpty: Boolean = media.isEmpty(),
     val selectedIds: Set<String> = emptySet(),
@@ -49,18 +48,7 @@ public data class LibraryUiState(
     public val filteredMedia: List<MediaWithDetails>
         get() {
             val statusFiltered =
-                if (statusFilter == null) {
-                    media
-                } else {
-                    media.filter { mediaItem ->
-                        when (mediaItem) {
-                            is MediaWithDetails.Book -> mediaItem.details?.status == statusFilter
-                            is MediaWithDetails.Movie,
-                            is MediaWithDetails.TVShow,
-                            -> false
-                        }
-                    }
-                }
+                if (statusFilter == null) media else media.filter(statusFilter::matches)
             val query = searchQuery.trim()
             if (query.isEmpty()) return statusFiltered
             return statusFiltered.filter { mediaItem ->
@@ -70,6 +58,8 @@ public data class LibraryUiState(
                         is MediaWithDetails.Book ->
                             mediaItem.details?.authors?.contains(query, ignoreCase = true) ==
                                 true
+                        // Movies and shows have no creator field to search yet -- director/cast
+                        // arrive with TMDB in Phase D. Title search still covers them.
                         is MediaWithDetails.Movie,
                         is MediaWithDetails.TVShow,
                         -> false

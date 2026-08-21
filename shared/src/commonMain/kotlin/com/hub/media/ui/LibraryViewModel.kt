@@ -3,7 +3,6 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.MediaRepository
-import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,7 +28,7 @@ public class LibraryViewModel(
     private val mediaRepository: MediaRepository,
     private val deleteMediaUseCase: BulkDeleteUseCase,
 ) : ViewModel() {
-    private val statusFilter = MutableStateFlow<ReadingStatus?>(null)
+    private val statusFilter = MutableStateFlow<LibraryStatusFilter?>(null)
     private val searchQuery = MutableStateFlow("")
     private val selectedIds = MutableStateFlow<Set<String>>(emptySet())
     private val deleteError = MutableStateFlow<DeleteErrorEvent?>(null)
@@ -119,10 +118,10 @@ public class LibraryViewModel(
 
     /**
      * Sets the library's status filter (ROADMAP Task 6 Phase C): `null` shows every item ("All"),
-     * a specific [ReadingStatus] narrows [LibraryUiState.filteredMedia] to items currently at that
+     * a specific [LibraryStatusFilter] narrows [LibraryUiState.filteredMedia] to items currently at that
      * status.
      */
-    public fun setStatusFilter(status: ReadingStatus?) {
+    public fun setStatusFilter(status: LibraryStatusFilter?) {
         statusFilter.value = status
     }
 

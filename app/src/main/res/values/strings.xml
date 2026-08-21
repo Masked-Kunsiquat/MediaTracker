@@ -119,6 +119,13 @@
 
     <!-- LibraryScreen status filter -->
     <string name="library_filter_all">All</string>
+    <!-- Library status filter chips. Deliberately media-neutral: the same chip must read
+         correctly for a book and a film, so these are not the book-specific reading_status_*
+         strings, which stay in use on the book detail screen. -->
+    <string name="library_filter_backlog">Backlog</string>
+    <string name="library_filter_in_progress">In progress</string>
+    <string name="library_filter_finished">Finished</string>
+    <string name="library_filter_abandoned">Abandoned</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_empty_subtitle">Add your first item to get started</string>
     <string name="library_released_label">Released: </string>
