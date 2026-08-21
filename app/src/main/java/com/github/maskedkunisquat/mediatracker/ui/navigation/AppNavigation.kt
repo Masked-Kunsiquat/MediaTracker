@@ -11,6 +11,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreenRoute
@@ -102,6 +103,27 @@ fun AppNavigation(
                     "Missing required argument: ${Route.MovieDetail.ARG_MOVIE_ID}"
                 }
             MovieDetailScreenRoute(
+                appContainer = appContainer,
+                movieId = movieId,
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToEditMovie = {
+                    navController.navigate(Route.EditMovie.createRoute(movieId))
+                },
+            )
+        }
+
+        composable(
+            route = Route.EditMovie.route,
+            arguments =
+                listOf(
+                    navArgument(Route.EditMovie.ARG_MOVIE_ID) { type = NavType.StringType },
+                ),
+        ) { backStackEntry ->
+            val movieId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.EditMovie.ARG_MOVIE_ID)) {
+                    "Missing required argument: ${Route.EditMovie.ARG_MOVIE_ID}"
+                }
+            EditMovieScreenRoute(
                 appContainer = appContainer,
                 movieId = movieId,
                 onNavigateBack = { navController.navigateUp() },

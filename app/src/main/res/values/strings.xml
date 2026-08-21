@@ -127,6 +127,9 @@
 
     <!-- Manual movie entry (Task 13 Phase B) -->
     <string name="add_movie_title">Add movie</string>
+    <string name="edit_movie_title">Edit movie</string>
+    <string name="edit_movie_save">Save changes</string>
+    <string name="edit_movie_content_description">Edit movie</string>
     <string name="add_book_menu_item">Add book</string>
     <string name="add_media_content_description">Add to library</string>
     <string name="add_movie_field_title">Title</string>

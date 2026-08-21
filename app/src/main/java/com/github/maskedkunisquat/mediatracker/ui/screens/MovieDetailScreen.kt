@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +49,7 @@ fun MovieDetailScreenRoute(
     appContainer: AppContainer,
     movieId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToEditMovie: () -> Unit,
 ) {
     val viewModel: MovieDetailViewModel =
         viewModel(factory = MovieDetailViewModelFactory(appContainer, movieId))
@@ -59,6 +61,7 @@ fun MovieDetailScreenRoute(
         onDelete = viewModel::deleteMovie,
         onErrorShown = viewModel::consumeError,
         onNavigateBack = onNavigateBack,
+        onNavigateToEditMovie = onNavigateToEditMovie,
     )
 }
 
@@ -74,6 +77,7 @@ fun MovieDetailScreen(
     onDelete: () -> Unit,
     onErrorShown: () -> Unit,
     onNavigateBack: () -> Unit,
+    onNavigateToEditMovie: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -135,6 +139,12 @@ fun MovieDetailScreen(
                 },
                 actions = {
                     if (uiState is MovieDetailUiState.Ready) {
+                        IconButton(onClick = onNavigateToEditMovie) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = stringResource(R.string.edit_movie_content_description),
+                            )
+                        }
                         IconButton(onClick = { showDeleteConfirmation = true }) {
                             Icon(
                                 Icons.Default.Delete,

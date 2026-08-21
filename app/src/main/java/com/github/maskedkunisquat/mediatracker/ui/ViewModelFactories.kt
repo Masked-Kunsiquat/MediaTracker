@@ -10,6 +10,7 @@ import com.hub.media.ui.BackupViewModel
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.ChangelogViewModel
 import com.hub.media.ui.EditBookViewModel
+import com.hub.media.ui.EditMovieViewModel
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
@@ -329,6 +330,24 @@ class MovieDetailViewModelFactory(
                     movieId = movieId,
                     movieRepository = appContainer.movieRepository,
                     deleteMediaUseCase = appContainer.deleteMediaUseCase,
+                ) as T
+            }
+            else -> error("Unknown viewmodel class: $modelClass")
+        }
+}
+
+/** Factory for [EditMovieViewModel] with its [movieId] (ROADMAP Task 13 Phase B). */
+class EditMovieViewModelFactory(
+    private val appContainer: AppContainer,
+    private val movieId: String,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        when {
+            modelClass.isAssignableFrom(EditMovieViewModel::class.java) -> {
+                EditMovieViewModel(
+                    movieId = movieId,
+                    movieRepository = appContainer.movieRepository,
                 ) as T
             }
             else -> error("Unknown viewmodel class: $modelClass")
