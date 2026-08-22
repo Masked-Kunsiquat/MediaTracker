@@ -30,7 +30,7 @@ This skill ensures that MediaTracker's promise of "first-class data portability"
 
 ## Import Logic & Duplicate Matching
 - **Precedence**: `media_id` -> `isbn` (for books) -> `type` + `title` + `release_year` -> `type` + `title` only (with Review Note).
-- **Heterogeneous Support**: `ImportDataUseCase` and `LibraryCsvExporter` MUST support mixed media types uniformly.
+- **Heterogeneous Support**: `LibraryCsvExporter` MUST support mixed media types uniformly — every media type in the library belongs in the export. `ImportDataUseCase` currently accepts `BOOK` rows only; a `MOVIE` row is reported as a rejected row, never silently dropped.
 - **In-File Duplicates**: Later rows in the same file MUST resolve against earlier rows from the SAME file using these same typed keys.
 
 ## Reading Log Structure (`reading_logs_export.csv`)
