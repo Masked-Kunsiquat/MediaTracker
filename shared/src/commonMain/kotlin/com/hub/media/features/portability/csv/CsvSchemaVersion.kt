@@ -44,8 +44,18 @@ package com.hub.media.features.portability.csv
  * via a registered legacy-header adapter that pads each row with an empty `authors` field before
  * handing it to [LibraryCsvImporter] -- see that object's KDoc and `LibraryCsvExporter.HEADER_V1`.
  * A `v1` file must still import cleanly; only the *exporter* ever writes `v2` now.
+ *
+ * **ROADMAP Task 13 Phase B update: `v3`.** [LibraryCsvExporter] gained `runtime_minutes`,
+ * `watch_status` and `watched_at`, appended after `external_identifiers` so no existing column
+ * moved. Both older shapes still import: `v2` via [LibraryCsvImporter.padLegacyV2Row] and `v1` via
+ * [LibraryCsvImporter.padLegacyV1Row], which now inserts the `authors` column *and* pads to the
+ * current width -- a `v1` file is two format changes behind, and one adapter has to carry both.
+ *
+ * Note this bump marks a column-set change the *exporter* made; [LibraryCsvImporter] still refuses
+ * a `MOVIE` row, so the three new columns are written and not yet read. See
+ * [LibraryCsvExporter]'s KDoc for why they are written anyway.
  */
-public const val CSV_SCHEMA_VERSION: Int = 2
+public const val CSV_SCHEMA_VERSION: Int = 3
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

@@ -273,9 +273,14 @@ public class ImportDataUseCase(
                         CsvTableReader.read(
                             libraryCsv,
                             LibraryCsvExporter.HEADER,
-                            // ROADMAP Task 9 Phase A: a v1 export (no `authors` column) must still import
-                            // cleanly -- see LibraryCsvExporter.HEADER_V1's KDoc.
-                            legacyHeaders = mapOf(LibraryCsvExporter.HEADER_V1 to LibraryCsvImporter::padLegacyV1Row),
+                            // Every header shape this app has ever exported must still import
+                            // cleanly: v1 (no `authors` column, ROADMAP Task 9 Phase A) and v2 (no
+                            // movie columns, Task 13 Phase B) -- see each adapter's KDoc.
+                            legacyHeaders =
+                                mapOf(
+                                    LibraryCsvExporter.HEADER_V1 to LibraryCsvImporter::padLegacyV1Row,
+                                    LibraryCsvExporter.HEADER_V2 to LibraryCsvImporter::padLegacyV2Row,
+                                ),
                         )
                 ) {
                     is CsvTableResult.Failure -> return refuse("library_export.csv: ${table.message}")

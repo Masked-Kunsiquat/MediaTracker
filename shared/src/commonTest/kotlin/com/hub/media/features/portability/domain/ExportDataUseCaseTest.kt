@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
@@ -62,7 +63,14 @@ class ExportDataUseCaseTest {
         runTest {
             val movieRepository = MovieRepository(db)
             assertIs<Resource.Success<String>>(bookRepository.addBook(title = "Dune", format = BookFormat.PHYSICAL))
-            assertIs<Resource.Success<String>>(movieRepository.addMovie(title = "Arrival", releaseYear = 2016))
+            assertIs<Resource.Success<String>>(
+                movieRepository.addMovie(
+                    title = "Arrival",
+                    releaseYear = 2016,
+                    runtimeMinutes = 116,
+                    status = WatchStatus.WATCHED,
+                ),
+            )
 
             val result = useCase.execute()
             assertIs<Resource.Success<CsvExportBundle>>(result)
@@ -73,6 +81,15 @@ class ExportDataUseCaseTest {
                 libraryCsv.contains("Arrival"),
                 "the movie must be exported too -- a backup that silently omits it loses the row: $libraryCsv",
             )
+
+            // The row alone is not the claim: a movie whose runtime and watch status are missing
+            // from the file has been half-exported, and those two are the only things the movie
+            // form records that a media_items row cannot hold.
+            val movieLine = libraryCsv.split(CsvUtil.LINE_ENDING).single { it.contains("Arrival") }
+            val fields = movieLine.split(",")
+            assertEquals("116", fields[16], "runtime must reach the CSV: $movieLine")
+            assertEquals("WATCHED", fields[17], "watch status must reach the CSV: $movieLine")
+            assertTrue(fields[18].isNotEmpty(), "watchedAt must reach the CSV: $movieLine")
         }
 
     @Test

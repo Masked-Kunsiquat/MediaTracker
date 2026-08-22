@@ -211,6 +211,25 @@ public object LibraryCsvImporter {
      * rejected outright by the header check. A blank `authors` cell parses to `null` exactly like a
      * blank cell in a genuine `v2` file would (see [ParsedLibraryRow.authors]) -- there is no author
      * to recover from a file that never recorded one.
+     *
+     * Since `v3` (ROADMAP Task 13 Phase B) it also pads the trailing movie columns: a `v1` file is
+     * two format changes behind, and an adapter that only caught up with one of them would produce
+     * a row of the wrong width, which `CsvTableReader` rejects as truncated.
      */
-    public fun padLegacyV1Row(row: List<String>): List<String> = row.toMutableList().apply { add(COL_AUTHORS, "") }
+    public fun padLegacyV1Row(row: List<String>): List<String> =
+        padLegacyV2Row(row.toMutableList().apply { add(COL_AUTHORS, "") })
+
+    /**
+     * Adapts one `csv_schema_version=2` data row (shaped like [LibraryCsvExporter.HEADER_V2]) into
+     * the current [LibraryCsvExporter.HEADER] shape by appending the movie columns as blanks.
+     *
+     * A pure append, because `v3` added its columns at the end -- see [LibraryCsvExporter.HEADER_V2]
+     * for why there. Blank is the honest value: a `v2` file predates movie export entirely, and
+     * every row in one is a book anyway.
+     *
+     * Derived from the two header widths rather than a literal count, so a later column addition
+     * cannot leave this padding silently one short.
+     */
+    public fun padLegacyV2Row(row: List<String>): List<String> =
+        row + List(LibraryCsvExporter.HEADER.size - LibraryCsvExporter.HEADER_V2.size) { "" }
 }
