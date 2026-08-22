@@ -329,6 +329,43 @@ class MovieRepositoryTest {
             assertNull(db.movieDetailsDao().getByMediaId(unknownId))
         }
 
+    @Test
+    fun updateMovieMetadata_mediaIdBelongsToBook_returnsErrorAndLeavesTheBookUnchanged() =
+        runTest {
+            // The dangerous half of the type gate. A book's id shares the media_items table with
+            // every movie, so an UPDATE keyed on id alone would rewrite that book's title/year/
+            // price with movie-form values -- and report success, because only the movie_details
+            // half would miss and that half's row count is not the one the repository checks.
+            val bookRepo = BookRepository(db)
+            val bookResult =
+                bookRepo.addBook(
+                    title = "Not A Movie",
+                    releaseYear = 1925,
+                    purchasePrice = 9.99,
+                    format = BookFormat.PHYSICAL,
+                )
+            assertIs<Resource.Success<String>>(bookResult)
+            val bookId = bookResult.data
+
+            val result =
+                repo.updateMovieMetadata(
+                    mediaId = bookId,
+                    title = "Clobbered By A Movie Edit",
+                    releaseYear = 2000,
+                    purchasePrice = 1.0,
+                    runtimeMinutes = 120,
+                    status = WatchStatus.WATCHED,
+                )
+            assertIs<Resource.Error>(result)
+            assertTrue(result.message.contains("not found"))
+
+            val book = db.mediaItemDao().getById(bookId)
+            assertEquals("Not A Movie", book?.title, "a movie edit must never rewrite a book's title")
+            assertEquals(1925, book?.releaseYear)
+            assertEquals(9.99, book?.purchasePrice, "a movie edit must never rewrite a book's price")
+            assertNull(db.movieDetailsDao().getByMediaId(bookId))
+        }
+
     // ---- updateMovieMetadata: watchedAt transition rules -------------------------------------
 
     @Test

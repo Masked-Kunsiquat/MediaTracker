@@ -39,9 +39,22 @@ interface MovieWriteDao {
         insertMovieDetails(details)
     }
 
+    /**
+     * Targeted update of `media_items`' editable columns, scoped to `MOVIE` rows.
+     *
+     * The `type` predicate is what makes this DAO's affected-row count mean "no such *movie*"
+     * rather than merely "no such row". Without it, a book's id reaching
+     * [com.hub.media.features.movies.data.MovieRepository.updateMovieMetadata] would overwrite that
+     * book's title/releaseYear/purchasePrice with movie-form values and still report success — only
+     * the `movie_details` half would miss, and that half's count is deliberately not the one
+     * [updateMovieMetadataAtomically] returns.
+     *
+     * The literal matches `Converters.mediaTypeToName`, which persists a `MediaType` as its
+     * `name` — the same spelling Room's own generated binding uses for a typed parameter.
+     */
     @Query(
         "UPDATE media_items SET title = :title, releaseYear = :releaseYear, " +
-            "purchasePrice = :purchasePrice WHERE id = :mediaId",
+            "purchasePrice = :purchasePrice WHERE id = :mediaId AND type = 'MOVIE'",
     )
     suspend fun updateMediaItemFields(
         mediaId: String,
