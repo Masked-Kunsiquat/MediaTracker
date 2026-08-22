@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Add from the library**: the add button now offers a choice of book or movie.
   - **Editing**: a movie's details can be corrected after the fact. Manual entry has no provider to re-fetch from, so this is the only way to fix a typo.
   - **Only the title is required.** A blank year, runtime or price means "unknown" and is stored as such, rather than as zero.
+  - **A number that cannot be read is refused, not discarded.** Clearing a field means "unknown" and saves as such, but an entry the app cannot parse (a year too long to be a year, a price like "1.2.3") now marks the field and blocks the save. Previously both cases became "unknown", so on the edit form an unreadable entry silently erased the value it was meant to correct.
+  - **The form locks while a save is in flight**, so an edit made mid-save cannot be dropped by a write that had already read the old values.
 
 ### Changed
 
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schema v6 (ROADMAP Task 13 Phase A)** — Adds the database half of the polymorphic media model: `movie_details`, `tv_details`, `episodes` and `watch_logs`, via `MIGRATION_5_6`. Purely additive — four tables created, none altered, so no existing book data is read or rewritten. No user-visible effect yet; nothing creates a movie or TV row until Phase B.
   - **`WatchStatus`**: movies and shows get their own status enum rather than generalizing `ReadingStatus`, which is persisted by name and would have required rewriting every existing book's stored status to gain naming symmetry.
   - **Episode-level by construction**: watched state lives on `episodes.watchedAt` with progress derived by counting, so no stored counter can drift from the rows it summarizes.
+- **Movie metadata updates are scoped to movie rows.** `MovieWriteDao.updateMediaItemFields` now matches on `type = 'MOVIE'` as well as id. `media_items` is shared by every media type, so an id-only `UPDATE` meant a book id reaching `MovieRepository.updateMovieMetadata` would have overwritten that book's title, year and price and reported success — only the `movie_details` half would have missed, and that half's row count is not the one the repository checks. The UI's type gate makes this unreachable today; the DAO no longer relies on it.
 
 ## [0.14.0] - 2026-08-20
 
