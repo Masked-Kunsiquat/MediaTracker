@@ -3,6 +3,7 @@ package com.hub.media.features.media.data
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.TVDetailsEntity
 
 /**
  * Polymorphic representation of a media item with its type-specific details (ROADMAP Task 13 foundation).
@@ -27,7 +28,14 @@ public sealed class MediaWithDetails {
         val details: MovieDetailsEntity?,
     ) : MediaWithDetails()
 
+    /**
+     * @property details Show-level metadata, or `null` in the same data-integrity edge case
+     *   [Movie.details] can be null in: the parent row exists without its detail row. Never
+     *   produced by [com.hub.media.features.tv.data.TVShowRepository.addShow], which inserts both
+     *   atomically.
+     */
     public data class TVShow(
         override val item: MediaItemEntity,
+        val details: TVDetailsEntity?,
     ) : MediaWithDetails()
 }

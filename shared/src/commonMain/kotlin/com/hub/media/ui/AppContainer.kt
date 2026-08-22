@@ -34,6 +34,7 @@ import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.stats.data.StatsRepository
+import com.hub.media.features.tv.data.TVShowRepository
 import io.ktor.client.HttpClient
 
 /**
@@ -98,6 +99,9 @@ public class AppContainer(
 
     /** Movie data operations (ROADMAP Task 13 Phase B). */
     public val movieRepository: MovieRepository = MovieRepository(database)
+
+    /** TV show data operations (ROADMAP Task 13 Phase C). */
+    public val tvShowRepository: TVShowRepository = TVShowRepository(database)
 
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
