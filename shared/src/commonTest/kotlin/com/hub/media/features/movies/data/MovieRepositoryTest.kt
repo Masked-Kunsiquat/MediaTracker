@@ -2,7 +2,9 @@ package com.hub.media.features.movies.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
@@ -449,6 +451,147 @@ class MovieRepositoryTest {
             val details = db.movieDetailsDao().getByMediaId(mediaId)
             assertEquals(WatchStatus.WATCHING, details?.status)
             assertNull(details?.watchedAt, "moving away from WATCHED must clear watchedAt")
+        }
+
+    // ---- updateMovieMetadata: a parent row whose details row is missing ----------------------
+
+    @Test
+    fun updateMovieMetadata_detailsRowMissing_selfHealsRatherThanReportingAHalfWrite() =
+        runTest {
+            // The data-integrity edge MediaWithDetails.Movie.details documents: a media_items row
+            // with no movie_details half. The UPDATE there matches nothing, so runtime/status/
+            // watchedAt used to go nowhere while the media_items row count still said "updated".
+            val mediaId = newId()
+            db.movieWriteDao().insertMediaItem(
+                MediaItemEntity(
+                    id = mediaId,
+                    type = MediaType.MOVIE,
+                    title = "Orphaned",
+                    releaseYear = null,
+                    purchasePrice = null,
+                    createdAt = Clock.System.now(),
+                ),
+            )
+            assertNull(db.movieDetailsDao().getByMediaId(mediaId), "precondition: no details row")
+
+            val result =
+                repo.updateMovieMetadata(
+                    mediaId = mediaId,
+                    title = "Orphaned",
+                    runtimeMinutes = 99,
+                    status = WatchStatus.WATCHING,
+                )
+            assertIs<Resource.Success<Unit>>(result)
+
+            val details = db.movieDetailsDao().getByMediaId(mediaId)
+            assertEquals(99, details?.runtimeMinutes, "the missing details row must be created, not skipped")
+            assertEquals(WatchStatus.WATCHING, details?.status)
+        }
+
+    // ---- updateWatchStatus: the status-only path -------------------------------------------
+
+    @Test
+    fun updateWatchStatus_writesStatusAndWatchedAtAndTouchesNothingElse() =
+        runTest {
+            val addResult =
+                repo.addMovie(
+                    title = "Heat",
+                    releaseYear = 1995,
+                    purchasePrice = 7.99,
+                    runtimeMinutes = 170,
+                    status = WatchStatus.WATCHLIST,
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+
+            val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
+            assertIs<Resource.Success<Unit>>(result)
+
+            val item = db.mediaItemDao().getById(mediaId)
+            assertEquals("Heat", item?.title, "a status change must not rewrite the title")
+            assertEquals(1995, item?.releaseYear)
+            assertEquals(7.99, item?.purchasePrice)
+
+            val details = db.movieDetailsDao().getByMediaId(mediaId)
+            assertEquals(WatchStatus.WATCHED, details?.status)
+            assertEquals(170, details?.runtimeMinutes, "a status change must not rewrite the runtime")
+            assertTrue(details?.watchedAt != null, "watchedAt must be stamped on the WATCHED transition")
+        }
+
+    @Test
+    fun updateWatchStatus_reSavingAlreadyWatched_preservesOriginalWatchedAt() =
+        runTest {
+            // Proves this path derives watchedAt through resolveWatchedAt rather than stamping
+            // unconditionally: the advancing clock makes a second read directly observable.
+            val clock = AdvancingClock(start = Instant.fromEpochMilliseconds(1_700_000_000_000))
+            val repoWithClock = MovieRepository(db, clock)
+
+            val addResult = repoWithClock.addMovie(title = "Seen It", status = WatchStatus.WATCHED)
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+            val firstWatchedAt = db.movieDetailsDao().getByMediaId(mediaId)?.watchedAt
+            assertTrue(firstWatchedAt != null)
+
+            val result = repoWithClock.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
+            assertIs<Resource.Success<Unit>>(result)
+
+            assertEquals(
+                firstWatchedAt,
+                db.movieDetailsDao().getByMediaId(mediaId)?.watchedAt,
+                "re-selecting WATCHED must not bump when the film was actually watched",
+            )
+        }
+
+    @Test
+    fun updateWatchStatus_transitionAwayFromWatched_clearsWatchedAt() =
+        runTest {
+            val addResult = repo.addMovie(title = "Abandoned Midway", status = WatchStatus.WATCHED)
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+            assertTrue(db.movieDetailsDao().getByMediaId(mediaId)?.watchedAt != null)
+
+            val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.ABANDONED)
+            assertIs<Resource.Success<Unit>>(result)
+
+            val details = db.movieDetailsDao().getByMediaId(mediaId)
+            assertEquals(WatchStatus.ABANDONED, details?.status)
+            assertNull(details?.watchedAt, "moving away from WATCHED must clear watchedAt")
+        }
+
+    @Test
+    fun updateWatchStatus_rowWithOutOfRangeReleaseYear_stillChangesStatus() =
+        runTest {
+            // Why this path exists at all. Routing a status tap through updateMovieMetadata put the
+            // row's *other* fields back through validation, so a stored release year outside
+            // MIN_RELEASE_YEAR..MAX_RELEASE_YEAR -- unreachable through this app's forms, but not
+            // through a row that arrived some other way -- made the status unchangeable, and failed
+            // with a complaint about a field the user never touched.
+            val mediaId = newId()
+            db.movieWriteDao().insertMovieAtomically(
+                item =
+                    MediaItemEntity(
+                        id = mediaId,
+                        type = MediaType.MOVIE,
+                        title = "Impossibly Old",
+                        releaseYear = 1600,
+                        purchasePrice = null,
+                        createdAt = Clock.System.now(),
+                    ),
+                details = MovieDetailsEntity(mediaId = mediaId, status = WatchStatus.WATCHLIST),
+            )
+
+            val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
+            assertIs<Resource.Success<Unit>>(result)
+            assertEquals(WatchStatus.WATCHED, db.movieDetailsDao().getByMediaId(mediaId)?.status)
+        }
+
+    @Test
+    fun updateWatchStatus_unknownMediaId_returnsError() =
+        runTest {
+            val result = repo.updateWatchStatus(mediaId = newId(), status = WatchStatus.WATCHED)
+
+            assertIs<Resource.Error>(result)
+            assertTrue(result.message.contains("not found"))
         }
 
     // ---- observeMovieDetail / observeAllMoviesWithDetails: type gate against books ----------

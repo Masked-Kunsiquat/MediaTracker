@@ -164,6 +164,43 @@ public class MovieRepository(
         }
     }
 
+    /**
+     * Changes only a movie's [WatchStatus], and the [MovieDetailsEntity.watchedAt] that follows
+     * from it.
+     *
+     * Separate from [updateMovieMetadata] rather than a call into it, because a status tap is not
+     * an edit of everything else. Re-sending title/year/price/runtime to change one column put
+     * those values back through [MovieMetadataValidation], so a row whose stored release year is
+     * outside [MovieMetadataValidation.MIN_RELEASE_YEAR]..[MovieMetadataValidation.MAX_RELEASE_YEAR]
+     * — not reachable through this app's own forms, but reachable by a row that arrived some other
+     * way — could not have its status changed at all, and failed with a complaint about a field the
+     * user had not touched. Writing only the two columns that actually change also means a status
+     * tap can no longer overwrite a title someone edited in between.
+     *
+     * @return [Resource.Error] if [mediaId] has no `movie_details` row (deleted, or never a movie).
+     */
+    public suspend fun updateWatchStatus(
+        mediaId: String,
+        status: WatchStatus,
+    ): Resource<Unit> =
+        try {
+            val existing = db.movieDetailsDao().getByMediaId(mediaId)
+            val watchedAt =
+                resolveWatchedAt(
+                    newStatus = status,
+                    oldStatus = existing?.status ?: WatchStatus.WATCHLIST,
+                    oldWatchedAt = existing?.watchedAt,
+                    clock = clock,
+                )
+            val rows = db.movieWriteDao().updateWatchStatusFields(mediaId, status, watchedAt)
+            if (rows == 0) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to update status for movie: id=$mediaId" }
+            Resource.Error("Failed to update movie status: ${e.message ?: "Unknown error"}", cause = e)
+        }
+
     public companion object {
         /**
          * Derives [MovieDetailsEntity.watchedAt] for a [WatchStatus] transition. Identical in shape

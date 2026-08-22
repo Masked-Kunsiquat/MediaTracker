@@ -68,22 +68,14 @@ public class MovieDetailViewModel(
      * Quick status change without a full edit round-trip, mirroring
      * [BookDetailViewModel.updateStatus].
      *
-     * Re-sends the movie's current title/year/price/runtime because the underlying update is a
-     * whole-metadata write. That is safe only because the values come from the *current* emission
-     * rather than a snapshot taken when the screen opened.
+     * Writes only the status, via [MovieRepository.updateWatchStatus] — it deliberately does not
+     * re-send the movie's other fields, since none of them are what the user just changed. See that
+     * function's KDoc for what re-sending them cost.
      */
     public fun updateStatus(status: WatchStatus) {
-        val current = (uiState.value as? MovieDetailUiState.Ready)?.movie ?: return
+        if (uiState.value !is MovieDetailUiState.Ready) return
         viewModelScope.launch {
-            val result =
-                movieRepository.updateMovieMetadata(
-                    mediaId = movieId,
-                    title = current.item.title,
-                    releaseYear = current.item.releaseYear,
-                    purchasePrice = current.item.purchasePrice,
-                    runtimeMinutes = current.details?.runtimeMinutes,
-                    status = status,
-                )
+            val result = movieRepository.updateWatchStatus(mediaId = movieId, status = status)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }
