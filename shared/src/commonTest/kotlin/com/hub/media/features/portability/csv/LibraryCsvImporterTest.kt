@@ -59,6 +59,13 @@ class LibraryCsvImporterTest {
             finishedAt,
             trackingMode,
             externalIdentifiers,
+            // The v3 movie columns (runtime_minutes/watch_status/watched_at). Blank because every
+            // fixture here is a book, and kept present so these rows stay the width a real current
+            // export actually has -- parseRow ignores them, but a fixture that quietly stayed a
+            // format behind would be a poor model of the file it stands in for.
+            "",
+            "",
+            "",
         )
 
     @Test
@@ -282,17 +289,56 @@ class LibraryCsvImporterTest {
             )
         val padded = LibraryCsvImporter.padLegacyV1Row(v1Row)
 
-        // Same 15 values, now 16 fields long, with a blank inserted right after "Dune" (index 3).
-        assertEquals(16, padded.size)
+        // Same 15 values, now the current width, with a blank inserted right after "Dune"
+        // (index 3) and the v3 movie columns padded on the end -- a v1 file is two format changes
+        // behind, so this adapter has to carry both.
+        assertEquals(LibraryCsvExporter.HEADER.size, padded.size)
         assertEquals("Dune", padded[3])
         assertEquals("", padded[4])
         assertEquals("1965", padded[5])
-        assertEquals("ISBN:9780441013593", padded.last())
+        assertEquals("ISBN:9780441013593", padded[15])
 
-        // And the padded row parses exactly like a genuine blank-authors v2 row would.
+        // And the padded row parses exactly like a genuine blank-authors row would.
         val result = LibraryCsvImporter.parseRow(padded)
         assertIs<LibraryRowParseResult.Parsed>(result)
         assertEquals(null, result.row.authors)
         assertEquals("Dune", result.row.title)
+    }
+
+    // --- padLegacyV2Row (ROADMAP Task 13 Phase B: a v2 file must still import) --------------------
+
+    @Test
+    fun padLegacyV2Row_appendsBlankMovieColumnsAndLeavesEveryExistingValueInPlace() {
+        val v2Row =
+            listOf(
+                "2",
+                SAMPLE_MEDIA_ID,
+                "BOOK",
+                "Dune",
+                "Frank Herbert",
+                "1965",
+                "9.99",
+                "2024-01-01T00:00:00Z",
+                "",
+                "9780441013593",
+                "PAPERBACK",
+                "412",
+                "READING",
+                "",
+                "PAGES",
+                "ISBN:9780441013593",
+            )
+        val padded = LibraryCsvImporter.padLegacyV2Row(v2Row)
+
+        assertEquals(LibraryCsvExporter.HEADER.size, padded.size)
+        // A pure append: every column a v2 file already had keeps its index, which is the whole
+        // reason the v3 columns went on the end.
+        assertEquals(v2Row, padded.take(v2Row.size))
+        assertTrue(padded.drop(v2Row.size).all { it.isEmpty() }, "the appended movie columns must be blank")
+
+        val result = LibraryCsvImporter.parseRow(padded)
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        assertEquals("Dune", result.row.title)
+        assertEquals("Frank Herbert", result.row.authors)
     }
 }

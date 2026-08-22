@@ -118,11 +118,46 @@
     <string name="edit_total_pages_suffix">pages</string>
 
     <!-- LibraryScreen status filter -->
+    <!-- Movie status, shown on the movie detail screen and the add-movie form. Type-specific by
+         design: a detail screen shows one item of known type, so it uses that type's vocabulary. -->
+    <string name="watch_status_watchlist">Watchlist</string>
+    <string name="watch_status_watching">Watching</string>
+    <string name="watch_status_watched">Watched</string>
+    <string name="watch_status_abandoned">Abandoned</string>
+
+    <!-- Manual movie entry (Task 13 Phase B) -->
+    <string name="add_movie_title">Add movie</string>
+    <string name="edit_movie_title">Edit movie</string>
+    <string name="edit_movie_save">Save changes</string>
+    <string name="edit_movie_content_description">Edit movie</string>
+    <string name="add_book_menu_item">Add book</string>
+    <string name="add_media_content_description">Add to library</string>
+    <string name="add_movie_field_title">Title</string>
+    <string name="add_movie_field_year">Release year</string>
+    <string name="add_movie_field_runtime">Runtime (minutes)</string>
+    <string name="add_movie_field_price">Purchase price</string>
+    <string name="add_movie_runtime_invalid_error">Enter a positive runtime in minutes</string>
+    <string name="add_movie_status_label">Status</string>
+    <string name="add_movie_save">Save movie</string>
+
+    <!-- Movie detail (Task 13 Phase B) -->
+    <string name="movie_detail_not_found">Movie not found</string>
+    <string name="movie_detail_runtime">Runtime: %1$d min</string>
+    <string name="movie_detail_runtime_unknown">Runtime unknown</string>
+    <string name="movie_detail_delete">Delete movie</string>
+    <string name="movie_detail_delete_confirm">Delete this movie? This cannot be undone.</string>
     <string name="library_filter_all">All</string>
+    <!-- Library status filter chips. Deliberately media-neutral: the same chip must read
+         correctly for a book and a film, so these are not the book-specific reading_status_*
+         strings, which stay in use on the book detail screen. -->
+    <string name="library_filter_not_started">Not started</string>
+    <string name="library_filter_in_progress">In progress</string>
+    <string name="library_filter_finished">Finished</string>
+    <string name="library_filter_abandoned">Abandoned</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_empty_subtitle">Add your first item to get started</string>
-    <string name="library_released_label">Released: </string>
-    <string name="library_year_label">Year: </string>
+    <string name="library_released_label">Released: %1$s</string>
+    <string name="library_year_label">Year: %1$s</string>
 
     <!-- LibraryScreen local search (ROADMAP Task 9 Phase A) -->
     <string name="library_search_placeholder">Search by title or author</string>

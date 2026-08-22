@@ -3,6 +3,7 @@ package com.hub.media.features.portability.domain
 import androidx.room.Room
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.AppDatabaseConstructor
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.util.Resource
@@ -97,7 +98,7 @@ class ExportDataUseCaseLogExclusionTest {
                     )
                 assertIs<Resource.Success<String>>(sessionResult)
 
-                val useCase = ExportDataUseCase(bookRepository, readingSessionRepository)
+                val useCase = ExportDataUseCase(MediaRepository(liveDb), bookRepository, readingSessionRepository)
                 val result = useCase.execute()
                 assertIs<Resource.Success<CsvExportBundle>>(result)
                 val bundle = result.data

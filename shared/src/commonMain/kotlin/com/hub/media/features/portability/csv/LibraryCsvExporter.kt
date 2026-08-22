@@ -33,10 +33,58 @@ import com.hub.media.features.media.data.MediaWithDetails
  * 15. `tracking_mode` -- by enum name; empty when details are null.
  * 16. `external_identifiers` -- every [ExternalIdentifierEntity] for this item packed into one
  *     field as `PROVIDER:externalId` pairs joined by `|`.
+ * 17. `runtime_minutes` (schema v6 / CSV `v3`, ROADMAP Task 13 Phase B) --
+ *     [com.hub.media.core.database.entities.MovieDetailsEntity.runtimeMinutes]; empty when null or
+ *     for a non-movie.
+ * 18. `watch_status` -- [com.hub.media.core.database.entities.WatchStatus] by enum name; empty for
+ *     a non-movie. Deliberately its own column rather than sharing `status` with books: the two are
+ *     different enums (see [com.hub.media.core.database.entities.WatchStatus]'s KDoc), and one
+ *     column holding either would make `FINISHED` and `WATCHED` indistinguishable from a value that
+ *     merely looks unfamiliar.
+ * 19. `watched_at` -- ISO-8601 UTC; empty when null or for a non-movie.
+ *
+ * ### Why movie columns exist here before the importer can read them
+ * [LibraryCsvImporter] still rejects a `MOVIE` row (only `BOOK` is supported), so these three
+ * columns are written and not yet read. That is deliberate: this file is the user's backup, and a
+ * movie's runtime and watch status only survive a lost device if they were *written down* at export
+ * time. Adding the columns once the importer can consume them would be too late for every export
+ * taken in between.
  */
 public object LibraryCsvExporter {
     /** Header row, in column order -- see class KDoc for what each column holds. */
     public val HEADER: List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION_COLUMN,
+            "media_id",
+            "type",
+            "title",
+            "authors",
+            "release_year",
+            "purchase_price",
+            "created_at",
+            "cover_image_hash",
+            "isbn",
+            "format",
+            "total_pages",
+            "status",
+            "finished_at",
+            "tracking_mode",
+            "external_identifiers",
+            "runtime_minutes",
+            "watch_status",
+            "watched_at",
+        )
+
+    /**
+     * The `csv_schema_version=2` header shape (ROADMAP Task 9 Phase A), before `v3` appended the
+     * three movie columns.
+     *
+     * The movie columns went on the **end** rather than beside their book equivalents so every
+     * column a `v2` file already had keeps its index -- which is what lets
+     * [LibraryCsvImporter.padLegacyV2Row] be a pad rather than a reshuffle, and leaves
+     * [LibraryCsvImporter]'s column constants untouched.
+     */
+    public val HEADER_V2: List<String> =
         listOf(
             CSV_SCHEMA_VERSION_COLUMN,
             "media_id",
@@ -169,6 +217,39 @@ public object LibraryCsvExporter {
                 is MediaWithDetails.TVShow,
                 -> ""
             }
+        val runtimeMinutes =
+            when (media) {
+                is MediaWithDetails.Movie ->
+                    media.details
+                        ?.runtimeMinutes
+                        ?.toString()
+                        .orEmpty()
+                is MediaWithDetails.Book,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val watchStatus =
+            when (media) {
+                is MediaWithDetails.Movie ->
+                    media.details
+                        ?.status
+                        ?.name
+                        .orEmpty()
+                is MediaWithDetails.Book,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
+        val watchedAt =
+            when (media) {
+                is MediaWithDetails.Movie ->
+                    media.details
+                        ?.watchedAt
+                        ?.toString()
+                        .orEmpty()
+                is MediaWithDetails.Book,
+                is MediaWithDetails.TVShow,
+                -> ""
+            }
 
         return listOf(
             CSV_SCHEMA_VERSION.toString(),
@@ -187,6 +268,9 @@ public object LibraryCsvExporter {
             finishedAt,
             trackingMode,
             packIdentifiers(identifiers),
+            runtimeMinutes,
+            watchStatus,
+            watchedAt,
         )
     }
 

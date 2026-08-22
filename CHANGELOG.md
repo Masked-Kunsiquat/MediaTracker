@@ -7,11 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Movies (ROADMAP Task 13 Phase B)** — Films can now be added, viewed, edited and deleted alongside books. Entry is manual: title, release year, runtime and purchase price, with a Watchlist/Watching/Watched/Abandoned status. No provider lookup is involved yet.
+  - **Add from the library**: the add button now offers a choice of book or movie.
+  - **Editing**: a movie's details can be corrected after the fact. Manual entry has no provider to re-fetch from, so this is the only way to fix a typo.
+  - **Only the title is required.** A blank year, runtime or price means "unknown" and is stored as such, rather than as zero.
+  - **A number that cannot be read is refused, not discarded.** Clearing a field means "unknown" and saves as such, but an entry the app cannot parse (a year too long to be a year, a price like "1.2.3") now marks the field and blocks the save. Previously both cases became "unknown", so on the edit form an unreadable entry silently erased the value it was meant to correct.
+  - **The form locks while a save is in flight**, so an edit made mid-save cannot be dropped by a write that had already read the old values.
+
+### Changed
+
+- **Library status filter now covers every media type.** The chips read "Not started", "In progress", "Finished" and "Abandoned" instead of the book-specific "To read", "Reading" and "Did not finish" — one chip has to match a book and a film at once. Book detail keeps its own wording.
+- **Movies and shows without artwork** show a film or television icon instead of a book.
+
+### Fixed
+
+- **Movies were missing from CSV exports.** The library export read a book-only source, so a film in the library was silently absent from the backup file — data that would have been lost on device loss with nothing to warn the user. Exports now include every media type, with a movie's runtime and watch status in columns of their own (`csv_schema_version` is now `3`; files this app produced as `v1` or `v2` still import). Note that re-importing a movie row is not supported yet; it is reported as a rejected row rather than being silently dropped — the columns are written now so that a backup taken today still holds the data once movie re-import is supported.
+- **A movie's status can be changed from its detail screen without touching anything else.** The status chips used to re-save the film's title, year, price and runtime alongside the status, which meant a status tap could overwrite a title edited elsewhere in between, and a film whose stored release year was outside the accepted range could not have its status changed at all — the save failed complaining about a field the user had not touched.
+- **Release year rendered without a space** ("Year:2016") on library cards.
+
 ### Internal
 
 - **Schema v6 (ROADMAP Task 13 Phase A)** — Adds the database half of the polymorphic media model: `movie_details`, `tv_details`, `episodes` and `watch_logs`, via `MIGRATION_5_6`. Purely additive — four tables created, none altered, so no existing book data is read or rewritten. No user-visible effect yet; nothing creates a movie or TV row until Phase B.
   - **`WatchStatus`**: movies and shows get their own status enum rather than generalizing `ReadingStatus`, which is persisted by name and would have required rewriting every existing book's stored status to gain naming symmetry.
   - **Episode-level by construction**: watched state lives on `episodes.watchedAt` with progress derived by counting, so no stored counter can drift from the rows it summarizes.
+- **A movie whose `movie_details` row is missing is repaired rather than half-written.** `MovieWriteDao.updateMovieMetadataAtomically` returned the `media_items` row count and ignored the `movie_details` one, so an update against a parent row that had no `movie_details` row sent runtime/status/`watchedAt` into a statement that matched nothing and still reported success. It now inserts the missing row inside the same transaction. `MovieDetailsDao` is read-only as a result — every movie write spans both tables, so all of them belong to `MovieWriteDao`.
+- **Movie metadata updates are scoped to movie rows.** `MovieWriteDao.updateMediaItemFields` now matches on `type = 'MOVIE'` as well as id. `media_items` is shared by every media type, so an id-only `UPDATE` meant a book id reaching `MovieRepository.updateMovieMetadata` would have overwritten that book's title, year and price and reported success — only the `movie_details` half would have missed, and that half's row count is not the one the repository checks. The UI's type gate makes this unreachable today; the DAO no longer relies on it.
 
 ## [0.14.0] - 2026-08-20
 

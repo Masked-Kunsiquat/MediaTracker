@@ -7,13 +7,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
 
 /**
@@ -49,8 +53,20 @@ fun AppNavigation(
                 onNavigateToAddBook = {
                     navController.navigate(Route.AddBook.route)
                 },
-                onNavigateToMediaDetail = { bookId ->
-                    navController.navigate(Route.BookDetail.createRoute(bookId))
+                onNavigateToAddMovie = {
+                    navController.navigate(Route.AddMovie.route)
+                },
+                // Type-aware at last (ROADMAP Task 13 Phase B). Until a movie row could exist this
+                // took an id alone and sent everything to Book Detail; the `when` is now
+                // exhaustive, so adding a media type fails to compile here rather than silently
+                // routing to the wrong screen.
+                onNavigateToMediaDetail = { mediaId, type ->
+                    when (type) {
+                        MediaType.BOOK -> navController.navigate(Route.BookDetail.createRoute(mediaId))
+                        MediaType.MOVIE -> navController.navigate(Route.MovieDetail.createRoute(mediaId))
+                        // Phase C builds the show detail screen; until then no TV_SHOW row exists.
+                        MediaType.TV_SHOW -> Unit
+                    }
                 },
                 onNavigateToStats = {
                     navController.navigate(Route.Stats.route)
@@ -58,6 +74,59 @@ fun AppNavigation(
                 onNavigateToSettings = {
                     navController.navigate(Route.Settings.route)
                 },
+            )
+        }
+
+        composable(Route.AddMovie.route) {
+            AddMovieScreenRoute(
+                appContainer = appContainer,
+                onNavigateBack = { navController.navigateUp() },
+                // Straight to the new movie, replacing the form in the back stack so Back from the
+                // detail screen returns to the library rather than to a spent form.
+                onMovieAdded = { movieId ->
+                    navController.navigate(Route.MovieDetail.createRoute(movieId)) {
+                        popUpTo(Route.AddMovie.route) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = Route.MovieDetail.route,
+            arguments =
+                listOf(
+                    navArgument(Route.MovieDetail.ARG_MOVIE_ID) { type = NavType.StringType },
+                ),
+        ) { backStackEntry ->
+            val movieId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.MovieDetail.ARG_MOVIE_ID)) {
+                    "Missing required argument: ${Route.MovieDetail.ARG_MOVIE_ID}"
+                }
+            MovieDetailScreenRoute(
+                appContainer = appContainer,
+                movieId = movieId,
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToEditMovie = {
+                    navController.navigate(Route.EditMovie.createRoute(movieId))
+                },
+            )
+        }
+
+        composable(
+            route = Route.EditMovie.route,
+            arguments =
+                listOf(
+                    navArgument(Route.EditMovie.ARG_MOVIE_ID) { type = NavType.StringType },
+                ),
+        ) { backStackEntry ->
+            val movieId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.EditMovie.ARG_MOVIE_ID)) {
+                    "Missing required argument: ${Route.EditMovie.ARG_MOVIE_ID}"
+                }
+            EditMovieScreenRoute(
+                appContainer = appContainer,
+                movieId = movieId,
+                onNavigateBack = { navController.navigateUp() },
             )
         }
 

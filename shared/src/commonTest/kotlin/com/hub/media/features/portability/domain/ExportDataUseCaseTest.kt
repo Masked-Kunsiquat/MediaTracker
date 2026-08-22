@@ -1,12 +1,15 @@
 package com.hub.media.features.portability.domain
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
+import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION
 import com.hub.media.features.portability.csv.CsvUtil
 import kotlinx.coroutines.test.runTest
@@ -38,13 +41,56 @@ class ExportDataUseCaseTest {
         db = testAppDatabase()
         bookRepository = BookRepository(db)
         readingSessionRepository = ReadingSessionRepository(db)
-        useCase = ExportDataUseCase(bookRepository, readingSessionRepository)
+        useCase = ExportDataUseCase(MediaRepository(db), bookRepository, readingSessionRepository)
     }
 
     @AfterTest
     fun tearDown() {
         db.close()
     }
+
+    /**
+     * A movie in the library must appear in the exported CSV.
+     *
+     * This is a data-portability claim, not a formatting one: `library_export.csv` is the archival
+     * format this app promises (AGENTS.md §1), so anything missing from it is data a user loses on
+     * device loss with no error to warn them. `LibraryCsvExporter` was generalized to
+     * `MediaWithDetails` in Issue #67 and handles movie rows, so the question is purely whether the
+     * export use case ever hands them to it.
+     */
+    @Test
+    fun execute_withAMovieInTheLibrary_includesItInTheLibraryCsv() =
+        runTest {
+            val movieRepository = MovieRepository(db)
+            assertIs<Resource.Success<String>>(bookRepository.addBook(title = "Dune", format = BookFormat.PHYSICAL))
+            assertIs<Resource.Success<String>>(
+                movieRepository.addMovie(
+                    title = "Arrival",
+                    releaseYear = 2016,
+                    runtimeMinutes = 116,
+                    status = WatchStatus.WATCHED,
+                ),
+            )
+
+            val result = useCase.execute()
+            assertIs<Resource.Success<CsvExportBundle>>(result)
+
+            val libraryCsv = result.data.libraryCsv
+            assertTrue(libraryCsv.contains("Dune"), "the book must be exported")
+            assertTrue(
+                libraryCsv.contains("Arrival"),
+                "the movie must be exported too -- a backup that silently omits it loses the row: $libraryCsv",
+            )
+
+            // The row alone is not the claim: a movie whose runtime and watch status are missing
+            // from the file has been half-exported, and those two are the only things the movie
+            // form records that a media_items row cannot hold.
+            val movieLine = libraryCsv.split(CsvUtil.LINE_ENDING).single { it.contains("Arrival") }
+            val fields = movieLine.split(",")
+            assertEquals("116", fields[16], "runtime must reach the CSV: $movieLine")
+            assertEquals("WATCHED", fields[17], "watch status must reach the CSV: $movieLine")
+            assertTrue(fields[18].isNotEmpty(), "watchedAt must reach the CSV: $movieLine")
+        }
 
     @Test
     fun execute_emptyDatabase_producesHeaderOnlyCsvForBothFiles() =

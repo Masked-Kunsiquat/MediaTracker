@@ -18,7 +18,7 @@ files must be generated as a matched pair.
   negotiable — the reader matches the header against an expected list and fails the whole file if
   it does not match.
 - **`csv_schema_version` is the first column of every data row**, not just the header, and its
-  value is `2`.
+  value is `3`.
 - **Empty means "unknown"** for every optional field. Write an empty field, never `null`, `N/A`,
   `0`, or `-`. This matters: `0` and empty are different answers, and the app treats a `0` duration
   as a real zero-second session rather than a missing one.
@@ -29,13 +29,13 @@ files must be generated as a matched pair.
 
 ## File 1 — `library_export.csv`
 
-16 columns, in this order:
+19 columns, in this order:
 
 | # | Column | Required | Notes |
 | ---: | :--- | :--- | :--- |
-| 1 | `csv_schema_version` | yes | Always `2` |
+| 1 | `csv_schema_version` | yes | Always `3` |
 | 2 | `media_id` | yes | UUID string; referenced by the reading log |
-| 3 | `type` | yes | `BOOK` — the only supported value today |
+| 3 | `type` | yes | `BOOK` — the only value the **importer** accepts. The app's own export also writes `MOVIE` rows (see below) |
 | 4 | `title` | yes | Must not be blank |
 | 5 | `authors` | no | **One string**, multiple authors joined with `"; "` (semicolon + space) |
 | 6 | `release_year` | no | Integer `1450`–`2100`, or empty |
@@ -49,6 +49,14 @@ files must be generated as a matched pair.
 | 14 | `finished_at` | no | ISO-8601 UTC. Only meaningful with `status=FINISHED` |
 | 15 | `tracking_mode` | no | `PAGES` or `PERCENT` |
 | 16 | `external_identifiers` | no | `PROVIDER:value`, multiple joined with `\|` (pipe) |
+| 17 | `runtime_minutes` | no | Movies only. Integer `> 0`, or empty. Leave empty on a book row |
+| 18 | `watch_status` | no | Movies only. `WATCHLIST`, `WATCHING`, `WATCHED`, `ABANDONED` |
+| 19 | `watched_at` | no | Movies only. ISO-8601 UTC. Only meaningful with `watch_status=WATCHED` |
+
+**Columns 17–19 are written by the app, not read back by it.** The app exports movies in full, but
+its importer still rejects a `MOVIE` row (reported as a rejected row, not silently dropped). They
+are in the file so a movie's runtime and watch status survive in a backup taken today; a generated
+file meant for import should contain `BOOK` rows only and leave these three empty.
 
 **`external_identifiers` providers:** `ISBN`, `OPEN_LIBRARY`, `GOOGLE_BOOKS`, `TMDB`, `TVDB`.
 Example: `ISBN:9780441478125|OPEN_LIBRARY:OL27258W`.
@@ -63,7 +71,7 @@ cover yet, which the app's cover backfill can then fill in properly.
 
 | # | Column | Required | Notes |
 | ---: | :--- | :--- | :--- |
-| 1 | `csv_schema_version` | yes | Always `2` |
+| 1 | `csv_schema_version` | yes | Always `3` (the marker is shared by both files, so it moves when either one changes shape) |
 | 2 | `session_id` | yes | UUID string, unique per session |
 | 3 | `media_id` | yes | Must match a `media_id` in the library file |
 | 4 | `timestamp_start` | yes | ISO-8601 UTC |
@@ -117,18 +125,18 @@ rejects is not useful, so:
 `library_export.csv`:
 
 ```csv
-csv_schema_version,media_id,type,title,authors,release_year,purchase_price,created_at,cover_image_hash,isbn,format,total_pages,status,finished_at,tracking_mode,external_identifiers
-2,11111111-1111-4111-8111-111111111111,BOOK,The Left Hand of Darkness,Ursula K. Le Guin,1969,12.99,2026-01-05T09:15:00Z,,9780441478125,PAPERBACK,304,FINISHED,2026-02-01T21:40:00Z,PAGES,ISBN:9780441478125
-2,33333333-3333-4333-8333-333333333333,BOOK,Good Omens,Terry Pratchett; Neil Gaiman,1990,14.00,2026-01-07T09:15:00Z,,9780060853983,HARDCOVER,491,READING,,PAGES,ISBN:9780060853983
+csv_schema_version,media_id,type,title,authors,release_year,purchase_price,created_at,cover_image_hash,isbn,format,total_pages,status,finished_at,tracking_mode,external_identifiers,runtime_minutes,watch_status,watched_at
+3,11111111-1111-4111-8111-111111111111,BOOK,The Left Hand of Darkness,Ursula K. Le Guin,1969,12.99,2026-01-05T09:15:00Z,,9780441478125,PAPERBACK,304,FINISHED,2026-02-01T21:40:00Z,PAGES,ISBN:9780441478125,,,
+3,33333333-3333-4333-8333-333333333333,BOOK,Good Omens,Terry Pratchett; Neil Gaiman,1990,14.00,2026-01-07T09:15:00Z,,9780060853983,HARDCOVER,491,READING,,PAGES,ISBN:9780060853983,,,
 ```
 
 `reading_logs_export.csv`:
 
 ```csv
 csv_schema_version,session_id,media_id,timestamp_start,timestamp_end,duration_seconds,start_unit,end_unit,delta_pages,notes
-2,aaaaaaaa-0001-4000-8000-000000000001,11111111-1111-4111-8111-111111111111,2026-01-20T19:05:00Z,2026-01-20T20:10:00Z,3900,0.0,48.0,48,Opening chapters
-2,aaaaaaaa-0001-4000-8000-000000000002,11111111-1111-4111-8111-111111111111,2026-01-24T21:00:00Z,2026-01-24T21:45:00Z,2700,48.0,95.0,47,
-2,aaaaaaaa-0002-4000-8000-000000000001,33333333-3333-4333-8333-333333333333,2026-02-14T08:30:00Z,2026-02-14T09:00:00Z,,120.0,151.0,31,"Commute reading, noisy train"
+3,aaaaaaaa-0001-4000-8000-000000000001,11111111-1111-4111-8111-111111111111,2026-01-20T19:05:00Z,2026-01-20T20:10:00Z,3900,0.0,48.0,48,Opening chapters
+3,aaaaaaaa-0001-4000-8000-000000000002,11111111-1111-4111-8111-111111111111,2026-01-24T21:00:00Z,2026-01-24T21:45:00Z,2700,48.0,95.0,47,
+3,aaaaaaaa-0002-4000-8000-000000000001,33333333-3333-4333-8333-333333333333,2026-02-14T08:30:00Z,2026-02-14T09:00:00Z,,120.0,151.0,31,"Commute reading, noisy train"
 ```
 
 Note the second session has an empty `duration_seconds` (unknown, not zero) and an empty `notes`,

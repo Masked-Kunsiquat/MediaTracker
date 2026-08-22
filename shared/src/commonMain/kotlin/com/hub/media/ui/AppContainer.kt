@@ -23,6 +23,7 @@ import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.media.domain.RealSearchMediaUseCase
 import com.hub.media.features.media.domain.SearchMediaUseCase
+import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
@@ -94,6 +95,9 @@ public class AppContainer(
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
+
+    /** Movie data operations (ROADMAP Task 13 Phase B). */
+    public val movieRepository: MovieRepository = MovieRepository(database)
 
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
@@ -239,6 +243,7 @@ public class AppContainer(
      */
     public val exportDataUseCase: ExportDataUseCase =
         ExportDataUseCase(
+            mediaRepository = mediaRepository,
             bookRepository = bookRepository,
             readingSessionRepository = readingSessionRepository,
         )

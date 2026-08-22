@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -63,9 +66,9 @@ import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
-import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.LibraryUiState
 import com.hub.media.ui.LibraryViewModel
 import kotlin.time.ExperimentalTime
@@ -78,6 +81,7 @@ import kotlin.time.Instant
  * @param appContainer The dependency container for creating ViewModels.
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Callback to navigate to the add-book screen.
+ * @param onNavigateToAddMovie Callback to navigate to the manual add-movie screen.
  * @param onNavigateToMediaDetail Callback invoked with a media item's id when its card is tapped.
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
  * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase B).
@@ -87,7 +91,8 @@ fun LibraryScreenRoute(
     appContainer: AppContainer,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
-    onNavigateToMediaDetail: (String) -> Unit,
+    onNavigateToAddMovie: () -> Unit,
+    onNavigateToMediaDetail: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
@@ -101,6 +106,7 @@ fun LibraryScreenRoute(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
         onNavigateToAddBook = onNavigateToAddBook,
+        onNavigateToAddMovie = onNavigateToAddMovie,
         onMediaClick = onNavigateToMediaDetail,
         onNavigateToStats = onNavigateToStats,
         onNavigateToSettings = onNavigateToSettings,
@@ -120,8 +126,11 @@ fun LibraryScreenRoute(
  *
  * @param uiState [LibraryUiState] containing the list of media, status filter, and isEmpty flag.
  * @param coverStorageDir Absolute path to the cover image storage directory.
- * @param onNavigateToAddBook Called when the FAB is pressed.
- * @param onMediaClick Called with the media ID when a card is tapped.
+ * @param onNavigateToAddBook Called when the add-book action is chosen.
+ * @param onNavigateToAddMovie Called when the add-movie action is chosen.
+ * @param onMediaClick Called with the media ID **and its type** when a card is tapped. The type is
+ *   what lets the caller pick the right detail destination; passing the id alone routed every tap
+ *   to Book Detail regardless of type (ROADMAP Task 13 Phase B).
  * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped.
  * @param onNavigateToSettings Called when the TopAppBar's settings icon is tapped.
  * @param onStatusFilterChange Called with the newly selected filter (`null` for "All").
@@ -133,10 +142,11 @@ fun LibraryScreen(
     uiState: LibraryUiState,
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
-    onMediaClick: (String) -> Unit,
+    onNavigateToAddMovie: () -> Unit,
+    onMediaClick: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onStatusFilterChange: (ReadingStatus?) -> Unit,
+    onStatusFilterChange: (LibraryStatusFilter?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onToggleSelection: (String) -> Unit = {},
     onClearSelection: () -> Unit = {},
@@ -144,6 +154,7 @@ fun LibraryScreen(
     onDeleteErrorShown: (Long) -> Unit = {},
 ) {
     var showBulkDeleteConfirmation by remember { mutableStateOf(false) }
+    var showAddMenu by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // A failed delete previously left the books present, the selection intact, and nothing on
@@ -187,8 +198,35 @@ fun LibraryScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onNavigateToAddBook) {
-                Text("+", style = MaterialTheme.typography.headlineLarge)
+            // The FAB now picks a media type rather than going straight to add-book. A menu rather
+            // than a second FAB because the library is one list -- two permanent buttons would
+            // imply two places to land.
+            Box {
+                FloatingActionButton(onClick = { showAddMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.add_media_content_description),
+                    )
+                }
+                DropdownMenu(
+                    expanded = showAddMenu,
+                    onDismissRequest = { showAddMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_book_menu_item)) },
+                        onClick = {
+                            showAddMenu = false
+                            onNavigateToAddBook()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_movie_title)) },
+                        onClick = {
+                            showAddMenu = false
+                            onNavigateToAddMovie()
+                        },
+                    )
+                }
             }
         },
     ) { innerPadding ->
@@ -273,7 +311,7 @@ fun LibraryScreen(
                                 MediaCard(
                                     media = media,
                                     coverStorageDir = coverStorageDir,
-                                    onClick = { onMediaClick(media.item.id) },
+                                    onClick = { onMediaClick(media.item.id, media.item.type) },
                                     selectionMode = uiState.isSelectionMode,
                                     selected = media.item.id in uiState.selectedIds,
                                     onToggleSelection = { onToggleSelection(media.item.id) },
@@ -427,8 +465,8 @@ private fun LibrarySearchField(
  */
 @Composable
 private fun StatusFilterRow(
-    selected: ReadingStatus?,
-    onSelectedChange: (ReadingStatus?) -> Unit,
+    selected: LibraryStatusFilter?,
+    onSelectedChange: (LibraryStatusFilter?) -> Unit,
 ) {
     LazyRow(
         modifier =
@@ -444,11 +482,11 @@ private fun StatusFilterRow(
                 label = { Text(stringResource(R.string.library_filter_all)) },
             )
         }
-        items(ReadingStatus.entries.toList()) { status ->
+        items(LibraryStatusFilter.entries.toList()) { status ->
             FilterChip(
                 selected = selected == status,
                 onClick = { onSelectedChange(status) },
-                label = { Text(status.displayLabel()) },
+                label = { Text(status.filterLabel()) },
             )
         }
     }
@@ -494,6 +532,7 @@ private fun MediaCard(
                 coverDir = coverStorageDir,
                 coverImageHash = mediaItem.coverImageHash,
                 modifier = Modifier.fillMaxSize(),
+                mediaType = mediaItem.type,
             )
         }
 
@@ -528,14 +567,19 @@ private fun MediaCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (mediaItem.releaseYear != null) {
+            val releaseYear = mediaItem.releaseYear
+            if (releaseYear != null) {
+                // Formatted rather than concatenated: these strings used to end in a trailing
+                // space, which XML strips, so the card rendered "Year:2016".
                 val label =
                     when (mediaItem.type) {
-                        MediaType.BOOK -> stringResource(R.string.library_released_label)
-                        MediaType.MOVIE, MediaType.TV_SHOW -> stringResource(R.string.library_year_label)
+                        MediaType.BOOK ->
+                            stringResource(R.string.library_released_label, releaseYear)
+                        MediaType.MOVIE, MediaType.TV_SHOW ->
+                            stringResource(R.string.library_year_label, releaseYear)
                     }
                 Text(
-                    text = "$label${mediaItem.releaseYear}",
+                    text = label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -602,7 +646,8 @@ private fun LibraryScreenPreview() {
                 ),
             coverStorageDir = "/fake/path",
             onNavigateToAddBook = {},
-            onMediaClick = {},
+            onNavigateToAddMovie = {},
+            onMediaClick = { _, _ -> },
             onNavigateToStats = {},
             onNavigateToSettings = {},
             onStatusFilterChange = {},

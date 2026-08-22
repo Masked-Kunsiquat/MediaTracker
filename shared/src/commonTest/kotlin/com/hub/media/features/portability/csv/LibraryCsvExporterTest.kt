@@ -6,8 +6,10 @@ import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -139,6 +141,99 @@ class LibraryCsvExporterTest {
         assertEquals("", fields[11]) // total_pages
         assertEquals("", fields[13]) // finished_at
         assertEquals("", fields[15]) // external_identifiers
+        assertEquals("", fields[16]) // runtime_minutes -- a book has none
+        assertEquals("", fields[17]) // watch_status
+        assertEquals("", fields[18]) // watched_at
+    }
+
+    // ---- movie columns (CSV v3, ROADMAP Task 13 Phase B) -------------------------------------
+
+    @Test
+    fun export_fullyPopulatedMovie_writesTheMovieColumnsAndLeavesTheBookOnesEmpty() {
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-3",
+                type = MediaType.MOVIE,
+                title = "Arrival",
+                releaseYear = 2016,
+                purchasePrice = 9.99,
+                createdAt = createdAt,
+                coverImageHash = "poster.jpg",
+            )
+        val details =
+            MovieDetailsEntity(
+                mediaId = "media-3",
+                runtimeMinutes = 116,
+                status = WatchStatus.WATCHED,
+                watchedAt = finishedAt,
+            )
+
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Movie(mediaItem, details)), emptyMap())
+        val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
+
+        assertEquals("MOVIE", fields[2])
+        assertEquals("Arrival", fields[3])
+        assertEquals("2016", fields[5])
+        assertEquals("9.99", fields[6])
+        // The book-shaped columns stay empty rather than borrowing a movie's values: `status` is a
+        // ReadingStatus column, and a WATCHED film written into it would read back as an
+        // unrecognized reading status.
+        assertEquals("", fields[4], "authors")
+        assertEquals("", fields[9], "isbn")
+        assertEquals("", fields[10], "format")
+        assertEquals("", fields[11], "total_pages")
+        assertEquals("", fields[12], "status")
+        assertEquals("", fields[13], "finished_at")
+        assertEquals("", fields[14], "tracking_mode")
+
+        assertEquals("116", fields[16])
+        assertEquals("WATCHED", fields[17])
+        assertEquals(finishedAt.toString(), fields[18])
+        assertTrue(ISO_INSTANT_REGEX.matches(fields[18]), "watched_at should be ISO-8601 UTC: ${fields[18]}")
+    }
+
+    @Test
+    fun export_movieWithUnknownRuntimeAndNoWatchDate_exportsThoseAsEmpty() {
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-4",
+                type = MediaType.MOVIE,
+                title = "Unseen",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+        val details = MovieDetailsEntity(mediaId = "media-4", status = WatchStatus.WATCHLIST)
+
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Movie(mediaItem, details)), emptyMap())
+        val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
+
+        assertEquals("", fields[16], "an unknown runtime is empty, never 0")
+        assertEquals("WATCHLIST", fields[17])
+        assertEquals("", fields[18])
+    }
+
+    @Test
+    fun export_missingMovieDetailsRow_leavesMovieColumnsEmptyWithoutCrashing() {
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-5",
+                type = MediaType.MOVIE,
+                title = "Orphaned",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Movie(mediaItem, details = null)), emptyMap())
+        val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
+
+        assertEquals("Orphaned", fields[3])
+        assertEquals("", fields[16])
+        assertEquals("", fields[17])
+        assertEquals("", fields[18])
     }
 
     @Test

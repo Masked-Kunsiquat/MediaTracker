@@ -5,6 +5,7 @@ import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.storage.LocalImageStorageManager
@@ -16,6 +17,7 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaSummary
 import com.hub.media.features.media.domain.DeleteMediaUseCase
+import com.hub.media.features.movies.data.MovieRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -140,9 +142,9 @@ class LibraryViewModelTest {
 
             viewModel.uiState.first { it.media.size == 3 }
 
-            viewModel.setStatusFilter(ReadingStatus.READING)
+            viewModel.setStatusFilter(LibraryStatusFilter.IN_PROGRESS)
 
-            val filtered = viewModel.uiState.first { it.statusFilter == ReadingStatus.READING }
+            val filtered = viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.IN_PROGRESS }
             assertEquals(3, filtered.media.size, "the unfiltered media list must be untouched by the filter")
             assertEquals(1, filtered.filteredMedia.size, "a book with no details row must not match a non-null filter")
             assertEquals(
@@ -206,6 +208,57 @@ class LibraryViewModelTest {
         if (status != null) repository.updateReadingStatus(result.data, status)
         return result.data
     }
+
+    /** Adds a movie through its repository, the same way production does. */
+    private suspend fun insertMovie(
+        title: String,
+        status: WatchStatus,
+    ): String {
+        val result = MovieRepository(db).addMovie(title = title, status = status)
+        assertIs<Resource.Success<String>>(result)
+        return result.data
+    }
+
+    // --- Mixed-media status filtering (ROADMAP Task 13 Phase B) ------------------------------
+
+    /**
+     * A movie must be reachable through the status filter.
+     *
+     * This is the regression this phase exists to prevent. `filteredMedia` previously compared a
+     * book's [ReadingStatus] directly and returned `false` for every non-book, so the first movie
+     * added would have sat in the library yet vanished from every chip except "All" -- present but
+     * unreachable, which reads as data loss rather than as a filter.
+     *
+     * Both halves are asserted, because either alone is satisfied by a broken implementation: a
+     * filter matching *everything* would pass the positive case, and the old
+     * always-`false` behaviour would pass the negative one.
+     */
+    @Test
+    fun statusFilter_matchesMoviesAndBooksTogether() =
+        runTest {
+            insertBook("Dune", ReadingStatus.READING)
+            insertMovie("Arrival", WatchStatus.WATCHING)
+            insertMovie("Solaris", WatchStatus.WATCHLIST)
+            viewModel.uiState.first { it.media.size == 3 }
+
+            viewModel.setStatusFilter(LibraryStatusFilter.IN_PROGRESS)
+            val inProgress =
+                viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.IN_PROGRESS }
+            assertEquals(
+                listOf("Arrival", "Dune"),
+                inProgress.filteredMedia.map { it.item.title }.sorted(),
+                "a READING book and a WATCHING movie are both 'in progress'",
+            )
+
+            viewModel.setStatusFilter(LibraryStatusFilter.NOT_STARTED)
+            val backlog =
+                viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.NOT_STARTED }
+            assertEquals(
+                listOf("Solaris"),
+                backlog.filteredMedia.map { it.item.title },
+                "the watchlisted movie alone is not started",
+            )
+        }
 
     // --- Selection mode and bulk delete (ROADMAP Task 14 Phase B) ---------------------------
 
@@ -283,8 +336,8 @@ class LibraryViewModelTest {
             viewModel.uiState.first { it.media.size == 2 }
             viewModel.toggleSelection(visible)
             viewModel.toggleSelection(hidden)
-            viewModel.setStatusFilter(ReadingStatus.READING)
-            viewModel.uiState.first { it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2 }
+            viewModel.setStatusFilter(LibraryStatusFilter.IN_PROGRESS)
+            viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.IN_PROGRESS && it.selectedIds.size == 2 }
 
             viewModel.deleteSelected()
 
@@ -307,14 +360,14 @@ class LibraryViewModelTest {
             viewModel.toggleSelection(visible)
             viewModel.toggleSelection(hidden)
 
-            viewModel.setStatusFilter(ReadingStatus.READING)
+            viewModel.setStatusFilter(LibraryStatusFilter.IN_PROGRESS)
 
             // Both halves of the state, not just the filter: the toggles and the filter propagate
             // separately, so the first emission carrying READING can still hold a stale selection --
             // which would make the assertion below pass or fail on timing rather than on behaviour.
             val state =
                 viewModel.uiState.first {
-                    it.statusFilter == ReadingStatus.READING && it.selectedIds.size == 2
+                    it.statusFilter == LibraryStatusFilter.IN_PROGRESS && it.selectedIds.size == 2
                 }
             assertEquals(1, state.filteredMedia.size, "the filter still narrows what is *shown*")
             assertEquals(

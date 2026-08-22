@@ -12,6 +12,8 @@ import com.hub.media.core.database.dao.BookWriteDao
 import com.hub.media.core.database.dao.ExternalIdentifierDao
 import com.hub.media.core.database.dao.ImportWriteDao
 import com.hub.media.core.database.dao.MediaItemDao
+import com.hub.media.core.database.dao.MovieDetailsDao
+import com.hub.media.core.database.dao.MovieWriteDao
 import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
 import com.hub.media.core.database.entities.AppSettingEntity
@@ -113,6 +115,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appSettingsDao(): AppSettingsDao
 
     abstract fun importWriteDao(): ImportWriteDao
+
+    abstract fun movieDetailsDao(): MovieDetailsDao
+
+    abstract fun movieWriteDao(): MovieWriteDao
 }
 
 /**
