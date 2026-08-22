@@ -32,15 +32,6 @@ sealed interface Route {
     }
 
     /**
-     * Movie detail screen for a single movie identified by [ARG_MOVIE_ID] (Task 13 Phase B).
-     *
-     * A separate route from [BookDetail] rather than one polymorphic "media detail" route: the two
-     * screens render different fields and drive different view models, so a shared route would
-     * only branch on type immediately on arrival. Keeping them apart is what lets the library's
-     * card tap decide the destination up front -- see `onNavigateToMediaDetail`.
-     */
-
-    /**
      * Edit an existing movie's metadata (Task 13 Phase B). Manual entry has no provider to correct
      * a typo from, so this is the only path that can fix one.
      */
@@ -54,6 +45,14 @@ sealed interface Route {
         fun createRoute(movieId: String): String = "$PATH/$movieId"
     }
 
+    /**
+     * Movie detail screen for a single movie identified by [ARG_MOVIE_ID] (Task 13 Phase B).
+     *
+     * A separate route from [BookDetail] rather than one polymorphic "media detail" route: the two
+     * screens render different fields and drive different view models, so a shared route would
+     * only branch on type immediately on arrival. Keeping them apart is what lets the library's
+     * card tap decide the destination up front -- see `onNavigateToMediaDetail`.
+     */
     data object MovieDetail : Route {
         /** NavHost argument key for the movie id, used both here and by [createRoute]. */
         const val ARG_MOVIE_ID: String = "movieId"

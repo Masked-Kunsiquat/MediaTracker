@@ -139,7 +139,6 @@
     <string name="add_movie_runtime_invalid_error">Enter a positive runtime in minutes</string>
     <string name="add_movie_status_label">Status</string>
     <string name="add_movie_save">Save movie</string>
-    <string name="add_movie_fab_content_description">Add movie</string>
 
     <!-- Movie detail (Task 13 Phase B) -->
     <string name="movie_detail_not_found">Movie not found</string>
