@@ -75,11 +75,20 @@ fun AddMovieScreenRoute(
 }
 
 /**
- * Stateless manual movie entry form (ROADMAP Task 13 Phase B).
+ * Manual movie entry form (ROADMAP Task 13 Phase B).
  *
- * Stateless so it can be driven directly by an instrumented test with fabricated state and fake
- * callbacks, per AGENTS.md §7 — the default for screen behaviour, since it touches no database and
- * behaves identically on an empty device or a full one.
+ * Stateless with respect to the **save lifecycle** — idle/saving/saved/error all arrive as
+ * [uiState] — so it can be driven directly by an instrumented test with fabricated state and fake
+ * callbacks, per AGENTS.md §7. That is the part worth testing: it touches no database and behaves
+ * identically on an empty device or a full one.
+ *
+ * The field values themselves are deliberately *not* hoisted into [AddMovieViewModel], unlike
+ * [EditMovieScreen], whose values live in `EditMovieUiState.Editing`. That difference is not an
+ * inconsistency: the edit form has to prefill from a row the ViewModel loads once, so the values
+ * must survive that load and the ViewModel is the only thing that can hold them. This form starts
+ * empty, so there is nothing to load and nothing for a ViewModel to own — [rememberSaveable]
+ * already carries the typed text across rotation and process death, which is the only durability
+ * requirement here.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
