@@ -37,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditMovieViewModelFactory
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.features.movies.data.MovieMetadataValidation
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditMovieUiState
 import com.hub.media.ui.EditMovieViewModel
@@ -133,36 +134,79 @@ fun EditMovieScreen(
                 return@Column
             }
 
+            // Blank means "unknown" and clears the stored value on purpose; text that cannot be
+            // parsed means neither, and saving it would erase the number the user came here to
+            // correct (EditMovieViewModel refuses it outright -- this is what says which field).
+            // Only parseability is checked; range and sign stay in MovieMetadataValidation.
+            val releaseYearIsValid = form.releaseYear.isBlank() || form.releaseYear.toIntOrNull() != null
+            val runtimeIsValid = form.runtimeMinutes.isBlank() || form.runtimeMinutes.toIntOrNull() != null
+            val purchasePriceIsValid = form.purchasePrice.isBlank() || form.purchasePrice.toDoubleOrNull() != null
+
             OutlinedTextField(
                 value = form.title,
                 onValueChange = onTitleChange,
                 label = { Text(stringResource(R.string.add_movie_field_title)) },
                 singleLine = true,
                 isError = form.title.isBlank(),
+                enabled = !form.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = form.releaseYear,
-                onValueChange = { onReleaseYearChange(it.filter(Char::isDigit)) },
+                onValueChange = { onReleaseYearChange(it.filterIntegerInput()) },
                 label = { Text(stringResource(R.string.add_movie_field_year)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = !releaseYearIsValid,
+                supportingText =
+                    if (!releaseYearIsValid) {
+                        {
+                            Text(
+                                stringResource(
+                                    R.string.edit_release_year_invalid_error,
+                                    MovieMetadataValidation.MIN_RELEASE_YEAR,
+                                    MovieMetadataValidation.MAX_RELEASE_YEAR,
+                                ),
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                enabled = !form.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = form.runtimeMinutes,
-                onValueChange = { onRuntimeChange(it.filter(Char::isDigit)) },
+                onValueChange = { onRuntimeChange(it.filterIntegerInput()) },
                 label = { Text(stringResource(R.string.add_movie_field_runtime)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = !runtimeIsValid,
+                supportingText =
+                    if (!runtimeIsValid) {
+                        { Text(stringResource(R.string.add_movie_runtime_invalid_error)) }
+                    } else {
+                        null
+                    },
+                enabled = !form.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = form.purchasePrice,
-                onValueChange = onPurchasePriceChange,
+                // Filtered the same way EditBookScreen filters its price field: an unfiltered box
+                // accepts "12,50" or "1.2.3", neither of which toDoubleOrNull can read.
+                onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
                 label = { Text(stringResource(R.string.add_movie_field_price)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                isError = !purchasePriceIsValid,
+                supportingText =
+                    if (!purchasePriceIsValid) {
+                        { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
+                    } else {
+                        null
+                    },
+                enabled = !form.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -176,15 +220,21 @@ fun EditMovieScreen(
                         selected = form.status == option,
                         onClick = { onStatusChange(option) },
                         label = { Text(option.displayLabel()) },
+                        enabled = !form.isSaving,
                     )
                 }
             }
 
             Button(
                 onClick = onSave,
-                // Clearing a numeric field is legitimate ("unknown"), so only a blank title blocks
-                // saving -- the same rule the add form uses.
-                enabled = form.title.isNotBlank() && !form.isSaving,
+                // Clearing a numeric field is legitimate ("unknown") and does not block saving; a
+                // field that cannot be read at all does -- the same rule the add form uses.
+                enabled =
+                    form.title.isNotBlank() &&
+                        releaseYearIsValid &&
+                        runtimeIsValid &&
+                        purchasePriceIsValid &&
+                        !form.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (form.isSaving) {

@@ -136,6 +136,7 @@
     <string name="add_movie_field_year">Release year</string>
     <string name="add_movie_field_runtime">Runtime (minutes)</string>
     <string name="add_movie_field_price">Purchase price</string>
+    <string name="add_movie_runtime_invalid_error">Enter a positive runtime in minutes</string>
     <string name="add_movie_status_label">Status</string>
     <string name="add_movie_save">Save movie</string>
     <string name="add_movie_fab_content_description">Add movie</string>

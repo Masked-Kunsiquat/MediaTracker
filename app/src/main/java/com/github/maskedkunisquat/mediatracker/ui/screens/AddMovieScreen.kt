@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddMovieViewModelFactory
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.features.movies.data.MovieMetadataValidation
 import com.hub.media.ui.AddMovieUiState
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AppContainer
@@ -105,9 +106,26 @@ fun AddMovieScreen(
     }
 
     val isSaving = uiState is AddMovieUiState.Saving
+
+    // Blank means "unknown" and saves as null; text that cannot be parsed is a different thing
+    // entirely and must not be quietly forwarded as null, which would discard what was typed
+    // without saying so. Only parseability is checked here -- the range and sign rules stay in
+    // MovieMetadataValidation, so this never becomes a second, drifting copy of them.
+    val parsedReleaseYear = releaseYear.toIntOrNull()
+    val releaseYearIsValid = releaseYear.isBlank() || parsedReleaseYear != null
+    val parsedRuntimeMinutes = runtimeMinutes.toIntOrNull()
+    val runtimeIsValid = runtimeMinutes.isBlank() || parsedRuntimeMinutes != null
+    val parsedPurchasePrice = purchasePrice.toDoubleOrNull()
+    val purchasePriceIsValid = purchasePrice.isBlank() || parsedPurchasePrice != null
+
     // Only the title is required. Every other field blank means "unknown", which is a valid state
     // and must not block saving -- an empty runtime is not a zero-minute film.
-    val canSave = title.isNotBlank() && !isSaving
+    val canSave =
+        title.isNotBlank() &&
+            releaseYearIsValid &&
+            runtimeIsValid &&
+            purchasePriceIsValid &&
+            !isSaving
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -139,30 +157,65 @@ fun AddMovieScreen(
                 onValueChange = { title = it },
                 label = { Text(stringResource(R.string.add_movie_field_title)) },
                 singleLine = true,
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = releaseYear,
-                onValueChange = { releaseYear = it.filter(Char::isDigit) },
+                onValueChange = { releaseYear = it.filterIntegerInput() },
                 label = { Text(stringResource(R.string.add_movie_field_year)) },
                 singleLine = true,
                 keyboardOptions = numericKeyboard(KeyboardType.Number),
+                isError = !releaseYearIsValid,
+                supportingText =
+                    if (!releaseYearIsValid) {
+                        {
+                            Text(
+                                stringResource(
+                                    R.string.edit_release_year_invalid_error,
+                                    MovieMetadataValidation.MIN_RELEASE_YEAR,
+                                    MovieMetadataValidation.MAX_RELEASE_YEAR,
+                                ),
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = runtimeMinutes,
-                onValueChange = { runtimeMinutes = it.filter(Char::isDigit) },
+                onValueChange = { runtimeMinutes = it.filterIntegerInput() },
                 label = { Text(stringResource(R.string.add_movie_field_runtime)) },
                 singleLine = true,
                 keyboardOptions = numericKeyboard(KeyboardType.Number),
+                isError = !runtimeIsValid,
+                supportingText =
+                    if (!runtimeIsValid) {
+                        { Text(stringResource(R.string.add_movie_runtime_invalid_error)) }
+                    } else {
+                        null
+                    },
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = purchasePrice,
-                onValueChange = { purchasePrice = it },
+                // Filtered the same way EditBookScreen filters its price field: an unfiltered box
+                // accepts "12,50" or "1.2.3", neither of which toDoubleOrNull can read.
+                onValueChange = { purchasePrice = it.filterDecimalInput() },
                 label = { Text(stringResource(R.string.add_movie_field_price)) },
                 singleLine = true,
                 keyboardOptions = numericKeyboard(KeyboardType.Decimal),
+                isError = !purchasePriceIsValid,
+                supportingText =
+                    if (!purchasePriceIsValid) {
+                        { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
+                    } else {
+                        null
+                    },
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -176,20 +229,25 @@ fun AddMovieScreen(
                         selected = status == option,
                         onClick = { status = option },
                         label = { Text(option.displayLabel()) },
+                        enabled = !isSaving,
                     )
                 }
             }
 
             Button(
                 onClick = {
+                    // The parsed values, not a fresh parse: canSave has already established that
+                    // each non-blank field actually read, so a null here can only mean blank
+                    // ("unknown") -- never "unreadable, forwarded as unknown anyway".
+                    //
+                    // Parsing is still not trusted as validation: toDoubleOrNull accepts
+                    // "Infinity". MovieMetadataValidation rejects non-finite values before the
+                    // write, which is what actually protects the column.
                     onSave(
                         title,
-                        releaseYear.toIntOrNull(),
-                        runtimeMinutes.toIntOrNull(),
-                        // toDoubleOrNull is deliberately not trusted as validation: it accepts
-                        // "Infinity". MovieMetadataValidation rejects non-finite values before the
-                        // write, which is what actually protects the column.
-                        purchasePrice.toDoubleOrNull(),
+                        parsedReleaseYear,
+                        parsedRuntimeMinutes,
+                        parsedPurchasePrice,
                         status,
                     )
                 },

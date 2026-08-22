@@ -133,6 +133,9 @@ dependencies {
 // com.hub.media.features.movies.data.* is excluded by package, mirroring
 // com.hub.media.features.books.data.* above. Without this the android unit-test variants would
 // try to run it against the stub android.jar with no Robolectric and fail.
+// EditMovieViewModelTest (ROADMAP Task 13 Phase B PR review) is Room-backed for the same reason
+// EditBookViewModelTest is -- EditMovieViewModel takes a concrete MovieRepository, so there is no
+// seam to fake and the test builds a real AppDatabase -- and is excluded by exact class name.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
@@ -149,6 +152,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.ui.BackfillViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.EditMovieViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.SettingsViewModelTest*")
             isFailOnNoMatchingTests = false
         }

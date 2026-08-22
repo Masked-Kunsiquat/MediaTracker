@@ -164,14 +164,37 @@ class AddMovieScreenTest {
     }
 
     @Test
-    fun whenStateIsSaving_theSaveControlIsDisabledEvenWithATitleTyped() {
+    fun whenStateIsSaving_theWholeFormIsDisabled_notJustTheSaveButton() {
         setContent(uiState = AddMovieUiState.Saving)
 
-        // The text fields are not gated on isSaving, only the button is -- confirm a typed title
-        // still cannot be submitted while a save is already in flight (no double-submit).
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+
+        // The fields and chips matter as much as the button: the values were read at click time,
+        // so a form that stayed editable mid-save would accept edits the in-flight write cannot
+        // include -- and then navigate away on success, showing a saved movie that does not match
+        // what is on screen. Asserted as "there is no field here that accepts text" rather than
+        // via the enabled flag, because that is the behaviour, not the implementation of it.
+        val titleLabel = context.getString(R.string.add_movie_field_title)
+        composeRule.onNode(hasText(titleLabel) and hasSetTextAction()).assertDoesNotExist()
+
+        val watchingLabel = context.getString(R.string.watch_status_watching)
+        composeRule.onNodeWithText(watchingLabel).assertIsNotEnabled()
+    }
+
+    @Test
+    fun aNumberTooLargeToParse_blocksSavingRatherThanBeingSentAsUnknown() {
+        var saves = 0
+        setContent(onSave = { _, _, _, _, _ -> saves++ })
+
         typeIntoField(R.string.add_movie_field_title, "Dune")
+        // Digits only, so the input filter lets it through, but it does not fit in an Int. The
+        // dangerous handling is toIntOrNull()'s null, which is this codebase's spelling of
+        // "unknown" -- the typed year would vanish with nothing said. Blocking the save is what
+        // makes the field's error state the user's only route forward.
+        typeIntoField(R.string.add_movie_field_year, "19999999999")
 
         composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+        assertEquals(0, saves)
     }
 
     @Test
