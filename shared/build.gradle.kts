@@ -141,6 +141,10 @@ dependencies {
 // com.hub.media.features.tv.data.* is excluded by package, mirroring
 // com.hub.media.features.movies.data.* above. Without this the android unit-test variants would
 // try to run it against the stub android.jar with no Robolectric and fail.
+// AddTVShowViewModelTest and TVShowDetailViewModelTest (ROADMAP Task 13 Phase C) are Room-backed
+// for the same reason EditMovieViewModelTest is -- both take a concrete TVShowRepository, so there
+// is no seam to fake and each test builds a real AppDatabase -- and are excluded by exact class
+// name.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
         filter {
@@ -159,6 +163,8 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditMovieViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.AddTVShowViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.TVShowDetailViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.SettingsViewModelTest*")
             isFailOnNoMatchingTests = false
         }
