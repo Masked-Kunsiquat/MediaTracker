@@ -1,5 +1,6 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
@@ -9,6 +10,7 @@ import com.hub.media.core.util.error
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Log tag for [MediaRepository] (ROADMAP Task 15 Phase C). */
@@ -36,6 +38,18 @@ public class MediaRepository(
      * Observes a single media item by ID as a reactive stream.
      */
     public fun observeMediaItem(id: String): Flow<MediaItemEntity?> = db.mediaItemDao().observeById(id)
+
+    /**
+     * Observes derived episode progress for every show that has episodes, keyed by show id
+     * (ROADMAP Task 13 Phase C).
+     *
+     * A show with no episode rows is **absent from the map**, not present with zeros — the
+     * underlying query groups by `mediaId`. [com.hub.media.ui.LibraryStatusFilter.ofShow] treats
+     * that absence as "not started"; anything else reading this must decide the same question
+     * deliberately rather than assume a key exists.
+     */
+    public fun observeTVProgressByMediaId(): Flow<Map<String, TVProgressRow>> =
+        db.episodeDao().observeProgress().map { rows -> rows.associateBy { it.mediaId } }
 
     /**
      * Observes every media item together with its details as a reactive stream.

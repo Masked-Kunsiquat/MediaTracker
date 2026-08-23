@@ -1,5 +1,6 @@
 package com.hub.media.ui
 
+import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
@@ -40,17 +41,18 @@ public enum class LibraryStatusFilter {
      * An item whose detail row is missing matches nothing — it has no status to compare, and
      * claiming otherwise would put it under a chip it does not belong to. It still appears under
      * "All", which is the filter's `null` case and never reaches this function.
+     *
+     * @param tvProgress This show's episode counts, or `null` when it has none. Ignored for books
+     *   and movies, which carry their status directly — see [ofShow] for why TV cannot.
      */
-    public fun matches(media: MediaWithDetails): Boolean =
+    public fun matches(
+        media: MediaWithDetails,
+        tvProgress: TVProgressRow? = null,
+    ): Boolean =
         when (media) {
             is MediaWithDetails.Book -> media.details?.status?.let(::of) == this
             is MediaWithDetails.Movie -> media.details?.status?.let(::of) == this
-            // TV has no reachable status yet: nothing creates a TV_SHOW row, and TVDetailsEntity has
-            // no DAO until Phase C. **Phase C must add the tv_details case here**, or shows will be
-            // invisible to every chip exactly as movies were before this class existed -- the same
-            // bug, rediscovered. It is unreachable rather than wrong today only because no TV row
-            // can exist.
-            is MediaWithDetails.TVShow -> false
+            is MediaWithDetails.TVShow -> media.details?.let { ofShow(it.status, tvProgress) } == this
         }
 
     public companion object {
@@ -61,6 +63,42 @@ public enum class LibraryStatusFilter {
                 ReadingStatus.READING -> IN_PROGRESS
                 ReadingStatus.FINISHED -> FINISHED
                 ReadingStatus.DNF -> ABANDONED
+            }
+
+        /**
+         * Places a show, which — unlike a book or a movie — is **derived from its episodes**
+         * rather than read from a stored status (ROADMAP Task 13 Phase C).
+         *
+         * ### Why TV diverges from the other two
+         * Nothing advances `tv_details.status` as episodes are ticked off, so filtering on it
+         * would file a show you had watched to the end under "Not started" until you corrected it
+         * by hand. The case that decides it: finish a show, then quick-fill a newly aired season.
+         * Derived, it returns to [IN_PROGRESS] on its own; stored, it sits on [FINISHED] while
+         * unwatched episodes exist beneath it — the same stored-vs-derived drift
+         * [com.hub.media.core.database.entities.TVDetailsEntity]'s KDoc refuses for progress
+         * counters, in a different disguise.
+         *
+         * [WatchStatus.ABANDONED] is the one state episodes cannot express — "I gave up" is a
+         * decision, not a count — so it is taken from [storedStatus] and wins over any derivation.
+         * Every other stored value is ignored here on purpose; see that entity's KDoc for what the
+         * column therefore does and does not mean.
+         *
+         * @param tvProgress `null` for a show with no episode rows at all, which
+         *   [com.hub.media.core.database.dao.EpisodeDao.observeProgress] omits entirely because it
+         *   groups by `mediaId`. That absence means [NOT_STARTED] — a show nobody has quick-filled
+         *   yet. Read instead as "0 of 0, therefore complete", it would file every empty show
+         *   under [FINISHED].
+         */
+        public fun ofShow(
+            storedStatus: WatchStatus,
+            tvProgress: TVProgressRow?,
+        ): LibraryStatusFilter =
+            when {
+                storedStatus == WatchStatus.ABANDONED -> ABANDONED
+                tvProgress == null || tvProgress.totalEpisodes == 0 -> NOT_STARTED
+                tvProgress.watchedEpisodes == 0 -> NOT_STARTED
+                tvProgress.watchedEpisodes >= tvProgress.totalEpisodes -> FINISHED
+                else -> IN_PROGRESS
             }
 
         /** Maps a movie's stored status onto the shared filter vocabulary. */

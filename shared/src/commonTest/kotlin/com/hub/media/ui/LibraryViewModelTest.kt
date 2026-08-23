@@ -18,6 +18,8 @@ import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaSummary
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -509,5 +511,62 @@ class LibraryViewModelTest {
                 viewModel.uiState.value.deleteError,
                 "acknowledging an older event must not discard the one on screen",
             )
+        }
+    // ---- TV shows are placed by their episodes (ROADMAP Task 13 Phase C) --------------------
+
+    @Test
+    fun setStatusFilter_placesShowsByEpisodeProgressNotByStoredStatus() =
+        runTest {
+            // End-to-end proof that the derived placement reaches the UI state: the repository
+            // never writes anything but WATCHLIST to tv_details.status, so a show watched to the
+            // end is only findable under "Finished" if the episode counts got there.
+            val tvRepo = TVShowRepository(db)
+            val startedResult =
+                tvRepo.addShow(
+                    title = "Half Watched Show",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                )
+            assertIs<Resource.Success<String>>(startedResult)
+            val finishedResult =
+                tvRepo.addShow(
+                    title = "Completed Show",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                )
+            assertIs<Resource.Success<String>>(finishedResult)
+
+            val startedEpisodes = db.episodeDao().getByMediaId(startedResult.data)
+            assertIs<Resource.Success<Unit>>(tvRepo.setEpisodeWatched(startedEpisodes.first().id, watched = true))
+            assertIs<Resource.Success<Unit>>(tvRepo.setSeasonWatched(finishedResult.data, 1, watched = true))
+
+            viewModel.uiState.first { it.media.size == 2 && it.tvProgress.size == 2 }
+
+            viewModel.setStatusFilter(LibraryStatusFilter.FINISHED)
+            val finished = viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.FINISHED }
+            assertEquals(
+                listOf("Completed Show"),
+                finished.filteredMedia.map { it.item.title },
+                "a show with every episode watched belongs under Finished, whatever tv_details.status says",
+            )
+
+            viewModel.setStatusFilter(LibraryStatusFilter.IN_PROGRESS)
+            val inProgress = viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.IN_PROGRESS }
+            assertEquals(listOf("Half Watched Show"), inProgress.filteredMedia.map { it.item.title })
+        }
+
+    @Test
+    fun setStatusFilter_showWithNoEpisodesYet_isNotStartedRatherThanMissingFromEveryChip() =
+        runTest {
+            // The GROUP BY hole: no episode rows means no progress row, so this show reaches the
+            // filter as null. Before Phase C every show hit that path and vanished from all four
+            // chips -- the bug movies had before Phase B, rediscovered.
+            val tvRepo = TVShowRepository(db)
+            val result = tvRepo.addShow(title = "Not Filled In Yet")
+            assertIs<Resource.Success<String>>(result)
+
+            viewModel.uiState.first { it.media.size == 1 }
+
+            viewModel.setStatusFilter(LibraryStatusFilter.NOT_STARTED)
+            val notStarted = viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.NOT_STARTED }
+            assertEquals(listOf("Not Filled In Yet"), notStarted.filteredMedia.map { it.item.title })
         }
 }

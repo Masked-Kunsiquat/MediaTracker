@@ -24,9 +24,14 @@ import androidx.room.PrimaryKey
  *   typed (or what a provider reported), not a constraint — [EpisodeEntity] rows are the truth
  *   about what actually exists, and a show can legitimately hold episodes for a season beyond this
  *   number if the count was wrong.
- * @property status Show-level viewing lifecycle. Derived from episode state by the domain layer
- *   rather than being independently editable is a Phase C decision, not settled here; this column
- *   exists so the library can filter shows at all.
+ * @property status **Settled in Phase C: this is not a lifecycle, it is an abandonment flag.**
+ *   Where a show sits — not started / in progress / finished — is derived from its episodes by
+ *   [com.hub.media.ui.LibraryStatusFilter.ofShow], for the reason this KDoc gives above about
+ *   progress: a stored value cannot see the rows that change beneath it, so a show would sit on
+ *   "finished" while a newly quick-filled season went unwatched. Only [WatchStatus.ABANDONED] is
+ *   read from this column, because giving up is a decision no episode count can express. The other
+ *   [WatchStatus] values remain storable and are deliberately ignored by the filter; nothing in
+ *   the app writes them, and a future reader should not infer meaning from one that appears here.
  */
 @Entity(
     tableName = "tv_details",
