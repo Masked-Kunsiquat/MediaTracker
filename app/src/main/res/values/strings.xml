@@ -364,4 +364,42 @@
     <string name="add_book_search_edition_publisher_format">Publisher: %1$s</string>
     <string name="add_book_search_edition_isbn_format">ISBN: %1$s</string>
     <string name="add_book_search_edition_pages_format">%1$d pages</string>
+
+    <!-- TV show season/episode field labels, shared by AddTVShowScreen's season rows and
+         TVShowDetailScreen's add-season dialog (Task 13 Phase C). -->
+    <string name="tv_season_number_label">Season number</string>
+    <string name="tv_episode_count_label">Episode count</string>
+
+    <!-- Manual TV show entry with season quick-fill (Task 13 Phase C) -->
+    <string name="add_tv_show_title">Add TV show</string>
+    <string name="add_tv_show_field_title">Title</string>
+    <string name="add_tv_show_field_year">Release year</string>
+    <string name="add_tv_show_field_total_seasons">Total seasons</string>
+    <string name="add_tv_show_field_price">Purchase price</string>
+    <string name="add_tv_show_total_seasons_invalid_error">Enter a positive number of seasons</string>
+    <string name="add_tv_show_seasons_section_label">Seasons</string>
+    <string name="add_tv_show_seasons_empty">A show can be added with no seasons — quick-fill them later from the show\'s detail screen.</string>
+    <string name="add_tv_show_season_number_required_error">Enter a season number</string>
+    <string name="add_tv_show_episode_count_required_error">Enter an episode count</string>
+    <string name="add_tv_show_add_season">Add season</string>
+    <string name="add_tv_show_remove_season_content_description">Remove season row %1$d</string>
+    <string name="add_tv_show_save">Save show</string>
+
+    <!-- TV show detail (Task 13 Phase C) -->
+    <string name="tv_show_detail_not_found">TV show not found</string>
+    <plurals name="tv_show_detail_progress">
+        <item quantity="one">%1$d / %2$d episode</item>
+        <item quantity="other">%1$d / %2$d episodes</item>
+    </plurals>
+    <string name="tv_show_detail_abandon_button">Mark as abandoned</string>
+    <string name="tv_show_detail_resume_button">Resume watching</string>
+    <string name="tv_show_detail_no_seasons">No seasons yet. Add one below to start tracking episodes.</string>
+    <string name="tv_show_detail_add_season">Add season</string>
+    <string name="tv_show_detail_season_header">Season %1$d: %2$d / %3$d episodes</string>
+    <string name="tv_show_detail_mark_season_watched">Mark season watched</string>
+    <string name="tv_show_detail_clear_season">Clear season</string>
+    <string name="tv_show_detail_episode_number_label">Episode %1$d</string>
+    <string name="tv_show_detail_episode_content_description">Season %1$d, episode %2$d</string>
+    <string name="tv_show_detail_delete">Delete show</string>
+    <string name="tv_show_detail_delete_confirm">Delete this show? This cannot be undone.</string>
 </resources>
