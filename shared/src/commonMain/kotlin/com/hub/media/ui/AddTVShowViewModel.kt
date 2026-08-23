@@ -144,9 +144,9 @@ public class AddTVShowViewModel(
         val current = _uiState.value
         if (current.isSaving) return
 
-        val releaseYear = parseOptionalTvField(current.releaseYear, String::toIntOrNull)
-        val totalSeasons = parseOptionalTvField(current.totalSeasons, String::toIntOrNull)
-        val purchasePrice = parseOptionalTvField(current.purchasePrice, String::toDoubleOrNull)
+        val releaseYear = parseOptionalNumber(current.releaseYear, String::toIntOrNull)
+        val totalSeasons = parseOptionalNumber(current.totalSeasons, String::toIntOrNull)
+        val purchasePrice = parseOptionalNumber(current.purchasePrice, String::toDoubleOrNull)
         if (releaseYear == null || totalSeasons == null || purchasePrice == null) {
             val unreadableField =
                 when {
@@ -224,37 +224,3 @@ public class AddTVShowViewModel(
             )
     }
 }
-
-/**
- * A numeric form field that was read successfully. [value] is `null` when the field was blank —
- * "unknown", which is a legitimate thing to save. See [EditMovieViewModel]'s copy of this type for
- * the full rationale; duplicated here (under a distinct name -- two file-private top-level classes
- * sharing a name in the same package collide at the JVM class-file level despite both being
- * `private`) rather than shared, because it is `private` there too.
- */
-private class ParsedTvField<T : Any>(
-    val value: T?,
-)
-
-/**
- * Reads an optional numeric field: [ParsedTvField] with a `null` [ParsedTvField.value] for blank
- * text, [ParsedTvField] with the number for text that parses, and `null` for text that does not
- * parse at all — the third case being the one a plain `toIntOrNull()`/`toDoubleOrNull()` cannot
- * express on its own.
- */
-private fun <T : Any> parseOptionalTvField(
-    text: String,
-    parse: (String) -> T?,
-): ParsedTvField<T>? {
-    val trimmed = text.trim()
-    if (trimmed.isEmpty()) return ParsedTvField(null)
-    return parse(trimmed)?.let { ParsedTvField(it) }
-}
-
-/**
- * Reads a *required* numeric field for one season row: `null` for both blank text and text that
- * fails to parse. Unlike [parseOptionalTvField], a season row has no legitimate "unknown" value to
- * fall back to — a blank episode count is an unfinished row, not a known-absent one — so both
- * failure shapes collapse to the same "not usable" outcome here.
- */
-private fun parseRequiredInt(text: String): Int? = text.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
