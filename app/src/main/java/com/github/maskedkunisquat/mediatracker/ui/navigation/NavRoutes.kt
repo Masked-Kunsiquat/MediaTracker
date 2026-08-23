@@ -31,6 +31,28 @@ sealed interface Route {
         override val route: String = "add_movie"
     }
 
+    /** Manual TV show entry with season quick-fill (ROADMAP Task 13 Phase C). No arguments. */
+    data object AddTVShow : Route {
+        override val route: String = "add_tv_show"
+    }
+
+    /**
+     * Show detail: the episode checklist for a single show identified by [ARG_SHOW_ID]
+     * (Task 13 Phase C). Its own route rather than a shared "media detail" one, for the reason
+     * [MovieDetail]'s KDoc gives.
+     */
+    data object TVShowDetail : Route {
+        /** NavHost argument key for the show id, used both here and by [createRoute]. */
+        const val ARG_SHOW_ID: String = "showId"
+
+        private const val PATH: String = "tv_show_detail"
+
+        override val route: String = "$PATH/{$ARG_SHOW_ID}"
+
+        /** Builds a concrete, navigable route string for a specific [showId]. */
+        fun createRoute(showId: String): String = "$PATH/$showId"
+    }
+
     /**
      * Edit an existing movie's metadata (Task 13 Phase B). Manual entry has no provider to correct
      * a typo from, so this is the only path that can fix one.

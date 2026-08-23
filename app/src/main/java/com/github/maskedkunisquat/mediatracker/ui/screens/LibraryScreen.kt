@@ -64,6 +64,7 @@ import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.media.data.MediaWithDetails
@@ -82,6 +83,7 @@ import kotlin.time.Instant
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Callback to navigate to the add-book screen.
  * @param onNavigateToAddMovie Callback to navigate to the manual add-movie screen.
+ * @param onNavigateToAddTVShow Callback to navigate to the manual add-show screen (Task 13 Phase C).
  * @param onNavigateToMediaDetail Callback invoked with a media item's id when its card is tapped.
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
  * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase B).
@@ -92,6 +94,7 @@ fun LibraryScreenRoute(
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
     onNavigateToAddMovie: () -> Unit,
+    onNavigateToAddTVShow: () -> Unit,
     onNavigateToMediaDetail: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -107,6 +110,7 @@ fun LibraryScreenRoute(
         coverStorageDir = coverStorageDir,
         onNavigateToAddBook = onNavigateToAddBook,
         onNavigateToAddMovie = onNavigateToAddMovie,
+        onNavigateToAddTVShow = onNavigateToAddTVShow,
         onMediaClick = onNavigateToMediaDetail,
         onNavigateToStats = onNavigateToStats,
         onNavigateToSettings = onNavigateToSettings,
@@ -128,6 +132,7 @@ fun LibraryScreenRoute(
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateToAddBook Called when the add-book action is chosen.
  * @param onNavigateToAddMovie Called when the add-movie action is chosen.
+ * @param onNavigateToAddTVShow Called when the add-show action is chosen.
  * @param onMediaClick Called with the media ID **and its type** when a card is tapped. The type is
  *   what lets the caller pick the right detail destination; passing the id alone routed every tap
  *   to Book Detail regardless of type (ROADMAP Task 13 Phase B).
@@ -143,6 +148,7 @@ fun LibraryScreen(
     coverStorageDir: String,
     onNavigateToAddBook: () -> Unit,
     onNavigateToAddMovie: () -> Unit,
+    onNavigateToAddTVShow: () -> Unit,
     onMediaClick: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -224,6 +230,13 @@ fun LibraryScreen(
                         onClick = {
                             showAddMenu = false
                             onNavigateToAddMovie()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_tv_show_title)) },
+                        onClick = {
+                            showAddMenu = false
+                            onNavigateToAddTVShow()
                         },
                     )
                 }
@@ -311,6 +324,7 @@ fun LibraryScreen(
                                 MediaCard(
                                     media = media,
                                     coverStorageDir = coverStorageDir,
+                                    tvProgress = uiState.tvProgress[media.item.id],
                                     onClick = { onMediaClick(media.item.id, media.item.type) },
                                     selectionMode = uiState.isSelectionMode,
                                     selected = media.item.id in uiState.selectedIds,
@@ -495,12 +509,18 @@ private fun StatusFilterRow(
 /**
  * A card displaying a single media item.
  * Consolidated from `BookCard` per Issue #67.
+ *
+ * @param tvProgress This show's episode counts, or `null` for a non-show and for a show with no
+ *   episodes yet -- the library's progress map has no entry for one, since it is grouped by
+ *   `mediaId`. Both cases render no progress line at all, which is right: "0 / 0 episodes" on a
+ *   show nobody has quick-filled reads as a bug rather than as an empty show.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MediaCard(
     media: MediaWithDetails,
     coverStorageDir: String,
+    tvProgress: TVProgressRow?,
     onClick: () -> Unit,
     selectionMode: Boolean = false,
     selected: Boolean = false,
@@ -584,6 +604,21 @@ private fun MediaCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (tvProgress != null && tvProgress.totalEpisodes > 0) {
+                // The same derived counts the status chip places this show by -- see
+                // LibraryStatusFilter.ofShow. Nothing here is read from a stored column.
+                Text(
+                    text =
+                        pluralStringResource(
+                            R.plurals.tv_show_detail_progress,
+                            tvProgress.totalEpisodes,
+                            tvProgress.watchedEpisodes,
+                            tvProgress.totalEpisodes,
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             val status =
                 when (media) {
                     is MediaWithDetails.Book -> media.details?.status
@@ -647,6 +682,7 @@ private fun LibraryScreenPreview() {
             coverStorageDir = "/fake/path",
             onNavigateToAddBook = {},
             onNavigateToAddMovie = {},
+            onNavigateToAddTVShow = {},
             onMediaClick = { _, _ -> },
             onNavigateToStats = {},
             onNavigateToSettings = {},
