@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Only the title is required.** A blank year, runtime or price means "unknown" and is stored as such, rather than as zero.
   - **A number that cannot be read is refused, not discarded.** Clearing a field means "unknown" and saves as such, but an entry the app cannot parse (a year too long to be a year, a price like "1.2.3") now marks the field and blocks the save. Previously both cases became "unknown", so on the edit form an unreadable entry silently erased the value it was meant to correct.
   - **The form locks while a save is in flight**, so an edit made mid-save cannot be dropped by a write that had already read the old values.
+- **TV shows, tracked per episode (ROADMAP Task 13 Phase C)** — Shows sit in the library alongside books and films, and you tick off individual episodes rather than setting a show-level status.
+  - **Quick-fill**: say "Season 1: 10 episodes" and the app creates ten numbered episodes, ready to tick. Titles arrive later with the provider; an episode with no title yet shows its number, which is normal rather than an error.
+  - **Correcting a season's length adds only what is missing.** Going from 10 episodes to 12 adds two, leaving the ten that already exist — and anything you had already watched — untouched.
+  - **Whole-season actions**, without losing detail: marking a season watched leaves episodes you had already watched at the date you watched them, rather than restamping the season as watched today.
+  - **A show's place in the library comes from its episodes**, not from a status you set. Watch everything and it moves to Finished on its own; quick-fill a newly aired season and it moves back to In progress, which a stored status could not do. Because of that, a show offers "Mark as abandoned" rather than a status picker — abandoning is the one thing episode counts cannot express.
+  - **Library cards show a show's progress** ("4 / 10 episodes"), from the same counts the filter uses, so the card and the chip cannot disagree.
+  - **Known limitation: you cannot say *when* you watched something.** Ticking an episode records the moment you ticked it, and there is no way to enter or correct that date — so an episode you actually watched years ago is dated today. Films have the same limitation. Worth knowing before you tick off a back catalogue.
 
 ### Changed
 
@@ -25,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Movies were missing from CSV exports.** The library export read a book-only source, so a film in the library was silently absent from the backup file — data that would have been lost on device loss with nothing to warn the user. Exports now include every media type, with a movie's runtime and watch status in columns of their own (`csv_schema_version` is now `3`; files this app produced as `v1` or `v2` still import). Note that re-importing a movie row is not supported yet; it is reported as a rejected row rather than being silently dropped — the columns are written now so that a backup taken today still holds the data once movie re-import is supported.
 - **A movie's status can be changed from its detail screen without touching anything else.** The status chips used to re-save the film's title, year, price and runtime alongside the status, which meant a status tap could overwrite a title edited elsewhere in between, and a film whose stored release year was outside the accepted range could not have its status changed at all — the save failed complaining about a field the user had not touched.
+- **A show's episodes are included in the backup.** Episodes export as their own `episodes_export.csv`, alongside the library and reading-log files, carrying which episodes you have watched and when — the state episode-level tracking exists to record, and previously absent from the backup entirely. A show's season count rides on its library row (`csv_schema_version` is now `4`; files this app produced as `v1`, `v2` or `v3` still import). As with movies, re-importing a show is not supported yet; such a row is reported as rejected rather than silently dropped.
 - **Release year rendered without a space** ("Year:2016") on library cards.
 
 ### Internal
