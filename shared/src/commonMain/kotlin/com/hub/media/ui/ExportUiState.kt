@@ -12,12 +12,13 @@ public sealed class ExportUiState {
 
     /**
      * The CSV documents were generated successfully. The app layer is expected to write
-     * [bundle]'s two documents to files (SAF `ACTION_CREATE_DOCUMENT`) and then call
+     * [bundle]'s three documents to files (SAF `ACTION_CREATE_DOCUMENT`) and then call
      * [ExportViewModel.reset] once that follow-up write completes (success or failure) --
      * generation succeeding here says nothing about whether the write-to-disk step also
      * succeeds.
      *
-     * @property bundle The generated `library_export.csv` and `reading_logs_export.csv` text.
+     * @property bundle The generated `library_export.csv`, `reading_logs_export.csv`, and
+     *   `episodes_export.csv` text.
      */
     public data class Success(
         val bundle: CsvExportBundle,

@@ -40,9 +40,10 @@ interface EpisodeDao {
     suspend fun getById(id: String): EpisodeEntity?
 
     /**
-     * Whole-table observation. No production caller today -- the library reads
-     * [observeProgress] and a show screen reads [observeByMediaId], so this exists for the
-     * assert-nothing-was-left-behind tests [MovieDetailsDao.getAll] documents.
+     * Whole-table observation. Backs [com.hub.media.core.database.MediaRepository.observeAllEpisodes]
+     * (ROADMAP Task 13 Phase C), which `episodes_export.csv` reads through -- the library reads
+     * [observeProgress] and a show screen reads [observeByMediaId] for their own narrower needs, but
+     * an export needs every episode in the database regardless of show.
      */
     @Query("SELECT * FROM episodes")
     fun observeAll(): Flow<List<EpisodeEntity>>

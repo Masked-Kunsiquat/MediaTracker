@@ -8,6 +8,7 @@ import com.hub.media.core.util.error
 import com.hub.media.core.util.info
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
+import com.hub.media.features.portability.csv.EpisodeCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import kotlinx.coroutines.flow.first
@@ -32,10 +33,10 @@ public interface ExportUseCase {
 
 /**
  * End-to-end "export my data to CSV" workflow (ROADMAP Task 8 Phase A): takes one consistent
- * snapshot of the whole library plus every reading session, and hands back both generated CSV
- * documents as a [CsvExportBundle]. Pure Kotlin/KMP-clean (no Android APIs, no file I/O) --
- * consumed by [com.hub.media.ui.ExportViewModel]; the app module is responsible for actually
- * writing the two returned strings to files the user picks via SAF.
+ * snapshot of the whole library plus every reading session and every episode, and hands back all
+ * three generated CSV documents as a [CsvExportBundle]. Pure Kotlin/KMP-clean (no Android APIs, no
+ * file I/O) -- consumed by [com.hub.media.ui.ExportViewModel]; the app module is responsible for
+ * actually writing the returned strings to files the user picks via SAF.
  *
  * @param bookRepository Source of the library snapshot
  *   ([BookRepository.observeAllBooksWithDetails]) and every external identifier
@@ -45,9 +46,10 @@ public interface ExportUseCase {
  *
  * ### Why there is no "exclude log data" filter here (ROADMAP Task 15 Phase B)
  * There is no log-related code in this class, deliberately -- not an oversight to fill in later.
- * [execute] only ever reads through [bookRepository]/[readingSessionRepository], both backed by
- * Room tables, and formats what they return via [LibraryCsvExporter]/[ReadingLogCsvExporter],
- * whose column sets are fixed at compile time (see each exporter's KDoc for the exact list). The
+ * [execute] only ever reads through [mediaRepository]/[bookRepository]/[readingSessionRepository],
+ * all backed by Room tables, and formats what they return via
+ * [LibraryCsvExporter]/[ReadingLogCsvExporter]/[EpisodeCsvExporter], whose column sets are fixed at
+ * compile time (see each exporter's KDoc for the exact list). The
  * persistent log store (Task 15 Phase B) is a flat file under `<filesDir>/logs/`, deliberately
  * **not** a Room table -- "that would bloat the database that gets backed up and CSV-exported,"
  * per that task's own ROADMAP entry -- so there is no query, no table, and no field this class
@@ -67,12 +69,13 @@ public class ExportDataUseCase(
     private val logger: Logger = AppLogger,
 ) : ExportUseCase {
     /**
-     * Runs the export: reads one current snapshot of books, their external identifiers, and every
-     * reading session (each via `Flow.first()` -- a one-shot read, not an ongoing subscription),
-     * then formats them via [LibraryCsvExporter]/[ReadingLogCsvExporter].
+     * Runs the export: reads one current snapshot of books, their external identifiers, every
+     * reading session, and every episode (each via `Flow.first()` -- a one-shot read, not an
+     * ongoing subscription), then formats them via
+     * [LibraryCsvExporter]/[ReadingLogCsvExporter]/[EpisodeCsvExporter].
      *
-     * @return [Resource.Success] with both generated CSV documents, or [Resource.Error] describing
-     *   why the read/format step failed. Never throws.
+     * @return [Resource.Success] with all three generated CSV documents, or [Resource.Error]
+     *   describing why the read/format step failed. Never throws.
      */
     public override suspend fun execute(): Resource<CsvExportBundle> =
         try {
@@ -91,6 +94,13 @@ public class ExportDataUseCase(
                     .first()
                     .groupBy { it.mediaId }
             val sessions = readingSessionRepository.observeAllSessions().first()
+            // Via MediaRepository rather than TVShowRepository: TVShowRepository.observeEpisodes()
+            // is scoped to one show (what a show screen needs), while this export needs every
+            // episode in the database regardless of show -- the same whole-library shape
+            // observeAllMediaWithDetails() above already reads through MediaRepository for media
+            // items, so episodes follow the same accessor rather than adding a second repository
+            // dependency to this class just for one whole-table read.
+            val episodes = mediaRepository.observeAllEpisodes().first()
 
             // Build the bundle BEFORE logging completion, deliberately -- a completion entry must
             // never be written before the thing it claims completed. If either exporter throws, this
@@ -100,9 +110,11 @@ public class ExportDataUseCase(
                 CsvExportBundle(
                     libraryCsv = LibraryCsvExporter.export(media, identifiersByMediaId),
                     readingLogsCsv = ReadingLogCsvExporter.export(sessions),
+                    episodesCsv = EpisodeCsvExporter.export(episodes),
                 )
             logger.info(TAG) {
-                "Export completed: ${media.size} item(s), ${sessions.size} session(s)"
+                "Export completed: ${media.size} item(s), ${sessions.size} session(s), " +
+                    "${episodes.size} episode(s)"
             }
             Resource.Success(bundle)
         } catch (e: CancellationException) {

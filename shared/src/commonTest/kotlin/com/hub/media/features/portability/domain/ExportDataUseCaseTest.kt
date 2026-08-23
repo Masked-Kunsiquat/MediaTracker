@@ -12,6 +12,9 @@ import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION
 import com.hub.media.features.portability.csv.CsvUtil
+import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.data.TVShowRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -93,7 +96,7 @@ class ExportDataUseCaseTest {
         }
 
     @Test
-    fun execute_emptyDatabase_producesHeaderOnlyCsvForBothFiles() =
+    fun execute_emptyDatabase_producesHeaderOnlyCsvForAllThreeFiles() =
         runTest {
             val result = useCase.execute()
             assertIs<Resource.Success<CsvExportBundle>>(result)
@@ -106,8 +109,57 @@ class ExportDataUseCaseTest {
                 result.data.readingLogsCsv
                     .trimEnd()
                     .split(CsvUtil.LINE_ENDING)
+            val episodesLines =
+                result.data.episodesCsv
+                    .trimEnd()
+                    .split(CsvUtil.LINE_ENDING)
             assertEquals(1, libraryLines.size)
             assertEquals(1, logsLines.size)
+            assertEquals(1, episodesLines.size)
+        }
+
+    /**
+     * A show's quick-filled episodes must appear in `episodes_export.csv` with `watched_at`
+     * populated for the ones ticked off and empty for the rest.
+     *
+     * This is the end-to-end claim [EpisodeCsvExporterTest]'s unit-level coverage cannot make on
+     * its own: that the backup actually carries watched state all the way from
+     * [TVShowRepository.setEpisodeWatched] through the real repository/DAO round-trip to the
+     * generated file -- the exact same "a backup that drops this loses the row" concern
+     * [execute_withAMovieInTheLibrary_includesItInTheLibraryCsv] makes for movies, applied to the
+     * column [EpisodeCsvExporter]'s KDoc calls "the point of the file."
+     */
+    @Test
+    fun execute_showWithQuickFilledEpisodes_exportsWatchedStatePerEpisode() =
+        runTest {
+            val tvShowRepository = TVShowRepository(db)
+            val addResult =
+                tvShowRepository.addShow(
+                    title = "Chernobyl",
+                    totalSeasons = 1,
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 3)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+            val episodes = tvShowRepository.observeEpisodes(mediaId).first()
+            val watchedEpisode = episodes.single { it.episodeNumber == 1 }
+            val unwatchedEpisode = episodes.single { it.episodeNumber == 2 }
+            assertIs<Resource.Success<Unit>>(tvShowRepository.setEpisodeWatched(watchedEpisode.id, watched = true))
+
+            val result = useCase.execute()
+            assertIs<Resource.Success<CsvExportBundle>>(result)
+            val episodesCsv = result.data.episodesCsv
+
+            val lines = episodesCsv.trimEnd().split(CsvUtil.LINE_ENDING).drop(1)
+            assertEquals(3, lines.size, "every quick-filled episode must be exported: $episodesCsv")
+
+            val watchedLine = lines.single { it.contains(watchedEpisode.id) }
+            val watchedFields = watchedLine.split(",")
+            assertTrue(watchedFields.last().isNotEmpty(), "watched_at must reach the CSV: $watchedLine")
+
+            val unwatchedLine = lines.single { it.contains(unwatchedEpisode.id) }
+            val unwatchedFields = unwatchedLine.split(",")
+            assertEquals("", unwatchedFields.last(), "an unwatched episode's watched_at must be empty")
         }
 
     @Test

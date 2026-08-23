@@ -212,24 +212,46 @@ public object LibraryCsvImporter {
      * blank cell in a genuine `v2` file would (see [ParsedLibraryRow.authors]) -- there is no author
      * to recover from a file that never recorded one.
      *
-     * Since `v3` (ROADMAP Task 13 Phase B) it also pads the trailing movie columns: a `v1` file is
-     * two format changes behind, and an adapter that only caught up with one of them would produce
-     * a row of the wrong width, which `CsvTableReader` rejects as truncated.
+     * Since `v3` (ROADMAP Task 13 Phase B) and `v4` (ROADMAP Task 13 Phase C) it also pads every
+     * trailing column added since: a `v1` file is three format changes behind, and an adapter that
+     * only caught up with some of them would produce a row of the wrong width, which
+     * `CsvTableReader` rejects as truncated. Delegating to [padLegacyV2Row] rather than duplicating
+     * its padding keeps that "pad to current width" logic in exactly one place.
      */
     public fun padLegacyV1Row(row: List<String>): List<String> =
         padLegacyV2Row(row.toMutableList().apply { add(COL_AUTHORS, "") })
 
     /**
      * Adapts one `csv_schema_version=2` data row (shaped like [LibraryCsvExporter.HEADER_V2]) into
-     * the current [LibraryCsvExporter.HEADER] shape by appending the movie columns as blanks.
+     * the current [LibraryCsvExporter.HEADER] shape by appending every column added since as blanks
+     * -- the movie columns (`v3`) and `total_seasons` (`v4`).
      *
-     * A pure append, because `v3` added its columns at the end -- see [LibraryCsvExporter.HEADER_V2]
-     * for why there. Blank is the honest value: a `v2` file predates movie export entirely, and
-     * every row in one is a book anyway.
+     * A pure append, because both `v3` and `v4` added their columns at the end -- see
+     * [LibraryCsvExporter.HEADER_V2]/[LibraryCsvExporter.HEADER_V3] for why there. Blank is the
+     * honest value: a `v2` file predates movie and show export entirely, and every row in one is a
+     * book anyway.
+     *
+     * Derived from the two header widths rather than a literal count, so a later column addition
+     * cannot leave this padding silently one short -- and automatically keeps pace with the current
+     * width whenever [LibraryCsvExporter.HEADER] grows again.
+     */
+    public fun padLegacyV2Row(row: List<String>): List<String> =
+        row + List(LibraryCsvExporter.HEADER.size - LibraryCsvExporter.HEADER_V2.size) { "" }
+
+    /**
+     * Adapts one `csv_schema_version=3` data row (shaped like [LibraryCsvExporter.HEADER_V3]) into
+     * the current [LibraryCsvExporter.HEADER] shape by appending `total_seasons` as blank --
+     * registered with [com.hub.media.features.portability.csv.CsvTableReader.read]'s
+     * `legacyHeaders` parameter (ROADMAP Task 13 Phase C) so a pre-existing `v3` export still
+     * imports cleanly.
+     *
+     * A pure append, because `v4` added its one column at the end -- see
+     * [LibraryCsvExporter.HEADER_V3] for why there. Blank is the honest value: a `v3` file predates
+     * show export entirely, and every row in one is a book or a movie anyway.
      *
      * Derived from the two header widths rather than a literal count, so a later column addition
      * cannot leave this padding silently one short.
      */
-    public fun padLegacyV2Row(row: List<String>): List<String> =
-        row + List(LibraryCsvExporter.HEADER.size - LibraryCsvExporter.HEADER_V2.size) { "" }
+    public fun padLegacyV3Row(row: List<String>): List<String> =
+        row + List(LibraryCsvExporter.HEADER.size - LibraryCsvExporter.HEADER_V3.size) { "" }
 }

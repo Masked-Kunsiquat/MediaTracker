@@ -8,6 +8,7 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
@@ -144,6 +145,7 @@ class LibraryCsvExporterTest {
         assertEquals("", fields[16]) // runtime_minutes -- a book has none
         assertEquals("", fields[17]) // watch_status
         assertEquals("", fields[18]) // watched_at
+        assertEquals("", fields[19]) // total_seasons -- a book has none
     }
 
     // ---- movie columns (CSV v3, ROADMAP Task 13 Phase B) -------------------------------------
@@ -190,6 +192,7 @@ class LibraryCsvExporterTest {
         assertEquals("WATCHED", fields[17])
         assertEquals(finishedAt.toString(), fields[18])
         assertTrue(ISO_INSTANT_REGEX.matches(fields[18]), "watched_at should be ISO-8601 UTC: ${fields[18]}")
+        assertEquals("", fields[19], "total_seasons -- a movie has none")
     }
 
     @Test
@@ -234,6 +237,99 @@ class LibraryCsvExporterTest {
         assertEquals("", fields[16])
         assertEquals("", fields[17])
         assertEquals("", fields[18])
+    }
+
+    // ---- total_seasons column (CSV v4, ROADMAP Task 13 Phase C) ------------------------------
+
+    @Test
+    fun export_showWithTotalSeasons_writesItAndLeavesEveryOtherTypeSpecificColumnEmpty() {
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-6",
+                type = MediaType.TV_SHOW,
+                title = "Chernobyl",
+                releaseYear = 2019,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+        val details = TVDetailsEntity(mediaId = "media-6", totalSeasons = 1, status = WatchStatus.WATCHED)
+
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.TVShow(mediaItem, details)), emptyMap())
+        val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
+
+        assertEquals("TV_SHOW", fields[2])
+        assertEquals("Chernobyl", fields[3])
+        assertEquals("1", fields[19])
+        // A show has none of the book- or movie-specific columns either.
+        assertEquals("", fields[4], "authors")
+        assertEquals("", fields[9], "isbn")
+        assertEquals("", fields[16], "runtime_minutes")
+        assertEquals("", fields[17], "watch_status")
+        assertEquals("", fields[18], "watched_at")
+    }
+
+    @Test
+    fun export_showWithUnknownTotalSeasons_exportsAsEmpty() {
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-7",
+                type = MediaType.TV_SHOW,
+                title = "Unknown Season Count",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+        val details = TVDetailsEntity(mediaId = "media-7", totalSeasons = null)
+
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.TVShow(mediaItem, details)), emptyMap())
+        val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
+
+        assertEquals("", fields[19], "an unknown season count is empty, never 0")
+    }
+
+    @Test
+    fun export_bookAndMovie_leaveTotalSeasonsEmpty() {
+        val book = mediaWithDetails(mediaId = "media-8")
+        val movieItem =
+            MediaItemEntity(
+                id = "media-9",
+                type = MediaType.MOVIE,
+                title = "A Movie",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+        val movie = MediaWithDetails.Movie(movieItem, details = null)
+
+        val csv = LibraryCsvExporter.export(listOf(book, movie), emptyMap())
+        val lines = csv.trimEnd().split(CsvUtil.LINE_ENDING).drop(1)
+
+        for (line in lines) {
+            assertEquals("", line.split(",")[19], "total_seasons must be empty for a non-show: $line")
+        }
+    }
+
+    @Test
+    fun export_missingTVDetailsRow_leavesTotalSeasonsEmptyWithoutCrashing() {
+        val mediaItem =
+            MediaItemEntity(
+                id = "media-10",
+                type = MediaType.TV_SHOW,
+                title = "Orphaned Show",
+                releaseYear = null,
+                purchasePrice = null,
+                createdAt = createdAt,
+                coverImageHash = null,
+            )
+
+        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.TVShow(mediaItem, details = null)), emptyMap())
+        val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")
+
+        assertEquals("Orphaned Show", fields[3])
+        assertEquals("", fields[19])
     }
 
     @Test

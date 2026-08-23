@@ -274,12 +274,14 @@ public class ImportDataUseCase(
                             libraryCsv,
                             LibraryCsvExporter.HEADER,
                             // Every header shape this app has ever exported must still import
-                            // cleanly: v1 (no `authors` column, ROADMAP Task 9 Phase A) and v2 (no
-                            // movie columns, Task 13 Phase B) -- see each adapter's KDoc.
+                            // cleanly: v1 (no `authors` column, ROADMAP Task 9 Phase A), v2 (no
+                            // movie columns, Task 13 Phase B), and v3 (no `total_seasons`, Task 13
+                            // Phase C) -- see each adapter's KDoc.
                             legacyHeaders =
                                 mapOf(
                                     LibraryCsvExporter.HEADER_V1 to LibraryCsvImporter::padLegacyV1Row,
                                     LibraryCsvExporter.HEADER_V2 to LibraryCsvImporter::padLegacyV2Row,
+                                    LibraryCsvExporter.HEADER_V3 to LibraryCsvImporter::padLegacyV3Row,
                                 ),
                         )
                 ) {

@@ -42,17 +42,55 @@ import com.hub.media.features.media.data.MediaWithDetails
  *     column holding either would make `FINISHED` and `WATCHED` indistinguishable from a value that
  *     merely looks unfamiliar.
  * 19. `watched_at` -- ISO-8601 UTC; empty when null or for a non-movie.
+ * 20. `total_seasons` (schema v7 / CSV `v4`, ROADMAP Task 13 Phase C) --
+ *     [com.hub.media.core.database.entities.TVDetailsEntity.totalSeasons]; empty when null or for
+ *     a non-show. Show-level data lives here on the item's own row, exactly like a movie's
+ *     `runtime_minutes` -- the show's *episodes*, being one-to-many, get their own file instead;
+ *     see [com.hub.media.features.portability.csv.EpisodeCsvExporter].
  *
- * ### Why movie columns exist here before the importer can read them
- * [LibraryCsvImporter] still rejects a `MOVIE` row (only `BOOK` is supported), so these three
- * columns are written and not yet read. That is deliberate: this file is the user's backup, and a
- * movie's runtime and watch status only survive a lost device if they were *written down* at export
- * time. Adding the columns once the importer can consume them would be too late for every export
- * taken in between.
+ * ### Why movie/show columns exist here before the importer can read them
+ * [LibraryCsvImporter] still rejects both a `MOVIE` row and a `TV_SHOW` row (only `BOOK` is
+ * supported), so the three movie columns and `total_seasons` are written and not yet read. That is
+ * deliberate: this file is the user's backup, and a movie's runtime/watch status or a show's season
+ * count only survive a lost device if they were *written down* at export time. Adding a column once
+ * the importer can consume it would be too late for every export taken in between.
  */
 public object LibraryCsvExporter {
     /** Header row, in column order -- see class KDoc for what each column holds. */
     public val HEADER: List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION_COLUMN,
+            "media_id",
+            "type",
+            "title",
+            "authors",
+            "release_year",
+            "purchase_price",
+            "created_at",
+            "cover_image_hash",
+            "isbn",
+            "format",
+            "total_pages",
+            "status",
+            "finished_at",
+            "tracking_mode",
+            "external_identifiers",
+            "runtime_minutes",
+            "watch_status",
+            "watched_at",
+            "total_seasons",
+        )
+
+    /**
+     * The `csv_schema_version=3` header shape (ROADMAP Task 13 Phase B), before `v4` appended
+     * `total_seasons`.
+     *
+     * `total_seasons` went on the **end** rather than beside the other show-adjacent columns so
+     * every column a `v3` file already had keeps its index -- which is what lets
+     * [LibraryCsvImporter.padLegacyV3Row] be a pad rather than a reshuffle, mirroring exactly how
+     * [HEADER_V2] below became the previous version's fixed shape.
+     */
+    public val HEADER_V3: List<String> =
         listOf(
             CSV_SCHEMA_VERSION_COLUMN,
             "media_id",
@@ -250,6 +288,17 @@ public object LibraryCsvExporter {
                 is MediaWithDetails.TVShow,
                 -> ""
             }
+        val totalSeasons =
+            when (media) {
+                is MediaWithDetails.TVShow ->
+                    media.details
+                        ?.totalSeasons
+                        ?.toString()
+                        .orEmpty()
+                is MediaWithDetails.Book,
+                is MediaWithDetails.Movie,
+                -> ""
+            }
 
         return listOf(
             CSV_SCHEMA_VERSION.toString(),
@@ -271,6 +320,7 @@ public object LibraryCsvExporter {
             runtimeMinutes,
             watchStatus,
             watchedAt,
+            totalSeasons,
         )
     }
 

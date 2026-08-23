@@ -14,7 +14,11 @@ import kotlinx.coroutines.CompletableDeferred
 internal class FakeExportDataUseCase(
     private val result: Resource<CsvExportBundle> =
         Resource.Success(
-            CsvExportBundle(libraryCsv = "csv_schema_version\r\n", readingLogsCsv = "csv_schema_version\r\n"),
+            CsvExportBundle(
+                libraryCsv = "csv_schema_version\r\n",
+                readingLogsCsv = "csv_schema_version\r\n",
+                episodesCsv = "csv_schema_version\r\n",
+            ),
         ),
 ) : ExportUseCase {
     /** Number of times [execute] has been called. */

@@ -1,6 +1,7 @@
 package com.hub.media.core.database
 
 import com.hub.media.core.database.dao.TVProgressRow
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
@@ -50,6 +51,15 @@ public class MediaRepository(
      */
     public fun observeTVProgressByMediaId(): Flow<Map<String, TVProgressRow>> =
         db.episodeDao().observeProgress().map { rows -> rows.associateBy { it.mediaId } }
+
+    /**
+     * Observes every episode across the whole library, unfiltered by show (ROADMAP Task 13 Phase
+     * C). Backs [com.hub.media.features.portability.domain.ExportDataUseCase], which needs every
+     * episode for `episodes_export.csv` the same way [observeAllMediaWithDetails] needs every media
+     * item -- there is no per-show id to scope the read to, unlike
+     * [com.hub.media.features.tv.data.TVShowRepository.observeEpisodes].
+     */
+    public fun observeAllEpisodes(): Flow<List<EpisodeEntity>> = db.episodeDao().observeAll()
 
     /**
      * Observes every media item together with its details as a reactive stream.
