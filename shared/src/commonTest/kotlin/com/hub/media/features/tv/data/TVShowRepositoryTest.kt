@@ -16,6 +16,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -29,7 +30,7 @@ import kotlin.time.Instant
  * naming, and level of KDoc, per [TVShowRepository]'s own note that it is written to behave
  * identically to [com.hub.media.features.movies.data.MovieRepository] where the two overlap. The
  * one structural difference this file covers that the movie test does not is per-episode
- * progress: quick-fill, [TVShowRepository.addSeason]'s "add only what's missing" rule, and the
+ * progress: quick-fill, [TVShowRepository.setSeasonLength]'s "add only what's missing" rule, and the
  * per-episode/per-season watched ticks.
  */
 class TVShowRepositoryTest {
@@ -364,10 +365,10 @@ class TVShowRepositoryTest {
             assertNothingPersisted()
         }
 
-    // ---- addSeason: adds only the missing episode numbers -------------------------------------
+    // ---- setSeasonLength: adds only the missing episode numbers -------------------------------------
 
     @Test
-    fun addSeason_correctingSeasonSize_addsOnlyMissingNumbersAndPreservesExistingIdsAndWatchedState() =
+    fun setSeasonLength_correctingSeasonSize_addsOnlyMissingNumbersAndPreservesExistingIdsAndWatchedState() =
         runTest {
             // The single most important test in this file. Re-creating rows instead of adding the
             // missing ones would destroy watched state -- EpisodeEntity's KDoc explicitly forbids it.
@@ -384,14 +385,22 @@ class TVShowRepositoryTest {
             val firstEpisode = original.first { it.episodeNumber == 1 }
             val watchResult = repo.setEpisodeWatched(firstEpisode.id, watched = true)
             assertIs<Resource.Success<Unit>>(watchResult)
-            val watchedAtBeforeAddSeason = db.episodeDao().getById(firstEpisode.id)?.watchedAt
-            assertTrue(watchedAtBeforeAddSeason != null, "precondition: episode 1 is watched before addSeason runs")
+            val watchedAtBeforeChange = db.episodeDao().getById(firstEpisode.id)?.watchedAt
+            assertTrue(watchedAtBeforeChange != null, "precondition: episode 1 is watched before the season grows")
 
-            val result = repo.addSeason(mediaId, seasonNumber = 1, episodeCount = 12)
-            assertIs<Resource.Success<Unit>>(result)
+            val result = repo.setSeasonLength(mediaId, seasonNumber = 1, episodeCount = 12)
+            assertEquals(
+                0,
+                assertIs<Resource.Success<SeasonLengthChange>>(result).data.episodesRemoved,
+                "growing a season removes nothing",
+            )
 
             val after = db.episodeDao().getByMediaIdAndSeason(mediaId, 1)
-            assertEquals(12, after.size, "addSeason(12) on a season of 10 must add exactly the 2 missing episodes")
+            assertEquals(
+                12,
+                after.size,
+                "setSeasonLength(12) on a season of 10 must add exactly the 2 missing episodes",
+            )
             assertEquals((1..12).toList(), after.map { it.episodeNumber })
 
             // The original ten rows must be the SAME rows, not ten new ones with matching numbers.
@@ -401,47 +410,207 @@ class TVShowRepositoryTest {
                 assertTrue(
                     stillThere != null,
                     "episode id=${originalEpisode.id} (episode #${originalEpisode.episodeNumber}) must survive " +
-                        "addSeason unchanged -- recreating it would be indistinguishable from data loss",
+                        "a season change unchanged -- recreating it would be indistinguishable from data loss",
                 )
             }
             val episode1After = afterById[firstEpisode.id]
             assertEquals(
-                watchedAtBeforeAddSeason,
+                watchedAtBeforeChange,
                 episode1After?.watchedAt,
-                "addSeason must not touch watchedAt on episodes that already existed",
+                "growing a season must not touch watchedAt on episodes that already existed",
             )
         }
 
     @Test
-    fun addSeason_mediaIdBelongsToBook_rejectedAndCreatesNoEpisodes() =
+    fun setSeasonLength_shrinkingASeason_removesOnlyTheEpisodesAboveTheNewCount() =
+        runTest {
+            // The bug this exists for: a season could only ever grow, so a mistyped 20 left ten rows
+            // that could not be removed and a show that could never read as finished.
+            val addResult =
+                repo.addShow(
+                    title = "Mistyped",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 20)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+            val original = db.episodeDao().getByMediaIdAndSeason(mediaId, 1)
+            val keptEpisode = original.first { it.episodeNumber == 3 }
+            assertIs<Resource.Success<Unit>>(repo.setEpisodeWatched(keptEpisode.id, watched = true))
+            val keptWatchedAt = db.episodeDao().getById(keptEpisode.id)?.watchedAt
+
+            val result = repo.setSeasonLength(mediaId, seasonNumber = 1, episodeCount = 10)
+
+            val change = assertIs<Resource.Success<SeasonLengthChange>>(result).data
+            assertEquals(10, change.episodesRemoved, "episodes 11..20 are the ones that had to go")
+
+            val after = db.episodeDao().getByMediaIdAndSeason(mediaId, 1)
+            assertEquals((1..10).toList(), after.map { it.episodeNumber })
+            assertEquals(
+                keptWatchedAt,
+                after.first { it.id == keptEpisode.id }.watchedAt,
+                "an episode below the new count keeps its identity and its watched date",
+            )
+        }
+
+    @Test
+    fun setSeasonLength_shrinkingPastAWatchedEpisode_removesItAndSaysHowMany() =
+        runTest {
+            // Shrinking is destructive on purpose -- the point is that the count reported back is
+            // what the screen puts in front of the user before they confirm.
+            val addResult =
+                repo.addShow(
+                    title = "Shrinking",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 5)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+            val lastEpisode = db.episodeDao().getByMediaIdAndSeason(mediaId, 1).first { it.episodeNumber == 5 }
+            assertIs<Resource.Success<Unit>>(repo.setEpisodeWatched(lastEpisode.id, watched = true))
+
+            val result = repo.setSeasonLength(mediaId, seasonNumber = 1, episodeCount = 4)
+
+            assertEquals(1, assertIs<Resource.Success<SeasonLengthChange>>(result).data.episodesRemoved)
+            assertNull(db.episodeDao().getById(lastEpisode.id), "a watched episode above the count is still removed")
+        }
+
+    @Test
+    fun setSeasonLength_unchangedCount_removesNothing() =
+        runTest {
+            val addResult =
+                repo.addShow(
+                    title = "Unchanged",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 6)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+
+            val result = repo.setSeasonLength(mediaId, seasonNumber = 1, episodeCount = 6)
+
+            assertEquals(0, assertIs<Resource.Success<SeasonLengthChange>>(result).data.episodesRemoved)
+            assertEquals(6, db.episodeDao().getByMediaIdAndSeason(mediaId, 1).size)
+        }
+
+    @Test
+    fun setSeasonLength_shrinkingOneSeason_leavesEveryOtherSeasonAlone() =
+        runTest {
+            val addResult =
+                repo.addShow(
+                    title = "Two Seasons",
+                    seasons =
+                        listOf(
+                            SeasonQuickFill(seasonNumber = 1, episodeCount = 8),
+                            SeasonQuickFill(seasonNumber = 2, episodeCount = 8),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+
+            assertIs<Resource.Success<SeasonLengthChange>>(repo.setSeasonLength(mediaId, 1, episodeCount = 3))
+
+            assertEquals(3, db.episodeDao().getByMediaIdAndSeason(mediaId, 1).size)
+            assertEquals(8, db.episodeDao().getByMediaIdAndSeason(mediaId, 2).size, "season 2 must be untouched")
+        }
+
+    // ---- removeSeason -----------------------------------------------------------------------
+
+    @Test
+    fun removeSeason_deletesThatSeasonAndReportsTheCount() =
+        runTest {
+            val addResult =
+                repo.addShow(
+                    title = "Wrong Season",
+                    seasons =
+                        listOf(
+                            SeasonQuickFill(seasonNumber = 1, episodeCount = 4),
+                            SeasonQuickFill(seasonNumber = 2, episodeCount = 3),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+
+            val result = repo.removeSeason(mediaId, seasonNumber = 2)
+
+            assertEquals(3, assertIs<Resource.Success<SeasonLengthChange>>(result).data.episodesRemoved)
+            assertTrue(db.episodeDao().getByMediaIdAndSeason(mediaId, 2).isEmpty())
+            assertEquals(4, db.episodeDao().getByMediaIdAndSeason(mediaId, 1).size, "season 1 must be untouched")
+        }
+
+    @Test
+    fun removeSeason_seasonWithNoEpisodes_returnsErrorRatherThanSilentSuccess() =
+        runTest {
+            val addResult = repo.addShow(title = "No Seasons")
+            assertIs<Resource.Success<String>>(addResult)
+
+            val result = repo.removeSeason(addResult.data, seasonNumber = 1)
+
+            assertIs<Resource.Error>(result)
+            assertTrue(result.message.contains("Season 1"), "the rejection must name the season")
+            // This message reaches the user as a snackbar verbatim, so the media id stays in the
+            // log where it is useful and out of the sentence the user reads.
+            assertFalse(
+                result.message.contains(addResult.data),
+                "a user-facing message must not quote the internal media id",
+            )
+        }
+
+    @Test
+    fun removeSeason_negativeSeasonNumber_rejectedByValidationLikeSetSeasonLength() =
+        runTest {
+            val addResult =
+                repo.addShow(
+                    title = "Guarded Show",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 3)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+
+            val result = repo.removeSeason(addResult.data, seasonNumber = -1)
+
+            assertIs<Resource.Error>(result)
+            // Must be the validation rejection, not the "that season is already gone" one -- a
+            // season that never existed would produce the latter whether or not validation ran, so
+            // asserting merely that this errored would pass with the guard removed.
+            assertEquals(
+                TVMetadataValidation.validateSeasonNumber(-1),
+                result.message,
+                "removeSeason must reject a bad season number the way setSeasonLength does",
+            )
+            assertEquals(
+                3,
+                db.episodeDao().getByMediaIdAndSeason(addResult.data, 1).size,
+                "a rejected season number must not have deleted anything",
+            )
+        }
+
+    @Test
+    fun setSeasonLength_mediaIdBelongsToBook_rejectedAndCreatesNoEpisodes() =
         runTest {
             val bookRepo = BookRepository(db)
             val bookResult = bookRepo.addBook(title = "Not A Show", format = BookFormat.PHYSICAL)
             assertIs<Resource.Success<String>>(bookResult)
             val bookId = bookResult.data
 
-            val result = repo.addSeason(bookId, seasonNumber = 1, episodeCount = 5)
+            val result = repo.setSeasonLength(bookId, seasonNumber = 1, episodeCount = 5)
             assertIs<Resource.Error>(result)
             assertTrue(db.episodeDao().getByMediaId(bookId).isEmpty())
         }
 
     @Test
-    fun addSeason_mediaIdBelongsToMovie_rejectedAndCreatesNoEpisodes() =
+    fun setSeasonLength_mediaIdBelongsToMovie_rejectedAndCreatesNoEpisodes() =
         runTest {
             val movieRepo = MovieRepository(db)
             val movieResult = movieRepo.addMovie(title = "Not A Show")
             assertIs<Resource.Success<String>>(movieResult)
             val movieId = movieResult.data
 
-            val result = repo.addSeason(movieId, seasonNumber = 1, episodeCount = 5)
+            val result = repo.setSeasonLength(movieId, seasonNumber = 1, episodeCount = 5)
             assertIs<Resource.Error>(result)
             assertTrue(db.episodeDao().getByMediaId(movieId).isEmpty())
         }
 
     @Test
-    fun addSeason_unknownMediaId_rejected() =
+    fun setSeasonLength_unknownMediaId_rejected() =
         runTest {
-            val result = repo.addSeason(newId(), seasonNumber = 1, episodeCount = 5)
+            val result = repo.setSeasonLength(newId(), seasonNumber = 1, episodeCount = 5)
             assertIs<Resource.Error>(result)
         }
 

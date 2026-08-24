@@ -11,6 +11,7 @@ import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
+import com.hub.media.core.util.warn
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -28,6 +29,17 @@ private const val TAG = "TVShowRepository"
 public data class SeasonQuickFill(
     val seasonNumber: Int,
     val episodeCount: Int,
+)
+
+/**
+ * What [TVShowRepository.setSeasonLength] actually changed.
+ *
+ * @property episodesRemoved How many episode rows a shrink deleted — 0 when the season grew or was
+ *   already the requested length. Reported rather than inferred so the UI can tell the user what a
+ *   confirmed shrink cost, including the case where their answer turned out to remove nothing.
+ */
+public data class SeasonLengthChange(
+    val episodesRemoved: Int,
 )
 
 /**
@@ -89,7 +101,7 @@ public class TVShowRepository(
      * @param totalSeasons Advisory season count, or null for "unknown" -- see [TVDetailsEntity.totalSeasons].
      * @param seasons The quick-fill request: one [SeasonQuickFill] per season being pre-populated
      *   with episode rows now. May be empty -- a show can be added with no episodes yet and have
-     *   seasons quick-filled later via [addSeason].
+     *   seasons quick-filled later via [setSeasonLength].
      * @return [Resource.Success] with the new media id, or [Resource.Error] (never throws).
      */
     public suspend fun addShow(
@@ -161,22 +173,31 @@ public class TVShowRepository(
     }
 
     /**
-     * Quick-fills a season onto an existing show. Reads the season's existing episodes first and
-     * inserts only the episode numbers not already present, so correcting a season from 10 episodes
-     * to 12 adds two rows rather than duplicating (or re-creating, which would destroy
-     * [EpisodeEntity.watchedAt]) all twelve -- see [EpisodeEntity]'s "rows exist before their titles
-     * do" KDoc and the unique `(mediaId, seasonNumber, episodeNumber)` index it documents.
+     * Makes one season exactly [episodeCount] episodes long, whether that means growing it,
+     * shrinking it, or nothing at all.
      *
-     * @param episodeCount The season's *total* episode count as the user now understands it, not a
-     *   number of rows to append. Passing the same value twice is a no-op the second time.
-     * @return [Resource.Error] if [mediaId] does not resolve to an existing TV show, or a
-     *   validation rule is violated.
+     * Growing keeps what is already there: only the missing episode numbers are inserted, so
+     * correcting a season from 10 to 12 adds two rows and leaves the ten that exist — and everything
+     * watched on them — untouched. See [EpisodeEntity]'s "rows exist before their titles do" KDoc.
+     *
+     * Shrinking **deletes** the episodes numbered above [episodeCount], and their watched dates with
+     * them. That is the point of it: before this existed a season could only grow, so quick-filling
+     * 20 episodes when 10 were meant left ten rows that could never be removed and a show that could
+     * never read as finished. The only escape was deleting the show, which costs every watched date
+     * on every season. This is the smaller loss, but it is still a loss, which is why the caller is
+     * expected to put the count in front of the user first — [SeasonLengthChange] reports what it
+     * actually cost.
+     *
+     * @param episodeCount The season's total length as the user now understands it, not a number of
+     *   rows to add. Passing the same value twice does nothing the second time.
+     * @return [Resource.Error] if [mediaId] does not resolve to an existing TV show, or a validation
+     *   rule is violated.
      */
-    public suspend fun addSeason(
+    public suspend fun setSeasonLength(
         mediaId: String,
         seasonNumber: Int,
         episodeCount: Int,
-    ): Resource<Unit> {
+    ): Resource<SeasonLengthChange> {
         TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateEpisodeCount(episodeCount)?.let { return Resource.Error(it) }
 
@@ -198,13 +219,53 @@ public class TVShowRepository(
                         episodeNumber = episodeNumber,
                     )
                 }
-            db.tvWriteDao().insertMissingEpisodes(mediaId, seasonNumber, candidates)
-            Resource.Success(Unit)
+            val removed = db.tvWriteDao().setSeasonLength(mediaId, seasonNumber, episodeCount, candidates)
+            Resource.Success(SeasonLengthChange(episodesRemoved = removed))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to add season $seasonNumber for show: id=$mediaId" }
-            Resource.Error("Failed to add season: ${e.message ?: "Unknown error"}", cause = e)
+            logger.error(TAG, e) { "Failed to set the length of season $seasonNumber for show: id=$mediaId" }
+            Resource.Error("Failed to update season: ${e.message ?: "Unknown error"}", cause = e)
+        }
+    }
+
+    /**
+     * Removes a whole season and every episode in it.
+     *
+     * For a season added by mistake — the wrong number, or one that never existed. Destructive in
+     * the same way a shrink through [setSeasonLength] is, and for the same reason acceptable: the
+     * alternative was deleting the entire show. The caller confirms; this reports.
+     *
+     * Validates [seasonNumber] the way [setSeasonLength] does, so both destructive entry points
+     * reject the same inputs. There is no matching "does this show exist" read: deleting by
+     * `(mediaId, seasonNumber)` cannot touch another show's rows, and a mediaId that resolves to
+     * nothing simply deletes nothing, which the zero case below already reports.
+     *
+     * @return [Resource.Error] if that season of that show has no episodes, so "removed nothing"
+     *   cannot be mistaken for "removed a season".
+     */
+    public suspend fun removeSeason(
+        mediaId: String,
+        seasonNumber: Int,
+    ): Resource<SeasonLengthChange> {
+        TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
+
+        return try {
+            val removed = db.tvWriteDao().deleteSeason(mediaId, seasonNumber)
+            if (removed == 0) {
+                // The id belongs in the log, not in front of the user. Reaching here means the
+                // screen offered a season that is already gone, so say that rather than quoting
+                // the row it failed to find.
+                logger.warn(TAG) { "No episodes to remove for season $seasonNumber of show: id=$mediaId" }
+                Resource.Error("Season $seasonNumber no longer exists")
+            } else {
+                Resource.Success(SeasonLengthChange(episodesRemoved = removed))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to remove season $seasonNumber for show: id=$mediaId" }
+            Resource.Error("Failed to remove season: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
