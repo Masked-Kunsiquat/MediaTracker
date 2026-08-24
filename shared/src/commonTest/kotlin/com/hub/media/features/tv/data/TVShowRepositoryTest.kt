@@ -16,6 +16,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -543,7 +544,41 @@ class TVShowRepositoryTest {
             val result = repo.removeSeason(addResult.data, seasonNumber = 1)
 
             assertIs<Resource.Error>(result)
-            assertTrue(result.message.contains("no episodes"))
+            assertTrue(result.message.contains("Season 1"), "the rejection must name the season")
+            // This message reaches the user as a snackbar verbatim, so the media id stays in the
+            // log where it is useful and out of the sentence the user reads.
+            assertFalse(
+                result.message.contains(addResult.data),
+                "a user-facing message must not quote the internal media id",
+            )
+        }
+
+    @Test
+    fun removeSeason_negativeSeasonNumber_rejectedByValidationLikeSetSeasonLength() =
+        runTest {
+            val addResult =
+                repo.addShow(
+                    title = "Guarded Show",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 3)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+
+            val result = repo.removeSeason(addResult.data, seasonNumber = -1)
+
+            assertIs<Resource.Error>(result)
+            // Must be the validation rejection, not the "that season is already gone" one -- a
+            // season that never existed would produce the latter whether or not validation ran, so
+            // asserting merely that this errored would pass with the guard removed.
+            assertEquals(
+                TVMetadataValidation.validateSeasonNumber(-1),
+                result.message,
+                "removeSeason must reject a bad season number the way setSeasonLength does",
+            )
+            assertEquals(
+                3,
+                db.episodeDao().getByMediaIdAndSeason(addResult.data, 1).size,
+                "a rejected season number must not have deleted anything",
+            )
         }
 
     @Test

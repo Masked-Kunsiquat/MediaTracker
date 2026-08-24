@@ -11,6 +11,7 @@ import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
+import com.hub.media.core.util.warn
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -235,17 +236,28 @@ public class TVShowRepository(
      * the same way a shrink through [setSeasonLength] is, and for the same reason acceptable: the
      * alternative was deleting the entire show. The caller confirms; this reports.
      *
+     * Validates [seasonNumber] the way [setSeasonLength] does, so both destructive entry points
+     * reject the same inputs. There is no matching "does this show exist" read: deleting by
+     * `(mediaId, seasonNumber)` cannot touch another show's rows, and a mediaId that resolves to
+     * nothing simply deletes nothing, which the zero case below already reports.
+     *
      * @return [Resource.Error] if that season of that show has no episodes, so "removed nothing"
      *   cannot be mistaken for "removed a season".
      */
     public suspend fun removeSeason(
         mediaId: String,
         seasonNumber: Int,
-    ): Resource<SeasonLengthChange> =
-        try {
+    ): Resource<SeasonLengthChange> {
+        TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
+
+        return try {
             val removed = db.tvWriteDao().deleteSeason(mediaId, seasonNumber)
             if (removed == 0) {
-                Resource.Error("Season $seasonNumber of show id=$mediaId has no episodes")
+                // The id belongs in the log, not in front of the user. Reaching here means the
+                // screen offered a season that is already gone, so say that rather than quoting
+                // the row it failed to find.
+                logger.warn(TAG) { "No episodes to remove for season $seasonNumber of show: id=$mediaId" }
+                Resource.Error("Season $seasonNumber no longer exists")
             } else {
                 Resource.Success(SeasonLengthChange(episodesRemoved = removed))
             }
@@ -255,6 +267,7 @@ public class TVShowRepository(
             logger.error(TAG, e) { "Failed to remove season $seasonNumber for show: id=$mediaId" }
             Resource.Error("Failed to remove season: ${e.message ?: "Unknown error"}", cause = e)
         }
+    }
 
     /**
      * Sets or clears one episode's watched state, stamping [clock] `now()` when [watched] is true
