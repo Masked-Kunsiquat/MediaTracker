@@ -103,6 +103,7 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.BookDetailViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
@@ -116,6 +117,7 @@ import com.hub.media.features.books.timer.ReadingTimerState
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailUiState
 import com.hub.media.ui.BookDetailViewModel
+import com.hub.media.ui.filterIntegerInput
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
@@ -2732,32 +2734,6 @@ private fun deriveTimestampEnd(
             .atZone(java.time.ZoneId.systemDefault())
     return Instant.fromEpochMilliseconds(zonedDateTime.toInstant().toEpochMilli())
 }
-
-/**
- * Keeps only digits and at most one decimal point, e.g. for [Double] position input fields. Also
- * reused by `EditBookScreen` (same package, ROADMAP Task 6 Phase A) for its purchase-price field.
- */
-internal fun String.filterDecimalInput(): String {
-    val builder = StringBuilder()
-    var seenDot = false
-    for (char in this) {
-        when {
-            char.isDigit() -> builder.append(char)
-            char == '.' && !seenDot -> {
-                builder.append(char)
-                seenDot = true
-            }
-        }
-    }
-    return builder.toString()
-}
-
-/**
- * Keeps only digits, e.g. for [Int]/[Long] input fields (duration minutes, pages read). Also
- * reused by `EditBookScreen` (same package, ROADMAP Task 6 Phase A) for its release-year and
- * total-pages fields.
- */
-internal fun String.filterIntegerInput(): String = filter { it.isDigit() }
 
 private val PREVIEW_BOOK =
     MediaItemEntity(
