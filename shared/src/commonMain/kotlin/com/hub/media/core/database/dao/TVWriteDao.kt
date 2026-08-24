@@ -30,7 +30,7 @@ interface TVWriteDao {
     /**
      * Inserts one or more episode rows. Used both inside [insertShowAtomically] (a new show's
      * initial quick-fill) and standalone by
-     * [com.hub.media.features.tv.data.TVShowRepository.addSeason] (quick-filling a season onto an
+     * [com.hub.media.features.tv.data.TVShowRepository.setSeasonLength] (quick-filling a season onto an
      * existing show, where `media_items`/`tv_details` already exist and only this table changes).
      */
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -87,6 +87,51 @@ interface TVWriteDao {
             insertEpisodes(missing)
         }
         return missing.size
+    }
+
+    /** Deletes every episode of one season. Backs removing a season added by mistake. */
+    @Query("DELETE FROM episodes WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber")
+    suspend fun deleteSeason(
+        mediaId: String,
+        seasonNumber: Int,
+    ): Int
+
+    /** Deletes the episodes of one season numbered above [keepCount]. */
+    @Query(
+        "DELETE FROM episodes WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber " +
+            "AND episodeNumber > :keepCount",
+    )
+    suspend fun deleteEpisodesAbove(
+        mediaId: String,
+        seasonNumber: Int,
+        keepCount: Int,
+    ): Int
+
+    /**
+     * Makes one season exactly [episodeCount] episodes long, in a single transaction: inserting
+     * whichever of [candidates] are missing and deleting anything numbered above the count.
+     *
+     * Both halves together, because a season length is one intent. Quick-fill could only ever grow a
+     * season before this, so a mistyped count (20 where 10 was meant) left ten episodes that could
+     * not be removed and a show that could never read as finished — the only escape was deleting the
+     * show, which takes every watched date on it.
+     *
+     * Deleting *is* destructive, unlike everything else quick-fill does: an episode numbered above
+     * the new count takes its [EpisodeEntity.watchedAt] with it. That is the caller's decision to
+     * confirm, not this DAO's to soften — it is why the count of what would be lost belongs in front
+     * of the user before this runs.
+     *
+     * @return the number of episode rows deleted, so a caller can report what a shrink actually cost.
+     */
+    @Transaction
+    suspend fun setSeasonLength(
+        mediaId: String,
+        seasonNumber: Int,
+        episodeCount: Int,
+        candidates: List<EpisodeEntity>,
+    ): Int {
+        insertMissingEpisodes(mediaId, seasonNumber, candidates)
+        return deleteEpisodesAbove(mediaId, seasonNumber, episodeCount)
     }
 
     /**

@@ -144,13 +144,29 @@ public class TVShowDetailViewModel(
         }
     }
 
-    /** Quick-fills a season onto this show — see [TVShowRepository.addSeason]. */
-    public fun addSeason(
+    /**
+     * Sets a season's length — quick-filling a new season, growing an existing one, or shrinking a
+     * mistyped one. See [TVShowRepository.setSeasonLength]; a shrink deletes episodes and their
+     * watched dates, so the caller is expected to have confirmed it first.
+     */
+    public fun setSeasonLength(
         seasonNumber: Int,
         episodeCount: Int,
     ) {
         viewModelScope.launch {
-            val result = tvShowRepository.addSeason(showId, seasonNumber, episodeCount)
+            val result = tvShowRepository.setSeasonLength(showId, seasonNumber, episodeCount)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    /**
+     * Removes a season and every episode in it. Destructive and unconfirmed here by design — the
+     * screen owns the confirmation, since it is the half that knows how much watched history the
+     * user is about to lose.
+     */
+    public fun removeSeason(seasonNumber: Int) {
+        viewModelScope.launch {
+            val result = tvShowRepository.removeSeason(showId, seasonNumber)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }

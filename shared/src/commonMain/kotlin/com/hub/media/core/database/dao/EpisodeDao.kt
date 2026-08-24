@@ -23,7 +23,7 @@ interface EpisodeDao {
 
     /**
      * The episodes already recorded for one season of one show, ordered by [EpisodeEntity.episodeNumber].
-     * Backs [com.hub.media.features.tv.data.TVShowRepository.addSeason], which reads this to work
+     * Backs [com.hub.media.features.tv.data.TVShowRepository.setSeasonLength], which reads this to work
      * out which episode numbers are missing before quick-filling the rest -- see that function's
      * KDoc for why it must not re-create episodes that already exist.
      */

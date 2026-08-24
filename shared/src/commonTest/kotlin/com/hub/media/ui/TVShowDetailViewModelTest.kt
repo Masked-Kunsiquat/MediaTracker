@@ -175,12 +175,12 @@ class TVShowDetailViewModelTest {
         }
 
     @Test
-    fun addSeason_quickFillsNewEpisodesAndTheyAppearGroupedInReadyState() =
+    fun setSeasonLength_quickFillsNewEpisodesAndTheyAppearGroupedInReadyState() =
         runTest {
             val showId = insertShow(seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)))
             val viewModel = readyViewModel(showId)
 
-            viewModel.addSeason(seasonNumber = 2, episodeCount = 4)
+            viewModel.setSeasonLength(seasonNumber = 2, episodeCount = 4)
 
             val state =
                 viewModel.uiState.first {

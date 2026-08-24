@@ -56,7 +56,7 @@ public object TVMetadataValidation {
      * The quick-fill episode count for one season. Must be `> 0` and no greater than
      * [MAX_EPISODE_COUNT] -- this value directly drives a loop that generates one
      * [com.hub.media.core.database.entities.EpisodeEntity] row per episode
-     * ([com.hub.media.features.tv.data.TVShowRepository.addShow]/[com.hub.media.features.tv.data.TVShowRepository.addSeason]),
+     * ([com.hub.media.features.tv.data.TVShowRepository.addShow]/[com.hub.media.features.tv.data.TVShowRepository.setSeasonLength]),
      * so an unbounded value lets a typo (`1000000` for `10`) attempt a million-row insert.
      */
     public fun validateEpisodeCount(episodeCount: Int): String? =
