@@ -402,4 +402,27 @@
     <string name="tv_show_detail_episode_content_description">Season %1$d, episode %2$d</string>
     <string name="tv_show_detail_delete">Delete show</string>
     <string name="tv_show_detail_delete_confirm">Delete this show? This cannot be undone.</string>
+
+    <!-- Per-season overflow menu: change a season's length or remove it outright (fix/tv-season-shrink) -->
+    <string name="tv_show_detail_season_menu_content_description">Season %1$d options</string>
+    <string name="tv_show_detail_change_episode_count">Change episode count</string>
+    <string name="tv_show_detail_remove_season">Remove season</string>
+    <string name="tv_show_detail_remove_season_title">Remove season %1$d?</string>
+    <plurals name="tv_show_detail_episode_removal_count">
+        <item quantity="one">%1$d episode will be removed.</item>
+        <item quantity="other">%1$d episodes will be removed.</item>
+    </plurals>
+    <plurals name="tv_show_detail_episodes_watched_warning">
+        <item quantity="one">%1$d of them is marked watched. This cannot be undone.</item>
+        <item quantity="other">%1$d of them are marked watched. This cannot be undone.</item>
+    </plurals>
+    <plurals name="tv_show_detail_shrink_season_title">
+        <item quantity="one">Remove %1$d episode?</item>
+        <item quantity="other">Remove %1$d episodes?</item>
+    </plurals>
+    <string name="tv_show_detail_shrink_season_confirm">Remove episodes</string>
+    <!-- Shown instead of the watched warning when none of the episodes being removed were watched:
+         still destructive, but there is no watch history to lose, and "0 of them are marked
+         watched" reads like a bug. -->
+    <string name="tv_show_detail_removal_undone_warning">This cannot be undone.</string>
 </resources>
