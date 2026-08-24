@@ -388,7 +388,11 @@ class TVShowRepositoryTest {
             assertTrue(watchedAtBeforeChange != null, "precondition: episode 1 is watched before the season grows")
 
             val result = repo.setSeasonLength(mediaId, seasonNumber = 1, episodeCount = 12)
-            assertIs<Resource.Success<Unit>>(result)
+            assertEquals(
+                0,
+                assertIs<Resource.Success<SeasonLengthChange>>(result).data.episodesRemoved,
+                "growing a season removes nothing",
+            )
 
             val after = db.episodeDao().getByMediaIdAndSeason(mediaId, 1)
             assertEquals(
