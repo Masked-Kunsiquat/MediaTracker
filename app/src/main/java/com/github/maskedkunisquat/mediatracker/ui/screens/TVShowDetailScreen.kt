@@ -47,6 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -441,6 +442,11 @@ private fun SeasonHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // weight(fill = false) lets the header shrink instead of shoving the trailing controls off
+        // the right edge. Without it a two-digit episode count ("8 / 10") is wide enough to push
+        // the overflow IconButton past the container, where it is clipped -- taking its content
+        // description with it -- and overlaps the watched button, so taps aimed at the season menu
+        // mark the whole season watched instead.
         Text(
             text =
                 stringResource(
@@ -450,6 +456,9 @@ private fun SeasonHeader(
                     total,
                 ),
             style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f, fill = false),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) }) {
