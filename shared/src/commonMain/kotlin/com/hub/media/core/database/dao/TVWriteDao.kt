@@ -175,19 +175,31 @@ interface TVWriteDao {
     }
 
     /**
-     * The per-episode watched tick, scoped by episode id. Backs
-     * [com.hub.media.features.tv.data.TVShowRepository.setEpisodeWatched], which reads the row
-     * first to decide what [watchedAt] should be (see that function's KDoc for why re-ticking an
-     * already-watched episode must not bump its timestamp) -- this query only ever applies the
-     * value already decided.
+     * The per-episode watched tick, scoped by episode id.
+     *
+     * `COALESCE` is what preserves an existing timestamp: re-ticking an already-watched episode must
+     * not bump the date it was actually watched, and deciding that in SQL rather than by reading the
+     * row first means there is no window between the decision and the write for a second tick to
+     * land in. It is the single-episode form of the `watchedAt IS NULL` predicate
+     * [markSeasonWatched] uses for the same reason.
+     *
+     * @return `1` if [episodeId] resolved to an existing row, `0` otherwise -- including when the
+     *   episode was already watched and `COALESCE` therefore wrote the value it already held.
+     */
+    @Query("UPDATE episodes SET watchedAt = COALESCE(watchedAt, :watchedAt) WHERE id = :episodeId")
+    suspend fun markEpisodeWatched(
+        episodeId: String,
+        watchedAt: Instant,
+    ): Int
+
+    /**
+     * Clears one episode's watched state. Unconditional, unlike [markEpisodeWatched]: there is no
+     * timestamp worth preserving on the way to `null`.
      *
      * @return `1` if [episodeId] resolved to an existing row, `0` otherwise.
      */
-    @Query("UPDATE episodes SET watchedAt = :watchedAt WHERE id = :episodeId")
-    suspend fun setEpisodeWatchedAt(
-        episodeId: String,
-        watchedAt: Instant?,
-    ): Int
+    @Query("UPDATE episodes SET watchedAt = NULL WHERE id = :episodeId")
+    suspend fun clearEpisodeWatched(episodeId: String): Int
 
     /**
      * Marks every *unwatched* episode of one season watched, stamping [watchedAt] on each.

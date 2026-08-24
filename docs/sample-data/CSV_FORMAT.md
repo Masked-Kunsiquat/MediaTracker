@@ -13,7 +13,7 @@ yet — see its own section below.
 - `reading_logs_export.csv` — reading sessions, linked to books by `media_id`
 - `episodes_export.csv` — a show's episodes, linked to the show by `media_id` (export-only)
 
-## Rules that apply to both files
+## Rules that apply to every file
 
 - **Standard RFC 4180 CSV.** Quote any field containing a comma, a double quote, or a newline;
   escape an embedded double quote by doubling it (`""`). UTF-8, no BOM.
@@ -27,8 +27,10 @@ yet — see its own section below.
   as a real zero-second session rather than a missing one.
 - **Timestamps are ISO-8601 in UTC**, e.g. `2026-01-05T09:15:00Z`. Fractional seconds are accepted.
 - **Enum values are the exact uppercase names listed below.** Anything else rejects that row.
-- **`media_id` is a UUID string.** It is the join key between the two files, so a session's
-  `media_id` must exactly match the book's.
+- **`media_id` is a UUID string.** It is the join key *into* `library_export.csv`: a reading
+  session's `media_id` must match the book it belongs to, and an episode's `media_id` must match the
+  **show** it belongs to. A row whose `media_id` matches nothing in the library file has nowhere to
+  attach.
 
 ## File 1 — `library_export.csv`
 

@@ -213,9 +213,12 @@ public class TVShowRepository(
      * and clearing to `null` when false.
      *
      * Re-ticking an already-watched episode must not bump its timestamp, mirroring
-     * [com.hub.media.features.movies.data.MovieRepository.resolveWatchedAt]'s rule -- so the
-     * existing row is read first, and a prior non-null [EpisodeEntity.watchedAt] is preserved
-     * rather than overwritten with a fresh [clock] read.
+     * [com.hub.media.features.movies.data.MovieRepository.resolveWatchedAt]'s rule. That decision is
+     * made in SQL (`COALESCE`, see [com.hub.media.core.database.dao.TVWriteDao.markEpisodeWatched])
+     * rather than by reading the row and deciding here: reading first would leave a window between
+     * the read and the write for a second tick to land in, and the read is not needed for anything
+     * else. `clock.now()` is passed unconditionally and simply ignored by the database when the
+     * episode already carries a date.
      *
      * @return [Resource.Error] if [episodeId] does not resolve to an existing episode.
      */
@@ -224,14 +227,12 @@ public class TVShowRepository(
         watched: Boolean,
     ): Resource<Unit> =
         try {
-            val existing = db.episodeDao().getById(episodeId)
-            val watchedAt =
-                when {
-                    !watched -> null
-                    existing?.watchedAt != null -> existing.watchedAt
-                    else -> clock.now()
+            val rows =
+                if (watched) {
+                    db.tvWriteDao().markEpisodeWatched(episodeId, clock.now())
+                } else {
+                    db.tvWriteDao().clearEpisodeWatched(episodeId)
                 }
-            val rows = db.tvWriteDao().setEpisodeWatchedAt(episodeId, watchedAt)
             if (rows == 0) Resource.Error("Episode with id=$episodeId not found") else Resource.Success(Unit)
         } catch (e: CancellationException) {
             throw e
