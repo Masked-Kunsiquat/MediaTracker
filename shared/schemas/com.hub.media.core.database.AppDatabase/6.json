@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "b387fbb3db911bc03ba59605f78bac78",
+    "identityHash": "e9b494528eba59efd10bd0c237aae291",
     "entities": [
       {
         "tableName": "media_items",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT NOT NULL, `releaseYear` INTEGER, `purchasePrice` REAL, `createdAt` INTEGER NOT NULL, `coverImageHash` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT NOT NULL, `releaseYear` INTEGER, `purchasePrice` REAL, `createdAt` INTEGER NOT NULL, `coverImageHash` TEXT, `communityRating` REAL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -46,6 +46,11 @@
             "fieldPath": "coverImageHash",
             "columnName": "coverImageHash",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "communityRating",
+            "columnName": "communityRating",
+            "affinity": "REAL"
           }
         ],
         "primaryKey": {
@@ -339,7 +344,7 @@
       },
       {
         "tableName": "tv_details",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `totalSeasons` INTEGER, `status` TEXT NOT NULL, PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `totalSeasons` INTEGER, `status` TEXT NOT NULL, `airingStatus` TEXT, `overview` TEXT, `firstAirDate` INTEGER, `lastAirDate` INTEGER, PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "mediaId",
@@ -357,6 +362,26 @@
             "columnName": "status",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "airingStatus",
+            "columnName": "airingStatus",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "overview",
+            "columnName": "overview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "firstAirDate",
+            "columnName": "firstAirDate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastAirDate",
+            "columnName": "lastAirDate",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -381,7 +406,7 @@
       },
       {
         "tableName": "episodes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `seasonNumber` INTEGER NOT NULL, `episodeNumber` INTEGER NOT NULL, `title` TEXT, `airDate` INTEGER, `watchedAt` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `seasonNumber` INTEGER NOT NULL, `episodeNumber` INTEGER NOT NULL, `title` TEXT, `airDate` INTEGER, `watchedAt` INTEGER, `runtimeMinutes` INTEGER, `overview` TEXT, `stillImageHash` TEXT, `communityRating` REAL, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -421,6 +446,26 @@
             "fieldPath": "watchedAt",
             "columnName": "watchedAt",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runtimeMinutes",
+            "columnName": "runtimeMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "overview",
+            "columnName": "overview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stillImageHash",
+            "columnName": "stillImageHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "communityRating",
+            "columnName": "communityRating",
+            "affinity": "REAL"
           }
         ],
         "primaryKey": {
@@ -556,7 +601,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b387fbb3db911bc03ba59605f78bac78')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e9b494528eba59efd10bd0c237aae291')"
     ]
   }
 }

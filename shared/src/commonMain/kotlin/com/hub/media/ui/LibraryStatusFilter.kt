@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.dao.TVProgressRow
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
@@ -52,7 +53,7 @@ public enum class LibraryStatusFilter {
         when (media) {
             is MediaWithDetails.Book -> media.details?.status?.let(::of) == this
             is MediaWithDetails.Movie -> media.details?.status?.let(::of) == this
-            is MediaWithDetails.TVShow -> media.details?.let { ofShow(it.status, tvProgress) } == this
+            is MediaWithDetails.TVShow -> media.details?.let { ofShow(it.status, tvProgress, it.airingStatus) } == this
         }
 
     public companion object {
@@ -83,21 +84,46 @@ public enum class LibraryStatusFilter {
          * Every other stored value is ignored here on purpose; see that entity's KDoc for what the
          * column therefore does and does not mean.
          *
+         * ### Watching everything is not the same as the show being over
+         * "Every episode row is watched" answers a question about the *viewer*. Whether the show
+         * has more episodes coming is a question about the *show*, and [airingStatus] is the only
+         * thing that knows it. A running series whose aired episodes are all watched is **up to
+         * date**, not completed — filing it under [FINISHED] tells the user they are done with
+         * something that will hand them another season in three months, and it silently stops
+         * being true the moment someone quick-fills that season.
+         *
+         * So a fully-watched show still in production is [IN_PROGRESS]: there is more of it, and
+         * the viewer has not finished it. [AiringStatus.ENDED] and [AiringStatus.CANCELLED] both
+         * mean no more is coming, so both keep [FINISHED] — a cancellation is still an end, even
+         * an unsatisfying one.
+         *
+         * `null` means nobody has told us, which is **every row today** — nothing writes
+         * [airingStatus] until Phase D — and it deliberately keeps the old behaviour rather than
+         * guessing. A show is far more often finished than abandoned mid-watch, and moving every
+         * completed show to [IN_PROGRESS] on the strength of an unknown would be a worse lie than
+         * the one being fixed.
+         *
          * @param tvProgress `null` for a show with no episode rows at all, which
          *   [com.hub.media.core.database.dao.EpisodeDao.observeProgress] omits entirely because it
          *   groups by `mediaId`. That absence means [NOT_STARTED] — a show nobody has quick-filled
          *   yet. Read instead as "0 of 0, therefore complete", it would file every empty show
          *   under [FINISHED].
+         * @param airingStatus Whether the show is still running, or `null` for unknown. Defaulted
+         *   so that callers which genuinely have no show row — and the tests written before this
+         *   distinction existed — keep the pre-existing behaviour rather than being forced to
+         *   assert an answer they do not have.
          */
         public fun ofShow(
             storedStatus: WatchStatus,
             tvProgress: TVProgressRow?,
+            airingStatus: AiringStatus? = null,
         ): LibraryStatusFilter =
             when {
                 storedStatus == WatchStatus.ABANDONED -> ABANDONED
                 tvProgress == null || tvProgress.totalEpisodes == 0 -> NOT_STARTED
                 tvProgress.watchedEpisodes == 0 -> NOT_STARTED
-                tvProgress.watchedEpisodes >= tvProgress.totalEpisodes -> FINISHED
+                tvProgress.watchedEpisodes >= tvProgress.totalEpisodes ->
+                    if (airingStatus == AiringStatus.CONTINUING) IN_PROGRESS else FINISHED
                 else -> IN_PROGRESS
             }
 

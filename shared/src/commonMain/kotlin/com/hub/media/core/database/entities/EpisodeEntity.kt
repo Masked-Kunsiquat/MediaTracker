@@ -60,4 +60,39 @@ public data class EpisodeEntity(
     val title: String? = null,
     val airDate: Instant? = null,
     val watchedAt: Instant? = null,
+    /**
+     * This episode's length in minutes, or `null` for "not known yet" — which is every
+     * quick-filled row, since the user is asked for a count and not for runtimes.
+     *
+     * Per episode rather than per show: a show's episode lengths are not uniform (pilots and
+     * finales routinely run long, and TMDB reports `episode_run_time` as an *array* on the show
+     * for exactly that reason). Any "hours watched" figure has to sum real episode lengths to be
+     * worth showing, and this project already ships reading-time statistics, so the same question
+     * will be asked of TV.
+     */
+    val runtimeMinutes: Int? = null,
+    /** This episode's synopsis from a provider, or `null` if none has been fetched. */
+    val overview: String? = null,
+    /**
+     * Content hash of this episode's still image as stored by
+     * [com.hub.media.core.storage.LocalImageStorageManager.saveImage], or `null` if none has been
+     * downloaded.
+     *
+     * A hash of a locally-stored file rather than a provider URL, matching
+     * [MediaItemEntity.coverImageHash] and AGENTS.md §4: this app is offline-first, and a remote
+     * path would make every episode row render blank the moment the device loses signal. Whether
+     * to download stills at all, and how aggressively to evict them, is a Phase D decision — a
+     * show can hold hundreds of episodes — but the column shape does not depend on that answer.
+     */
+    val stillImageHash: String? = null,
+    /**
+     * The provider's aggregate viewer score, normalised to 0.0-10.0, or `null` if unknown.
+     *
+     * Deliberately *not* the user's own rating, which belongs to Task 10 (re-read/re-watch
+     * modelling) and may well attach to a viewing rather than to the episode. This is the "did
+     * other people like it" number, kept so it can be shown against the user's own once that
+     * exists. Normalised on write because providers disagree on scale — TMDB is out of 10,
+     * Goodreads out of 5 — and a bare number whose scale is unrecorded is a trap.
+     */
+    val communityRating: Double? = null,
 )

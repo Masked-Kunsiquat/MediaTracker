@@ -282,6 +282,12 @@ public val MIGRATION_4_5: Migration =
  * column to `book_details`. This one reads nothing and rewrites nothing, so no existing book can
  * be damaged by it however it fails — a failure leaves a v5 database that still works.
  *
+ * It does touch one pre-existing table: `media_items` gains a nullable `communityRating` via
+ * `ALTER TABLE ... ADD COLUMN`. That still rewrites no rows — SQLite records the new column in the
+ * table's schema and existing rows read `null` for it — so the paragraph above holds. It is called
+ * out because the rest of this migration is `CREATE TABLE` only, and a reader scanning for
+ * "does this touch my books" deserves the honest answer rather than an inferred one.
+ *
  * That property is *why* [com.hub.media.core.database.entities.WatchStatus] is a second enum
  * rather than a generalization of
  * [com.hub.media.core.database.entities.ReadingStatus]: renaming that enum's constants would have
@@ -317,17 +323,26 @@ public val MIGRATION_5_6: Migration =
                 )
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `tv_details` (`mediaId` TEXT NOT NULL, " +
-                        "`totalSeasons` INTEGER, `status` TEXT NOT NULL, PRIMARY KEY(`mediaId`), " +
+                        "`totalSeasons` INTEGER, `status` TEXT NOT NULL, `airingStatus` TEXT, " +
+                        "`overview` TEXT, `firstAirDate` INTEGER, `lastAirDate` INTEGER, " +
+                        "PRIMARY KEY(`mediaId`), " +
                         "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
                         "ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `episodes` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
                         "`seasonNumber` INTEGER NOT NULL, `episodeNumber` INTEGER NOT NULL, `title` TEXT, " +
-                        "`airDate` INTEGER, `watchedAt` INTEGER, PRIMARY KEY(`id`), " +
+                        "`airDate` INTEGER, `watchedAt` INTEGER, `runtimeMinutes` INTEGER, " +
+                        "`overview` TEXT, `stillImageHash` TEXT, `communityRating` REAL, " +
+                        "PRIMARY KEY(`id`), " +
                         "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
                         "ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
+                // media_items is not new in v6 -- it has existed since v1 and holds every book the
+                // user already has -- so this column is appended to the live table rather than
+                // written into a CREATE TABLE above. ADD COLUMN of a nullable column rewrites no
+                // rows: existing books simply read null, which is the correct "unknown" here.
+                connection.execSQL("ALTER TABLE `media_items` ADD COLUMN `communityRating` REAL")
                 connection.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS " +
                         "`index_episodes_mediaId_seasonNumber_episodeNumber` " +
