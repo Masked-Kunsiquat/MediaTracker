@@ -11,6 +11,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -78,6 +79,7 @@ class EditMovieScreenTest {
         uiState: EditMovieUiState,
         onSave: () -> Unit = {},
         onErrorShown: () -> Unit = {},
+        onPurchasePriceChange: (String) -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -86,7 +88,7 @@ class EditMovieScreenTest {
                     onTitleChange = {},
                     onReleaseYearChange = {},
                     onRuntimeChange = {},
-                    onPurchasePriceChange = {},
+                    onPurchasePriceChange = onPurchasePriceChange,
                     onStatusChange = {},
                     onSave = onSave,
                     onErrorShown = onErrorShown,
@@ -101,6 +103,29 @@ class EditMovieScreenTest {
         setContent(editing())
 
         composeRule.onNode(saveButtonMatcher).assertIsEnabled()
+    }
+
+    /**
+     * The price field's input filter reaches its callback (#83): these ten tests stubbed
+     * `onPurchasePriceChange` out entirely, so the screen was covered while the one field on it
+     * that can silently corrupt a stored value was not. The filter itself is unit-tested in
+     * `NumericFormFieldTest`; what is asserted here is only that this screen is wired to it, which
+     * no unit test can see.
+     *
+     * A comma is a thousands separator in this test device's en-US locale, so it is dropped rather
+     * than read as a decimal point -- the case that made "14,99" store 1499 before it was fixed.
+     */
+    @Test
+    fun typingIntoThePriceField_forwardsFilteredTextRatherThanTheRawKeystrokes() {
+        var captured: String? = null
+        setContent(editing(purchasePrice = ""), onPurchasePriceChange = { captured = it })
+
+        // The field is labelled add_movie_field_price, not edit_purchase_price_label -- the edit
+        // screen reuses the add screen's string here rather than owning its own.
+        val label = context.getString(R.string.add_movie_field_price)
+        composeRule.onNode(hasText(label) and hasSetTextAction()).performTextInput("1,499.50")
+
+        assertEquals("1499.50", captured)
     }
 
     @Test
