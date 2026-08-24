@@ -36,12 +36,19 @@ jobs:
           persist-credentials: false
 
       - name: Verify CHANGELOG.md update
+        # The runner substitutes ${{ }} into the script text before any shell sees it, so a ref
+        # name is safer read from the environment than pasted into a command. base_ref is this
+        # repository's own branch rather than anything a fork contributor picks, so this is
+        # defence in depth rather than a live hole -- but the habit is what keeps head_ref, which
+        # *is* contributor-named, from ever being interpolated here by someone copying this step.
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           # Fetch the base branch so we can diff against it
-          git fetch origin ${{ github.base_ref }} --depth=1
+          git fetch origin "$BASE_REF" --depth=1
 
           # Get the list of files changed in this PR compared to the target branch
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          CHANGED_FILES=$(git diff --name-only "origin/$BASE_REF...HEAD")
           
           # Check if code in shared/ or app/src/main/ was touched
           CODE_TOUCHED=$(echo "$CHANGED_FILES" | grep -E '^(shared/|app/src/main/)' || true)
@@ -87,6 +94,9 @@ jobs:
 
       - name: Verify frozen schemas are untouched
         if: github.event_name == 'pull_request'
+        # See the changelog job's step for why the ref goes through the environment.
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           SCHEMA_DIR="shared/schemas/com.hub.media.core.database.AppDatabase"
 
@@ -97,7 +107,7 @@ jobs:
           # open: "Until v6 ships, 6.json and MIGRATION_5_6 may still be edited in place -- which
           # is exactly the window in which to correct anything wrong with them." Reading the tag
           # makes the check enforce the rule its own error message quotes.
-          git fetch origin ${{ github.base_ref }} --depth=1
+          git fetch origin "$BASE_REF" --depth=1
           git fetch --tags --force
 
           LATEST_TAG=$(git tag --sort=-v:refname | head -1)
@@ -114,7 +124,7 @@ jobs:
             exit 0
           fi
 
-          MODIFIED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          MODIFIED_FILES=$(git diff --name-only "origin/$BASE_REF...HEAD")
 
           for schema in $FROZEN_SCHEMAS; do
             if echo "$MODIFIED_FILES" | grep -q "^$schema$"; then
