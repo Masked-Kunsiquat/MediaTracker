@@ -63,6 +63,7 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditBookUiState
 import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.filterIntegerInput
+import com.hub.media.ui.parseOptionalNumber
 
 /**
  * Route-level composable for the edit-book-metadata screen (ROADMAP Task 6 Phase A).
@@ -276,24 +277,25 @@ private fun EditBookForm(
 
     val titleIsValid = titleText.isNotBlank()
 
-    val parsedReleaseYear = releaseYearText.toIntOrNull()
+    val parsedReleaseYear = parseOptionalNumber(releaseYearText, String::toIntOrNull)
+    val validatedReleaseYear = parsedReleaseYear?.value
     val releaseYearIsValid =
-        releaseYearText.isBlank() ||
+        parsedReleaseYear != null &&
             (
-                parsedReleaseYear != null &&
-                    parsedReleaseYear in BookRepository.MIN_RELEASE_YEAR..BookRepository.MAX_RELEASE_YEAR
+                validatedReleaseYear == null ||
+                    validatedReleaseYear in BookRepository.MIN_RELEASE_YEAR..BookRepository.MAX_RELEASE_YEAR
             )
-    val validatedReleaseYear = if (releaseYearText.isBlank()) null else parsedReleaseYear
 
-    val parsedPurchasePrice = purchasePriceText.toDoubleOrNull()
+    val parsedPurchasePrice = parseOptionalNumber(purchasePriceText, String::toDoubleOrNull)
+    val validatedPurchasePrice = parsedPurchasePrice?.value
     val purchasePriceIsValid =
-        purchasePriceText.isBlank() ||
-            (parsedPurchasePrice != null && parsedPurchasePrice >= 0.0)
-    val validatedPurchasePrice = if (purchasePriceText.isBlank()) null else parsedPurchasePrice
+        parsedPurchasePrice != null &&
+            (validatedPurchasePrice == null || validatedPurchasePrice >= 0.0)
 
-    val parsedTotalPages = totalPagesText.toIntOrNull()
-    val totalPagesIsValid = totalPagesText.isBlank() || (parsedTotalPages != null && parsedTotalPages > 0)
-    val validatedTotalPages = if (totalPagesText.isBlank()) null else parsedTotalPages
+    val parsedTotalPages = parseOptionalNumber(totalPagesText, String::toIntOrNull)
+    val validatedTotalPages = parsedTotalPages?.value
+    val totalPagesIsValid =
+        parsedTotalPages != null && (validatedTotalPages == null || validatedTotalPages > 0)
 
     val formIsValid = titleIsValid && releaseYearIsValid && purchasePriceIsValid && totalPagesIsValid
 

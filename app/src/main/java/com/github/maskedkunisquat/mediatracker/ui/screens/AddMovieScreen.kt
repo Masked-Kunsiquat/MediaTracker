@@ -45,6 +45,7 @@ import com.hub.media.ui.AddMovieUiState
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.filterIntegerInput
+import com.hub.media.ui.parseOptionalNumber
 
 /**
  * Route wrapper: owns the [AddMovieViewModel] and turns a successful save into navigation.
@@ -122,12 +123,19 @@ fun AddMovieScreen(
     // entirely and must not be quietly forwarded as null, which would discard what was typed
     // without saying so. Only parseability is checked here -- the range and sign rules stay in
     // MovieMetadataValidation, so this never becomes a second, drifting copy of them.
-    val parsedReleaseYear = releaseYear.toIntOrNull()
-    val releaseYearIsValid = releaseYear.isBlank() || parsedReleaseYear != null
-    val parsedRuntimeMinutes = runtimeMinutes.toIntOrNull()
-    val runtimeIsValid = runtimeMinutes.isBlank() || parsedRuntimeMinutes != null
-    val parsedPurchasePrice = purchasePrice.toDoubleOrNull()
-    val purchasePriceIsValid = purchasePrice.isBlank() || parsedPurchasePrice != null
+    // The value saved and the answer to "is this savable" come from one call each, deliberately.
+    // Reading them from two separate parses lets them disagree -- a field the form calls valid
+    // whose value arrives as null saves "unknown" over the number the user typed, which is the
+    // erasure this comment block exists to prevent.
+    val releaseYearField = parseOptionalNumber(releaseYear, String::toIntOrNull)
+    val parsedReleaseYear = releaseYearField?.value
+    val releaseYearIsValid = releaseYearField != null
+    val runtimeField = parseOptionalNumber(runtimeMinutes, String::toIntOrNull)
+    val parsedRuntimeMinutes = runtimeField?.value
+    val runtimeIsValid = runtimeField != null
+    val purchasePriceField = parseOptionalNumber(purchasePrice, String::toDoubleOrNull)
+    val parsedPurchasePrice = purchasePriceField?.value
+    val purchasePriceIsValid = purchasePriceField != null
 
     // Only the title is required. Every other field blank means "unknown", which is a valid state
     // and must not block saving -- an empty runtime is not a zero-minute film.

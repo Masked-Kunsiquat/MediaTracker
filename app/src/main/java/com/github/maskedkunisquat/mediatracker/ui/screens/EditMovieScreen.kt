@@ -43,6 +43,7 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditMovieUiState
 import com.hub.media.ui.EditMovieViewModel
 import com.hub.media.ui.filterIntegerInput
+import com.hub.media.ui.parseOptionalNumber
 
 /** Route wrapper: owns the [EditMovieViewModel] and leaves once the save lands. */
 @Composable
@@ -140,9 +141,9 @@ fun EditMovieScreen(
             // parsed means neither, and saving it would erase the number the user came here to
             // correct (EditMovieViewModel refuses it outright -- this is what says which field).
             // Only parseability is checked; range and sign stay in MovieMetadataValidation.
-            val releaseYearIsValid = form.releaseYear.isBlank() || form.releaseYear.toIntOrNull() != null
-            val runtimeIsValid = form.runtimeMinutes.isBlank() || form.runtimeMinutes.toIntOrNull() != null
-            val purchasePriceIsValid = form.purchasePrice.isBlank() || form.purchasePrice.toDoubleOrNull() != null
+            val releaseYearIsValid = parseOptionalNumber(form.releaseYear, String::toIntOrNull) != null
+            val runtimeIsValid = parseOptionalNumber(form.runtimeMinutes, String::toIntOrNull) != null
+            val purchasePriceIsValid = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull) != null
 
             OutlinedTextField(
                 value = form.title,
