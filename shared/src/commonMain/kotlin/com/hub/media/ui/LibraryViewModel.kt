@@ -34,16 +34,30 @@ public class LibraryViewModel(
     private val deleteError = MutableStateFlow<DeleteErrorEvent?>(null)
     private var deleteErrorSeq = 0L
 
-    public val uiState: StateFlow<LibraryUiState> =
+    /**
+     * The library list paired with derived TV episode progress (ROADMAP Task 13 Phase C).
+     *
+     * Combined here rather than as a sixth source below only because `combine` has no arity that
+     * wide; the two always arrive together as far as the UI is concerned, and a show's chip is
+     * wrong if it is placed before its episode counts land.
+     */
+    private val mediaWithProgress =
         combine(
             mediaRepository.observeAllMediaWithDetails(),
+            mediaRepository.observeTVProgressByMediaId(),
+        ) { media, progress -> media to progress }
+
+    public val uiState: StateFlow<LibraryUiState> =
+        combine(
+            mediaWithProgress,
             statusFilter,
             searchQuery,
             selectedIds,
             deleteError,
-        ) { media, filter, query, selected, error ->
+        ) { (media, tvProgress), filter, query, selected, error ->
             LibraryUiState(
                 media = media,
+                tvProgress = tvProgress,
                 statusFilter = filter,
                 searchQuery = query,
                 // Drop ids that no longer exist.

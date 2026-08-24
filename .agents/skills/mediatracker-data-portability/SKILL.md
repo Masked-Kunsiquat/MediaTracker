@@ -11,7 +11,7 @@ This skill ensures that MediaTracker's promise of "first-class data portability"
 - **Escaping**: Quote any field containing a comma, double quote, or newline. Escape double quotes by doubling them (`""`).
 - **Encoding**: UTF-8, no BOM.
 - **Headers**: Column order is NON-NEGOTIABLE. The importer matches headers against an expected list; reordering will fail the import.
-- **Schema Version**: The first column of every data row MUST be `csv_schema_version`. The current version is `3`.
+- **Schema Version**: The first column of every data row MUST be `csv_schema_version`. The current version is `4`.
 - **Nulls vs. Zeros**: Empty means "unknown". Never use `0`, `N/A`, or `-` for missing data. This is critical for `duration_seconds` (null != 0).
 
 ## Data Types
@@ -20,24 +20,38 @@ This skill ensures that MediaTracker's promise of "first-class data portability"
 - **Identifiers**: `media_id` is a UUID string. It is the primary join key between library and session files.
 
 ## Library Export Structure (`library_export.csv`)
-1. `csv_schema_version` (3)
+1. `csv_schema_version` (4)
 2. `media_id` (UUID)
 3. `type` (e.g., `BOOK`, `MOVIE`, `TV_SHOW`)
 4. `title`
 5. `authors` (joined by `"; "`, empty for non-book types)
 6. `release_year` (1450-2100)
-... (see `CSV_FORMAT.md` for full 19-column list; `v3` appended `runtime_minutes`, `watch_status` and `watched_at` for movies)
+... (see `CSV_FORMAT.md` for full 20-column list; `v3` appended `runtime_minutes`, `watch_status` and `watched_at` for movies; `v4` appended `total_seasons` for shows)
 
 ## Import Logic & Duplicate Matching
 - **Precedence**: `media_id` -> `isbn` (for books) -> `type` + `title` + `release_year` -> `type` + `title` only (with Review Note).
-- **Heterogeneous Support**: `LibraryCsvExporter` MUST support mixed media types uniformly — every media type in the library belongs in the export. `ImportDataUseCase` currently accepts `BOOK` rows only; a `MOVIE` row is reported as a rejected row, never silently dropped.
+- **Heterogeneous Support**: `LibraryCsvExporter` MUST support mixed media types uniformly — every media type in the library belongs in the export. `ImportDataUseCase` currently accepts `BOOK` rows only; a `MOVIE` or `TV_SHOW` row is reported as a rejected row, never silently dropped.
 - **In-File Duplicates**: Later rows in the same file MUST resolve against earlier rows from the SAME file using these same typed keys.
 
 ## Reading Log Structure (`reading_logs_export.csv`)
-1. `csv_schema_version` (3)
+1. `csv_schema_version` (4)
 2. `session_id` (UUID)
 3. `media_id` (Join key)
 ... (see `CSV_FORMAT.md` for full 10-column list)
+
+## Episode Export Structure (`episodes_export.csv`, ROADMAP Task 13 Phase C)
+One row per episode of a `TV_SHOW`, since episodes are one-to-many under a show exactly like
+reading sessions are one-to-many under a book — they do not fit `library_export.csv`'s
+one-row-per-item shape. Export-only: written on every export, but has **no importer yet**.
+1. `csv_schema_version` (4)
+2. `episode_id` (UUID)
+3. `media_id` (the show; join key)
+4. `season_number`
+5. `episode_number`
+6. `title` (empty for a quick-filled episode)
+7. `air_date` (ISO-8601 UTC, empty if unknown)
+8. `watched_at` (ISO-8601 UTC, empty if unwatched — the column this file exists to carry)
+... (see `CSV_FORMAT.md` File 3 for the full column list)
 
 ## Database Backup Protocol
 - **Vacuum Into**: Use SQLite's `VACUUM INTO` for backups to ensure a consistent snapshot of a WAL-mode database (not an atomic publication to the final destination).

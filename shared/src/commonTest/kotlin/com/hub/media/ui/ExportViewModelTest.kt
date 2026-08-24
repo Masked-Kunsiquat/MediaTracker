@@ -45,7 +45,8 @@ class ExportViewModelTest {
     @Test
     fun exportData_emitsIdleThenLoadingThenSuccess() =
         runTest {
-            val bundle = CsvExportBundle(libraryCsv = "library-csv", readingLogsCsv = "logs-csv")
+            val bundle =
+                CsvExportBundle(libraryCsv = "library-csv", readingLogsCsv = "logs-csv", episodesCsv = "episodes-csv")
             val fake = FakeExportDataUseCase(result = Resource.Success(bundle)).apply { awaitGate = true }
             val viewModel = newViewModel(fake)
 

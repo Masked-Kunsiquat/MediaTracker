@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.AddTVShowScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
@@ -17,6 +18,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreenRoute
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
 
@@ -56,6 +58,9 @@ fun AppNavigation(
                 onNavigateToAddMovie = {
                     navController.navigate(Route.AddMovie.route)
                 },
+                onNavigateToAddTVShow = {
+                    navController.navigate(Route.AddTVShow.route)
+                },
                 // Type-aware at last (ROADMAP Task 13 Phase B). Until a movie row could exist this
                 // took an id alone and sent everything to Book Detail; the `when` is now
                 // exhaustive, so adding a media type fails to compile here rather than silently
@@ -64,8 +69,7 @@ fun AppNavigation(
                     when (type) {
                         MediaType.BOOK -> navController.navigate(Route.BookDetail.createRoute(mediaId))
                         MediaType.MOVIE -> navController.navigate(Route.MovieDetail.createRoute(mediaId))
-                        // Phase C builds the show detail screen; until then no TV_SHOW row exists.
-                        MediaType.TV_SHOW -> Unit
+                        MediaType.TV_SHOW -> navController.navigate(Route.TVShowDetail.createRoute(mediaId))
                     }
                 },
                 onNavigateToStats = {
@@ -126,6 +130,39 @@ fun AppNavigation(
             EditMovieScreenRoute(
                 appContainer = appContainer,
                 movieId = movieId,
+                onNavigateBack = { navController.navigateUp() },
+            )
+        }
+
+        composable(Route.AddTVShow.route) {
+            AddTVShowScreenRoute(
+                appContainer = appContainer,
+                onNavigateBack = { navController.navigateUp() },
+                // Straight to the new show, replacing the form in the back stack so Back from the
+                // detail screen returns to the library rather than to a spent form -- the same
+                // shape the add-movie route uses.
+                onShowAdded = { showId ->
+                    navController.navigate(Route.TVShowDetail.createRoute(showId)) {
+                        popUpTo(Route.AddTVShow.route) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = Route.TVShowDetail.route,
+            arguments =
+                listOf(
+                    navArgument(Route.TVShowDetail.ARG_SHOW_ID) { type = NavType.StringType },
+                ),
+        ) { backStackEntry ->
+            val showId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.TVShowDetail.ARG_SHOW_ID)) {
+                    "Missing required argument: ${Route.TVShowDetail.ARG_SHOW_ID}"
+                }
+            TVShowDetailScreenRoute(
+                appContainer = appContainer,
+                showId = showId,
                 onNavigateBack = { navController.navigateUp() },
             )
         }

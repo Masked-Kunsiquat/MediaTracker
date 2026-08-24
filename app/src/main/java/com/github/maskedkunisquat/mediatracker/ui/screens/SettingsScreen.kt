@@ -273,12 +273,12 @@ fun SettingsScreenRoute(
             }
         }
 
-    // Holds the generated bundle between the two sequential SAF "create document" picks below --
-    // see SettingsScreen.kt's class-level export section KDoc for why both files are written from
-    // one cached bundle rather than two independent ExportDataUseCase runs.
+    // Holds the generated bundle between the three sequential SAF "create document" picks below --
+    // see SettingsScreen.kt's class-level export section KDoc for why all three files are written
+    // from one cached bundle rather than three independent ExportDataUseCase runs.
     var pendingBundle by remember { mutableStateOf<CsvExportBundle?>(null) }
 
-    val readingLogsLauncher =
+    val episodesLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/csv"),
         ) { uri ->
@@ -293,10 +293,35 @@ fun SettingsScreenRoute(
                         bundle == null -> exportFailureMessage
                         withContext(
                             Dispatchers.IO,
-                        ) { writeCsvToUri(context, uri, bundle.readingLogsCsv) } -> exportSuccessMessage
+                        ) { writeCsvToUri(context, uri, bundle.episodesCsv) } -> exportSuccessMessage
                         else -> exportFailureMessage
                     }
                 snackbarHostState.showSnackbar(message)
+            }
+        }
+
+    val readingLogsLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/csv"),
+        ) { uri ->
+            val bundle = pendingBundle
+            if (uri == null || bundle == null) {
+                pendingBundle = null
+                exportViewModel.reset()
+                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
+            } else {
+                // Off the main thread -- see episodesLauncher above.
+                coroutineScope.launch {
+                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.readingLogsCsv) }) {
+                        // Second file written; immediately prompt for the third file's destination so
+                        // all three documents come from the exact same generated snapshot.
+                        episodesLauncher.launch("episodes_export.csv")
+                    } else {
+                        pendingBundle = null
+                        exportViewModel.reset()
+                        snackbarHostState.showSnackbar(exportFailureMessage)
+                    }
+                }
             }
         }
 
@@ -310,11 +335,11 @@ fun SettingsScreenRoute(
                 exportViewModel.reset()
                 coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
             } else {
-                // Off the main thread -- see readingLogsLauncher above.
+                // Off the main thread -- see episodesLauncher above.
                 coroutineScope.launch {
                     if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
                         // First file written; immediately prompt for the second file's destination so
-                        // both documents come from the exact same generated snapshot.
+                        // every document comes from the exact same generated snapshot.
                         readingLogsLauncher.launch("reading_logs_export.csv")
                     } else {
                         pendingBundle = null
@@ -1273,21 +1298,21 @@ private fun WeekStartDaySetting(
 }
 
 /**
- * The data-export setting row (ROADMAP Task 8 Phase A): a label, a short description of what it
- * produces, and a single button that generates both `library_export.csv` and
- * `reading_logs_export.csv` from one consistent snapshot and then prompts (via the route
- * composable's SAF `ActivityResultContracts.CreateDocument` launchers) for where to save each one
- * in turn.
+ * The data-export setting row (ROADMAP Task 8 Phase A; third file added ROADMAP Task 13 Phase C):
+ * a label, a short description of what it produces, and a single button that generates
+ * `library_export.csv`, `reading_logs_export.csv`, and `episodes_export.csv` from one consistent
+ * snapshot and then prompts (via the route composable's SAF `ActivityResultContracts.CreateDocument`
+ * launchers) for where to save each one in turn.
  *
- * ### Why one button for two files, rather than two independent export actions
- * Exporting library metadata and reading-session history separately would let a book added or
- * edited between the two exports leave the two files describing different moments in time --
- * `ExportDataUseCase` deliberately reads both in one snapshot, so the UI offers exactly one
- * request that produces both, rather than two buttons that could be tapped independently and
- * reintroduce that inconsistency. Zipping the two files into one download was considered and
- * rejected: it would need either a hand-rolled ZIP writer or a new dependency (AGENTS.md §5),
- * for a two-small-CSV-files case that doesn't need it -- two sequential "save as" prompts is a
- * users-already-know-this-pattern tradeoff instead.
+ * ### Why one button for three files, rather than independent export actions
+ * Exporting library metadata, reading-session history, and episode watched state separately would
+ * let a book (or show) added or edited between exports leave the files describing different
+ * moments in time -- `ExportDataUseCase` deliberately reads all three in one snapshot, so the UI
+ * offers exactly one request that produces every file, rather than separate buttons that could be
+ * tapped independently and reintroduce that inconsistency. Zipping the files into one download was
+ * considered and rejected: it would need either a hand-rolled ZIP writer or a new dependency
+ * (AGENTS.md §5), for a few-small-CSV-files case that doesn't need it -- sequential "save as"
+ * prompts is a users-already-know-this-pattern tradeoff instead.
  */
 @Composable
 private fun ExportDataSetting(

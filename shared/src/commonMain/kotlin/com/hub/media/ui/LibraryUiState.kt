@@ -1,5 +1,6 @@
 package com.hub.media.ui
 
+import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.features.media.data.MediaWithDetails
 
 /**
@@ -25,6 +26,17 @@ public data class DeleteErrorEvent(
 
 public data class LibraryUiState(
     val media: List<MediaWithDetails> = emptyList(),
+    /**
+     * Episode counts per show id (ROADMAP Task 13 Phase C), for the shows that have episodes —
+     * a show with none is absent rather than present with zeros, since
+     * [com.hub.media.core.database.dao.EpisodeDao.observeProgress] groups by `mediaId`.
+     *
+     * Carried here rather than folded into [MediaWithDetails.TVShow] because it is derived, not
+     * stored: putting a count on the row would invite exactly the cached-progress field
+     * [com.hub.media.core.database.entities.TVDetailsEntity]'s KDoc forbids. Feeds both
+     * [LibraryStatusFilter.ofShow] and the library card's "4 / 10 episodes".
+     */
+    val tvProgress: Map<String, TVProgressRow> = emptyMap(),
     val statusFilter: LibraryStatusFilter? = null,
     val searchQuery: String = "",
     val isEmpty: Boolean = media.isEmpty(),
@@ -48,7 +60,11 @@ public data class LibraryUiState(
     public val filteredMedia: List<MediaWithDetails>
         get() {
             val statusFiltered =
-                if (statusFilter == null) media else media.filter(statusFilter::matches)
+                if (statusFilter == null) {
+                    media
+                } else {
+                    media.filter { statusFilter.matches(it, tvProgress[it.item.id]) }
+                }
             val query = searchQuery.trim()
             if (query.isEmpty()) return statusFiltered
             return statusFiltered.filter { mediaItem ->

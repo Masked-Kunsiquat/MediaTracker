@@ -1,5 +1,7 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.database.dao.TVProgressRow
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
@@ -9,6 +11,7 @@ import com.hub.media.core.util.error
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Log tag for [MediaRepository] (ROADMAP Task 15 Phase C). */
@@ -38,6 +41,27 @@ public class MediaRepository(
     public fun observeMediaItem(id: String): Flow<MediaItemEntity?> = db.mediaItemDao().observeById(id)
 
     /**
+     * Observes derived episode progress for every show that has episodes, keyed by show id
+     * (ROADMAP Task 13 Phase C).
+     *
+     * A show with no episode rows is **absent from the map**, not present with zeros — the
+     * underlying query groups by `mediaId`. [com.hub.media.ui.LibraryStatusFilter.ofShow] treats
+     * that absence as "not started"; anything else reading this must decide the same question
+     * deliberately rather than assume a key exists.
+     */
+    public fun observeTVProgressByMediaId(): Flow<Map<String, TVProgressRow>> =
+        db.episodeDao().observeProgress().map { rows -> rows.associateBy { it.mediaId } }
+
+    /**
+     * Observes every episode across the whole library, unfiltered by show (ROADMAP Task 13 Phase
+     * C). Backs [com.hub.media.features.portability.domain.ExportDataUseCase], which needs every
+     * episode for `episodes_export.csv` the same way [observeAllMediaWithDetails] needs every media
+     * item -- there is no per-show id to scope the read to, unlike
+     * [com.hub.media.features.tv.data.TVShowRepository.observeEpisodes].
+     */
+    public fun observeAllEpisodes(): Flow<List<EpisodeEntity>> = db.episodeDao().observeAll()
+
+    /**
      * Observes every media item together with its details as a reactive stream.
      */
     public fun observeAllMediaWithDetails(): Flow<List<MediaWithDetails>> =
@@ -45,9 +69,11 @@ public class MediaRepository(
             observeAllMedia(),
             db.bookDetailsDao().observeAll(),
             db.movieDetailsDao().observeAll(),
-        ) { mediaItems, bookDetails, movieDetails ->
+            db.tvDetailsDao().observeAll(),
+        ) { mediaItems, bookDetails, movieDetails, tvDetails ->
             val bookDetailsByMediaId = bookDetails.associateBy { it.mediaId }
             val movieDetailsByMediaId = movieDetails.associateBy { it.mediaId }
+            val tvDetailsByMediaId = tvDetails.associateBy { it.mediaId }
             mediaItems.map { mediaItem ->
                 when (mediaItem.type) {
                     MediaType.BOOK ->
@@ -60,7 +86,11 @@ public class MediaRepository(
                             item = mediaItem,
                             details = movieDetailsByMediaId[mediaItem.id],
                         )
-                    MediaType.TV_SHOW -> MediaWithDetails.TVShow(item = mediaItem)
+                    MediaType.TV_SHOW ->
+                        MediaWithDetails.TVShow(
+                            item = mediaItem,
+                            details = tvDetailsByMediaId[mediaItem.id],
+                        )
                 }
             }
         }

@@ -121,9 +121,9 @@ public class EditMovieViewModel(
         val form = _uiState.value as? EditMovieUiState.Editing ?: return
         if (form.isSaving) return
 
-        val releaseYear = parseOptional(form.releaseYear, String::toIntOrNull)
-        val runtimeMinutes = parseOptional(form.runtimeMinutes, String::toIntOrNull)
-        val purchasePrice = parseOptional(form.purchasePrice, String::toDoubleOrNull)
+        val releaseYear = parseOptionalNumber(form.releaseYear, String::toIntOrNull)
+        val runtimeMinutes = parseOptionalNumber(form.runtimeMinutes, String::toIntOrNull)
+        val purchasePrice = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull)
         if (releaseYear == null || runtimeMinutes == null || purchasePrice == null) {
             val unreadableField =
                 when {
@@ -162,29 +162,4 @@ public class EditMovieViewModel(
         val current = _uiState.value as? EditMovieUiState.Editing ?: return
         _uiState.value = transform(current)
     }
-}
-
-/**
- * A numeric form field that was read successfully. [value] is `null` when the field was blank —
- * "unknown", which is a legitimate thing to save.
- */
-private class Parsed<T : Any>(
-    val value: T?,
-)
-
-/**
- * Reads an optional numeric field: [Parsed] with a `null` [Parsed.value] for blank text, [Parsed]
- * with the number for text that parses, and `null` for text that does not parse at all.
- *
- * The third case is the one `toIntOrNull()`/`toDoubleOrNull()` cannot express on their own, and it
- * is not hypothetical even with a digits-only input filter: a run of digits longer than [Int] holds
- * ("19999999999" for a year) parses to nothing, and so would be written as "unknown".
- */
-private fun <T : Any> parseOptional(
-    text: String,
-    parse: (String) -> T?,
-): Parsed<T>? {
-    val trimmed = text.trim()
-    if (trimmed.isEmpty()) return Parsed(null)
-    return parse(trimmed)?.let { Parsed(it) }
 }

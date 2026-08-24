@@ -114,6 +114,11 @@ class ExportDataUseCaseLogExclusionTest {
                         "this file is reading SESSIONS, not application logs; see ExportDataUseCase's " +
                         "\"why there is no exclude filter\" KDoc section",
                 )
+                assertTrue(
+                    !bundle.episodesCsv.contains(logMarker),
+                    "episodes_export.csv must never contain log content -- see ExportDataUseCase's " +
+                        "\"why there is no exclude filter\" KDoc section",
+                )
                 // Sanity check that the decoy file itself really holds the marker, so a typo in the
                 // marker string above couldn't make this test pass for the wrong reason.
                 assertTrue(decoyLogFile.readText().contains(logMarker))

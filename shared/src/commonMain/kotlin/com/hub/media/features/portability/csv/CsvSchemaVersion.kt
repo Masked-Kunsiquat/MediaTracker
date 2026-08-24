@@ -54,8 +54,27 @@ package com.hub.media.features.portability.csv
  * Note this bump marks a column-set change the *exporter* made; [LibraryCsvImporter] still refuses
  * a `MOVIE` row, so the three new columns are written and not yet read. See
  * [LibraryCsvExporter]'s KDoc for why they are written anyway.
+ *
+ * **ROADMAP Task 13 Phase C update: `v4`.** [LibraryCsvExporter] gained `total_seasons`, appended
+ * after `watched_at` so no existing column moved -- the same reasoning as the `v3` bump above,
+ * applied to a show's season count instead of a movie's runtime/status. All three older shapes
+ * still import: `v3` via [LibraryCsvImporter.padLegacyV3Row], `v2` via
+ * [LibraryCsvImporter.padLegacyV2Row], and `v1` via [LibraryCsvImporter.padLegacyV1Row] -- each of
+ * which now pads all the way to the current width, not just to its own successor's.
+ *
+ * This phase also adds a second new file, `episodes_export.csv`
+ * ([com.hub.media.features.portability.csv.EpisodeCsvExporter]), for a show's episodes -- one row
+ * per episode, since an episode is one-to-many under a show exactly like a
+ * [com.hub.media.core.database.entities.ReadingSessionEntity] is one-to-many under a book, and so
+ * does not fit `library_export.csv`'s one-row-per-item shape. That file is not governed by this
+ * marker's "shared by both files" opening paragraph textually, but does carry the same
+ * `csv_schema_version` column for the same self-describing-row reason.
+ *
+ * As with `v3`, [LibraryCsvImporter] still refuses a `TV_SHOW` row, so `total_seasons` is written
+ * and not yet read, and `episodes_export.csv` is exported but has no importer at all yet -- see
+ * [LibraryCsvExporter]'s KDoc and [EpisodeCsvExporter]'s KDoc respectively.
  */
-public const val CSV_SCHEMA_VERSION: Int = 3
+public const val CSV_SCHEMA_VERSION: Int = 4
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

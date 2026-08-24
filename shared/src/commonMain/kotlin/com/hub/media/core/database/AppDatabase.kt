@@ -9,6 +9,7 @@ import com.hub.media.core.database.converters.Converters
 import com.hub.media.core.database.dao.AppSettingsDao
 import com.hub.media.core.database.dao.BookDetailsDao
 import com.hub.media.core.database.dao.BookWriteDao
+import com.hub.media.core.database.dao.EpisodeDao
 import com.hub.media.core.database.dao.ExternalIdentifierDao
 import com.hub.media.core.database.dao.ImportWriteDao
 import com.hub.media.core.database.dao.MediaItemDao
@@ -16,6 +17,8 @@ import com.hub.media.core.database.dao.MovieDetailsDao
 import com.hub.media.core.database.dao.MovieWriteDao
 import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
+import com.hub.media.core.database.dao.TVDetailsDao
+import com.hub.media.core.database.dao.TVWriteDao
 import com.hub.media.core.database.entities.AppSettingEntity
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.EpisodeEntity
@@ -119,6 +122,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun movieDetailsDao(): MovieDetailsDao
 
     abstract fun movieWriteDao(): MovieWriteDao
+
+    abstract fun tvDetailsDao(): TVDetailsDao
+
+    abstract fun episodeDao(): EpisodeDao
+
+    abstract fun tvWriteDao(): TVWriteDao
 }
 
 /**

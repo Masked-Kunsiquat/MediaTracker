@@ -60,6 +60,7 @@ class LibrarySelectionTest {
                     coverStorageDir = "unused",
                     onNavigateToAddBook = {},
                     onNavigateToAddMovie = {},
+                    onNavigateToAddTVShow = {},
                     onMediaClick = onMediaClick,
                     onNavigateToStats = {},
                     onNavigateToSettings = {},
