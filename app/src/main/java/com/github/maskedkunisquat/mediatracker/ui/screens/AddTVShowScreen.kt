@@ -45,6 +45,8 @@ import com.hub.media.ui.AddTVShowViewModel
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.SeasonRow
 import com.hub.media.ui.filterIntegerInput
+import com.hub.media.ui.parseOptionalNumber
+import com.hub.media.ui.parseRequiredInt
 
 /**
  * Route wrapper: owns the [AddTVShowViewModel] and turns a successful save into navigation.
@@ -122,15 +124,15 @@ fun AddTVShowScreen(
     // Blank means "unknown" and saves as null for these show-level fields; text that cannot be
     // parsed is refused rather than quietly forwarded as null -- same rule AddMovieScreen/
     // EditMovieScreen apply. Range and sign rules stay in TVMetadataValidation.
-    val releaseYearIsValid = uiState.releaseYear.isBlank() || uiState.releaseYear.toIntOrNull() != null
-    val totalSeasonsIsValid = uiState.totalSeasons.isBlank() || uiState.totalSeasons.toIntOrNull() != null
-    val purchasePriceIsValid = uiState.purchasePrice.isBlank() || uiState.purchasePrice.toDoubleOrNull() != null
+    val releaseYearIsValid = parseOptionalNumber(uiState.releaseYear, String::toIntOrNull) != null
+    val totalSeasonsIsValid = parseOptionalNumber(uiState.totalSeasons, String::toIntOrNull) != null
+    val purchasePriceIsValid = parseOptionalNumber(uiState.purchasePrice, String::toDoubleOrNull) != null
 
     // A season row's fields are REQUIRED, not optional -- see AddTVShowViewModel's KDoc: a blank
     // episode count is a row the user has not finished filling in, not "unknown episode count."
     val seasonRowsAreValid =
         uiState.seasons.all { row ->
-            row.seasonNumber.toIntOrNull() != null && row.episodeCount.toIntOrNull() != null
+            parseRequiredInt(row.seasonNumber) != null && parseRequiredInt(row.episodeCount) != null
         }
 
     val canSave =
@@ -292,8 +294,8 @@ private fun SeasonRowEditor(
     onRemove: (Int) -> Unit,
     enabled: Boolean,
 ) {
-    val seasonNumberIsValid = row.seasonNumber.toIntOrNull() != null
-    val episodeCountIsValid = row.episodeCount.toIntOrNull() != null
+    val seasonNumberIsValid = parseRequiredInt(row.seasonNumber) != null
+    val episodeCountIsValid = parseRequiredInt(row.episodeCount) != null
 
     Row(
         verticalAlignment = Alignment.Top,

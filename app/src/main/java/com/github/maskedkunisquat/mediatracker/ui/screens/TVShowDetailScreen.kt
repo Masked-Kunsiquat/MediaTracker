@@ -59,6 +59,7 @@ import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import com.hub.media.ui.TVShowDetailViewModel
 import com.hub.media.ui.filterIntegerInput
+import com.hub.media.ui.parseRequiredInt
 
 /**
  * Route wrapper: owns the [TVShowDetailViewModel] and leaves the screen once the show is gone.
@@ -558,8 +559,8 @@ private fun SeasonLengthDialog(
     var seasonNumberText by rememberSaveable { mutableStateOf(seasonNumber?.toString().orEmpty()) }
     var episodeCount by rememberSaveable { mutableStateOf(initialEpisodeCount?.toString().orEmpty()) }
 
-    val seasonNumberValue = seasonNumber ?: seasonNumberText.toIntOrNull()
-    val episodeCountValue = episodeCount.toIntOrNull()
+    val seasonNumberValue = seasonNumber ?: parseRequiredInt(seasonNumberText)
+    val episodeCountValue = parseRequiredInt(episodeCount)
     val canConfirm = seasonNumberValue != null && episodeCountValue != null
     val titleAndConfirmLabel =
         if (isEditingExisting) {
