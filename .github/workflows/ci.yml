@@ -89,24 +89,43 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           SCHEMA_DIR="shared/schemas/com.hub.media.core.database.AppDatabase"
-          
-          # Fetch the base branch
+
+          # The freeze attaches to SHIPPING IN A TAG, not to the file existing -- AGENTS.md §8, and
+          # its schema ledger records the current version as "not yet frozen" for exactly this
+          # reason. This step used to derive the frozen set from the base branch, which made a
+          # schema immutable the moment it merged and closed the window §8 deliberately leaves
+          # open: "Until v6 ships, 6.json and MIGRATION_5_6 may still be edited in place -- which
+          # is exactly the window in which to correct anything wrong with them." Reading the tag
+          # makes the check enforce the rule its own error message quotes.
           git fetch origin ${{ github.base_ref }} --depth=1
-          
-          # Get list of schema files in the base branch
-          FROZEN_SCHEMAS=$(git ls-tree -r --name-only origin/${{ github.base_ref }} "$SCHEMA_DIR" | grep -E '\/[0-9]+\.json$')
-          
-          # Check if any of these were modified in the PR
+          git fetch --tags --force
+
+          LATEST_TAG=$(git tag --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tags exist, so no schema has shipped and none is frozen."
+            exit 0
+          fi
+          echo "Newest release tag: $LATEST_TAG -- schemas present there are frozen."
+
+          # Schemas that shipped in that tag. An unreleased one is absent here and stays editable.
+          FROZEN_SCHEMAS=$(git ls-tree -r --name-only "$LATEST_TAG" "$SCHEMA_DIR" | grep -E '/[0-9]+\.json$' || true)
+          if [ -z "$FROZEN_SCHEMAS" ]; then
+            echo "No exported schemas at $LATEST_TAG; nothing to protect."
+            exit 0
+          fi
+
           MODIFIED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          
+
           for schema in $FROZEN_SCHEMAS; do
             if echo "$MODIFIED_FILES" | grep -q "^$schema$"; then
-              echo "::error::Frozen Room schema file modified: $schema"
+              echo "::error::Frozen Room schema file modified: $schema (shipped in $LATEST_TAG)"
               echo "AGENTS.md §8: 'Once a release is tagged, the database schema shipped in it is FROZEN.'"
-              echo "Existing schema JSONs must never be modified. If you need a schema change, bump APP_DATABASE_VERSION instead."
+              echo "A schema that has shipped must never be modified. Bump APP_DATABASE_VERSION and add a migration instead."
               exit 1
             fi
           done
+
+          echo "No frozen schema touched."
 
   secret-scan:
     name: Secret scan
