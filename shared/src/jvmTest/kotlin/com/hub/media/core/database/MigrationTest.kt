@@ -852,6 +852,116 @@ class MigrationTest {
                 assertTrue(stmt.isNull(0), "episodeId must accept NULL (a film watch, not an episode)")
                 assertTrue(stmt.isNull(1), "durationSeconds must accept NULL")
             }
+
+            // The provider-metadata columns added before the v6 freeze. Nothing writes them until
+            // Phase D, so NULL is what every row holds today and the schema has to say so -- this
+            // test's name promises *every* nullable column, and it stops being true the moment a
+            // column is added above without a line here.
+            db
+                .prepare(
+                    "SELECT airingStatus, overview, firstAirDate, lastAirDate " +
+                        "FROM tv_details WHERE mediaId = 'media-tv-null'",
+                ).use { stmt ->
+                    assertTrue(stmt.step())
+                    assertTrue(stmt.isNull(0), "airingStatus must accept NULL (unknown until a provider says)")
+                    assertTrue(stmt.isNull(1), "tv_details.overview must accept NULL")
+                    assertTrue(stmt.isNull(2), "firstAirDate must accept NULL")
+                    assertTrue(stmt.isNull(3), "lastAirDate must accept NULL")
+                }
+            db
+                .prepare(
+                    "SELECT runtimeMinutes, overview, stillImageHash, communityRating " +
+                        "FROM episodes WHERE id = 'episode-null'",
+                ).use { stmt ->
+                    assertTrue(stmt.step())
+                    assertTrue(stmt.isNull(0), "episodes.runtimeMinutes must accept NULL (quick-fill knows no runtime)")
+                    assertTrue(stmt.isNull(1), "episodes.overview must accept NULL")
+                    assertTrue(stmt.isNull(2), "stillImageHash must accept NULL (no image downloaded)")
+                    assertTrue(stmt.isNull(3), "episodes.communityRating must accept NULL")
+                }
+            db.prepare("SELECT communityRating FROM media_items WHERE id = 'media-tv-null'").use { stmt ->
+                assertTrue(stmt.step())
+                assertTrue(stmt.isNull(0), "media_items.communityRating must accept NULL")
+            }
+        }
+    }
+
+    /**
+     * The columns added to v6 before its freeze must round-trip real values, not merely accept
+     * NULL. `media_items.communityRating` is the one worth the most attention: it is the only
+     * column in [MIGRATION_5_6] added to a **pre-existing** table, via `ALTER TABLE ... ADD
+     * COLUMN`, so it is the only one whose arrival could disturb rows a user already had. The
+     * seeded book below is asserted to survive it untouched.
+     */
+    @Test
+    fun migrate5To6_providerMetadataColumns_roundTripRealValues() {
+        helper.createDatabase(5).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('book-before', 'BOOK', 'A Book From v5', 1979, 9.99, 1600000000000, 'abc.jpg')",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "VALUES ('media-tv-real', 'TV_SHOW', 'Chernobyl', 2019, NULL, 1700000000000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(6, listOf(MIGRATION_5_6)).use { db ->
+            // The book that existed before the ALTER must be exactly as it was, with the new
+            // column reading null rather than a zero.
+            db
+                .prepare(
+                    "SELECT title, releaseYear, purchasePrice, coverImageHash, communityRating " +
+                        "FROM media_items WHERE id = 'book-before'",
+                ).use { stmt ->
+                    assertTrue(stmt.step())
+                    assertEquals("A Book From v5", stmt.getText(0))
+                    assertEquals(1979, stmt.getInt(1))
+                    assertEquals(9.99, stmt.getDouble(2))
+                    assertEquals("abc.jpg", stmt.getText(3))
+                    assertTrue(stmt.isNull(4), "an ALTER-added column must read NULL on rows that predate it, not 0.0")
+                }
+
+            db.execSQL("UPDATE media_items SET communityRating = 9.3 WHERE id = 'media-tv-real'")
+            db.execSQL(
+                "INSERT INTO tv_details (mediaId, totalSeasons, status, airingStatus, overview, " +
+                    "firstAirDate, lastAirDate) " +
+                    "VALUES ('media-tv-real', 1, 'WATCHING', 'ENDED', 'A dramatisation.', " +
+                    "1557187200000, 1559347200000)",
+            )
+            db.execSQL(
+                "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, title, airDate, watchedAt, " +
+                    "runtimeMinutes, overview, stillImageHash, communityRating) " +
+                    "VALUES ('ep-real', 'media-tv-real', 1, 1, '1:23:45', 1557187200000, NULL, " +
+                    "61, 'An explosion.', 'still-hash.jpg', 8.7)",
+            )
+
+            db
+                .prepare(
+                    "SELECT airingStatus, overview, firstAirDate, lastAirDate FROM tv_details " +
+                        "WHERE mediaId = 'media-tv-real'",
+                ).use { stmt ->
+                    assertTrue(stmt.step())
+                    assertEquals("ENDED", stmt.getText(0))
+                    assertEquals("A dramatisation.", stmt.getText(1))
+                    assertEquals(1557187200000L, stmt.getLong(2))
+                    assertEquals(1559347200000L, stmt.getLong(3))
+                }
+            db
+                .prepare(
+                    "SELECT runtimeMinutes, overview, stillImageHash, communityRating FROM episodes " +
+                        "WHERE id = 'ep-real'",
+                ).use { stmt ->
+                    assertTrue(stmt.step())
+                    assertEquals(61, stmt.getInt(0))
+                    assertEquals("An explosion.", stmt.getText(1))
+                    assertEquals("still-hash.jpg", stmt.getText(2))
+                    assertEquals(8.7, stmt.getDouble(3))
+                }
+            db.prepare("SELECT communityRating FROM media_items WHERE id = 'media-tv-real'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(9.3, stmt.getDouble(0))
+            }
         }
     }
 

@@ -678,6 +678,22 @@ quietly does not work for shows.
 - **Phase D — TMDB.** Everything in the existing bullets below: client, key entry, backup
   scrubbing. Also the backfill path that fills episode titles and art onto quick-filled shows.
 
+**Resolved 2026-08-24 — episodes need no provider id of their own.** This was the one question
+worth answering while schema v6 was unfrozen, because `ExternalIdentifierEntity` is keyed
+`(mediaId, provider)` against `media_items`, and an episode is not a media item — so a per-episode
+id would have meant a new table. It does not. TMDB addresses every episode endpoint positionally,
+as `tv/{tv_id}/season/{season_number}/episode/{episode_number}`, and `episodes` already carries a
+unique index on `(mediaId, seasonNumber, episodeNumber)`. Given a local episode row and the show's
+TMDB id, the request is constructible from what v6 already stores.
+
+TMDB episodes *do* each carry an internal numeric `id` (episode `63056` inside show `1399`), which
+makes the docs look as though somewhere is needed to put it. **No endpoint accepts it.** It is
+meaningful only to the changes API, which reports upstream edits — a sync feature well beyond this
+phase, which would want its own schema version regardless and could add a table cheaply then.
+
+Also for Phase D: TMDB uses **season 0 for specials**. `TVMetadataValidation.validateSeasonNumber`
+rejects only negatives, so 0 already passes — compatible, though by accident rather than design.
+
 **Blocker to resolve in Phase A, not discovered later:** `ReadingStatus` is book-named and
 book-shaped (`TO_READ`/`READING`/`FINISHED`), and `LibraryUiState.filteredMedia` currently returns
 `false` for `Movie` and `TVShow` in the status filter. **The moment a movie row exists, filtering

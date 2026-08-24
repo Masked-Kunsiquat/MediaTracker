@@ -32,6 +32,21 @@ import androidx.room.PrimaryKey
  *   read from this column, because giving up is a decision no episode count can express. The other
  *   [WatchStatus] values remain storable and are deliberately ignored by the filter; nothing in
  *   the app writes them, and a future reader should not infer meaning from one that appears here.
+ * @property airingStatus Whether the show itself is still running — **not** the user's progress
+ *   through it, which is what [status] and the derived filter above are about. The name collision
+ *   between the two is the reason this one is not called `status`.
+ *
+ *   Nothing writes it yet; TMDB supplies it in Phase D as `status`/`in_production`. It exists now
+ *   because "finished" currently conflates two states a viewer keeps apart: *up to date* (every
+ *   aired episode watched, show still running) and *completed* (every episode there will ever be).
+ *   Without this column those are indistinguishable, so a running show sits under Finished until
+ *   its next season is quick-filled. `null` means unknown, which is every row today.
+ * @property overview The show's synopsis from a provider, or `null` if none has been fetched.
+ * @property firstAirDate Epoch milliseconds of the first episode's air date, or `null` if unknown.
+ *   Stored rather than derived from [EpisodeEntity.airDate] because a quick-filled show has no air
+ *   dates at all, and because the earliest *known* episode is not necessarily the first one.
+ * @property lastAirDate Epoch milliseconds of the most recent aired episode, or `null`. Together
+ *   with [airingStatus] this is what tells a viewer whether a gap means "on hiatus" or "over".
  */
 @Entity(
     tableName = "tv_details",
@@ -48,4 +63,8 @@ public data class TVDetailsEntity(
     @PrimaryKey val mediaId: String,
     val totalSeasons: Int? = null,
     val status: WatchStatus = WatchStatus.WATCHLIST,
+    val airingStatus: AiringStatus? = null,
+    val overview: String? = null,
+    val firstAirDate: Long? = null,
+    val lastAirDate: Long? = null,
 )
