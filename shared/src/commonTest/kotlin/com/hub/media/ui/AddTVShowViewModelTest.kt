@@ -193,14 +193,11 @@ class AddTVShowViewModelTest {
     @Test
     fun save_doubleTapped_createsOnlyOneShow() =
         runTest {
-            // No StandardTestDispatcher juggling needed here, unlike the concurrency tests in
-            // BookDetailViewModelTest: the isSaving flip happens synchronously in save() itself,
-            // before the repository call is ever launched -- so the second call below observes it
-            // regardless of dispatcher timing. What makes this a genuine test (not one that would
-            // pass even with the guard deleted) is that testAppDatabase() dispatches Room's actual
-            // suspend work onto a real thread, so the first save()'s launch{} genuinely suspends
-            // there and control returns to this test before it finishes -- the second save() call
-            // below lands while the first is still in flight, not after.
+            // Deliberately makes no assumption about whether the first save is still in flight when
+            // the second call lands. An earlier version of this test relied on Room suspending long
+            // enough for it to be -- true on one machine, false on CI, where the first save
+            // completed first and the second went on to write a second show. The guard covers both
+            // orderings now, so this test no longer depends on which one happens.
             val viewModel = newViewModel()
             viewModel.onTitleChange("Show")
 
@@ -210,6 +207,56 @@ class AddTVShowViewModelTest {
             viewModel.uiState.first { it.savedMediaId != null }
             val shows = db.mediaItemDao().observeByType(MediaType.TV_SHOW).first()
             assertEquals(1, shows.size, "a double-tapped save must create exactly one show")
+        }
+
+    @Test
+    fun save_afterASuccessfulSave_isIgnoredUntilReset() =
+        runTest {
+            // The half the in-flight flag cannot cover: the write has finished, so isSaving is
+            // false again, and nothing but savedMediaId stands between a second tap and a duplicate
+            // row. The screen navigates away at this point, which hides the window rather than
+            // closing it.
+            val viewModel = newViewModel()
+            viewModel.onTitleChange("Show")
+
+            viewModel.save()
+            viewModel.uiState.first { it.savedMediaId != null }
+
+            viewModel.save()
+
+            assertEquals(
+                1,
+                db
+                    .mediaItemDao()
+                    .observeByType(MediaType.TV_SHOW)
+                    .first()
+                    .size,
+                "a tap after a completed save must not write a second copy of the same show",
+            )
+        }
+
+    @Test
+    fun save_afterReset_isArmedAgain() =
+        runTest {
+            // reset() is what the screen calls once it has navigated on the saved id, so the guard
+            // must not be a permanent latch -- a form reused after a reset has to be able to save.
+            val viewModel = newViewModel()
+            viewModel.onTitleChange("First Show")
+            viewModel.save()
+            viewModel.uiState.first { it.savedMediaId != null }
+
+            viewModel.reset()
+            viewModel.onTitleChange("Second Show")
+            viewModel.save()
+            viewModel.uiState.first { it.savedMediaId != null }
+
+            val titles =
+                db
+                    .mediaItemDao()
+                    .observeByType(MediaType.TV_SHOW)
+                    .first()
+                    .map { it.title }
+            assertEquals(listOf("First Show", "Second Show"), titles.sorted())
         }
 
     @Test

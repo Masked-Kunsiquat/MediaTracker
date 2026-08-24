@@ -136,13 +136,20 @@ public class AddTVShowViewModel(
      *
      * Unreadable text in [AddTVShowUiState.title]/`releaseYear`/`totalSeasons`/`purchasePrice`, or a
      * season row missing or unable to parse its season number or episode count, is refused with a
-     * message naming the field or row — nothing is saved in that case. A second call while
-     * [AddTVShowUiState.isSaving] is `true` is ignored, so a double-tapped save cannot create the
-     * same show twice.
+     * message naming the field or row — nothing is saved in that case.
+     *
+     * ### Why the double-tap guard checks two things
+     * A second call is ignored while a save is in flight ([AddTVShowUiState.isSaving]) **and** once
+     * one has already succeeded ([AddTVShowUiState.savedMediaId]), until [reset] clears it. The
+     * in-flight half alone is not enough: it holds only for as long as the write takes, so a save
+     * that completes quickly leaves the form armed to create a second, identical show on the next
+     * tap. The screen navigates away when `savedMediaId` appears, which hides that window rather
+     * than closing it — a tap landing in it would still write a duplicate row, and the size of the
+     * window depends on how fast the database happens to be, which is not a safety property.
      */
     public fun save() {
         val current = _uiState.value
-        if (current.isSaving) return
+        if (current.isSaving || current.savedMediaId != null) return
 
         val releaseYear = parseOptionalNumber(current.releaseYear, String::toIntOrNull)
         val totalSeasons = parseOptionalNumber(current.totalSeasons, String::toIntOrNull)

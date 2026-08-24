@@ -69,7 +69,12 @@ public class AddMovieViewModel(
         purchasePrice: Double?,
         status: WatchStatus,
     ) {
-        if (_uiState.value is AddMovieUiState.Saving) return
+        // Two states are refused, not one: a save in flight, and a save that has already produced a
+        // movie and not yet been reset. See AddTVShowViewModel.save's KDoc -- the in-flight half
+        // alone holds only for as long as the write takes, so a fast save leaves the form armed to
+        // create a second, identical movie on the next tap. The screen navigates away when Saved
+        // appears, which hides that window rather than closing it.
+        if (_uiState.value is AddMovieUiState.Saving || _uiState.value is AddMovieUiState.Saved) return
         _uiState.value = AddMovieUiState.Saving
         viewModelScope.launch {
             _uiState.value =

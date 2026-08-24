@@ -163,6 +163,7 @@ tasks.withType<Test>().configureEach {
             excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.EditMovieViewModelTest*")
+            excludeTestsMatching("com.hub.media.ui.AddMovieViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.AddTVShowViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.TVShowDetailViewModelTest*")
             excludeTestsMatching("com.hub.media.ui.SettingsViewModelTest*")
