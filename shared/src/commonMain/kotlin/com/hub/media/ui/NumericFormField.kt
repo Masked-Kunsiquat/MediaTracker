@@ -20,9 +20,9 @@ package com.hub.media.ui
  * package collide at the JVM class-file level regardless of visibility — the second form to want
  * this idiom could not simply copy it, and the copy it did make had to be renamed around the clash.
  */
-internal class ParsedNumber<T : Any>(
+public class ParsedNumber<T : Any>(
     /** The number, or `null` when the field was blank — "unknown". */
-    val value: T?,
+    public val value: T?,
 )
 
 /**
@@ -30,7 +30,7 @@ internal class ParsedNumber<T : Any>(
  * text, [ParsedNumber] with the number for text that parses, and `null` for text that does not
  * parse at all — see this file's KDoc for why that third case is kept distinct.
  */
-internal fun <T : Any> parseOptionalNumber(
+public fun <T : Any> parseOptionalNumber(
     text: String,
     parse: (String) -> T?,
 ): ParsedNumber<T>? {
@@ -46,4 +46,59 @@ internal fun <T : Any> parseOptionalNumber(
  * episode count on a season row is an unfinished row, not a known-absent value — so both failure
  * shapes collapse to one "not usable" outcome.
  */
-internal fun parseRequiredInt(text: String): Int? = text.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
+public fun parseRequiredInt(text: String): Int? = text.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
+
+/**
+ * Keeps only the digits of a keystroke-by-keystroke integer field.
+ *
+ * Lives here rather than beside the screens that call it: it was previously a private extension at
+ * the bottom of `BookDetailScreen`, which every other add/edit form reached into purely because
+ * they share a package. Filtering and parsing are two halves of reading one field, and the parse
+ * half is called from ViewModels while the filter half is called from composables, so the pair has
+ * to sit somewhere both can see.
+ */
+public fun String.filterIntegerInput(): String = filter { it.isDigit() }
+
+/**
+ * Keeps the digits of a decimal field and at most one decimal point, normalising the separator the
+ * user's keyboard offers into the `.` that [String.toDoubleOrNull] can actually read.
+ *
+ * ### Why [decimalSeparator] is a parameter and not a constant
+ * `KeyboardType.Decimal` shows whichever separator the locale uses, so a comma-decimal locale
+ * offers `,`. The previous version of this filter kept digits and `.` only, which meant `,` was
+ * *dropped* rather than translated: "14,99" became "1499", and `toDoubleOrNull` — locale-invariant,
+ * it only ever accepts `.` — parsed that cleanly into a price a hundred times too large, with no
+ * error and nothing on screen to notice.
+ *
+ * Accepting both `.` and `,` as decimal points would fix that locale and break the other one:
+ * an en-US user typing "1,499" means one thousand four hundred ninety-nine, and turning it into
+ * "1.499" is the same class of silent corruption pointing the other way. Taking the locale's
+ * separator as an argument gets both right — whichever character is *not* the decimal separator is
+ * a thousands separator, and dropping it is the correct reading:
+ *
+ * | separator | input     | result |
+ * |-----------|-----------|--------|
+ * | `.`       | `1,499`   | `1499` |
+ * | `,`       | `1.499`   | `1499` |
+ * | `,`       | `14,99`   | `14.99`|
+ *
+ * `commonMain` cannot see the platform locale, which is the other half of why this is a parameter:
+ * the app module looks the separator up and passes it in, and this stays testable without one.
+ *
+ * @param decimalSeparator The character the user's keyboard offers as a decimal point. Anything
+ *   else non-digit is discarded, including a second occurrence of this one.
+ */
+public fun String.filterDecimalInput(decimalSeparator: Char): String {
+    val builder = StringBuilder()
+    var seenSeparator = false
+    for (char in this) {
+        when {
+            char.isDigit() -> builder.append(char)
+            char == decimalSeparator && !seenSeparator -> {
+                builder.append('.')
+                seenSeparator = true
+            }
+        }
+    }
+    return builder.toString()
+}

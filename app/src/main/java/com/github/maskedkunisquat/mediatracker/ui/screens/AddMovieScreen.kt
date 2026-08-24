@@ -38,11 +38,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddMovieViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
 import com.hub.media.ui.AddMovieUiState
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.filterIntegerInput
 
 /**
  * Route wrapper: owns the [AddMovieViewModel] and turns a successful save into navigation.

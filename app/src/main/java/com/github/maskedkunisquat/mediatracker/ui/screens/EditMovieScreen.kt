@@ -36,11 +36,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditMovieViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditMovieUiState
 import com.hub.media.ui.EditMovieViewModel
+import com.hub.media.ui.filterIntegerInput
 
 /** Route wrapper: owns the [EditMovieViewModel] and leaves once the save lands. */
 @Composable

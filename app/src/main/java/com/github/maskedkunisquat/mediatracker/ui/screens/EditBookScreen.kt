@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
@@ -61,6 +62,7 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditBookUiState
 import com.hub.media.ui.EditBookViewModel
+import com.hub.media.ui.filterIntegerInput
 
 /**
  * Route-level composable for the edit-book-metadata screen (ROADMAP Task 6 Phase A).
