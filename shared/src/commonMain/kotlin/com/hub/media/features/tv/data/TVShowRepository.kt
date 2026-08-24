@@ -185,22 +185,20 @@ public class TVShowRepository(
             if (show == null || show.type != MediaType.TV_SHOW) {
                 return Resource.Error("TV show with id=$mediaId not found")
             }
-            val existing = db.episodeDao().getByMediaIdAndSeason(mediaId, seasonNumber)
-            val existingNumbers = existing.map { it.episodeNumber }.toSet()
-            val missing =
-                (1..episodeCount)
-                    .filterNot { it in existingNumbers }
-                    .map { episodeNumber ->
-                        EpisodeEntity(
-                            id = newId(),
-                            mediaId = mediaId,
-                            seasonNumber = seasonNumber,
-                            episodeNumber = episodeNumber,
-                        )
-                    }
-            if (missing.isNotEmpty()) {
-                db.tvWriteDao().insertEpisodes(missing)
-            }
+            // Every row the season would have if it were empty; the DAO decides which of them are
+            // actually missing inside the same transaction as the insert, so two quick-fills of one
+            // season cannot both act on the same answer. Ids are generated here rather than there
+            // because newId() is not the database's concern -- the unused ones are simply discarded.
+            val candidates =
+                (1..episodeCount).map { episodeNumber ->
+                    EpisodeEntity(
+                        id = newId(),
+                        mediaId = mediaId,
+                        seasonNumber = seasonNumber,
+                        episodeNumber = episodeNumber,
+                    )
+                }
+            db.tvWriteDao().insertMissingEpisodes(mediaId, seasonNumber, candidates)
             Resource.Success(Unit)
         } catch (e: CancellationException) {
             throw e

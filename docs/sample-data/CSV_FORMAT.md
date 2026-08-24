@@ -114,7 +114,7 @@ book — so they get their own file rather than a column on `library_export.csv`
 | 1 | `csv_schema_version` | yes | Always `4` (the marker is shared across all three files) |
 | 2 | `episode_id` | yes | UUID string, unique per episode |
 | 3 | `media_id` | yes | The show; matches a `media_id` in the library file |
-| 4 | `season_number` | yes | Integer, 1-based (0 is representable for specials) |
+| 4 | `season_number` | yes | Integer `>= 0`. Regular seasons are 1-based; `0` means specials, and is a legitimate value rather than a placeholder |
 | 5 | `episode_number` | yes | Integer, 1-based within the season |
 | 6 | `title` | no | Empty is normal for a quick-filled episode whose title is not yet known |
 | 7 | `air_date` | no | ISO-8601 UTC, or empty if unknown |

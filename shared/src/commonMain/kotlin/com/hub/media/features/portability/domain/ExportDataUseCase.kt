@@ -102,6 +102,20 @@ public class ExportDataUseCase(
             // dependency to this class just for one whole-table read.
             val episodes = mediaRepository.observeAllEpisodes().first()
 
+            // NOT one database snapshot. The four reads above are four separate queries, so a write
+            // landing between them can put the files slightly out of step with each other -- a show
+            // deleted mid-export could leave its episodes in episodes_export.csv with no matching
+            // library row, or a book finished mid-export could be exported as unfinished with a
+            // session that says otherwise. Every row written is a real row that existed; what is not
+            // guaranteed is that they all existed at the same instant.
+            //
+            // Left as is rather than wrapped in a read transaction, which would mean this use case
+            // taking an AppDatabase instead of repositories. The window is the few milliseconds
+            // between reads, and the only writer that could land in it is the user themselves on
+            // another screen -- export runs from Settings, in the foreground, with no background
+            // writer active. Worth revisiting if bulk backfill ever runs concurrently; see the
+            // maintainability audit issue.
+
             // Build the bundle BEFORE logging completion, deliberately -- a completion entry must
             // never be written before the thing it claims completed. If either exporter throws, this
             // ordering ensures the catch block below logs "Export failed" instead of this having

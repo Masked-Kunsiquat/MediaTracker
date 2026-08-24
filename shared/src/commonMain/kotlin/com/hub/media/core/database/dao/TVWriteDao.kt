@@ -53,6 +53,42 @@ interface TVWriteDao {
         insertEpisodes(episodes)
     }
 
+    /** The episode numbers already recorded for one season, for [insertMissingEpisodes]. */
+    @Query("SELECT episodeNumber FROM episodes WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber")
+    suspend fun episodeNumbersInSeason(
+        mediaId: String,
+        seasonNumber: Int,
+    ): List<Int>
+
+    /**
+     * Inserts whichever of [candidates] are not already present, deciding which those are **inside
+     * the same transaction as the insert**.
+     *
+     * Reading the season and then inserting as two separate operations leaves a window: two
+     * quick-fills of the same season racing (a double-tapped confirm button is the realistic way in)
+     * both see the same "missing" set, and the second insert hits the unique
+     * `(mediaId, seasonNumber, episodeNumber)` index. Nothing is corrupted — the insert aborts and
+     * rolls back — but the user is shown a raw constraint failure for having tapped twice. Deciding
+     * and inserting under one transaction removes the window rather than reporting it.
+     *
+     * @param candidates Every episode row the caller would create for a full season, already
+     *   carrying its generated id; this filters them down to the ones that do not exist yet.
+     * @return the number of rows actually inserted, which is 0 when the season is already complete.
+     */
+    @Transaction
+    suspend fun insertMissingEpisodes(
+        mediaId: String,
+        seasonNumber: Int,
+        candidates: List<EpisodeEntity>,
+    ): Int {
+        val existing = episodeNumbersInSeason(mediaId, seasonNumber).toSet()
+        val missing = candidates.filterNot { it.episodeNumber in existing }
+        if (missing.isNotEmpty()) {
+            insertEpisodes(missing)
+        }
+        return missing.size
+    }
+
     /**
      * Targeted update of `media_items`' editable columns, scoped to `TV_SHOW` rows.
      *

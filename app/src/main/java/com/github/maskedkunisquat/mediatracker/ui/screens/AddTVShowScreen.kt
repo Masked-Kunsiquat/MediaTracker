@@ -169,7 +169,11 @@ fun AddTVShowScreen(
                 onValueChange = onTitleChange,
                 label = { Text(stringResource(R.string.add_tv_show_field_title)) },
                 singleLine = true,
-                isError = uiState.title.isBlank(),
+                // No isError, matching AddMovieScreen: this form opens empty, so flagging the blank
+                // title would put the very first field in an error state before the user has typed
+                // anything. The disabled Save button already says the title is required, without
+                // accusing anyone of a mistake they have not made yet. EditMovieScreen does flag it,
+                // and is right to -- there a blank title means the user cleared a value that existed.
                 enabled = !uiState.isSaving,
                 modifier = Modifier.fillMaxWidth(),
             )

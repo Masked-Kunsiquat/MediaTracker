@@ -67,6 +67,31 @@ class TVShowRepositoryTest {
         }
     }
 
+    /**
+     * Asserts a rejected write left **all three** tables untouched, not merely the one a given test
+     * was about. A validation failure must not persist a `media_items` row without its details, or
+     * episode rows for a show that was never created -- and checking one table would not notice.
+     */
+    private suspend fun assertNothingPersisted() {
+        assertTrue(
+            db
+                .mediaItemDao()
+                .observeAll()
+                .first()
+                .isEmpty(),
+            "a rejected addShow must leave no media_items row",
+        )
+        assertTrue(db.tvDetailsDao().getAll().isEmpty(), "a rejected addShow must leave no tv_details row")
+        assertTrue(
+            db
+                .episodeDao()
+                .observeAll()
+                .first()
+                .isEmpty(),
+            "a rejected addShow must leave no episode rows",
+        )
+    }
+
     // ---- addShow: happy path ----------------------------------------------------------------
 
     @Test
@@ -165,21 +190,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "   ")
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -188,21 +199,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "Show", releaseYear = TVMetadataValidation.MIN_RELEASE_YEAR - 1)
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -211,21 +208,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "Show", releaseYear = TVMetadataValidation.MAX_RELEASE_YEAR + 1)
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -234,21 +217,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "Show", purchasePrice = -0.01)
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -261,21 +230,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "Show", purchasePrice = Double.NaN)
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -284,21 +239,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "Show", purchasePrice = Double.POSITIVE_INFINITY)
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -308,21 +249,7 @@ class TVShowRepositoryTest {
                 repo.addShow(title = "Show", seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 0)))
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -341,21 +268,7 @@ class TVShowRepositoryTest {
                 )
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -365,21 +278,7 @@ class TVShowRepositoryTest {
                 repo.addShow(title = "Show", seasons = listOf(SeasonQuickFill(seasonNumber = -1, episodeCount = 5)))
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     @Test
@@ -388,21 +287,7 @@ class TVShowRepositoryTest {
             val result = repo.addShow(title = "Show", totalSeasons = 0)
             assertIs<Resource.Error>(result)
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     // ---- addShow: valid boundary values are ACCEPTED (positive controls for the rejects above) --
@@ -476,21 +361,7 @@ class TVShowRepositoryTest {
                 "the rejection must name the offending season rather than surface a raw UNIQUE-constraint message",
             )
 
-            assertTrue(
-                db
-                    .mediaItemDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
-            assertTrue(db.tvDetailsDao().getAll().isEmpty())
-            assertTrue(
-                db
-                    .episodeDao()
-                    .observeAll()
-                    .first()
-                    .isEmpty(),
-            )
+            assertNothingPersisted()
         }
 
     // ---- addSeason: adds only the missing episode numbers -------------------------------------
