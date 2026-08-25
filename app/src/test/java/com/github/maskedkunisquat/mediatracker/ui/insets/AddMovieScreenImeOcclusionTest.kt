@@ -24,9 +24,9 @@ import org.robolectric.RobolectricTestRunner
  * this screen's whole body -- which is exactly the shape that made the first version of this test
  * assert nothing at all. The harness then exempted everything inside a scroller, so deleting
  * `contentWindowInsets` from this screen changed no assertion and the test stayed green. It now
- * checks the scrolling viewport itself: scrolling stops when the content's end reaches the
- * viewport's bottom edge, so a viewport running under the keyboard strands the save button at the
- * foot of the form permanently. Confirmed by deleting that argument and watching this fail.
+ * scrolls that container to its end before measuring, which is the highest position the save button
+ * at the foot of the form can reach -- if it is still under the keyboard there, no scroll offset
+ * retrieves it. Confirmed by deleting that argument and watching this fail.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddMovieScreenImeOcclusionTest {

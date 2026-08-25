@@ -21,9 +21,9 @@ import org.robolectric.RobolectricTestRunner
  *
  * As with [AddMovieScreenImeOcclusionTest], every field, season row, and the save button live in
  * the one `verticalScroll` `Column` that makes up this screen's whole body. That is not an
- * exemption: the harness checks the scrolling viewport's own bottom edge, because content cannot be
- * scrolled past its end, so a viewport running under the keyboard strands the save button for good.
- * Confirmed by deleting `contentWindowInsets` from this screen and watching this fail.
+ * exemption: the harness scrolls that container to its end and measures there, which is as high as
+ * the save button can get, so a save button still under the keyboard at that point is gone for
+ * good. Confirmed by deleting `contentWindowInsets` from this screen and watching this fail.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddTVShowScreenImeOcclusionTest {

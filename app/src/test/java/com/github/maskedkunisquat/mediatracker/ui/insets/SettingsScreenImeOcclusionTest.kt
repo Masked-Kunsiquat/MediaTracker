@@ -16,10 +16,10 @@ import org.robolectric.RobolectricTestRunner
  *
  * The only text-entry control on this screen is the Google Books API key field
  * (`GoogleBooksApiKeySetting`), which -- like every other row here -- is an item inside the
- * screen's single top-level `LazyColumn`. The individual rows are exempt from the occlusion check,
- * but that `LazyColumn`'s own viewport is not: it cannot be scrolled past its end, so a viewport
- * running under the keyboard puts the last setting out of reach permanently. Confirmed by deleting
- * `contentWindowInsets` from this screen and watching this fail.
+ * screen's single top-level `LazyColumn`. The rows are measured with that list scrolled to its
+ * end, which is the highest the last setting can travel -- under the keyboard there means out of
+ * reach permanently. Confirmed by deleting `contentWindowInsets` from this screen and watching this
+ * fail.
  *
  * [SettingsUiState]'s defaults already render every section -- there is no empty/loading variant to
  * avoid the way [AddBookScreenImeOcclusionTest] avoids an empty search result list -- so no

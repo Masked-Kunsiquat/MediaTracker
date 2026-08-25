@@ -18,10 +18,10 @@ import org.robolectric.RobolectricTestRunner
  * state that would pass this check regardless of inset handling.
  *
  * Every field, status chip, and the save button live in the one `verticalScroll` `Column` that
- * makes up this screen's whole body. The harness checks that container's own bottom edge rather
- * than exempting what is inside it, because scrolling stops at the content's end -- so a viewport
- * running under the keyboard leaves the save button unreachable however far you scroll. Confirmed
- * by deleting `contentWindowInsets` from this screen and watching this fail.
+ * makes up this screen's whole body. The harness scrolls that container to its end and measures
+ * there rather than exempting what is inside it, because the end of the scroll is as high as the
+ * save button will ever get -- still under the keyboard there means unreachable however far you
+ * scroll. Confirmed by deleting `contentWindowInsets` from this screen and watching this fail.
  */
 @RunWith(RobolectricTestRunner::class)
 class EditMovieScreenImeOcclusionTest {
