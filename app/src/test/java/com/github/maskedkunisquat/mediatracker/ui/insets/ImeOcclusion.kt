@@ -5,6 +5,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.WindowInsets
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -70,10 +71,21 @@ object ImeOcclusion {
  * tool have no real `Window`, so `WindowInsets.safeDrawing` resolves to zero there and the bug
  * cannot be reproduced at all.
  *
- * Nodes inside a scrolling container are exempt, and the distinction is the point rather than a
- * convenience: content that has merely scrolled under the keyboard can be scrolled back out, so it
- * is not stranded. A FAB, a bottom bar or a search field cannot be, which is why those are the
- * things that strand.
+ * Two rules, because scrolling changes what "unreachable" means but does not abolish it:
+ * - A control at a **fixed** position — a FAB, a bottom bar, a search field above a list — must sit
+ *   above the keyboard line. Below it, it is simply gone.
+ * - A **scrolling viewport** must also end above the keyboard line, while the rows inside it are
+ *   exempt. Scrolling stops when the content's end reaches the viewport's bottom edge, so a
+ *   viewport running under the keyboard strands its last row permanently — no amount of scrolling
+ *   retrieves it — while a row that has merely scrolled under can be scrolled back out.
+ *
+ * Getting the second rule wrong is not hypothetical. This harness shipped its first draft exempting
+ * *anything* inside a scroller, which left four of its seven screens asserting nothing whatsoever:
+ * Add movie, Add show, Edit film and Settings each wrap their whole form, Save button included, in
+ * one scrolling container. All four passed with `contentWindowInsets` deleted.
+ *
+ * **The only way to know which of those two states a test is in is to break the code and watch it
+ * fail.** Every test using this harness has been checked that way and must stay that way.
  */
 fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(content: @Composable () -> Unit) {
     val keyboardPx = with(density) { ImeOcclusion.KeyboardHeight.roundToPx() }
@@ -96,26 +108,78 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(content: @
     // is present or not, rather than depending on how many roots this particular override happens
     // to introduce.
     val keyboardTopEdge = onAllNodes(isRoot()).fetchSemanticsNodes().maxOf { it.size.height } - keyboardPx
+
+    fun List<SemanticsNode>.belowTheKeyboard() =
+        filter { it.boundsInRoot.bottom > keyboardTopEdge + ImeOcclusion.TOLERANCE_PX }
+
     val occluded =
+        // Controls at a fixed position: a FAB, a bottom bar, a search field above a list. If one of
+        // these is below the keyboard line it is simply unreachable, which is the PR #95 bug.
         onAllNodes(hasClickAction() or hasSetTextAction())
             .fetchSemanticsNodes()
             .filterNot { it.isInsideAScrollingContainer() }
-            .filter { it.boundsInRoot.bottom > keyboardTopEdge + ImeOcclusion.TOLERANCE_PX }
+            .belowTheKeyboard()
+            .map { "control ${it.describe()} at ${it.boundsInRoot}" } +
+            // Scrolling viewports, which need a rule of their own rather than a blanket exemption.
+            //
+            // The first version of this harness exempted anything inside a scroller, reasoning that
+            // content which has scrolled under the keyboard can be scrolled back out. That is
+            // wrong, and wrong in the direction that matters: scrolling stops when the content's
+            // end reaches the *viewport's* bottom edge, so if the viewport itself runs under the
+            // keyboard, the last control is stranded permanently and no amount of scrolling
+            // retrieves it.
+            //
+            // It also made four of this lane's seven tests assert nothing at all -- Add movie, Add
+            // show, Edit film and Settings each wrap their entire form, Save button included, in
+            // one scrolling container, so every node on them was exempt and all four passed with
+            // `contentWindowInsets` deleted. A test that cannot fail is worse than no test
+            // (AGENTS.md section 7); four of them wearing the same green tick as the two real
+            // guards is worse still.
+            onAllNodes(isAScrollingContainer)
+                .fetchSemanticsNodes()
+                .belowTheKeyboard()
+                .map { "scrolling viewport ${it.describe()} at ${it.boundsInRoot}, holding ${it.firstTextInside()}" }
 
     // Reports every offender rather than the first, because a screen that mishandles insets
     // usually strands its whole bottom edge at once -- fixing them one failed run at a time would
     // mean one run per control.
     assertTrue(
         buildString {
-            append("The keyboard covers ${occluded.size} control(s) that the user has to reach.\n")
+            append("The keyboard covers ${occluded.size} thing(s) the user has to reach.\n")
             append("Keyboard top edge is y=$keyboardTopEdge px; anything below that is unreachable.\n")
-            occluded.forEach { node ->
-                append("  - ${node.describe()} at ${node.boundsInRoot}\n")
-            }
+            occluded.forEach { append("  - $it\n") }
         },
         occluded.isEmpty(),
     )
 }
+
+/**
+ * Matches a node that scrolls — the viewport, not the content inside it.
+ */
+private val isAScrollingContainer =
+    SemanticsMatcher("is a scrolling container") { it.scrolls() }
+
+/**
+ * The first piece of visible text anywhere inside this node.
+ *
+ * A scrolling viewport carries no text or content description of its own, so on its own it reports
+ * as an unlabelled node id — which tells whoever reads the failure nothing about *which* list on
+ * the screen is the problem. Naming something it contains is enough to locate it.
+ */
+private fun SemanticsNode.firstTextInside(): String =
+    generateSequence(listOf(this)) { level -> level.flatMap { it.children }.ifEmpty { null } }
+        .flatten()
+        .firstNotNullOfOrNull {
+            it.config
+                .getOrNull(SemanticsProperties.Text)
+                ?.firstOrNull()
+                ?.text
+        }
+        ?: "no text"
+
+private fun SemanticsNode.scrolls(): Boolean =
+    config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null ||
+        config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null
 
 /**
  * True when some ancestor scrolls, which makes this node's position a scroll offset rather than a
@@ -125,10 +189,7 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(content: @
  * `LazyColumn`), while the thing carrying the click action is a row inside it.
  */
 private fun SemanticsNode.isInsideAScrollingContainer(): Boolean =
-    generateSequence(parent) { it.parent }.any { ancestor ->
-        ancestor.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null ||
-            ancestor.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null
-    }
+    generateSequence(parent) { it.parent }.any { it.scrolls() }
 
 /**
  * A human-readable handle for a failure message.
