@@ -1323,21 +1323,25 @@ Nothing to schedule — these unblock when an upstream dependency moves.
 Actionable, none of it blocking. Anything here that grows past "small" should be promoted to a
 numbered task rather than left to be rediscovered.
 
-- **The Library FAB has no usable accessibility label, and Compose test tags are not exposed.**
-  `LibraryScreen`'s add-book button is `FloatingActionButton { Text("+") }` — a literal plus
-  character rather than an icon with a description — so TalkBack announces "plus" and a screen-reader
-  user is told nothing about what it does. It is the only such gap: every `Icon(` across all eight
-  screens carries a real `contentDescription`, with zero `contentDescription = null`, so this is an
-  outlier rather than a pattern. `Icon(Icons.Default.Add, contentDescription = "Add book")` fixes it.
-  - **Separately, `testTagsAsResourceId` is not enabled and no `testTag()` calls exist.** Turning it
-    on surfaces Compose test tags as `resource-id` in `uiautomator` dumps, which gives device
-    verification stable handles that survive text and layout changes. Today the only reliable way to
-    drive a control is to dump the view hierarchy and match on its visible text — workable, and in
-    fact how the changelog, log viewer and Add Book flows were verified, but it breaks whenever a
-    label is reworded, and it tempts guessing coordinates from a screenshot instead (which has
-    already produced one mis-tap into the wrong screen). Likely absorbed by
-    [#96](https://github.com/Masked-Kunsiquat/MediaTracker/issues/96), whose inset-occlusion
-    harness needs stable handles for the same reason — do it there rather than twice.
+- **Accessibility label and test handles on the Library FAB: complete.** Both halves of this item
+  are done, and they were done separately, which is worth recording because the entry read as open
+  long after its first half was not.
+  - The FAB was `FloatingActionButton { Text("+") }` — a literal plus character, so TalkBack
+    announced "plus" and a screen-reader user learned nothing about what it did. It now carries
+    `Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_media_content_description))`.
+    It was the only such gap: every `Icon(` across all eight screens carries a real
+    `contentDescription`, with zero `contentDescription = null`.
+  - **`testTagsAsResourceId` is now enabled** at the composition root, and the controls tests and
+    device checks actually drive carry tags from `ui/TestTags.kt`
+    ([#96](https://github.com/Masked-Kunsiquat/MediaTracker/issues/96)). Tags surface as
+    `resource-id` in `uiautomator` dumps, so device verification no longer has to match on visible
+    text — which broke whenever a label was reworded, and tempted guessing coordinates from a
+    screenshot instead, having already produced one mis-tap into the wrong screen.
+  - **Not every node is tagged, deliberately.** AGENTS.md §7 prefers a semantic matcher, because a
+    matcher asserts something a user can perceive while a tag asserts only that a developer wrote
+    the same string twice. Tags are for elements a matcher cannot reach cheaply, handles that must
+    survive a rewording, and nodes with no perceivable identity at all — every scrolling container,
+    which is why the occlusion lane could previously only report `unlabelled node #91`.
 
 - **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
   viewer state and viewer rendering are all covered, but the composition that connects them is not:

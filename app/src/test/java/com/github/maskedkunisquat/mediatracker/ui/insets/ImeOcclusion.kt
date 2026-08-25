@@ -292,10 +292,17 @@ private fun SemanticsNode.isInsideAScrollingContainer(): Boolean =
 /**
  * A human-readable handle for a failure message.
  *
- * Falls through several properties because the screens carry no `testTag`s yet (see the ROADMAP
- * backlog item on `testTagsAsResourceId`); until they do, visible text and content descriptions are
- * what identifies a control. The node id is a last resort — it is stable within a run, which is
- * enough to tell two unlabelled offenders apart.
+ * Prefers a `testTag` (see `TestTags`), which is why the tags exist: a scrolling container has no
+ * text and no content description of its own, so before they were applied a stranded list reported
+ * as `unlabelled node #91` and left the reader to work out which list on the screen that was.
+ *
+ * Falls through to content description and visible text for everything else, deliberately. Only the
+ * controls a test or a device check actually drives are tagged — a status chip that reports as
+ * "Abandoned" is telling you more than `addMovie:statusChip` would, and tagging every node to
+ * flatter this function would invert AGENTS.md section 7's preference for semantic matchers.
+ *
+ * The node id is a last resort. It is stable within a run, which is enough to tell two anonymous
+ * offenders apart, and seeing one is a hint that whatever it names may be worth a tag.
  */
 private fun SemanticsNode.describe(): String =
     config.getOrNull(SemanticsProperties.TestTag)
