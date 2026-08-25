@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **A flaky stats test no longer races the flow it observes** (#91). `StatsViewModelTest.uiState_reactsToNewSessionInsert` failed once on CI against an unrelated commit and never locally. The cause was not the test being slow: `StatsViewModel.uiState` is a nested `combine` — four Room flows per period, then week/month/streak/lifetime combined again — so a single insert makes every one of those re-emit independently and the combine publishes each halfway permutation on the way to the settled state. A predicate naming one field catches an intermediate and then asserts a field that has not arrived. The predicates now name every field their test asserts, and one collector is held open for the duration so the shared flow never drops to zero subscribers and stops its upstream. The same fix went to `uiState_weekStartDayChange_recomputesTheWeekPeriod`, which had the identical shape and had not yet flaked. Note this leaves the underlying behaviour untouched: the stats screen can still briefly render inconsistent numbers after a write, which #91 keeps open.
+
 ## [0.15.0] - 2026-08-24
 
 Films and television arrive. The previous release rebuilt the library around a single polymorphic

@@ -167,14 +167,23 @@ class StatsViewModelTest {
             // what made this test flaky (#91) -- the original only skipped the intermediates
             // because nothing was subscribed to observe them.
             //
-            // So the predicate has to name every field the insert moves. That reads as though it
-            // asserts nothing, and it is worth being plain about why it does: if the state never
-            // becomes this, `first` never returns and the test fails by timeout rather than by
-            // comparison. The predicate *is* the assertion; the `assertEquals` lines below restate
-            // it readably and add the derived streak, which the predicate does not cover.
+            // It is worse than one combine, too: uiState is a *nested* combine, of the week
+            // period, the month period, the reading streak and the lifetime count. So the streak
+            // lags independently of the week's own fields, and a predicate that settles the week
+            // can still be handed a stale streak -- which is what kept failing on CI after the
+            // week fields were pinned.
+            //
+            // So the predicate has to name every field this test asserts. That reads as though it
+            // asserts nothing, and it is worth being plain about why it does not: if the state
+            // never becomes this, `first` never returns and the test fails by timeout rather than
+            // by comparison. The predicate *is* the assertion. The `assertEquals` lines below
+            // restate it in a form that names the expected values when it does fail.
             val updated =
                 viewModel.uiState.first {
-                    it.week.sessionCount == 1 && it.week.pagesRead == 5 && it.week.timeReadSeconds == 300L
+                    it.week.sessionCount == 1 &&
+                        it.week.pagesRead == 5 &&
+                        it.week.timeReadSeconds == 300L &&
+                        it.currentStreakDays == 1
                 }
 
             assertEquals(1, updated.week.sessionCount)
