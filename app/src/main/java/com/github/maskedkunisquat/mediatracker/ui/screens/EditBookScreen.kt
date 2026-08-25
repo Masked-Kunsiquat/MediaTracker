@@ -5,9 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -145,6 +148,9 @@ fun EditBookScreen(
     ) -> Unit,
 ) {
     Scaffold(
+        // EditBookForm is a stack of OutlinedTextFields; Scaffold's default insets omit the IME,
+        // so safeDrawing is needed here or the keyboard would cover the field being edited.
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(stringResource(R.string.edit_book_title_bar)) },
@@ -163,7 +169,8 @@ fun EditBookScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
         ) {
             when (uiState) {
                 is EditBookUiState.Loading -> {

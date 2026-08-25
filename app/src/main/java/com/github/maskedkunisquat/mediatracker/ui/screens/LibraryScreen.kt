@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -172,6 +175,11 @@ fun LibraryScreen(
         onDeleteErrorShown(event.id)
     }
     Scaffold(
+        // Scaffold's default contentWindowInsets does NOT include the IME, so the keyboard would
+        // cover the search field on any device that reports IME insets rather than resizing the
+        // window. Passing safeDrawing puts the IME into innerPadding; the content consumes it
+        // below so nothing double-pads.
+        contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             // Selection swaps the whole bar rather than adding actions to it. The library's own
@@ -257,7 +265,8 @@ fun LibraryScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
         ) {
             if (uiState.isEmpty) {
                 // Empty state

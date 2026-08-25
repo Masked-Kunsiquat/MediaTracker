@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -193,6 +196,9 @@ fun AddBookScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_SEARCH) }
 
     Scaffold(
+        // Scaffold's default contentWindowInsets leaves out the IME, so without this the keyboard
+        // would sit on top of the search/ISBN fields instead of the layout resizing around it.
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text(stringResource(R.string.add_book_screen_title)) },
@@ -211,7 +217,8 @@ fun AddBookScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
         ) {
             // Tab row for Search and ISBN modes
             PrimaryTabRow(selectedTabIndex = selectedTab) {

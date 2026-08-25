@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The add button is no longer stranded behind the keyboard.** Searching your library brought up the keyboard on top of the "Add to library" button, so the only way to add something while a search was open was to dismiss the keyboard first. Measured on a device: the button sat at the very bottom of the screen, inside the keyboard's area, and now lifts above it.
+- **The keyboard no longer covers what you are typing into.** Every form — add and edit for books, films and shows, plus settings and the reading-session dialogs — now tells the system that the keyboard is part of the space it has to lay out around. Nothing was visibly broken on the test device, whose system happened to resize the window and paper over it; on a device that reports the keyboard differently, fields and buttons could sit underneath it.
+
 ### Internal
 
 - **A flaky stats test no longer races the flow it observes** (#91). `StatsViewModelTest.uiState_reactsToNewSessionInsert` failed once on CI against an unrelated commit and never locally. The cause was not the test being slow: `StatsViewModel.uiState` is a nested `combine` — four Room flows per period, then week/month/streak/lifetime combined again — so a single insert makes every one of those re-emit independently and the combine publishes each halfway permutation on the way to the settled state. A predicate naming one field catches an intermediate and then asserts a field that has not arrived. The predicates now name every field their test asserts, and one collector is held open for the duration so the shared flow never drops to zero subscribers and stops its upstream. The same fix went to `uiState_weekStartDayChange_recomputesTheWeekPeriod`, which had the identical shape and had not yet flaked. Note this leaves the underlying behaviour untouched: the stats screen can still briefly render inconsistent numbers after a write, which #91 keeps open.
