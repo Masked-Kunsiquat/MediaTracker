@@ -19,12 +19,10 @@ import org.robolectric.RobolectricTestRunner
  * the empty/idle state: an empty query renders no [androidx.compose.foundation.lazy.LazyColumn] of
  * results at all, which would leave nothing below the search field to strand and let this pass
  * regardless of inset handling, exactly as [LibraryScreenImeOcclusionTest]'s KDoc explains for its
- * own populated-vs-empty choice. The results sit in a scrolling `LazyColumn`, so the individual
- * rows are exempt -- but the viewport holding them is not, because scrolling stops when the
- * content's end reaches the
- * viewport's bottom edge, and a viewport running under the keyboard therefore strands its last
- * result permanently. Asserted alongside the search field and clear button, which sit outside that
- * container and cannot be scrolled anywhere at all.
+ * own populated-vs-empty choice. The results sit in a scrolling `LazyColumn`, so they are
+ * measured with that list scrolled to its end -- the highest position its last row can reach, and
+ * therefore the one that decides whether the row is reachable at all. Asserted alongside the search
+ * field and clear button, which sit outside the list and cannot be scrolled anywhere.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddBookScreenImeOcclusionTest {
