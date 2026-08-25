@@ -28,9 +28,22 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MediaTracker">
 
+        <!--
+            adjustResize is declared rather than inherited. The app already behaves correctly
+            without it, verified on a device: with the keyboard up the window resizes, the focused
+            field is scrolled into view, and the save button stays reachable. But that is the
+            system picking a sane default for an edge-to-edge activity rather than something this
+            app asked for, and an unspecified default is a thin thing to rest every form in the
+            app on across OEM skins and future releases.
+
+            Required by Android's edge-to-edge guidance for any activity with a soft keyboard,
+            which this is: a dozen text-heavy forms behind one activity. Deliberately the modern
+            manifest attribute, not SOFT_INPUT_ADJUST_RESIZE, which is deprecated.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MediaTracker">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
