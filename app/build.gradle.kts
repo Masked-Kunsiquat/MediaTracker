@@ -87,6 +87,17 @@ android {
         // in this module.
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric reads the *merged* manifest and the merged resources, so without this it
+            // starts against an empty package: no theme, no strings, and no `ComponentActivity`
+            // entry -- which `createComposeRule()` needs to launch a host for the composition. That
+            // entry arrives from `debugImplementation(ui-test-manifest)` below, already present for
+            // the instrumented suite; this flag is what lets the unit-test lane see it too.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 /**
@@ -225,6 +236,13 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    // The gated Compose lane (see AGENTS.md section 7). Robolectric gives `:app` unit tests a real
+    // view hierarchy, which is what makes layout assertions -- not just semantics ones -- possible
+    // off-device and therefore possible in CI.
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
