@@ -60,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -83,6 +84,7 @@ import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.util.LogLevel
@@ -1021,7 +1023,7 @@ fun SettingsScreen(
                     .consumeWindowInsets(innerPadding),
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag(TestTags.Settings.LIST),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
@@ -1219,7 +1221,7 @@ private fun GoogleBooksApiKeySetting(
                     )
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag(TestTags.Settings.API_KEY_FIELD),
         )
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),

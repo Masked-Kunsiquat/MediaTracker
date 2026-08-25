@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditMovieViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
@@ -137,7 +139,8 @@ fun EditMovieScreen(
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding)
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    .testTag(TestTags.EditMovie.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (form == null) {
@@ -246,7 +249,7 @@ fun EditMovieScreen(
                         runtimeIsValid &&
                         purchasePriceIsValid &&
                         !form.isSaving,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag(TestTags.EditMovie.SAVE_BUTTON),
             ) {
                 if (form.isSaving) {
                     CircularProgressIndicator(modifier = Modifier.padding(4.dp))
