@@ -13,6 +13,9 @@ import com.hub.media.features.stats.data.StatsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDateTime
@@ -93,6 +96,27 @@ class StatsViewModelTest {
             ),
         )
 
+    /**
+     * Holds one subscriber on [StatsViewModel.uiState] for the rest of the test.
+     *
+     * Needed by any test that reads the flow, changes something underneath it, then reads again.
+     * `first {}` **cancels its collection as soon as the predicate matches**, so between two such
+     * reads the subscriber count is zero — and `uiState` is shared with
+     * `SharingStarted.WhileSubscribed(5.seconds)`, which stops the upstream Room query that long
+     * after its last subscriber leaves.
+     *
+     * Whether the upstream survived that gap therefore came down to how the test scheduler
+     * happened to advance its *virtual* clock, which `runTest` moves eagerly whenever the test
+     * coroutine suspends. That is not something the test controls, and it is why
+     * `uiState_reactsToNewSessionInsert` passed locally and failed once on CI against an unrelated
+     * commit (#91). Keeping a collector alive removes the gap rather than trying to time it.
+     */
+    private fun TestScope.holdUiStateSubscribed(viewModel: StatsViewModel) {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect { }
+        }
+    }
+
     @Test
     fun uiState_initialValue_isLoading() {
         val viewModel = newViewModel()
@@ -125,6 +149,7 @@ class StatsViewModelTest {
         runTest {
             insertBook()
             val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
             val initial = viewModel.uiState.first { !it.isLoading }
             assertEquals(0, initial.week.sessionCount)
             assertEquals(0, initial.currentStreakDays)
@@ -133,7 +158,33 @@ class StatsViewModelTest {
                 sampleReadingSession(mediaId = mediaId, timestampStart = now, durationSeconds = 300, deltaPages = 5),
             )
 
-            val updated = viewModel.uiState.first { it.week.sessionCount > 0 }
+            // Waits for the insert to have propagated through *every* field, not for one of them
+            // to move. StatsViewModel.periodFlow is a combine of four independent Room flows, so
+            // one insert makes them re-emit separately and the combine publishes each halfway
+            // permutation in between: sessionCount 1 with pagesRead still null, and pagesRead 5
+            // with sessionCount still 0. Both were observed. Any single-field predicate therefore
+            // catches an intermediate and then asserts a field that has not caught up, which is
+            // what made this test flaky (#91) -- the original only skipped the intermediates
+            // because nothing was subscribed to observe them.
+            //
+            // It is worse than one combine, too: uiState is a *nested* combine, of the week
+            // period, the month period, the reading streak and the lifetime count. So the streak
+            // lags independently of the week's own fields, and a predicate that settles the week
+            // can still be handed a stale streak -- which is what kept failing on CI after the
+            // week fields were pinned.
+            //
+            // So the predicate has to name every field this test asserts. That reads as though it
+            // asserts nothing, and it is worth being plain about why it does not: if the state
+            // never becomes this, `first` never returns and the test fails by timeout rather than
+            // by comparison. The predicate *is* the assertion. The `assertEquals` lines below
+            // restate it in a form that names the expected values when it does fail.
+            val updated =
+                viewModel.uiState.first {
+                    it.week.sessionCount == 1 &&
+                        it.week.pagesRead == 5 &&
+                        it.week.timeReadSeconds == 300L &&
+                        it.currentStreakDays == 1
+                }
 
             assertEquals(1, updated.week.sessionCount)
             assertEquals(300L, updated.week.timeReadSeconds)
@@ -269,6 +320,7 @@ class StatsViewModelTest {
             )
 
             val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
             val beforeChange = viewModel.uiState.first { !it.isLoading }
             assertEquals(
                 0,
@@ -279,7 +331,13 @@ class StatsViewModelTest {
 
             settingsRepository.setWeekStartDay(WeekStartDay.SUNDAY)
 
-            val afterChange = viewModel.uiState.first { it.week.sessionCount > 0 }
+            // Keyed on the fully-settled week rather than on any one field: the same combine of
+            // four Room flows publishes every halfway permutation, so a single-field predicate
+            // catches one of them. See the longer note in uiState_reactsToNewSessionInsert.
+            val afterChange =
+                viewModel.uiState.first {
+                    it.week.sessionCount == 1 && it.week.pagesRead == 7 && it.week.timeReadSeconds == 400L
+                }
             assertEquals(1, afterChange.week.sessionCount, "June 16 must be included once the week starts on Sunday")
             assertEquals(400L, afterChange.week.timeReadSeconds)
             assertEquals(7, afterChange.week.pagesRead)
