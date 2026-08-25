@@ -334,8 +334,14 @@ jobs:
       # optional here: every Room-touching test is excluded from the androidUnitTest variants (see
       # shared/build.gradle.kts), so testDebugUnitTest alone would pass while skipping the whole
       # data layer.
+      #
+      # :app:testDebugUnitTest is the Robolectric lane added in #96. It runs here rather than in a
+      # job of its own deliberately: a new job's name is not a required status check until the
+      # protect-main ruleset is updated to match, so it could fail with the PR still merging --
+      # which is the exact hole this lane exists to close. Adding the task to a job that is already
+      # required needs no ruleset change at all.
       - name: Run unit tests
-        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest
+        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:testDebugUnitTest
 
       # Catches what unit tests never can: a malformed res/xml rule, a broken manifest merge, a
       # missing string resource. Every one of those has happened in this repository.
@@ -343,8 +349,10 @@ jobs:
         run: ./gradlew :app:assembleDebug
 
       # Only on failure -- a green run's reports are noise, but a red one is very hard to diagnose
-      # from log output alone. This belongs to *this* job: it names shared/build/test-results, which
-      # only exists where the tests actually ran. It spent a while attached to the lint job instead,
+      # from log output alone. This belongs to *this* job: it names the shared/ and app/ test-result
+      # directories, which only exist where the tests actually ran. Both are listed because the gate
+      # now spans both modules -- and the app/ half matters most, since a Robolectric failure's
+      # console line is a bare AssertionError with the message only in the XML. It spent a while attached to the lint job instead,
       # after that job was inserted directly above it, so a failing test run uploaded nothing at all
       # while the lint job uploaded a path that never existed there.
       - name: Upload test reports
@@ -355,6 +363,8 @@ jobs:
           path: |
             shared/build/reports/tests/
             shared/build/test-results/
+            app/build/reports/tests/
+            app/build/test-results/
           retention-days: 7
 
   compose-insets:
