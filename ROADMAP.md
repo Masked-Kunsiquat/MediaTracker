@@ -4,6 +4,25 @@ Living document tracking the project's task sequence. Updated as tasks complete 
 change; details for the active task live in the orchestration session, not here.
 Versioning follows AGENTS.md §8 — roughly one minor release per completed task.
 
+## Where sequencing lives
+
+**This file holds *why and what*. The project board holds *when*.**
+
+📋 **[MediaTracker board](https://github.com/users/Masked-Kunsiquat/projects/12)** — every open
+issue, with `Priority` (Now / Next / Later), `Kind` (Feature / Bug / Debt / Docs) and `Blocked by`.
+
+The split exists because the two churn at different rates. The reasoning below — why a decision
+went the way it did, what was rejected, which constraint forced a shape — is written once and stays
+true. Ordering changes every few days, and prose is a poor medium for it: re-prioritising used to
+mean hand-editing sequencing tables in this file *and* inside issue bodies, which is how the same
+plan came to exist in three places and disagree with itself.
+
+So: **an issue's priority is whatever the board says**, not whatever a "Suggested sequencing" table
+in its description says. Those tables are historical once an issue is on the board; delete them
+next time you edit that issue rather than maintaining both. The **Execution order** list below
+remains the coarse task-level sequence, because task numbering and dependencies genuinely belong
+with the reasoning — but where two disagree about what to pick up next, the board wins.
+
 **Task numbers are stable identifiers, not priority.** Priority has been reshuffled several
 times (Movies & TV alone moved from 6 to 13), and renumbering sections meant hand-editing every
 cross-reference — which is how a stale "Task 9" reference survived into a PR once already.
@@ -24,15 +43,21 @@ single list below and reordering is a one-line edit there.
 2. Task 10 — Re-read modeling (ratings land here)
 3. Task 11 — Analytics & stats revamp
 4. Task 12 — Genre tracking
-5. Task 13 — Movies & TV
+5. **Task 13 — Movies & TV.** *Mostly done*: Phase A (schema v6), Phase B (movies, manual entry)
+   and Phase C (shows, episode-level via quick-fill) all shipped in `v0.15.0`, which is also the
+   release that froze schema v6. Only Phase D remains — the TMDB client and metadata backfill
+   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). Its schema questions are
+   already settled: episodes need no provider id of their own, and the columns the backfill will
+   fill were added before the freeze. See that task's Phase D notes.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
 ## Index
 
 Jump links, because more than half this file is finished work that you scroll past to reach
-the part that is not. Priority lives in **Execution order** above, not here -- this is navigation and
-status only, so the two do not disagree about what is next.
+the part that is not. Priority lives on the [project board](https://github.com/users/Masked-Kunsiquat/projects/12)
+and coarse task order in **Execution order** above, not here -- this is navigation and status only,
+so none of the three disagree about what is next.
 
 Anchors are derived from the headings, so **renaming a section breaks its row here** — silently, since
 a dead in-page link scrolls nowhere rather than erroring. Renaming a section means fixing its row in
@@ -48,7 +73,7 @@ the same edit. Note the `(done)` suffixes are part of the anchor for exactly tha
 | [Task 10 — Re-read modeling](#task-10--re-read-modeling) | planned |
 | [Task 11 — Analytics & stats revamp](#task-11--analytics--stats-revamp) | planned |
 | [Task 12 — Genre tracking](#task-12--genre-tracking) | planned |
-| [Task 13 — Movies & TV](#task-13--movies--tv) | planned |
+| [Task 13 — Movies & TV](#task-13--movies--tv) | **in progress** — A/B/C shipped in `v0.15.0`, Phase D remains |
 | [Task 14 — Bulk operations & cover backfill](#task-14--bulk-operations--cover-backfill) | done |
 | [Task 15 — Logging](#task-15--logging) | done |
 | [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned |

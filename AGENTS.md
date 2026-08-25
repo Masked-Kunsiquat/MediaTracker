@@ -2,6 +2,8 @@
 
 This file serves as the strict architectural and coding guideline for AI agents collaborating on this project. All code suggestions, refactoring, and feature additions MUST adhere to the standards outlined below.
 
+**Where planning lives.** `ROADMAP.md` holds *why and what*; the [project board](https://github.com/users/Masked-Kunsiquat/projects/12) holds *when* — `Priority`, `Kind` and `Blocked by` per open issue. Where the two disagree about what to pick up next, the board wins: ordering churns and prose is a poor medium for it. Do not add or maintain "suggested sequencing" tables inside issue bodies now that the board exists.
+
 **Keeping this file true.** `CHANGELOG.md` and `ROADMAP.md` each have an update ritual (§8's changelog discipline; a ROADMAP edit per scheduling decision), and both have stayed accurate because of it. This file had none, and drifted for eight releases — it pointed at an `androidApp/` module that does not exist, mandated a verification command that skips the entire data layer, and recorded one frozen schema version out of five. Documentation that instructs an agent is more dangerous when stale than documentation that merely describes, because the agent obeys it.
 
 So: **update this file in the same commit as the change that invalidates it.** Concretely, that means a new top-level package or module (§6), a change to how tests are located or run (§7), a schema version bump (§8's ledger), a new external API or storage protocol (§4), or an approved new dependency (§5). If you find something here that contradicts the repo, fix it in that commit rather than working around it — a wrong line here misleads every future agent, not just you.
