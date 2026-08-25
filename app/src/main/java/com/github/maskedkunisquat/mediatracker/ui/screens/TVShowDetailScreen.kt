@@ -547,6 +547,13 @@ private fun EpisodeRow(
  * it was never checked against. [onConfirm] always reports a concrete season number and episode
  * count; whether that is destructive (a shrink) is decided by the caller, which is why this dialog
  * never itself asks for confirmation.
+ *
+ * edge-to-edge-exempt: this file's only text fields are the two below, and they live in an
+ * [AlertDialog] rendered as a sibling of the screen's `Scaffold` rather than inside its content.
+ * An AlertDialog is its own window and repositions itself for the keyboard, so passing
+ * `contentWindowInsets` to that Scaffold would pad content that is not affected. Verified on a
+ * device: with the keyboard open these fields move from y=931 to y=499 and the buttons from
+ * y=1454 to y=1022, all clear of it.
  */
 @Composable
 private fun SeasonLengthDialog(

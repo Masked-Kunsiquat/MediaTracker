@@ -357,6 +357,63 @@ jobs:
             shared/build/test-results/
           retention-days: 7
 
+  compose-insets:
+    name: Compose IME insets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Every Scaffold with a text field must handle IME insets
+        run: |
+          # Scaffold's default contentWindowInsets omits the IME, so a Scaffold containing a text
+          # field lays itself and its own slots out as though the keyboard were not there. That is
+          # not hypothetical: it put the library's "Add to library" FAB underneath the keyboard,
+          # where it could not be tapped, and nothing caught it -- the button was present, enabled
+          # and "displayed", so every semantics assertion passed. These are layout bounds, which
+          # nothing in the test suite asserts on.
+          #
+          # This is a shallow check on purpose. It cannot tell WHICH Scaffold in a file got the
+          # argument, only that a file needing one has one. It exists to catch the realistic
+          # regression -- a new screen written without the pattern -- not to prove correctness.
+          SCREENS="app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/screens"
+          FAILED=0
+
+          for f in "$SCREENS"/*.kt; do
+            grep -q 'Scaffold(' "$f" || continue
+            grep -qE 'OutlinedTextField\(|BasicTextField\(|[^a-zA-Z]TextField\(' "$f" || continue
+
+            # Escape hatch first, because a real case needs one: text fields inside a Dialog or
+            # AlertDialog live in their own window, which repositions itself for the keyboard, so
+            # the enclosing Scaffold genuinely must not be changed. Claiming the exemption means
+            # writing down why, next to the code.
+            if REASON=$(grep -m1 -o 'edge-to-edge-exempt:.*' "$f"); then
+              echo "exempt  $(basename "$f") -- $REASON"
+              continue
+            fi
+
+            # An assignment, not the bare word. Matching the word alone lets a file satisfy this
+            # check by *mentioning* contentWindowInsets in a comment -- which is exactly what
+            # happened the first time this was written: the exemption note below explains why a
+            # Scaffold should NOT get the argument, and that sentence silently passed the check.
+            if grep -qE 'contentWindowInsets[[:space:]]*=' "$f"; then
+              continue
+            fi
+
+            echo "::error file=$f::$(basename "$f") has a Scaffold and a text field but no contentWindowInsets."
+            echo "  Add 'contentWindowInsets = WindowInsets.safeDrawing' to the Scaffold and"
+            echo "  '.consumeWindowInsets(innerPadding)' alongside the existing .padding(innerPadding)."
+            echo "  If the text fields are inside a Dialog or AlertDialog, that window handles its own"
+            echo "  insets: add a comment containing 'edge-to-edge-exempt: <why>' instead."
+            FAILED=1
+          done
+
+          if [ "$FAILED" = "1" ]; then
+            exit 1
+          fi
+          echo "Every Scaffold with a text field handles IME insets, or says why it does not."
+
   lint:
     name: Linting
     runs-on: ubuntu-latest
