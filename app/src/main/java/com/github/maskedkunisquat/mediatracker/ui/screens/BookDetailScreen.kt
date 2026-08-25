@@ -17,12 +17,15 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1354,6 +1357,10 @@ private fun SessionDialogFrame(
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
+                // This Dialog is its own window, so it needs its own IME handling -- Scaffold's
+                // default contentWindowInsets don't include the IME, and without safeDrawing the
+                // keyboard would cover the position/duration/notes fields below.
+                contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = {
                     CenterAlignedTopAppBar(
                         title = { Text(title) },
@@ -1370,7 +1377,7 @@ private fun SessionDialogFrame(
                     )
                 },
             ) { innerPadding ->
-                Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                Column(modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding).fillMaxSize()) {
                     Column(
                         modifier =
                             Modifier

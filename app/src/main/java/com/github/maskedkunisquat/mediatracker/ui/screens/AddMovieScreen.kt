@@ -2,9 +2,12 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -147,6 +150,9 @@ fun AddMovieScreen(
             !isSaving
 
     Scaffold(
+        // Without this, Scaffold's default insets skip the IME and the keyboard would cover the
+        // form fields below rather than the content shifting to make room for it.
+        contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -167,6 +173,7 @@ fun AddMovieScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),

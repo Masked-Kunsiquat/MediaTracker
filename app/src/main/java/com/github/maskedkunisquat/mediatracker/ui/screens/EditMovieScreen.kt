@@ -2,9 +2,12 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -108,6 +111,10 @@ fun EditMovieScreen(
     }
 
     Scaffold(
+        // Same reasoning as AddMovieScreen: Scaffold's default insets don't cover the IME, so
+        // without safeDrawing the keyboard would sit over these fields instead of the layout
+        // resizing.
+        contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -128,6 +135,7 @@ fun EditMovieScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
