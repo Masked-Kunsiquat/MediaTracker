@@ -1335,7 +1335,9 @@ numbered task rather than left to be rediscovered.
     drive a control is to dump the view hierarchy and match on its visible text — workable, and in
     fact how the changelog, log viewer and Add Book flows were verified, but it breaks whenever a
     label is reworded, and it tempts guessing coordinates from a screenshot instead (which has
-    already produced one mis-tap into the wrong screen).
+    already produced one mis-tap into the wrong screen). Likely absorbed by
+    [#96](https://github.com/Masked-Kunsiquat/MediaTracker/issues/96), whose inset-occlusion
+    harness needs stable handles for the same reason — do it there rather than twice.
 
 - **Nothing tests that logging is actually wired up.** The store, codec, sink, composite logger,
   viewer state and viewer rendering are all covered, but the composition that connects them is not:
