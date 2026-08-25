@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-24
+
+Films and television arrive. The previous release rebuilt the library around a single polymorphic
+media model and had nothing to put in it; this one fills it. A film is entered by hand — title,
+year, runtime, purchase price, and a watchlist-through-watched status. A show is tracked **per
+episode** rather than per show: say how many episodes a season holds, and tick them off one at a
+time, because "four episodes into season two" is the thing a show tracker has to be able to say.
+
+Neither looks anything up yet. Titles are typed, and a quick-filled episode shows its number until
+metadata arrives in a later release — a normal state rather than an error. A season's length can be
+corrected in either direction afterwards, including downwards, so a mistyped count is a mistake to
+fix rather than one to live with.
+
+One correction worth calling out for anyone tracking what they paid: a purchase price typed with a
+comma as the decimal separator was stored a hundred times too large, silently and with no error, on
+every form that takes one. That is fixed, and prices already saved that way are worth a look.
+
 ### Added
 
 - **Movies (ROADMAP Task 13 Phase B)** — Films can now be added, viewed, edited and deleted alongside books. Entry is manual: title, release year, runtime and purchase price, with a Watchlist/Watching/Watched/Abandoned status. No provider lookup is involved yet.
