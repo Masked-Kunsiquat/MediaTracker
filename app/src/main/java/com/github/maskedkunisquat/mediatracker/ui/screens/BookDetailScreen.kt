@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -106,6 +107,9 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.BookDetailViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
+import com.github.maskedkunisquat.mediatracker.ui.insets.exceptBottom
+import com.github.maskedkunisquat.mediatracker.ui.insets.plus
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookDetailsEntity
@@ -381,10 +385,14 @@ fun BookDetailScreen(
         },
     ) { innerPadding ->
         Box(
+            // Library's shape: the tab row below is pinned and takes the top app bar and the
+            // horizontal cutout as real padding, while the navigation bar goes to whichever tab is
+            // showing -- both of them scroll, and both re-add it themselves.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .consumeWindowInsets(innerPadding)
+                    .padding(innerPadding.exceptBottom()),
         ) {
             when (uiState) {
                 is BookDetailUiState.Loading -> {
@@ -683,6 +691,9 @@ private fun DetailsTab(
             modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                // Inside the scroll: the tab's content passes under the navigation bar, and its
+                // last row still clears it. The screen's Box deliberately does not apply this.
+                .padding(barPadding(WindowInsetsSides.Bottom))
                 .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -755,7 +766,9 @@ private fun ReadingHistoryTab(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        // Bottom bar inset only -- the screen's pinned tab row above already applied the
+        // horizontal one, and applying it twice would indent the sessions past the tabs.
+        contentPadding = PaddingValues(16.dp).plus(barPadding(WindowInsetsSides.Bottom)),
     ) {
         item {
             TextButton(
