@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddTVShowScreen
@@ -11,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * IME-occlusion guard for the Add TV Show screen's form.
+ * Occlusion guards for the Add TV Show screen's form.
  *
  * Unlike [AddMovieScreen][com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreen], every
  * field on this screen -- including the season rows -- is bound directly to [AddTVShowUiState]
@@ -33,39 +34,58 @@ class AddTVShowScreenOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theFormAndSeasonRowsStayReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
-            // Named here rather than centrally so a dropped tag fails the screen that owns it.
-            expectedTags =
-                listOf(
-                    TestTags.AddTVShow.FORM,
-                    TestTags.AddTVShow.SAVE_BUTTON,
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
+    }
+
+    /**
+     * The navigation bar half, added with #99.
+     *
+     * As with [AddMovieScreenOcclusionTest]'s nav-bar test, this screen routes the keyboard outside
+     * the form's scroll via `imePadding()` and the bars inside it via `scrollingContentPadding` on
+     * the same `contentPadding` -- separate mechanisms sharing one scroller, so one can regress
+     * without the other. Deleting the bar half here leaves the keyboard test green and fails this
+     * one.
+     */
+    @Test
+    fun withTheNavigationBarShowing_theFormAndSeasonRowsStayReachable() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
+    }
+
+    @Composable
+    private fun Fixture() {
+        AddTVShowScreen(
+            uiState =
+                AddTVShowUiState(
+                    title = "Breaking Bad",
+                    releaseYear = "2008",
+                    totalSeasons = "5",
+                    purchasePrice = "39.99",
+                    seasons =
+                        listOf(
+                            SeasonRow(seasonNumber = "1", episodeCount = "7"),
+                            SeasonRow(seasonNumber = "2", episodeCount = "13"),
+                        ),
                 ),
-        ) {
-            AddTVShowScreen(
-                uiState =
-                    AddTVShowUiState(
-                        title = "Breaking Bad",
-                        releaseYear = "2008",
-                        totalSeasons = "5",
-                        purchasePrice = "39.99",
-                        seasons =
-                            listOf(
-                                SeasonRow(seasonNumber = "1", episodeCount = "7"),
-                                SeasonRow(seasonNumber = "2", episodeCount = "13"),
-                            ),
-                    ),
-                onTitleChange = {},
-                onReleaseYearChange = {},
-                onTotalSeasonsChange = {},
-                onPurchasePriceChange = {},
-                onAddSeasonRow = {},
-                onRemoveSeasonRow = {},
-                onSeasonNumberChange = { _, _ -> },
-                onEpisodeCountChange = { _, _ -> },
-                onSave = {},
-                onErrorShown = {},
-                onNavigateBack = {},
+            onTitleChange = {},
+            onReleaseYearChange = {},
+            onTotalSeasonsChange = {},
+            onPurchasePriceChange = {},
+            onAddSeasonRow = {},
+            onRemoveSeasonRow = {},
+            onSeasonNumberChange = { _, _ -> },
+            onEpisodeCountChange = { _, _ -> },
+            onSave = {},
+            onErrorShown = {},
+            onNavigateBack = {},
+        )
+    }
+
+    private companion object {
+        /** Named here rather than centrally so a dropped tag fails the screen that owns it. */
+        val TAGS =
+            listOf(
+                TestTags.AddTVShow.FORM,
+                TestTags.AddTVShow.SAVE_BUTTON,
             )
-        }
     }
 }

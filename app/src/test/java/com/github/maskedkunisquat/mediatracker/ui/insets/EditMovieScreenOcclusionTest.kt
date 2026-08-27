@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreen
@@ -11,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * IME-occlusion guard for the Edit Movie screen's form.
+ * Occlusion guards for the Edit Movie screen's form.
  *
  * [EditMovieUiState.Editing] is used with every field populated (mirroring
  * `EditMovieScreenTest`'s own `editing()` fixture) rather than [EditMovieUiState.Loading], which
@@ -31,32 +32,50 @@ class EditMovieScreenOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theFormStaysReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
-            // Named here rather than centrally so a dropped tag fails the screen that owns it.
-            expectedTags =
-                listOf(
-                    TestTags.EditMovie.FORM,
-                    TestTags.EditMovie.SAVE_BUTTON,
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
+    }
+
+    /**
+     * The navigation bar half, added with #99.
+     *
+     * Same split as [AddMovieScreenOcclusionTest]'s nav-bar test: `imePadding()` keeps the keyboard
+     * outside this screen's scroll while `scrollingContentPadding` puts the bars inside it, so the
+     * two are wired independently and one can regress without the other. Deleting the bar half
+     * here leaves the keyboard test green and fails this one.
+     */
+    @Test
+    fun withTheNavigationBarShowing_theFormStaysReachable() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
+    }
+
+    @Composable
+    private fun Fixture() {
+        EditMovieScreen(
+            uiState =
+                EditMovieUiState.Editing(
+                    title = "Interstellar",
+                    releaseYear = "2014",
+                    runtimeMinutes = "169",
+                    purchasePrice = "14.99",
+                    status = WatchStatus.WATCHLIST,
                 ),
-        ) {
-            EditMovieScreen(
-                uiState =
-                    EditMovieUiState.Editing(
-                        title = "Interstellar",
-                        releaseYear = "2014",
-                        runtimeMinutes = "169",
-                        purchasePrice = "14.99",
-                        status = WatchStatus.WATCHLIST,
-                    ),
-                onTitleChange = {},
-                onReleaseYearChange = {},
-                onRuntimeChange = {},
-                onPurchasePriceChange = {},
-                onStatusChange = {},
-                onSave = {},
-                onErrorShown = {},
-                onNavigateBack = {},
+            onTitleChange = {},
+            onReleaseYearChange = {},
+            onRuntimeChange = {},
+            onPurchasePriceChange = {},
+            onStatusChange = {},
+            onSave = {},
+            onErrorShown = {},
+            onNavigateBack = {},
+        )
+    }
+
+    private companion object {
+        /** Named here rather than centrally so a dropped tag fails the screen that owns it. */
+        val TAGS =
+            listOf(
+                TestTags.EditMovie.FORM,
+                TestTags.EditMovie.SAVE_BUTTON,
             )
-        }
     }
 }

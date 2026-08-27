@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreen
@@ -13,7 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * IME-occlusion guard for the Settings screen.
+ * Occlusion guards for the Settings screen.
  *
  * The only text-entry control on this screen is the Google Books API key field
  * (`GoogleBooksApiKeySetting`), which -- like every other row here -- is an item inside the
@@ -33,41 +34,59 @@ class SettingsScreenOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theSettingsListStaysReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
-            // Named here rather than centrally so a dropped tag fails the screen that owns it.
-            expectedTags =
-                listOf(
-                    TestTags.Settings.LIST,
-                    TestTags.Settings.API_KEY_FIELD,
-                ),
-        ) {
-            SettingsScreen(
-                uiState = SettingsUiState(),
-                onWeekStartDayChange = {},
-                onLogVerbosityChange = {},
-                onGoogleBooksApiKeySave = {},
-                onGoogleBooksApiKeyClear = {},
-                onNavigateToLogViewer = {},
-                onNavigateToChangelog = {},
-                exportInProgress = false,
-                onExportClick = {},
-                importInProgress = false,
-                duplicatePolicy = DuplicatePolicy.SKIP,
-                onDuplicatePolicyChange = {},
-                onImportClick = {},
-                goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
-                onGoodreadsDuplicatePolicyChange = {},
-                onImportGoodreadsClick = {},
-                backupInProgress = false,
-                onBackupClick = {},
-                restoreInProgress = false,
-                onRestoreClick = {},
-                backfillUiState = BackfillUiState.Idle,
-                onStartBackfillClick = {},
-                onCancelBackfillClick = {},
-                snackbarHostState = SnackbarHostState(),
-                onNavigateBack = {},
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
+    }
+
+    /**
+     * The navigation bar half, added with #99.
+     *
+     * This screen's `LazyColumn` carries `imePadding()` outside its `contentPadding` and the bars
+     * as part of that same `scrollingContentPadding` -- one container, two insets wired
+     * separately. Deleting the bar's share of that padding leaves the keyboard test above green
+     * (the IME rule reports no bar inset at all) and fails this one instead.
+     */
+    @Test
+    fun withTheNavigationBarShowing_theSettingsListStaysReachable() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
+    }
+
+    @Composable
+    private fun Fixture() {
+        SettingsScreen(
+            uiState = SettingsUiState(),
+            onWeekStartDayChange = {},
+            onLogVerbosityChange = {},
+            onGoogleBooksApiKeySave = {},
+            onGoogleBooksApiKeyClear = {},
+            onNavigateToLogViewer = {},
+            onNavigateToChangelog = {},
+            exportInProgress = false,
+            onExportClick = {},
+            importInProgress = false,
+            duplicatePolicy = DuplicatePolicy.SKIP,
+            onDuplicatePolicyChange = {},
+            onImportClick = {},
+            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
+            onGoodreadsDuplicatePolicyChange = {},
+            onImportGoodreadsClick = {},
+            backupInProgress = false,
+            onBackupClick = {},
+            restoreInProgress = false,
+            onRestoreClick = {},
+            backfillUiState = BackfillUiState.Idle,
+            onStartBackfillClick = {},
+            onCancelBackfillClick = {},
+            snackbarHostState = SnackbarHostState(),
+            onNavigateBack = {},
+        )
+    }
+
+    private companion object {
+        /** Named here rather than centrally so a dropped tag fails the screen that owns it. */
+        val TAGS =
+            listOf(
+                TestTags.Settings.LIST,
+                TestTags.Settings.API_KEY_FIELD,
             )
-        }
     }
 }
