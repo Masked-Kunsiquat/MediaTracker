@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.BuildConfig
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.ChangelogViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.features.changelog.ChangelogVersion
 import com.hub.media.features.changelog.parseInlineMarkup
 import com.hub.media.ui.ChangelogUiState
@@ -129,31 +131,43 @@ fun ChangelogScreen(
         },
     ) { innerPadding ->
         Box(
+            // No padding here: the list below draws behind the bars and re-adds the space as
+            // contentPadding. Padding this Box is what stops that happening.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .consumeWindowInsets(innerPadding),
         ) {
             when {
-                uiState.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                // Neither of the two non-list states scrolls, so both keep real padding and centre
+                // in the content area rather than in the window.
+                uiState.isLoading ->
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
 
                 uiState.failedToLoad || uiState.document.versions.isEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.changelog_unavailable),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier =
-                            Modifier
-                                .align(Alignment.Center)
-                                .padding(32.dp),
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.changelog_unavailable),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(32.dp),
+                        )
+                    }
                 }
 
                 else ->
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         items(uiState.document.versions.size) { index ->

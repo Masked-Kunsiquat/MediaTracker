@@ -62,6 +62,33 @@ fun barPaddingForScrollingContent(): PaddingValues =
         .asPaddingValues()
 
 /**
+ * Everything a full-bleed scrolling container re-adds inside itself, in one value.
+ *
+ * The three parts, and why each is separate:
+ *
+ * - **The top app bar's height**, which only the `Scaffold` knows, so it arrives as
+ *   [scaffoldPadding] and is read for its top edge alone. The rest of [scaffoldPadding] is not used
+ *   — its bottom carries the IME, which belongs outside the scroll (see
+ *   [barPaddingForScrollingContent]).
+ * - **The bars**, so the last row clears the navigation bar while the middle of the list passes
+ *   under it.
+ * - **[own]** — whatever margin the list already wanted. It cannot simply be dropped in favour of
+ *   the insets, and `contentPadding` takes one value, so the two are summed rather than chosen
+ *   between.
+ *
+ * The caller still owns the keyboard: pair this with `Modifier.imePadding()` on the container
+ * outside the scroll wherever the screen has a text field.
+ */
+@Composable
+fun scrollingContentPadding(
+    scaffoldPadding: PaddingValues,
+    own: PaddingValues = PaddingValues(0.dp),
+): PaddingValues =
+    PaddingValues(top = scaffoldPadding.calculateTopPadding())
+        .plus(barPaddingForScrollingContent())
+        .plus(own)
+
+/**
  * Sums two sets of padding side by side.
  *
  * The case this exists for: a list that wants 16dp of its own breathing room *and* has to clear the
@@ -100,19 +127,17 @@ fun PaddingValues.exceptBottom(): PaddingValues {
 }
 
 /**
- * The same padding with its top edge dropped.
+ * The bottom bar inset alone — the other half of [exceptBottom].
  *
- * The other half of [exceptBottom]: the scrolling part of such a screen takes the bottom inset as
- * `contentPadding` so its last row clears the navigation bar, and must not re-apply the top inset
- * that the pinned element above it has already accounted for.
+ * A screen that is part pinned, part scrolling applies the horizontal inset once, on the pinned
+ * part, and must not apply it again on the list below: two applications of a display cutout indent
+ * the list twice as far as the field above it, which is visible and wrong.
+ * [barPaddingForScrollingContent] carries the horizontal inset because the screens using it have
+ * nothing above the scroller to have applied it already. This one is for when something did.
  */
 @Composable
-fun PaddingValues.exceptTop(): PaddingValues {
-    val layoutDirection = LocalLayoutDirection.current
-    return PaddingValues(
-        start = calculateStartPadding(layoutDirection),
-        top = 0.dp,
-        end = calculateEndPadding(layoutDirection),
-        bottom = calculateBottomPadding(),
-    )
-}
+fun barPaddingBelowContent(): PaddingValues =
+    WindowInsets.systemBars
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Bottom)
+        .asPaddingValues()

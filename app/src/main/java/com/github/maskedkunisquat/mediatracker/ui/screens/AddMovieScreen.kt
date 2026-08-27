@@ -2,6 +2,7 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddMovieViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.insets.barPaddingForScrollingContent
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
@@ -184,9 +185,7 @@ fun AddMovieScreen(
                     .verticalScroll(rememberScrollState())
                     // Inside the scroll, so the form passes under the top app bar and the
                     // navigation bar instead of stopping dead at them.
-                    .padding(top = innerPadding.calculateTopPadding())
-                    .padding(barPaddingForScrollingContent())
-                    .padding(16.dp)
+                    .padding(scrollingContentPadding(innerPadding, PaddingValues(16.dp)))
                     .testTag(TestTags.AddMovie.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

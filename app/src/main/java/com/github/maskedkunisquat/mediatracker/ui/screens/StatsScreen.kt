@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.StatsUiState
@@ -98,17 +100,27 @@ fun StatsScreen(
         },
     ) { innerPadding ->
         Box(
+            // No padding here: the list below draws behind the bars and re-adds the space as
+            // contentPadding. Padding this Box is what stops that happening.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .consumeWindowInsets(innerPadding),
         ) {
             if (uiState.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                // The spinner is not a scrolling container and has no reason to sit behind
+                // anything, so it keeps real padding and centres in the content area rather than
+                // in the window.
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {

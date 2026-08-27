@@ -2,6 +2,7 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,7 +43,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditMovieViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.insets.barPaddingForScrollingContent
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
@@ -143,9 +144,7 @@ fun EditMovieScreen(
                     .imePadding()
                     .consumeWindowInsets(innerPadding)
                     .verticalScroll(rememberScrollState())
-                    .padding(top = innerPadding.calculateTopPadding())
-                    .padding(barPaddingForScrollingContent())
-                    .padding(16.dp)
+                    .padding(scrollingContentPadding(innerPadding, PaddingValues(16.dp)))
                     .testTag(TestTags.EditMovie.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
