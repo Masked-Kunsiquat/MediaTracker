@@ -19,14 +19,14 @@ import org.robolectric.RobolectricTestRunner
  * Drives the default (search) tab with a non-empty query and a populated results list rather than
  * the empty/idle state: an empty query renders no [androidx.compose.foundation.lazy.LazyColumn] of
  * results at all, which would leave nothing below the search field to strand and let this pass
- * regardless of inset handling, exactly as [LibraryScreenImeOcclusionTest]'s KDoc explains for its
+ * regardless of inset handling, exactly as [LibraryScreenOcclusionTest]'s KDoc explains for its
  * own populated-vs-empty choice. The results sit in a scrolling `LazyColumn`, so they are
  * measured with that list scrolled to its end -- the highest position its last row can reach, and
  * therefore the one that decides whether the row is reachable at all. Asserted alongside the search
  * field and clear button, which sit outside the list and cannot be scrolled anywhere.
  */
 @RunWith(RobolectricTestRunner::class)
-class AddBookScreenImeOcclusionTest {
+class AddBookScreenOcclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 

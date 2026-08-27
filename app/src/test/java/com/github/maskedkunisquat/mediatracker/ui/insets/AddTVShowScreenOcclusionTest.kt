@@ -20,14 +20,14 @@ import org.robolectric.RobolectricTestRunner
  * collapses to a single hint [androidx.compose.material3.Text] with nothing to lay out, which would
  * pass this check regardless of inset handling.
  *
- * As with [AddMovieScreenImeOcclusionTest], every field, season row, and the save button live in
+ * As with [AddMovieScreenOcclusionTest], every field, season row, and the save button live in
  * the one `verticalScroll` `Column` that makes up this screen's whole body. That is not an
  * exemption: the harness scrolls that container to its end and measures there, which is as high as
  * the save button can get, so a save button still under the keyboard at that point is gone for
  * good. Confirmed by deleting `contentWindowInsets` from this screen and watching this fail.
  */
 @RunWith(RobolectricTestRunner::class)
-class AddTVShowScreenImeOcclusionTest {
+class AddTVShowScreenOcclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 

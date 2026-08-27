@@ -30,7 +30,7 @@ import org.robolectric.RobolectricTestRunner
  * retrieves it. Confirmed by deleting that argument and watching this fail.
  */
 @RunWith(RobolectricTestRunner::class)
-class AddMovieScreenImeOcclusionTest {
+class AddMovieScreenOcclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 

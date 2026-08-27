@@ -40,7 +40,7 @@ import org.junit.Assert.assertTrue
  * `imePadding()`, or invent something else — the only question asked is whether the controls ended
  * up above the keyboard.
  */
-object ImeOcclusion {
+object Occlusion {
     /**
      * Height of the fake keyboard, in dp.
      *
@@ -50,6 +50,22 @@ object ImeOcclusion {
      * not matter to a correct screen, which is itself part of what is being asserted.
      */
     val KeyboardHeight: Dp = 300.dp
+
+    /**
+     * Height of the fake navigation bar, in dp.
+     *
+     * 48dp is Android's three-button navigation bar. The gesture bar is smaller (around 24dp), so
+     * asserting against the larger of the two covers both — and the larger is also the one that
+     * strands a control further, which is the case worth reproducing. As with [KeyboardHeight] the
+     * exact value should not matter to a correct screen.
+     *
+     * Two-thirds smaller than the keyboard, and that is the point of testing it separately: #99
+     * moved padding on every screen at once, and the failure it can produce is a *pinned* control
+     * left under the navigation bar with no keyboard anywhere in sight. The IME rule cannot see
+     * that — it reports an IME inset, which a screen may handle correctly while handling the bars
+     * wrongly, and the two insets now travel by different routes through every screen here.
+     */
+    val NavigationBarHeight: Dp = 48.dp
 
     /**
      * Allowed overlap, in px, before a node counts as occluded.
@@ -68,7 +84,7 @@ object ImeOcclusion {
  * control has been left underneath that keyboard.
  *
  * The inset is *reported*, not applied: the window keeps its full height and the composition is
- * told the bottom [ImeOcclusion.KeyboardHeight] is covered, which is exactly the situation a
+ * told the bottom [Occlusion.KeyboardHeight] is covered, which is exactly the situation a
  * `Scaffold` with the default `contentWindowInsets` mishandles. That fidelity is the reason this
  * lane runs on Robolectric rather than LayoutLib — Paparazzi and the Compose Preview screenshot
  * tool have no real `Window`, so `WindowInsets.safeDrawing` resolves to zero there and the bug
@@ -97,16 +113,72 @@ object ImeOcclusion {
 fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
     expectedTags: List<String> = emptyList(),
     content: @Composable () -> Unit,
+) = assertNothingIsBehindTheInset(
+    insetType = WindowInsetsCompat.Type.ime(),
+    insetHeight = Occlusion.KeyboardHeight,
+    whatItIs = "The keyboard",
+    expectedTags = expectedTags,
+    content = content,
+)
+
+/**
+ * Renders [content] with a navigation-bar-sized system-bar inset reported to it, then asserts that
+ * nothing the user has to reach has been left underneath that bar.
+ *
+ * The same rule as [assertNoInteractiveNodeIsBehindTheKeyboard], asked about a different inset, and
+ * it needs asking separately because after #99 the two insets travel by different routes through
+ * every screen here. The keyboard stays outside the scroll as `Modifier.imePadding()`; the bars go
+ * *inside* it as `contentPadding`. A screen can therefore get one right and the other wrong, and
+ * the IME test would report nothing -- it reports no bar inset at all, so a screen that ignores the
+ * bars entirely passes it comfortably.
+ *
+ * The failure this exists for is the one #99 names as its own most likely: padding moved on every
+ * screen at once, and the shape of getting it wrong is a control that is present, enabled and
+ * untappable. That was PR #95's stranded FAB and issue #83's season overflow button, both of which
+ * shipped past a fully green suite and were found by hand on a phone. This is the second of those
+ * two insets to get an assertion.
+ *
+ * Note what it deliberately does *not* assert: that content draws behind the bar. Nothing here
+ * fails a screen for keeping real padding -- film detail has no scrolling container and add book's
+ * results are a rounded card, and both are correct as they are. The rule is only that nothing ends
+ * up underneath, which holds under either strategy and stays true if a screen changes its mind.
+ */
+fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheNavigationBar(
+    expectedTags: List<String> = emptyList(),
+    content: @Composable () -> Unit,
+) = assertNothingIsBehindTheInset(
+    insetType = WindowInsetsCompat.Type.navigationBars(),
+    insetHeight = Occlusion.NavigationBarHeight,
+    whatItIs = "The navigation bar",
+    expectedTags = expectedTags,
+    content = content,
+)
+
+/**
+ * The shared body of the two rules above: report one bottom inset, then measure.
+ *
+ * [insetType] is a `WindowInsetsCompat.Type` bit. It is reported rather than applied -- the window
+ * keeps its full height and the composition is merely told the bottom [insetHeight] is covered,
+ * which is exactly the situation a `Scaffold` with the wrong `contentWindowInsets` mishandles.
+ * [whatItIs] names the inset in the failure message, because "The keyboard covers 3 things" and
+ * "The navigation bar covers 3 things" send a reader to very different code.
+ */
+private fun ComposeContentTestRule.assertNothingIsBehindTheInset(
+    insetType: Int,
+    insetHeight: Dp,
+    whatItIs: String,
+    expectedTags: List<String>,
+    content: @Composable () -> Unit,
 ) {
-    val keyboardPx = with(density) { ImeOcclusion.KeyboardHeight.roundToPx() }
+    val insetPx = with(density) { insetHeight.roundToPx() }
     setContent {
-        val imeInsets =
+        val insets =
             WindowInsetsCompat
                 .Builder()
-                .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, keyboardPx))
-                .setVisible(WindowInsetsCompat.Type.ime(), true)
+                .setInsets(insetType, Insets.of(0, 0, 0, insetPx))
+                .setVisible(insetType, true)
                 .build()
-        DeviceConfigurationOverride(DeviceConfigurationOverride.WindowInsets(imeInsets)) {
+        DeviceConfigurationOverride(DeviceConfigurationOverride.WindowInsets(insets)) {
             MediaTrackerTheme { content() }
         }
     }
@@ -117,12 +189,11 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
     // before any occlusion is measured. Taking the tallest is robust to that whether the override
     // is present or not, rather than depending on how many roots this particular override happens
     // to introduce.
-    val keyboardTopEdge = onAllNodes(isRoot()).fetchSemanticsNodes().maxOf { it.size.height } - keyboardPx
+    val insetTopEdge = onAllNodes(isRoot()).fetchSemanticsNodes().maxOf { it.size.height } - insetPx
 
-    fun List<SemanticsNode>.belowTheKeyboard() =
-        filter { it.boundsInRoot.bottom > keyboardTopEdge + ImeOcclusion.TOLERANCE_PX }
+    fun List<SemanticsNode>.belowTheLine() = filter { it.boundsInRoot.bottom > insetTopEdge + Occlusion.TOLERANCE_PX }
 
-    assertTheScreenCouldHaveFailed(keyboardTopEdge)
+    assertTheScreenCouldHaveFailed(insetTopEdge, whatItIs)
     assertTheseTagsExist(expectedTags)
 
     // Controls at a fixed position: a FAB, a bottom bar, a search field above a list. If one of
@@ -131,7 +202,7 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
         onAllNodes(hasClickAction() or hasSetTextAction())
             .fetchSemanticsNodes()
             .filterNot { it.isInsideAScrollingContainer() }
-            .belowTheKeyboard()
+            .belowTheLine()
             .map { "control ${it.describe()} at ${it.boundsInRoot}" }
 
     // Everything inside a scroller, measured at the one position that decides the question.
@@ -154,7 +225,7 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
         onAllNodes(hasClickAction() or hasSetTextAction())
             .fetchSemanticsNodes()
             .filter { it.isInsideAScrollingContainer() }
-            .belowTheKeyboard()
+            .belowTheLine()
             .map { "control ${it.describe()} at ${it.boundsInRoot}, with its list scrolled to the end" }
 
     val occluded = strandedInPlace + strandedAtTheEndOfAScroll
@@ -164,8 +235,8 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
     // mean one run per control.
     assertTrue(
         buildString {
-            append("The keyboard covers ${occluded.size} thing(s) the user has to reach.\n")
-            append("Keyboard top edge is y=$keyboardTopEdge px; anything below that is unreachable.\n")
+            append("$whatItIs covers ${occluded.size} thing(s) the user has to reach.\n")
+            append("Its top edge is y=$insetTopEdge px; anything below that is unreachable.\n")
             occluded.forEach { append("  - $it\n") }
         },
         occluded.isEmpty(),
@@ -219,22 +290,26 @@ private fun ComposeContentTestRule.assertTheseTagsExist(expectedTags: List<Strin
  * Necessary, not sufficient. A fixture can satisfy both and still assert nothing, which is why the
  * falsification sweep in the KDoc above is not optional.
  */
-private fun ComposeContentTestRule.assertTheScreenCouldHaveFailed(keyboardTopEdge: Int) {
+private fun ComposeContentTestRule.assertTheScreenCouldHaveFailed(
+    insetTopEdge: Int,
+    whatItIs: String,
+) {
     val candidates =
         onAllNodes(hasClickAction() or hasSetTextAction()).fetchSemanticsNodes() +
             onAllNodes(isAScrollingContainer).fetchSemanticsNodes()
     assertTrue(
-        "This fixture rendered nothing interactive, so it cannot demonstrate anything about the " +
-            "keyboard. Populate the screen's state -- a loading or empty variant passes trivially.",
+        "This fixture rendered nothing interactive, so it cannot demonstrate anything about " +
+            "${whatItIs.replaceFirstChar { it.lowercase() }}. Populate the screen's state -- a " +
+            "loading or empty variant passes trivially.",
         candidates.any { it.config.contains(SemanticsProperties.Focused) || it.boundsInRoot.height > 0f },
     )
     val deepest = candidates.maxOfOrNull { it.boundsInRoot.bottom } ?: 0f
     assertTrue(
-        "This fixture's interactive content stops at y=$deepest px, well above the keyboard line at " +
-            "y=$keyboardTopEdge px, so nothing on it could be covered whether or not the screen " +
+        "This fixture's interactive content stops at y=$deepest px, well above the line at " +
+            "y=$insetTopEdge px, so nothing on it could be covered whether or not the screen " +
             "handles insets -- the test would pass either way. Populate more state, or use the " +
             "state in which this screen actually fills the display.",
-        deepest >= keyboardTopEdge * MIN_FILL_FRACTION,
+        deepest >= insetTopEdge * MIN_FILL_FRACTION,
     )
 }
 

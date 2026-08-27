@@ -23,11 +23,11 @@ import org.robolectric.RobolectricTestRunner
  * fail.
  *
  * [SettingsUiState]'s defaults already render every section -- there is no empty/loading variant to
- * avoid the way [AddBookScreenImeOcclusionTest] avoids an empty search result list -- so no
+ * avoid the way [AddBookScreenOcclusionTest] avoids an empty search result list -- so no
  * particular field population is needed to make the layout meaningful.
  */
 @RunWith(RobolectricTestRunner::class)
-class SettingsScreenImeOcclusionTest {
+class SettingsScreenOcclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 

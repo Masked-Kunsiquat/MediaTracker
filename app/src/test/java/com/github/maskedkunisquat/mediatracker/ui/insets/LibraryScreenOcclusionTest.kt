@@ -25,7 +25,7 @@ import kotlin.time.Instant
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
 @RunWith(RobolectricTestRunner::class)
-class LibraryScreenImeOcclusionTest {
+class LibraryScreenOcclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 

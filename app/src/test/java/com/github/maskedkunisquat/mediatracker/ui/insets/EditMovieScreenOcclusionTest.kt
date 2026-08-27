@@ -25,7 +25,7 @@ import org.robolectric.RobolectricTestRunner
  * scroll. Confirmed by deleting `contentWindowInsets` from this screen and watching this fail.
  */
 @RunWith(RobolectricTestRunner::class)
-class EditMovieScreenImeOcclusionTest {
+class EditMovieScreenOcclusionTest {
     @get:Rule
     val composeRule = createComposeRule()
 
