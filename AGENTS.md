@@ -201,6 +201,8 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
   - The node **has no perceivable identity at all.** Every scrolling container is in this position, which is why they are tagged despite not being controls: the occlusion lane reads a viewport's bounds, and before the tags existed a stranded list could only be reported as `unlabelled node #91`.
 
   Put the tag on the node it names, never a wrapper — the occlusion lane measures that node's rectangle, so a tag one level up produces a confidently wrong failure message. Never restructure layout to hang a tag on something; adding a `Box` to hold one changes the very measurement these tests exist to check.
+
+  **Verify a new tag on a device, because no local test can.** Robolectric proves a tag is in the semantics tree; only a phone proves it reaches the `uiautomator` dump. Install, open the screen, and query the id — the dump also reports `[scrollable]` and `[clickable]`, which is how you confirm the tag landed on the node you meant rather than a wrapper one level up. A container tag that comes back without `[scrollable]` is on the wrong node, and the occlusion lane will then be measuring the wrong rectangle while passing.
 * **A test must never assume the device already has data.** `connectedDebugAndroidTest` **uninstalls the app when it finishes**, so nothing survives between runs — seeding a device by hand and then writing tests against it produces a suite that passes only on your machine. Tests that need data seed themselves.
 * **To put sample data on a device for manual poking:**
 
