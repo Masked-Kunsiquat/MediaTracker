@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,7 +71,7 @@ import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
-import com.github.maskedkunisquat.mediatracker.ui.insets.barPaddingBelowContent
+import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.insets.exceptBottom
 import com.github.maskedkunisquat.mediatracker.ui.insets.plus
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -347,7 +348,7 @@ fun LibraryScreen(
                             // the Box above already applied the horizontal inset once, for the
                             // pinned search field, and applying it again would indent the cards
                             // twice as far as the field above them.
-                            contentPadding = PaddingValues(8.dp).plus(barPaddingBelowContent()),
+                            contentPadding = PaddingValues(8.dp).plus(barPadding(WindowInsetsSides.Bottom)),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(

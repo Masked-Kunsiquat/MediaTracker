@@ -31,34 +31,35 @@ import androidx.compose.ui.unit.dp
  */
 
 /**
- * The bar insets a scrolling container re-adds *inside* itself: horizontal and bottom, keyboard
- * deliberately absent.
+ * The system bars on the sides you ask for, with the keyboard deliberately absent.
  *
- * The keyboard is the reason this is not simply `innerPadding`. A `Scaffold` given
- * `contentWindowInsets = WindowInsets.safeDrawing` (PR #95) folds the IME into `innerPadding`
- * alongside the bars, and once the padding moves inside the scroller those two want opposite
- * treatment:
+ * The keyboard is the reason this exists rather than a screen simply reusing `innerPadding`. A
+ * `Scaffold` given `contentWindowInsets = WindowInsets.safeDrawing` (PR #95) folds the IME into
+ * `innerPadding` alongside the bars, and once padding moves inside a scroller those two want
+ * opposite treatment:
  *
- * - **Bars belong inside.** The navigation bar is translucent and content passing under it is the
- *   whole point; the inset comes back as trailing space so the last row still clears it.
- * - **The keyboard belongs outside**, as real padding that shrinks the viewport. A scroller whose
+ * - **Bars belong inside the scroll.** The navigation bar is translucent and content passing under
+ *   it is the whole point; the inset comes back as trailing space so the last row still clears it.
+ * - **The keyboard belongs outside it**, as real padding that shrinks the viewport. A scroller whose
  *   viewport extends behind the keyboard reports a field as on-screen while the keyboard covers it,
- *   so focusing one scrolls it nowhere — which is PR #95's bug wearing a different hat, and one the
- *   occlusion lane's scroll-to-end rule would not catch, because the field *is* reachable by
- *   scrolling. It just isn't reached.
+ *   so focusing one scrolls it nowhere -- PR #95's bug wearing a different hat. Screens pair this
+ *   with `Modifier.imePadding()` on the container.
  *
- * So a form pairs this with `Modifier.imePadding()` on the container outside the scroll, and takes
- * the top bar's height from `innerPadding.calculateTopPadding()` — the one part of `innerPadding`
- * only the `Scaffold` knows.
- *
- * `systemBars ∪ displayCutout` is `safeDrawing` with the IME left out, by construction:
+ * `systemBars` union `displayCutout` is `safeDrawing` with the IME left out, by construction:
  * `safeDrawing` is the union of exactly those three.
+ *
+ * [sides] is a parameter rather than three named functions because which sides a screen wants is a
+ * property of its shape, and stating it at the call site is what makes the shape legible. A
+ * full-bleed list wants `Horizontal + Bottom`. A list under a pinned search field wants `Bottom`
+ * alone -- the field above already applied the horizontal inset, and applying it twice indents the
+ * list further than the field. A form above a pinned action bar wants `Horizontal` alone, because
+ * the bottom inset is that bar's to handle.
  */
 @Composable
-fun barPaddingForScrollingContent(): PaddingValues =
+fun barPadding(sides: WindowInsetsSides): PaddingValues =
     WindowInsets.systemBars
         .union(WindowInsets.displayCutout)
-        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+        .only(sides)
         .asPaddingValues()
 
 /**
@@ -69,7 +70,7 @@ fun barPaddingForScrollingContent(): PaddingValues =
  * - **The top app bar's height**, which only the `Scaffold` knows, so it arrives as
  *   [scaffoldPadding] and is read for its top edge alone. The rest of [scaffoldPadding] is not used
  *   — its bottom carries the IME, which belongs outside the scroll (see
- *   [barPaddingForScrollingContent]).
+ *   [barPadding]).
  * - **The bars**, so the last row clears the navigation bar while the middle of the list passes
  *   under it.
  * - **[own]** — whatever margin the list already wanted. It cannot simply be dropped in favour of
@@ -85,7 +86,7 @@ fun scrollingContentPadding(
     own: PaddingValues = PaddingValues(0.dp),
 ): PaddingValues =
     PaddingValues(top = scaffoldPadding.calculateTopPadding())
-        .plus(barPaddingForScrollingContent())
+        .plus(barPadding(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
         .plus(own)
 
 /**
@@ -125,19 +126,3 @@ fun PaddingValues.exceptBottom(): PaddingValues {
         bottom = 0.dp,
     )
 }
-
-/**
- * The bottom bar inset alone — the other half of [exceptBottom].
- *
- * A screen that is part pinned, part scrolling applies the horizontal inset once, on the pinned
- * part, and must not apply it again on the list below: two applications of a display cutout indent
- * the list twice as far as the field above it, which is visible and wrong.
- * [barPaddingForScrollingContent] carries the horizontal inset because the screens using it have
- * nothing above the scroller to have applied it already. This one is for when something did.
- */
-@Composable
-fun barPaddingBelowContent(): PaddingValues =
-    WindowInsets.systemBars
-        .union(WindowInsets.displayCutout)
-        .only(WindowInsetsSides.Bottom)
-        .asPaddingValues()

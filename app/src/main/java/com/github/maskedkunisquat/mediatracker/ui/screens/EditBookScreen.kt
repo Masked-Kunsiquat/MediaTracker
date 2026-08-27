@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -58,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
@@ -168,15 +172,23 @@ fun EditBookScreen(
         },
     ) { innerPadding ->
         Box(
+            // No bar padding here. This screen is part scrolling form, part pinned action bar, and
+            // the two halves take different pieces of innerPadding -- see EditBookForm. The
+            // keyboard is the exception, as always: it shrinks the viewport for both.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .imePadding()
                     .consumeWindowInsets(innerPadding),
         ) {
             when (uiState) {
                 is EditBookUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
                 is EditBookUiState.NotFound, is EditBookUiState.Saved -> {
                     // Nothing to render; the route wrapper navigates back on these states.
@@ -184,6 +196,7 @@ fun EditBookScreen(
                 is EditBookUiState.Ready -> {
                     EditBookForm(
                         state = uiState,
+                        scaffoldPadding = innerPadding,
                         onSave = onSave,
                         onCancel = onNavigateBack,
                     )
@@ -265,6 +278,7 @@ fun EditBookScreen(
 @Composable
 private fun EditBookForm(
     state: EditBookUiState.Ready,
+    scaffoldPadding: PaddingValues,
     onSave: (
         title: String,
         releaseYear: Int?,
@@ -314,6 +328,11 @@ private fun EditBookForm(
                 Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
+                    // Inside the scroll, so the form passes under the top app bar. Horizontal bars
+                    // only: the bottom inset is the pinned action bar's to handle, and adding it
+                    // here would open a navigation-bar-sized gap above a bar that is already there.
+                    .padding(top = scaffoldPadding.calculateTopPadding())
+                    .padding(barPadding(WindowInsetsSides.Horizontal))
                     .padding(16.dp)
                     .testTag(TestTags.EditBook.FORM),
             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -609,9 +628,14 @@ private fun EditBookBottomBar(
 ) {
     Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Row(
+            // A pinned control behind the navigation bar is the same bug as a pinned control
+            // behind the keyboard (#95), so this bar takes the bottom and horizontal insets as
+            // real padding. The Surface itself still spans to the window edge, so its elevated
+            // background fills the bar area rather than leaving a strip of list showing under it.
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .padding(barPadding(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
