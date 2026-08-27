@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Lists now scroll under the status and navigation bars instead of stopping dead at them.** Android already draws this app edge to edge — that is not something an app on a recent version opts into — but the app was laid out as though it did not, so every screen ended in a blank strip above the navigation bar and began at a hard edge below the status bar. Content now fills the screen and passes behind the bars, while the first and last rows still clear them, so nothing is ever hidden underneath one. Anything pinned — the add button, the Save and Cancel pair on the edit-book form, the search field above the library — keeps real space of its own, because a button behind the navigation bar is exactly as unreachable as a button behind the keyboard. Three screens deliberately kept the old arrangement and are not a gap: film detail has nothing that scrolls, add-book's search results are a rounded card whose corners the bar would clip, and the reading-session dialogs are separate windows that have no business drawing under anything.
+
 ### Fixed
 
 - **The add button is no longer stranded behind the keyboard.** Searching your library brought up the keyboard on top of the "Add to library" button, so the only way to add something while a search was open was to dismiss the keyboard first. Measured on a device: the button sat at the very bottom of the screen, inside the keyboard's area, and now lifts above it.

@@ -157,6 +157,10 @@ fun MovieDetailScreen(
         },
     ) { innerPadding ->
         Column(
+            // The one screen with no scrolling container at all, so #99's padding move does not
+            // apply: there is nothing here that could scroll under a bar, and moving the inset
+            // inside a Column that does not scroll would simply put the last row under the
+            // navigation bar with no way to reach it.
             modifier =
                 Modifier
                     .fillMaxSize()

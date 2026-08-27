@@ -216,6 +216,11 @@ fun AddBookScreen(
         },
     ) { innerPadding ->
         Column(
+            // Real padding, and deliberately not the contentPadding treatment #99 gave the other
+            // screens. Nothing here is a full-bleed list: the bottom-most thing on the search tab
+            // is a rounded, tinted results card, and a card drawing under the navigation bar is
+            // its corners being clipped by the bar rather than content flowing past it. The IME
+            // half from #95 is what this screen actually needs, and it keeps it.
             modifier =
                 Modifier
                     .fillMaxSize()
