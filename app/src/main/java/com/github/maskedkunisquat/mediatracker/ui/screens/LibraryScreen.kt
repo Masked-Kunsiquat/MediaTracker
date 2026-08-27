@@ -5,12 +5,14 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
@@ -68,6 +70,9 @@ import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.insets.barPaddingBelowContent
+import com.github.maskedkunisquat.mediatracker.ui.insets.exceptBottom
+import com.github.maskedkunisquat.mediatracker.ui.insets.plus
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -267,11 +272,20 @@ fun LibraryScreen(
             )
         }
         Box(
+            // Three insets, three different homes, because this screen is part pinned and part
+            // scrolling:
+            //   - the keyboard shrinks the viewport, as ever (imePadding, outside everything);
+            //   - the top app bar and the horizontal cutout are real padding here, because the
+            //     search field and filter row below are pinned and must clear them;
+            //   - the navigation bar is *not* applied here. It belongs to the media list as
+            //     contentPadding, so cards scroll under the bar instead of stopping above it.
+            //     Applying it here is what would put the list back on top of the bar.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding),
+                    .imePadding()
+                    .consumeWindowInsets(innerPadding)
+                    .padding(innerPadding.exceptBottom()),
         ) {
             if (uiState.isEmpty) {
                 // Empty state
@@ -327,9 +341,13 @@ fun LibraryScreen(
                         LazyColumn(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth()
-                                    .padding(8.dp)
+                                    .fillMaxSize()
                                     .testTag(TestTags.Library.MEDIA_LIST),
+                            // barPaddingBelowContent rather than barPaddingForScrollingContent:
+                            // the Box above already applied the horizontal inset once, for the
+                            // pinned search field, and applying it again would indent the cards
+                            // twice as far as the field above them.
+                            contentPadding = PaddingValues(8.dp).plus(barPaddingBelowContent()),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(
