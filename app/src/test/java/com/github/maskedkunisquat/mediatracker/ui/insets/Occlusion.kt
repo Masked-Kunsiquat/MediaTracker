@@ -142,6 +142,25 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
  * fails a screen for keeping real padding -- film detail has no scrolling container and add book's
  * results are a rounded card, and both are correct as they are. The rule is only that nothing ends
  * up underneath, which holds under either strategy and stays true if a screen changes its mind.
+ *
+ * ### Which screens have no navigation bar test, and why
+ *
+ * Four have one: the library, the changelog, edit book and settings. Every other screen #99 touched
+ * was tried and then deleted, because the rule could not fail there and a green no-op is worse than
+ * an absence. Listed so the gap is a decision on record rather than something to be rediscovered
+ * and "fixed" by adding a test back:
+ *
+ * - **Add book, add film, add show, edit film.** Their forms do not reach the bottom of the display
+ *   without a keyboard, so no control is ever near the bar. The keyboard is the inset that squeezes
+ *   these screens and each is falsified against it.
+ * - **Stats, the log viewer.** Neither has a single interactive node inside its scroller -- only
+ *   top-bar buttons -- and this rule measures interactive nodes. What #99 risks on those two is a
+ *   last card clipped by the bar, which is visual, and belongs to #96 Phase B.
+ * - **Book detail.** Same reason on the Details tab, whose bottom rows are plain metadata. Its
+ *   Reading history tab *would* qualify, since session rows carry edit and delete buttons at the
+ *   foot of a scroll, but which tab is showing is `remember`ed inside `BookDetailContent` rather
+ *   than hoisted, so reaching it needs a click and this harness measures rather than drives. That
+ *   one is a real gap, not an exemption.
  */
 fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheNavigationBar(
     expectedTags: List<String> = emptyList(),
