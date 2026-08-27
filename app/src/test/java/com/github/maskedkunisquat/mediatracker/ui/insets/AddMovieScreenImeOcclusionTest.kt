@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreen
 import com.hub.media.ui.AddMovieUiState
 import org.junit.Rule
@@ -35,7 +36,14 @@ class AddMovieScreenImeOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theFormStaysReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard {
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+            // Named here rather than centrally so a dropped tag fails the screen that owns it.
+            expectedTags =
+                listOf(
+                    TestTags.AddMovie.FORM,
+                    TestTags.AddMovie.SAVE_BUTTON,
+                ),
+        ) {
             AddMovieScreen(
                 uiState = AddMovieUiState.Idle,
                 onSave = { _, _, _, _, _ -> },

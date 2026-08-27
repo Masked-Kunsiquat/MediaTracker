@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddTVShowScreen
 import com.hub.media.ui.AddTVShowUiState
 import com.hub.media.ui.SeasonRow
@@ -32,7 +33,14 @@ class AddTVShowScreenImeOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theFormAndSeasonRowsStayReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard {
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+            // Named here rather than centrally so a dropped tag fails the screen that owns it.
+            expectedTags =
+                listOf(
+                    TestTags.AddTVShow.FORM,
+                    TestTags.AddTVShow.SAVE_BUTTON,
+                ),
+        ) {
             AddTVShowScreen(
                 uiState =
                     AddTVShowUiState(

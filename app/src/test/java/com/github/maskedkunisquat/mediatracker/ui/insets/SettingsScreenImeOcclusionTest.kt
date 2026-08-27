@@ -2,6 +2,7 @@ package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreen
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.ui.BackfillUiState
@@ -32,7 +33,14 @@ class SettingsScreenImeOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theSettingsListStaysReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard {
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+            // Named here rather than centrally so a dropped tag fails the screen that owns it.
+            expectedTags =
+                listOf(
+                    TestTags.Settings.LIST,
+                    TestTags.Settings.API_KEY_FIELD,
+                ),
+        ) {
             SettingsScreen(
                 uiState = SettingsUiState(),
                 onWeekStartDayChange = {},

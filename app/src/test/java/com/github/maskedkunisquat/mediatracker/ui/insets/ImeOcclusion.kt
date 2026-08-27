@@ -10,6 +10,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.WindowInsets
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.performSemanticsAction
@@ -93,7 +94,10 @@ object ImeOcclusion {
  * using this harness has been checked that way — strip the screen's inset handling, watch its test
  * fail, restore — and must stay that way.
  */
-fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(content: @Composable () -> Unit) {
+fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+    expectedTags: List<String> = emptyList(),
+    content: @Composable () -> Unit,
+) {
     val keyboardPx = with(density) { ImeOcclusion.KeyboardHeight.roundToPx() }
     setContent {
         val imeInsets =
@@ -119,6 +123,7 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(content: @
         filter { it.boundsInRoot.bottom > keyboardTopEdge + ImeOcclusion.TOLERANCE_PX }
 
     assertTheScreenCouldHaveFailed(keyboardTopEdge)
+    assertTheseTagsExist(expectedTags)
 
     // Controls at a fixed position: a FAB, a bottom bar, a search field above a list. If one of
     // these is below the keyboard line it is simply unreachable, which is the PR #95 bug.
@@ -165,6 +170,32 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(content: @
         },
         occluded.isEmpty(),
     )
+}
+
+/**
+ * Fails if a screen has lost a `testTag` it is supposed to carry.
+ *
+ * This exists because a tag that quietly disappears is invisible to everything else. The tags in
+ * PR #103 were applied to seven screens and two of them were reverted before the commit landed by a
+ * stray `git checkout` during an unrelated experiment — and every test stayed green, on the JVM and
+ * on a device, because nothing anywhere asserted a tag was present. The registry's whole promise is
+ * a handle that survives refactoring, and until this ran that promise rested on nobody making a
+ * mistake.
+ *
+ * Cheap to keep true: each screen's test names the tags that screen owns, so a dropped tag fails
+ * the screen it belongs to rather than some distant aggregate.
+ */
+private fun ComposeContentTestRule.assertTheseTagsExist(expectedTags: List<String>) {
+    expectedTags.forEach { tag ->
+        onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().ifEmpty {
+            throw AssertionError(
+                "This screen no longer carries the test tag \"$tag\". Either it was dropped in a " +
+                    "refactor -- in which case anything driving that handle on a device is now " +
+                    "silently matching nothing -- or the constant outlived the control and should " +
+                    "be deleted from TestTags.",
+            )
+        }
+    }
 }
 
 /**
@@ -257,24 +288,6 @@ private const val SCROLL_ATTEMPTS = 25
 private val isAScrollingContainer =
     SemanticsMatcher("is a scrolling container") { it.scrolls() }
 
-/**
- * The first piece of visible text anywhere inside this node.
- *
- * A scrolling viewport carries no text or content description of its own, so on its own it reports
- * as an unlabelled node id — which tells whoever reads the failure nothing about *which* list on
- * the screen is the problem. Naming something it contains is enough to locate it.
- */
-private fun SemanticsNode.firstTextInside(): String =
-    generateSequence(listOf(this)) { level -> level.flatMap { it.children }.ifEmpty { null } }
-        .flatten()
-        .firstNotNullOfOrNull {
-            it.config
-                .getOrNull(SemanticsProperties.Text)
-                ?.firstOrNull()
-                ?.text
-        }
-        ?: "no text"
-
 private fun SemanticsNode.scrolls(): Boolean =
     config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null ||
         config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null
@@ -292,9 +305,10 @@ private fun SemanticsNode.isInsideAScrollingContainer(): Boolean =
 /**
  * A human-readable handle for a failure message.
  *
- * Prefers a `testTag` (see `TestTags`), which is why the tags exist: a scrolling container has no
- * text and no content description of its own, so before they were applied a stranded list reported
- * as `unlabelled node #91` and left the reader to work out which list on the screen that was.
+ * Prefers a `testTag` (see `TestTags`). Note this is no longer why the container tags exist: since
+ * the rule became scroll-to-end, only nodes with a click or set-text action are ever described, so
+ * a viewport is never named here and cannot report as an unlabelled node. The container tags earn
+ * their place in a `uiautomator` dump instead, which is a device concern rather than this one.
  *
  * Falls through to content description and visible text for everything else, deliberately. Only the
  * controls a test or a device check actually drives are tagged — a status chip that reports as

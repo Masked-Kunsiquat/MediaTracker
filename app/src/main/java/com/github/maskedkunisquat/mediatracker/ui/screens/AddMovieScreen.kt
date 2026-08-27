@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddMovieViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
@@ -175,7 +177,8 @@ fun AddMovieScreen(
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding)
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    .testTag(TestTags.AddMovie.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             OutlinedTextField(
@@ -278,7 +281,7 @@ fun AddMovieScreen(
                     )
                 },
                 enabled = canSave,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag(TestTags.AddMovie.SAVE_BUTTON),
             ) {
                 if (isSaving) {
                     CircularProgressIndicator(modifier = Modifier.padding(4.dp))

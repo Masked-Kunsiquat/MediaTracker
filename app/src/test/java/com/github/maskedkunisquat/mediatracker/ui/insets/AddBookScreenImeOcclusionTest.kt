@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreen
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
@@ -54,7 +55,15 @@ class AddBookScreenImeOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theSearchFieldAndClearButtonStayReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard {
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+            // Named here rather than centrally so a dropped tag fails the screen that
+            // owns it. ISBN_FIELD is on the other tab and is not composed by this fixture.
+            expectedTags =
+                listOf(
+                    TestTags.AddBook.SEARCH_FIELD,
+                    TestTags.AddBook.RESULTS,
+                ),
+        ) {
             AddBookScreen(
                 uiState = AddBookUiState.Idle,
                 searchQuery = "Hobbit",
