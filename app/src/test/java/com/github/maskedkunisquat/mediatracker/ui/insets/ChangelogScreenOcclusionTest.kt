@@ -5,7 +5,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreen
 import com.hub.media.features.changelog.parseChangelog
 import com.hub.media.ui.ChangelogUiState
-import com.hub.media.ui.entryKey
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,75 +47,42 @@ class ChangelogScreenOcclusionTest {
     }
 
     private companion object {
+        /**
+         * Enough versions to run past the bottom of the test display, left **collapsed**.
+         *
+         * Both halves of that matter, and the first draft of this fixture had neither. It held
+         * four versions with every entry expanded, which is longer but useless here: the harness
+         * measures interactive nodes, and with a version open the bottom-most thing on screen is
+         * body text, while the clickable headers sit well above it. Nothing measurable came near
+         * the navigation bar and the test passed with the padding deleted.
+         *
+         * Collapsed, every row is a clickable version header, so the last row is both at the
+         * bottom edge and something this rule can see.
+         */
+        const val VERSION_COUNT = 25
+
         val DOCUMENT =
             parseChangelog(
-                """
-                ## [0.20.0] - 2026-08-20
-
-                Fifth batch of polish work.
-
-                ### Added
-
-                - **A sync status indicator** — shows the current backup state at a glance on the
-                  settings screen, replacing a text-only summary most people never noticed.
-                - **Bulk episode marking** — mark a whole season watched or unwatched in one tap
-                  instead of ticking every episode by hand.
-                - a small tweak to the empty-library illustration
-
-                ### Fixed
-
-                - **Season overflow menu clipped on narrow phones** — the season header now
-                  truncates its title instead of pushing the menu button off-screen.
-
-                ## [0.19.0] - 2026-08-06
-
-                Fourth batch.
-
-                ### Added
-
-                - **Reading streak card** — shows the current consecutive-day streak on the stats
-                  screen, alongside the existing week/month totals.
-
-                ### Changed
-
-                - **Log viewer now opens scrolled to the newest entry** — matches a terminal's tail
-                  behaviour instead of dropping you at the oldest line every time.
-
-                ## [0.18.0] - 2026-07-20
-
-                Third batch.
-
-                ### Fixed
-
-                - **Cover re-fetch no longer duplicates files on disk** — the content hash is now
-                  checked before writing, matching the dedup rule every other cover write follows.
-                - a one-line dependency bump
-
-                ## [0.17.0] - 2026-07-01
-
-                Second batch.
-
-                ### Added
-
-                - **CSV export now includes purchase price** — previously silently dropped from the
-                  exported columns.
-                """.trimIndent(),
+                buildString {
+                    (VERSION_COUNT downTo 1).forEach { n ->
+                        appendLine("## [0.$n.0] - 2026-01-01")
+                        appendLine()
+                        appendLine("Batch $n.")
+                        appendLine()
+                        appendLine("### Fixed")
+                        appendLine()
+                        appendLine("- **Something was wrong and now is not** -- one entry is enough.")
+                        appendLine()
+                    }
+                },
             )
 
         val UI_STATE =
             ChangelogUiState(
                 document = DOCUMENT,
                 isLoading = false,
-                expandedVersions = DOCUMENT.versions.map { it.version }.toSet(),
-                expandedEntries =
-                    DOCUMENT.versions
-                        .flatMap { version ->
-                            version.sections.flatMap { section ->
-                                section.entries.mapIndexedNotNull { index, entry ->
-                                    if (entry.heading != null) entryKey(version.version, section.title, index) else null
-                                }
-                            }
-                        }.toSet(),
+                expandedVersions = emptySet(),
+                expandedEntries = emptySet(),
             )
     }
 }

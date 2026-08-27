@@ -29,6 +29,13 @@ import org.robolectric.RobolectricTestRunner
  * scrolls that container to its end before measuring, which is the highest position the save button
  * at the foot of the form can reach -- if it is still under the keyboard there, no scroll offset
  * retrieves it. Confirmed by deleting that argument and watching this fail.
+ *
+ * There is deliberately **no navigation bar test** on this screen. Its form does not reach the
+ * bottom of the display without a keyboard, so nothing measurable is ever near the bar: the rule
+ * was tried here and passed with `barPadding` returning zero, which makes it a green no-op of the
+ * kind AGENTS.md section 7 rejects. The keyboard is the inset that actually squeezes this screen,
+ * and the test above is falsified against it. If the form grows past the display, add it back --
+ * and prove it fails first.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddMovieScreenOcclusionTest {
@@ -38,20 +45,6 @@ class AddMovieScreenOcclusionTest {
     @Test
     fun withTheKeyboardUp_theFormStaysReachable() {
         composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
-    }
-
-    /**
-     * The navigation bar half, added with #99.
-     *
-     * Not redundant with the test above: this screen sends the keyboard outside the scroll via
-     * `imePadding()` but the bars inside it via `scrollingContentPadding` on the same `Column`'s
-     * `contentPadding` -- two different mechanisms reached through the same scroller. Getting one
-     * right says nothing about the other; deleting the bar half of that padding leaves the keyboard
-     * test above green and fails this one.
-     */
-    @Test
-    fun withTheNavigationBarShowing_theFormStaysReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
     }
 
     @Composable

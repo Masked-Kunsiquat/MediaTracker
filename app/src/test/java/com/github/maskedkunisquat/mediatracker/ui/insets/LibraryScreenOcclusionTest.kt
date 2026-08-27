@@ -36,30 +36,35 @@ class LibraryScreenOcclusionTest {
     }
 
     /**
-     * The navigation bar half, added with #99 -- protects the add-book FAB, the control PR #95
-     * actually stranded.
+     * The navigation bar half, added with #99: the media list's last card must clear the bar.
      *
-     * The FAB is positioned by `Scaffold`'s own `contentWindowInsets = WindowInsets.safeDrawing`,
-     * not by anything this screen's content `Box` does -- that `Box` explicitly excepts the bottom
-     * inset (see its own comment) and hands it to the media list's `contentPadding` instead, so a
-     * card scrolls under the bar rather than stopping above it. The FAB and the list's last card
-     * are therefore protected by two independent mechanisms sharing one screen: stripping
-     * `contentWindowInsets` strands the FAB without touching the list's own padding, and stripping
-     * the list's `barPadding` strands its last card without moving the FAB.
+     * A different mechanism from the test above, on the same screen. The FAB is placed by
+     * `Scaffold`'s own `contentWindowInsets`, and `Scaffold`'s *default* is already `systemBars` --
+     * so the FAB clears the navigation bar whatever this screen does, and a test aimed at it would
+     * assert nothing. What #99 actually put at risk here is the list: its `Box` deliberately
+     * excepts the bottom inset and hands it to `contentPadding`, so the last card is the thing that
+     * ends up under the bar if that hand-off is wrong.
+     *
+     * Which is why the fixture below carries [BOOK_COUNT] books rather than the two it started
+     * with. With two, the list did not reach the bottom of the screen, the last card was nowhere
+     * near the bar, and this test passed with the padding deleted -- a green no-op of exactly the
+     * kind AGENTS.md section 7 and this harness's own KDoc warn about. Caught by falsification,
+     * not by reading it.
      */
     @Test
-    fun withTheNavigationBarShowing_theAddButtonStaysReachable() {
+    fun withTheNavigationBarShowing_theLastCardStaysAboveIt() {
         composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
     }
 
     @Composable
     private fun Fixture() {
         LibraryScreen(
-            // A populated library rather than an empty one: the empty state has no list to
-            // push the FAB around, so it would pass whether or not the inset were handled.
+            // Enough books to overflow the screen, all matching the query, so the list is both
+            // filtered (the PR #95 scenario the keyboard test needs) and long enough to have a
+            // card at the bottom edge (what the navigation bar test needs).
             uiState =
                 LibraryUiState(
-                    media = listOf(book("id-a", "Alpha Title"), book("id-b", "Bravo Title")),
+                    media = List(BOOK_COUNT) { book("id-$it", "Alpha Title $it") },
                     searchQuery = "Alpha",
                 ),
             coverStorageDir = "unused",
@@ -92,6 +97,13 @@ class LibraryScreenOcclusionTest {
     )
 
     private companion object {
+        /**
+         * Enough cards to run past the bottom of the test display, so the list has something at
+         * the navigation bar to be wrong about. Comfortably more than needed rather than tuned to
+         * a screen height, which would make the test depend on the Robolectric device profile.
+         */
+        const val BOOK_COUNT = 20
+
         /** Named here rather than centrally so a dropped tag fails the screen that owns it. */
         val TAGS =
             listOf(

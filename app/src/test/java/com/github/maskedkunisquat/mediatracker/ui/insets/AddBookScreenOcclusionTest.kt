@@ -25,6 +25,13 @@ import org.robolectric.RobolectricTestRunner
  * measured with that list scrolled to its end -- the highest position its last row can reach, and
  * therefore the one that decides whether the row is reachable at all. Asserted alongside the search
  * field and clear button, which sit outside the list and cannot be scrolled anywhere.
+ *
+ * There is deliberately **no navigation bar test** on this screen. Its form does not reach the
+ * bottom of the display without a keyboard, so nothing measurable is ever near the bar: the rule
+ * was tried here and passed with `barPadding` returning zero, which makes it a green no-op of the
+ * kind AGENTS.md section 7 rejects. The keyboard is the inset that actually squeezes this screen,
+ * and the test above is falsified against it. If the form grows past the display, add it back --
+ * and prove it fails first.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddBookScreenOcclusionTest {
@@ -34,22 +41,6 @@ class AddBookScreenOcclusionTest {
     @Test
     fun withTheKeyboardUp_theSearchFieldAndClearButtonStayReachable() {
         composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
-    }
-
-    /**
-     * The navigation bar half, added with #99.
-     *
-     * This screen passes `WindowInsets.safeDrawing` as its `Scaffold`'s `contentWindowInsets` and
-     * applies the whole result as one real `padding()` around the form -- unlike the screens split
-     * between `imePadding()` and `scrollingContentPadding`, both insets travel the same route here.
-     * Still worth asserting on its own: this catches a regression to that shared path itself, and
-     * -- because the two insets are asserted one at a time (see [Occlusion]'s KDoc) -- a bug that
-     * only manifests at the bar's shallower height would not necessarily show up in the keyboard
-     * test above.
-     */
-    @Test
-    fun withTheNavigationBarShowing_theResultsListStaysReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
     }
 
     @Composable
