@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +44,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddTVShowViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.insets.barPaddingForScrollingContent
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.features.tv.data.TVMetadataValidation
 import com.hub.media.ui.AddTVShowUiState
@@ -171,10 +173,14 @@ fun AddTVShowScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    // Keyboard outside the scroll, bars inside it -- see
+                    // barPaddingForScrollingContent for why those two insets part company here.
+                    .imePadding()
                     .consumeWindowInsets(innerPadding)
-                    .padding(16.dp)
                     .verticalScroll(rememberScrollState())
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .padding(barPaddingForScrollingContent())
+                    .padding(16.dp)
                     .testTag(TestTags.AddTVShow.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

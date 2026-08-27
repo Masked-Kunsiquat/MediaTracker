@@ -1,8 +1,15 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
@@ -22,6 +29,37 @@ import androidx.compose.ui.unit.dp
  * easy to get subtly wrong (`start` is not `left`), and a mistake produces a screen whose padding is
  * merely wrong rather than one that fails to compile.
  */
+
+/**
+ * The bar insets a scrolling container re-adds *inside* itself: horizontal and bottom, keyboard
+ * deliberately absent.
+ *
+ * The keyboard is the reason this is not simply `innerPadding`. A `Scaffold` given
+ * `contentWindowInsets = WindowInsets.safeDrawing` (PR #95) folds the IME into `innerPadding`
+ * alongside the bars, and once the padding moves inside the scroller those two want opposite
+ * treatment:
+ *
+ * - **Bars belong inside.** The navigation bar is translucent and content passing under it is the
+ *   whole point; the inset comes back as trailing space so the last row still clears it.
+ * - **The keyboard belongs outside**, as real padding that shrinks the viewport. A scroller whose
+ *   viewport extends behind the keyboard reports a field as on-screen while the keyboard covers it,
+ *   so focusing one scrolls it nowhere — which is PR #95's bug wearing a different hat, and one the
+ *   occlusion lane's scroll-to-end rule would not catch, because the field *is* reachable by
+ *   scrolling. It just isn't reached.
+ *
+ * So a form pairs this with `Modifier.imePadding()` on the container outside the scroll, and takes
+ * the top bar's height from `innerPadding.calculateTopPadding()` — the one part of `innerPadding`
+ * only the `Scaffold` knows.
+ *
+ * `systemBars ∪ displayCutout` is `safeDrawing` with the IME left out, by construction:
+ * `safeDrawing` is the union of exactly those three.
+ */
+@Composable
+fun barPaddingForScrollingContent(): PaddingValues =
+    WindowInsets.systemBars
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+        .asPaddingValues()
 
 /**
  * Sums two sets of padding side by side.
