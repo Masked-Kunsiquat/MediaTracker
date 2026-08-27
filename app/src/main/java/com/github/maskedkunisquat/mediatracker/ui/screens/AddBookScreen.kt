@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
@@ -343,7 +345,7 @@ private fun SearchTabContent(
                 label = { Text(stringResource(R.string.add_book_search_label)) },
                 placeholder = { Text(stringResource(R.string.add_book_search_placeholder, MIN_SEARCH_QUERY_LENGTH)) },
                 enabled = !isAddLoading,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag(TestTags.AddBook.SEARCH_FIELD),
                 singleLine = true,
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -408,7 +410,7 @@ private fun IsbnTabContent(
             placeholder = { Text(stringResource(R.string.add_book_isbn_placeholder)) },
             enabled = !isLoading,
             isError = isError,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag(TestTags.AddBook.ISBN_FIELD),
             singleLine = true,
         )
         if (isError) {
@@ -540,7 +542,8 @@ private fun SearchResultsSection(
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(8.dp),
-                            ).padding(4.dp),
+                            ).padding(4.dp)
+                            .testTag(TestTags.AddBook.RESULTS),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     itemsIndexed(

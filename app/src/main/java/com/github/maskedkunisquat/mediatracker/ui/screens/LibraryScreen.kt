@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
@@ -64,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.LibraryViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -216,7 +218,10 @@ fun LibraryScreen(
             // than a second FAB because the library is one list -- two permanent buttons would
             // imply two places to land.
             Box {
-                FloatingActionButton(onClick = { showAddMenu = true }) {
+                FloatingActionButton(
+                    onClick = { showAddMenu = true },
+                    modifier = Modifier.testTag(TestTags.Library.ADD_BUTTON),
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Add,
                         contentDescription = stringResource(R.string.add_media_content_description),
@@ -323,7 +328,8 @@ fun LibraryScreen(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(8.dp),
+                                    .padding(8.dp)
+                                    .testTag(TestTags.Library.MEDIA_LIST),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(
@@ -461,7 +467,8 @@ private fun LibrarySearchField(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag(TestTags.Library.SEARCH_FIELD),
         placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
         leadingIcon = {
             Icon(

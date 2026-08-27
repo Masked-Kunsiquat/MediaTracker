@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreen
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
@@ -32,7 +33,15 @@ class EditBookScreenImeOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theFormAndSaveCancelBarStayReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard {
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+            // Named here rather than centrally so a dropped tag fails the screen that owns it.
+            expectedTags =
+                listOf(
+                    TestTags.EditBook.FORM,
+                    TestTags.EditBook.SAVE_BUTTON,
+                    TestTags.EditBook.CANCEL_BUTTON,
+                ),
+        ) {
             EditBookScreen(
                 uiState =
                     EditBookUiState.Ready(

@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreen
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
@@ -47,7 +48,15 @@ class LibraryScreenImeOcclusionTest {
 
     @Test
     fun withTheKeyboardUp_theAddButtonAndSearchFieldStayReachable() {
-        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard {
+        composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(
+            // Named here rather than centrally so a dropped tag fails the screen that owns it.
+            expectedTags =
+                listOf(
+                    TestTags.Library.ADD_BUTTON,
+                    TestTags.Library.SEARCH_FIELD,
+                    TestTags.Library.MEDIA_LIST,
+                ),
+        ) {
             LibraryScreen(
                 // A populated library rather than an empty one: the empty state has no list to
                 // push the FAB around, so it would pass whether or not the inset were handled.

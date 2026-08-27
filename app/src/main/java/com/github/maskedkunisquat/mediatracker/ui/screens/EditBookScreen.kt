@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -56,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
@@ -312,7 +314,8 @@ private fun EditBookForm(
                 Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .testTag(TestTags.EditBook.FORM),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             FormSection(title = stringResource(R.string.edit_section_book_details)) {
@@ -615,14 +618,14 @@ private fun EditBookBottomBar(
             OutlinedButton(
                 onClick = onCancel,
                 enabled = !isSaving,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).testTag(TestTags.EditBook.CANCEL_BUTTON),
             ) {
                 Text(stringResource(R.string.cancel_button))
             }
             Button(
                 onClick = onSave,
                 enabled = canSave && !isSaving,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).testTag(TestTags.EditBook.SAVE_BUTTON),
             ) {
                 if (isSaving) {
                     CircularProgressIndicator(

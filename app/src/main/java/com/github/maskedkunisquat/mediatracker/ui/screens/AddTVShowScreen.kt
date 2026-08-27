@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddTVShowViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.features.tv.data.TVMetadataValidation
 import com.hub.media.ui.AddTVShowUiState
@@ -172,7 +174,8 @@ fun AddTVShowScreen(
                     .padding(innerPadding)
                     .consumeWindowInsets(innerPadding)
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    .testTag(TestTags.AddTVShow.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             OutlinedTextField(
@@ -279,7 +282,7 @@ fun AddTVShowScreen(
             Button(
                 onClick = onSave,
                 enabled = canSave,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag(TestTags.AddTVShow.SAVE_BUTTON),
             ) {
                 if (uiState.isSaving) {
                     CircularProgressIndicator(modifier = Modifier.padding(4.dp))
