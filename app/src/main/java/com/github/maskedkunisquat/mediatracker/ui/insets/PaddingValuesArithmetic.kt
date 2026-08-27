@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -7,6 +8,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
@@ -55,10 +58,18 @@ import androidx.compose.ui.unit.dp
  * list further than the field. A form above a pinned action bar wants `Horizontal` alone, because
  * the bottom inset is that bar's to handle.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun barPadding(sides: WindowInsetsSides): PaddingValues =
     WindowInsets.systemBars
         .union(WindowInsets.displayCutout)
+        // Only the part of the bar the keyboard is not already covering. Found on a device: with
+        // the keyboard up, Edit book's pinned Save/Cancel Surface had already been lifted clear by
+        // imePadding(), and this added the navigation bar's height on top of that -- a dead strip
+        // of elevated surface below the buttons, padding for a bar that was behind the keyboard.
+        // Subtracting gives the navigation bar's full height when the keyboard is down and zero
+        // when it is up, which is what each of those two situations actually needs.
+        .exclude(WindowInsets.ime)
         .only(sides)
         .asPaddingValues()
 
