@@ -139,8 +139,8 @@ fun EditMovieScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    // Keyboard outside the scroll, bars inside it -- see
-                    // barPaddingForScrollingContent for why those two insets part company here.
+                    // Keyboard outside the scroll, bars inside it -- see barPadding for why those
+                    // two insets part company here.
                     .imePadding()
                     .consumeWindowInsets(innerPadding)
                     .verticalScroll(rememberScrollState())

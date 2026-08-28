@@ -344,10 +344,10 @@ fun LibraryScreen(
                                 Modifier
                                     .fillMaxSize()
                                     .testTag(TestTags.Library.MEDIA_LIST),
-                            // barPaddingBelowContent rather than barPaddingForScrollingContent:
-                            // the Box above already applied the horizontal inset once, for the
-                            // pinned search field, and applying it again would indent the cards
-                            // twice as far as the field above them.
+                            // barPadding(Bottom) rather than scrollingContentPadding: the Box above
+                            // already applied the horizontal inset once, for the pinned search
+                            // field, and applying it again would indent the cards twice as far as
+                            // the field above them.
                             contentPadding = PaddingValues(8.dp).plus(barPadding(WindowInsetsSides.Bottom)),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {

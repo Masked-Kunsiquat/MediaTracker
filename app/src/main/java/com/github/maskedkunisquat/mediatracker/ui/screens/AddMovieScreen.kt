@@ -177,9 +177,9 @@ fun AddMovieScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    // The keyboard shrinks the viewport; the bars do not. See
-                    // barPaddingForScrollingContent -- a form whose viewport extends behind the
-                    // keyboard reports a focused field as on-screen while it is covered.
+                    // The keyboard shrinks the viewport; the bars do not. See barPadding -- a form
+                    // whose viewport extends behind the keyboard reports a focused field as
+                    // on-screen while it is covered.
                     .imePadding()
                     .consumeWindowInsets(innerPadding)
                     .verticalScroll(rememberScrollState())
