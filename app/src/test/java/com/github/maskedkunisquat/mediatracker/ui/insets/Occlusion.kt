@@ -145,10 +145,10 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
  *
  * ### Which screens have no navigation bar test, and why
  *
- * Four have one: the library, the changelog, edit book and settings. Every other screen #99 touched
- * was tried and then deleted, because the rule could not fail there and a green no-op is worse than
- * an absence. Listed so the gap is a decision on record rather than something to be rediscovered
- * and "fixed" by adding a test back:
+ * Five have one: the library, the changelog, edit book, settings and TV show detail. Every other
+ * screen #99 touched was tried and then deleted, because the rule could not fail there and a green
+ * no-op is worse than an absence. Listed so the gap is a decision on record rather than something
+ * to be rediscovered and "fixed" by adding a test back:
  *
  * - **Add book, add film, add show, edit film.** Their forms do not reach the bottom of the display
  *   without a keyboard, so no control is ever near the bar. The keyboard is the inset that squeezes

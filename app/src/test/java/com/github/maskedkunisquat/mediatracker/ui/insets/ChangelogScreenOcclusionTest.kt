@@ -16,15 +16,13 @@ import org.robolectric.RobolectricTestRunner
  * No keyboard counterpart: this screen has no text field, so an IME rule would render the identical
  * layout and assert nothing beyond what this test already does.
  *
- * Four versions, parsed with the same [parseChangelog] the screen itself uses on `CHANGELOG.md`
- * (mirroring [ChangelogScreenTest]'s own fixture) rather than a hand-built [ChangelogUiState], so
- * this exercises the real section/entry shape. Every version is expanded and every folded
- * (`**bold**`-led) entry within them is too -- unlike [ChangelogScreenTest], which deliberately
- * keeps content collapsed to assert the fold itself, this needs the opposite: content long enough
- * to reach the bottom of the screen, which a collapsed version card does not do. Each version's
- * `ExpanderRow` and each entry's `ExpanderRow` are genuinely clickable, so -- unlike
- * [StatsScreenOcclusionTest]/[LogViewerScreenOcclusionTest] -- this screen has real controls near
- * the bottom of the list for the bar to strand.
+ * Twenty-five versions, parsed with the same [parseChangelog] the screen itself uses on
+ * `CHANGELOG.md` (mirroring [ChangelogScreenTest]'s own fixture) rather than a hand-built
+ * [ChangelogUiState], so this exercises the real section/entry shape. Every one of them is left
+ * **collapsed**, which is the opposite of what this fixture started as -- see the note on
+ * `VERSION_COUNT` for why the expanded version of it asserted nothing at all. Collapsed, every row
+ * on screen is a clickable version `ExpanderRow`, so the bottom of this list is something the rule
+ * can measure and the bar can strand.
  */
 @RunWith(RobolectricTestRunner::class)
 class ChangelogScreenOcclusionTest {
