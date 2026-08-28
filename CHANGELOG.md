@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-28
+
+The app now fills the screen. Android has drawn applications edge to edge for several versions —
+it is not something an app on a recent release opts into — but this one was laid out as though it
+did not, so every list ended in a blank strip above the navigation bar and began at a hard edge
+below the status bar. Content now runs the full height of the display and passes behind the bars,
+while the first and last rows still clear them, so nothing ends up hidden underneath one.
+
+Anything pinned keeps real space of its own: the add button, the Save and Cancel pair on the
+edit-book form, the search field above the library. A button behind the navigation bar is exactly
+as unreachable as a button behind the keyboard, which is the other half of what this release
+fixes. Searching the library used to bring the keyboard up on top of the "Add to library" button,
+so the only way to add something with a search already open was to dismiss the keyboard first.
+Every form now tells the system that the keyboard is part of the space it has to lay out around —
+nothing was visibly broken on the test device, whose system happened to resize the window and
+paper over it, but a device that reports the keyboard differently would have put fields
+underneath it.
+
+Three screens deliberately keep the older arrangement, and none of them is an oversight: film
+detail has nothing that scrolls, the add-book search results sit in a rounded card whose corners a
+bar would clip, and the reading-session dialogs are separate windows with no business drawing
+under anything.
+
 ### Changed
 
 - **Lists now scroll under the status and navigation bars instead of stopping dead at them.** Android already draws this app edge to edge — that is not something an app on a recent version opts into — but the app was laid out as though it did not, so every screen ended in a blank strip above the navigation bar and began at a hard edge below the status bar. Content now fills the screen and passes behind the bars, while the first and last rows still clear them, so nothing is ever hidden underneath one. Anything pinned — the add button, the Save and Cancel pair on the edit-book form, the search field above the library — keeps real space of its own, because a button behind the navigation bar is exactly as unreachable as a button behind the keyboard. Three screens deliberately kept the old arrangement and are not a gap: film detail has nothing that scrolls, add-book's search results are a rounded card whose corners the bar would clip, and the reading-session dialogs are separate windows that have no business drawing under anything.
@@ -18,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
-- **The occlusion lane now asks about the navigation bar, not just the keyboard** (#99). Drawing behind the bars sends the two insets down different routes through every screen — the keyboard stays outside a scroller as real padding, the bars go inside it as `contentPadding` — so a screen can get one right while getting the other wrong, and a lane that only ever reported an IME inset could not tell. The harness now reports either inset through one shared body, and the failure message names which. Every new assertion was proved by breaking the code rather than by passing: return zero from `barPadding` and watch that screen's test fail. That sweep is also why there are fewer tests here than there might have been. Seven of the nine first written did not fail — two screens have no interactive node inside their scroller at all, so nothing measurable can ever be under the bar; four are forms that do not reach the bottom of the display without a keyboard; two had fixtures too thin to reach the bar and were fixed rather than deleted. The ones that could not fail are gone, and `Occlusion.kt` lists which screens have a navigation-bar guard, which are exempt, and which is a genuine gap (book detail's Reading history tab, whose selected tab is not hoisted and so cannot be reached without driving a click).
+- **The occlusion lane now asks about the navigation bar, not just the keyboard** (#99). Drawing behind the bars sends the two insets down different routes through every screen — the keyboard stays outside a scroller as real padding, the bars go inside it as `contentPadding` — so a screen can get one right while getting the other wrong, and a lane that only ever reported an IME inset could not tell. The harness now reports either inset through one shared body, and the failure message names which. Every new assertion was proved by breaking the code rather than by passing: return zero from `barPadding` and watch that screen's test fail. That sweep is also why there are fewer tests here than there might have been. Seven of the nine first written did not fail — two screens have no interactive node inside their scroller at all, so nothing measurable can ever be under the bar; four are forms that do not reach the bottom of the display without a keyboard; two had fixtures too thin to reach the bar and were fixed rather than deleted. The ones that could not fail are gone, and `Occlusion.kt` lists which screens have a navigation-bar guard and which are exempt, with the reason in each case. Book detail's Reading history tab was recorded there as a genuine gap and turned out not to be one: reaching it needs a click, driving that click works, and the test is still a no-op on arrival, because `SessionEventCard` puts its edit and delete buttons in the card's first row with the progress and notes lines beneath them — so the bottom-most control on that list is never the bottom-most thing on it, and it clears the bar whatever the padding does. Measured rather than argued, and the measurement is in the KDoc so the idea is not retried.
 
 - **Controls that tests and device checks drive now have stable handles** (#96). Driving a control on a device meant dumping the view hierarchy and matching on its visible text, which breaks the moment a label is reworded and tempts guessing coordinates from a screenshot instead — that has already caused one mis-tap into the wrong screen. `testTagsAsResourceId` is now on at the composition root and the controls worth naming carry tags from a single registry, so they appear as `resource-id` in a `uiautomator` dump. Not every node is tagged, deliberately: a semantic matcher asserts something a user can perceive, while a tag only asserts that the same string was written twice, so tags are reserved for handles a matcher cannot reach cheaply and for nodes with no perceivable identity — every scrolling container, which is why an occlusion failure could previously name only `unlabelled node #91` and now names the list.
 
