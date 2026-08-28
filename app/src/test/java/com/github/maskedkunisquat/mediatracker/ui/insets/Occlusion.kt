@@ -156,11 +156,22 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
  * - **Stats, the log viewer.** Neither has a single interactive node inside its scroller -- only
  *   top-bar buttons -- and this rule measures interactive nodes. What #99 risks on those two is a
  *   last card clipped by the bar, which is visual, and belongs to #96 Phase B.
- * - **Book detail.** Same reason on the Details tab, whose bottom rows are plain metadata. Its
- *   Reading history tab *would* qualify, since session rows carry edit and delete buttons at the
- *   foot of a scroll, but which tab is showing is `remember`ed inside `BookDetailContent` rather
- *   than hoisted, so reaching it needs a click and this harness measures rather than drives. That
- *   one is a real gap, not an exemption.
+ * - **Book detail, both tabs.** The Details tab for the reason above: its bottom rows are plain
+ *   metadata. The Reading history tab *looks* like it qualifies -- session rows carry edit and
+ *   delete buttons at the foot of a scroll -- and it does not, for a reason worth recording because
+ *   it is invisible from the call site. `SessionEventCard` puts those two `IconButton`s in the
+ *   card's *first* row, above the progress, duration and notes lines, so roughly 120dp of card
+ *   always sits beneath them. The bottom-most interactive node on that list is therefore never the
+ *   bottom-most *node*, and it clears a navigation bar whatever the padding does. Measured, with
+ *   `ReadingHistoryTab`'s `barPadding` deliberately deleted and the list scrolled to its end: the
+ *   deepest control lands at y=2373px against a bar line at y=2529px. The test passes on broken
+ *   code, which is the definition of the no-op this lane deletes.
+ *
+ *   Reaching that tab at all needs a click, since `selectedTabIndex` is `remember`ed inside
+ *   `BookDetailContent`. Do not add a driving seam to this harness to get there: it was tried,
+ *   the click lands correctly, and the fixture is a no-op on arrival. What #99 actually risks on
+ *   that tab is the last card clipped by the bar, which is visual and belongs to #96 Phase B --
+ *   the same disposition as Stats and the log viewer above.
  */
 fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheNavigationBar(
     expectedTags: List<String> = emptyList(),
