@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -40,6 +42,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
 import com.github.maskedkunisquat.mediatracker.ui.LogViewerViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
+import com.github.maskedkunisquat.mediatracker.ui.insets.exceptBottom
 import com.hub.media.core.storage.LogEntry
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.LogViewerUiState
@@ -167,10 +171,14 @@ fun LogViewerScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         Box(
+            // The direction hint and its divider below are pinned, so they take the top app bar
+            // and the horizontal cutout here; the log itself scrolls and re-adds the navigation
+            // bar inset inside its own scroll.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .consumeWindowInsets(innerPadding)
+                    .padding(innerPadding.exceptBottom()),
         ) {
             when {
                 uiState.isLoading && uiState.entries.isEmpty() -> {
@@ -213,6 +221,7 @@ fun LogViewerScreen(
                                     Modifier
                                         .fillMaxSize()
                                         .verticalScroll(scrollState)
+                                        .padding(barPadding(WindowInsetsSides.Bottom))
                                         .padding(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {

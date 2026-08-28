@@ -3,7 +3,9 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -53,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TVShowDetailViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.SeasonGroup
@@ -321,11 +324,10 @@ fun TVShowDetailScreen(
         // TVMetadataValidation.MAX_EPISODE_COUNT of them per season), and a Column would compose
         // every one of them on entry whether or not it is on screen.
         LazyColumn(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
+            modifier = Modifier.fillMaxSize().consumeWindowInsets(innerPadding),
+            // As contentPadding rather than padding(): the season list passes under the top app
+            // bar and the navigation bar, and its first and last rows still clear them.
+            contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (uiState) {

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -85,6 +86,7 @@ import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.util.LogLevel
@@ -1016,15 +1018,18 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
         Box(
+            // The keyboard shrinks the viewport, the bars do not: the list draws behind the bars
+            // and re-adds their space as contentPadding, while the API key field still has to end
+            // up above the IME.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .imePadding()
                     .consumeWindowInsets(innerPadding),
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag(TestTags.Settings.LIST),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 item {

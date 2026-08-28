@@ -2,10 +2,12 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddMovieViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
@@ -174,10 +177,15 @@ fun AddMovieScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    // The keyboard shrinks the viewport; the bars do not. See barPadding -- a form
+                    // whose viewport extends behind the keyboard reports a focused field as
+                    // on-screen while it is covered.
+                    .imePadding()
                     .consumeWindowInsets(innerPadding)
-                    .padding(16.dp)
                     .verticalScroll(rememberScrollState())
+                    // Inside the scroll, so the form passes under the top app bar and the
+                    // navigation bar instead of stopping dead at them.
+                    .padding(scrollingContentPadding(innerPadding, PaddingValues(16.dp)))
                     .testTag(TestTags.AddMovie.FORM),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
