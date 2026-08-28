@@ -16,10 +16,10 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.then
 import androidx.compose.ui.unit.dp
-import com.github.takahirom.roborazzi.RoborazziOptions
 import androidx.core.graphics.Insets
 import androidx.core.view.WindowInsetsCompat
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
 
@@ -200,6 +200,36 @@ fun ComposeContentTestRule.assertTagsExist(vararg tags: String) {
         )
     }
 }
+
+/**
+ * Asserts that each of [texts] is on screen, for use as a [captureGolden] pairing.
+ *
+ * The pairing for the screens that carry no `testTag` — Stats, the changelog and the detail
+ * screens. That is not a shortfall to be fixed by tagging them: AGENTS.md section 7 prefers a
+ * semantic matcher precisely because it asserts something a user can perceive, while a tag only
+ * asserts that the same string was written twice. A golden of the stats screen paired with "the
+ * words 'Books finished' are on it" is a better guard than one paired with `stats:card3`.
+ *
+ * Matches a substring rather than the whole node, so a label may gain surrounding text without
+ * failing — these assert that a screen still says what it is for, not that its copy is frozen.
+ */
+fun ComposeContentTestRule.assertTextIsShown(vararg texts: String) {
+    texts.forEach { text ->
+        assertTrue(
+            "This screen no longer shows \"$text\", so its golden is a picture of a screen that " +
+                "has lost a label the user reads. Either the copy changed -- in which case update " +
+                "this assertion deliberately -- or the section it belongs to stopped rendering.",
+            onAllNodes(hasTextContaining(text)).fetchSemanticsNodes().isNotEmpty(),
+        )
+    }
+}
+
+private fun hasTextContaining(substring: String) =
+    SemanticsMatcher("text contains '$substring'") { node ->
+        node.config.getOrNull(SemanticsProperties.Text).orEmpty().any {
+            it.text.contains(substring, ignoreCase = true)
+        }
+    }
 
 /**
  * The positive control: fails if the fixture would produce a golden of nothing much.

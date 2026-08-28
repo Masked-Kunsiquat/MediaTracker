@@ -340,8 +340,18 @@ jobs:
       # protect-main ruleset is updated to match, so it could fail with the PR still merging --
       # which is the exact hole this lane exists to close. Adding the task to a job that is already
       # required needs no ruleset change at all.
+      # `:app:verifyRoborazziDebug` rather than `:app:testDebugUnitTest`, and it is not an extra
+      # task: it *is* that task, run with Roborazzi's verify property set, so the app's unit tests
+      # execute exactly once and the screenshot goldens (#102) are compared against the committed
+      # PNGs in the same pass. Plain `testDebugUnitTest` still runs the golden tests' assertions but
+      # leaves Roborazzi in its no-op mode, comparing nothing -- which would look identical in the
+      # log and gate nothing at all.
+      #
+      # Verify never writes a PNG. Recording is `recordRoborazziDebug`, run by a human who then
+      # looks at the images (#102 rule 3) -- a CI job that can regenerate a golden is a golden that
+      # silently agrees with whatever the code now does.
       - name: Run unit tests
-        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:testDebugUnitTest
+        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:verifyRoborazziDebug
 
       # Catches what unit tests never can: a malformed res/xml rule, a broken manifest merge, a
       # missing string resource. Every one of those has happened in this repository.
@@ -351,6 +361,11 @@ jobs:
       # Only on failure -- a green run's reports are noise, but a red one is very hard to diagnose
       # from log output alone. This belongs to *this* job: it names the shared/ and app/ test-result
       # directories, which only exist where the tests actually ran. Both are listed because the gate
+      # The roborazzi/ directory is here for the same reason and matters more: a failed golden says
+      # only "<name>.png is changed" in the log, and the side-by-side compare image it points at is
+      # the entire content of the failure. Without this, a screenshot regression in CI is a message
+      # naming a file nobody can see.
+      #
       # now spans both modules -- and the app/ half matters most, since a Robolectric failure's
       # console line is a bare AssertionError with the message only in the XML. It spent a while attached to the lint job instead,
       # after that job was inserted directly above it, so a failing test run uploaded nothing at all
@@ -365,6 +380,7 @@ jobs:
             shared/build/test-results/
             app/build/reports/tests/
             app/build/test-results/
+            app/build/outputs/roborazzi/
           retention-days: 7
 
   compose-insets:
