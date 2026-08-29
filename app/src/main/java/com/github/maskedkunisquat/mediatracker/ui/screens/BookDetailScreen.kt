@@ -125,6 +125,8 @@ import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BookDetailUiState
 import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.filterIntegerInput
+import com.hub.media.ui.parseOptionalFiniteDouble
+import com.hub.media.ui.parseOptionalNumber
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
@@ -1573,25 +1575,32 @@ private fun PendingSessionDialog(
 
     val isPageMode = trackingMode == TrackingMode.PAGES
 
-    val parsedStartUnit = startUnitText.toDoubleOrNull()
-    val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
+    // parseOptionalFiniteDouble rather than a raw toDoubleOrNull plus a hand-written isFinite
+    // check (#78): an overflowing digit string parses to POSITIVE_INFINITY rather than failing, so
+    // "did it parse" is not the question. The shared parser folds that in, which is why the
+    // `isValid` lines below no longer restate it.
+    val parsedStartUnit = parseOptionalFiniteDouble(startUnitText)
+    val startUnitIsValid = parsedStartUnit?.value != null
     val startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid
 
-    val parsedEndUnit = endUnitText.toDoubleOrNull()
-    val endUnitIsValid = parsedEndUnit != null && parsedEndUnit.isFinite()
+    val parsedEndUnit = parseOptionalFiniteDouble(endUnitText)
+    val endUnitIsValid = parsedEndUnit?.value != null
     val endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid
 
     // Page-mode: deltaPages is fully determined by the positions the user already entered, so it
     // needs no separate manual input -- see ManualSessionDialog's KDoc.
     val derivedDeltaPages =
         if (isPageMode && startUnitIsValid && endUnitIsValid) {
-            (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
+            (parsedEndUnit.value!! - parsedStartUnit.value!!).roundToInt()
         } else {
             null
         }
 
-    val parsedDeltaPages = deltaPagesText.toIntOrNull()
-    val deltaPagesIsValid = deltaPagesText.isBlank() || parsedDeltaPages != null
+    // Blank stays distinct from unreadable here too: parseOptionalNumber returns a ParsedNumber
+    // whose value is null for a blank field (an omitted count, which is allowed) and null itself
+    // for text that does not parse -- so `deltaPagesIsValid` is simply "not unreadable".
+    val parsedDeltaPages = parseOptionalNumber(deltaPagesText, String::toIntOrNull)
+    val deltaPagesIsValid = parsedDeltaPages != null
     val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
 
     val canSave =
@@ -1633,9 +1642,9 @@ private fun PendingSessionDialog(
                 primaryEnabled = canSave,
                 onPrimary = {
                     onSave(
-                        parsedStartUnit ?: 0.0,
-                        parsedEndUnit ?: 0.0,
-                        if (isPageMode) derivedDeltaPages else parsedDeltaPages,
+                        parsedStartUnit?.value ?: 0.0,
+                        parsedEndUnit?.value ?: 0.0,
+                        if (isPageMode) derivedDeltaPages else parsedDeltaPages?.value,
                         notesText.ifBlank { null },
                     )
                 },
@@ -1956,11 +1965,14 @@ private fun ManualSessionDialog(
     // (`null` for both "blank" and "unparseable/overflowed"); `durationIsValid` disambiguates
     // those two `null` causes (and gates the Save button below); `validatedDurationMinutes` feeds
     // `effectiveDurationSeconds` below, which is the value that actually reaches [onSave].
-    val parsedDurationMinutes = durationText.toLongOrNull()
+    val parsedDurationMinutes = parseOptionalNumber(durationText, String::toLongOrNull)
+    // Read into a local rather than testing `parsedDurationMinutes.value` twice: it is a property
+    // of a class in another module, so Kotlin will not smart-cast it and the bound check below
+    // would not compile against the nullable type.
+    val validatedDurationMinutes = parsedDurationMinutes?.value
     val durationIsValid =
-        durationText.isBlank() ||
-            (parsedDurationMinutes != null && parsedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
-    val validatedDurationMinutes = if (durationText.isBlank()) null else parsedDurationMinutes
+        parsedDurationMinutes != null &&
+            (validatedDurationMinutes == null || validatedDurationMinutes <= MAX_MANUAL_DURATION_MINUTES)
 
     // The value that actually reaches [onSave] -- see the "Duration precision is preserved when
     // untouched" section of this function's KDoc. `durationText == prefilledDurationText` means
@@ -1977,25 +1989,32 @@ private fun ManualSessionDialog(
             validatedDurationMinutes?.let { it * 60 }
         }
 
-    val parsedStartUnit = startUnitText.toDoubleOrNull()
-    val startUnitIsValid = parsedStartUnit != null && parsedStartUnit.isFinite()
+    // parseOptionalFiniteDouble rather than a raw toDoubleOrNull plus a hand-written isFinite
+    // check (#78): an overflowing digit string parses to POSITIVE_INFINITY rather than failing, so
+    // "did it parse" is not the question. The shared parser folds that in, which is why the
+    // `isValid` lines below no longer restate it.
+    val parsedStartUnit = parseOptionalFiniteDouble(startUnitText)
+    val startUnitIsValid = parsedStartUnit?.value != null
     val startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid
 
-    val parsedEndUnit = endUnitText.toDoubleOrNull()
-    val endUnitIsValid = parsedEndUnit != null && parsedEndUnit.isFinite()
+    val parsedEndUnit = parseOptionalFiniteDouble(endUnitText)
+    val endUnitIsValid = parsedEndUnit?.value != null
     val endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid
 
     // Page-mode: deltaPages is fully determined by the positions already entered -- see the "Page
     // vs. percent mode" section of this function's KDoc.
     val derivedDeltaPages =
         if (isPageMode && startUnitIsValid && endUnitIsValid) {
-            (parsedEndUnit!! - parsedStartUnit!!).roundToInt()
+            (parsedEndUnit.value!! - parsedStartUnit.value!!).roundToInt()
         } else {
             null
         }
 
-    val parsedDeltaPages = deltaPagesText.toIntOrNull()
-    val deltaPagesIsValid = deltaPagesText.isBlank() || parsedDeltaPages != null
+    // Blank stays distinct from unreadable here too: parseOptionalNumber returns a ParsedNumber
+    // whose value is null for a blank field (an omitted count, which is allowed) and null itself
+    // for text that does not parse -- so `deltaPagesIsValid` is simply "not unreadable".
+    val parsedDeltaPages = parseOptionalNumber(deltaPagesText, String::toIntOrNull)
+    val deltaPagesIsValid = parsedDeltaPages != null
     val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
 
     val context = LocalContext.current
@@ -2086,9 +2105,9 @@ private fun ManualSessionDialog(
                             hour = timePickerState.hour,
                             minute = timePickerState.minute,
                         ),
-                        parsedStartUnit ?: 0.0,
-                        parsedEndUnit ?: 0.0,
-                        if (isPageMode) derivedDeltaPages else parsedDeltaPages,
+                        parsedStartUnit?.value ?: 0.0,
+                        parsedEndUnit?.value ?: 0.0,
+                        if (isPageMode) derivedDeltaPages else parsedDeltaPages?.value,
                         notesText.ifBlank { null },
                     )
                 },
