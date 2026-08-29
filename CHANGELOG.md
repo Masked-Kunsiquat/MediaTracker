@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **Ten screenshot goldens across eight canonical surfaces** (#102). The occlusion lane added in #96 catches anything that can be stated as a rule about where things are, and it stays the first choice, because an assertion needs no reviewer. What it cannot see is how a screen *looks*: a colour that goes wrong in dark mode, a control that keeps its size while its contents overflow it, spacing that collapses when the system font is set large. The edge-to-edge work in #99 changed how every screen relates to the system bars, which is exactly that kind of change, and nothing in the repository could have noticed if it had gone wrong. Ten images now cover the library (light, dark, and at double font size), settings, the changelog, stats, add book, edit book, film detail and TV show detail. Deliberately ten rather than the forty-five the app could produce — a change carrying ten pictures gets looked at, one carrying forty-five gets waved through, and a golden nobody looks at is not evidence of anything.
+
+  The images run on the same simulated device as the existing lane rather than a second one free to drift from it, which is why Roborazzi was chosen over the more common Paparazzi: Paparazzi has no real window, so the system-bar insets this app keeps getting wrong resolve to zero there and the bug class cannot be photographed at all.
+
+  Every screenshot is paired with an assertion that does not live in the picture — a control still carries its handle, or a screen still says the words it is for — and the pairing is a required argument, so a test that checks only its image does not compile. That is the guard against the predictable rot, where images get re-recorded by reflex until they agree with whatever the code now does. Recording stays a manual step whose output a person is expected to look at; CI only ever compares.
+
+  Two defects were found in the setup itself, both of which reported success. The first recording produced three byte-identical files for a screen's light, dark and large-font variants, because the tool's default draws a diagram of the layout tree rather than the screen — a lane structurally incapable of showing a colour mistake, reported as a clean run. The second, once real drawing was switched on, died inside the graphics stack because the test renderer was in a mode where images are never actually allocated.
+
 ## [0.16.0] - 2026-08-28
 
 The app now fills the screen. Android has drawn applications edge to edge for several versions —

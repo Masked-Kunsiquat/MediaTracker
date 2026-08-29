@@ -10,6 +10,12 @@ appcompat = "1.7.1"
 material = "1.14.0"
 ktlint = "14.2.0"
 robolectric = "4.15.1"
+# Screenshot goldens (#102). Runs on Robolectric rather than LayoutLib, which is the whole reason
+# it was chosen over Paparazzi: LayoutLib has no real Window and no WindowInsetsCompat dispatch, so
+# WindowInsets.safeDrawing resolves to zero there and the inset bugs this project keeps hitting
+# cannot be rendered at all. Roborazzi inherits app/src/test/resources/robolectric.properties --
+# the pinned SDK, the Pixel-class screen and the bare Application -- from the lane #96 built.
+roborazzi = "1.73.0"
 
 kotlin = "2.2.21"
 ksp = "2.2.21-2.0.4"
@@ -33,6 +39,9 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "roborazzi-junit-rule", version.ref = "roborazzi" }
 
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
@@ -76,3 +85,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 androidx-room = { id = "androidx.room", version.ref = "room" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
