@@ -122,11 +122,13 @@ shared/
  │    │    └── util/          <-- Result wrapper, id generation, Logger facility
  │    ├── features/
  │    │    ├── books/         <-- Timer, Reading Logs, ISBN Fetcher
+ │    │    ├── changelog/     <-- In-app changelog parsing
+ │    │    ├── media/         <-- Type-agnostic: search, delete, metadata rules every medium shares
  │    │    ├── portability/   <-- CSV export/import, .sqlite backup/restore, Goodreads import
  │    │    ├── settings/      <-- Typed access to the app_settings key-value store
  │    │    ├── stats/         <-- Analytics Queries & Aggregate Flow
- │    │    ├── movies/        <-- (planned, Task 13) Movie Logs, TMDB Client
- │    │    └── tv/            <-- (planned, Task 13) Season/Episode Progression
+ │    │    ├── movies/        <-- Movie Logs, TMDB Client
+ │    │    └── tv/            <-- Season/Episode Progression
  │    └── ui/                 <-- Shared ViewModels & UI Contracts, AppContainer (manual DI)
  ├── src/androidMain/, src/jvmMain/   <-- expect/actual platform implementations
  └── src/commonTest/, src/jvmTest/, src/androidUnitTest/   <-- see §7 for which goes where
@@ -144,7 +146,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 * **Coverage Requirements:**
   - Every Repository, UseCase, and Utility function MUST have accompanying unit tests.
   - Test edge cases: 0-page books, 0-second timers, missing API metadata fields, corrupt image byte arrays.
-* **Test Location:** Default to `shared/src/commonTest/kotlin/` — tests there run on *every* target. Use `shared/src/jvmTest/kotlin/` only when a test genuinely needs a JVM-only dependency (e.g. Room's `MigrationTestHelper`, or real file I/O against a live database file).
+* **Test Location:** Default to `shared/src/commonTest/kotlin/` — tests there run on *every* target. Use `shared/src/jvmTest/kotlin/` when a test needs a JVM-only dependency (Room's `MigrationTestHelper`, real file I/O against a live database file) **or touches Room at all**. `testAppDatabase()` is declared in `jvmTest` and is deliberately not visible from `commonTest`, so a Room-backed test written in the wrong source set is a compile error rather than a test that silently never runs (#81 §3). Before that split there were 19 hand-maintained `excludeTestsMatching(...)` entries doing the same job by memory, and they had drifted: two pure-Kotlin tests were being swept up by package-wide patterns, one of them documenting itself as running on every variant while it did not.
 * **Verification Command:** AI agents MUST run:
 
   ```bash
@@ -155,7 +157,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 
   **`:app:verifyRoborazziDebug` is the screenshot-golden gate (#102), named separately on purpose.** It does not run the suite a second time: it *is* `testDebugUnitTest` with Roborazzi's verify property set, so Gradle executes the tests once and compares the goldens in the same pass. Both are named because they are two different gates, and `:app:testDebugUnitTest` **on its own is assertion-only** — the golden tests' paired assertions run, but Roborazzi compares nothing, which looks identical in the log. If you run one task by hand while iterating, run the verify one.
 
-  **Do NOT use `./gradlew test` as the verification command.** It resolves to `:app:testDebugUnitTest` + `:shared:testDebugUnitTest` and does **not** include `:shared:jvmTest` — which is the authoritative run for the entire data layer. `shared/build.gradle.kts` excludes every Room-touching test (all DAO tests, repository tests, `MigrationTest`, backup/restore) from the `testDebugUnitTest`/`testReleaseUnitTest` variants, because those run on the host JVM against Android's stub `android.jar` with no Robolectric, where Room cannot obtain a real `Context`. Running only `./gradlew test` therefore passes while silently skipping the data layer entirely. (Robolectric now exists in `:app` — see the UI-test lanes below — but **not** in `:shared`, and adding it there would not help: `:shared:jvmTest` already runs the data layer against a real bundled SQLite driver, which is a better test than a shadowed one, so the exclusions stay.) Read that file's comment block before adding or moving a test.
+  **Do NOT use `./gradlew test` as the verification command.** It resolves to `:app:testDebugUnitTest` + `:shared:testDebugUnitTest` and does **not** include `:shared:jvmTest` — which is the authoritative run for the entire data layer. Every Room-touching test (all DAO tests, repository tests, `MigrationTest`, backup/restore) lives in `shared/src/jvmTest/` and therefore runs *only* there — those variants execute on the host JVM against Android's stub `android.jar` with no Robolectric, where Room cannot obtain a real `Context`. Running only `./gradlew test` therefore passes while silently skipping the data layer entirely. (Robolectric now exists in `:app` — see the UI-test lanes below — but **not** in `:shared`, and adding it there would not help: `:shared:jvmTest` already runs the data layer against a real bundled SQLite driver, which is a better test than a shadowed one.) Until #81 this was enforced by an exclusion list in `shared/build.gradle.kts` rather than by where the file sits; that list is gone, and the source set is the rule.
 * **Also build the app module when touching anything outside Kotlin source** — manifest entries, `res/xml/` rules, resources, Gradle config:
 
   ```bash

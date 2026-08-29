@@ -28,8 +28,7 @@ import kotlin.test.assertTrue
  * reached the database, not just an in-memory shortcut (persistence itself, independent of any
  * ViewModel, is covered directly by [com.hub.media.features.settings.data.WeekStartDayTest]).
  *
- * Room-backed, so this class is excluded from the android unit-test variant by exact class name in
- * shared/build.gradle.kts, same as [StatsViewModelTest]/[EditBookViewModelTest].
+ * Room-backed, so this class lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81), same as [StatsViewModelTest]/[EditBookViewModelTest].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {

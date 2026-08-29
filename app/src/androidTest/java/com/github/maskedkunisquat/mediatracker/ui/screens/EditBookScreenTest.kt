@@ -16,7 +16,7 @@ import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
-import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.domain.BookMetadataValidation
 import com.hub.media.ui.EditBookUiState
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -36,7 +36,7 @@ import org.junit.Test
  * into it -- [performTextInput] appends to whatever text is already there, so starting from blank
  * avoids the wrong value being asserted against a concatenation of seed and typed text.
  *
- * The out-of-range and unparseable release-year cases both use [BookRepository]'s own
+ * The out-of-range and unparseable release-year cases both use [BookMetadataValidation]'s own
  * `MIN_RELEASE_YEAR`/`MAX_RELEASE_YEAR` constants rather than hardcoded bounds, per
  * [EditBookForm]'s KDoc: client-side and repository-side validation read the same numbers, so this
  * test would fail to compile (not just fail) if the two drifted apart.
@@ -121,8 +121,8 @@ class EditBookScreenTest {
     fun releaseYearOutOfRange_disablesSave_andShowsInlineError() {
         setContent(uiState = readyState(title = "Dune", releaseYear = null))
 
-        // Below BookRepository.MIN_RELEASE_YEAR (1450) -- parses fine as an Int but fails the bound
-        // check, which is a different failure than "1999999999" below being unreadable at all.
+        // Below BookMetadataValidation.MIN_RELEASE_YEAR (1450) -- parses fine as an Int but fails
+        // the bound check, which is a different failure than "1999999999" below being unreadable at all.
         typeIntoField(R.string.edit_release_year_label, "1000")
 
         composeRule.onNode(saveButtonMatcher()).assertIsNotEnabled()
@@ -130,8 +130,8 @@ class EditBookScreenTest {
         val errorText =
             context.getString(
                 R.string.edit_release_year_invalid_error,
-                BookRepository.MIN_RELEASE_YEAR,
-                BookRepository.MAX_RELEASE_YEAR,
+                BookMetadataValidation.MIN_RELEASE_YEAR,
+                BookMetadataValidation.MAX_RELEASE_YEAR,
             )
         composeRule.onNodeWithText(errorText).assertIsDisplayed()
     }

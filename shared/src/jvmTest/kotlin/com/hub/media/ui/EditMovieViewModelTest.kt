@@ -21,8 +21,7 @@ import kotlin.test.assertTrue
 /**
  * [EditMovieViewModel] tests against a real in-memory [AppDatabase], mirroring
  * [EditBookViewModelTest]'s style (same `testAppDatabase()` builder, `Dispatchers.Main` set to an
- * eager test dispatcher via [ViewModelRegistry.installMain]). Room-backed, so excluded from the
- * android unit-test variant by exact class name in `shared/build.gradle.kts` — `:shared:jvmTest` is
+ * eager test dispatcher via [ViewModelRegistry.installMain]). Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) — `:shared:jvmTest` is
  * the authoritative gate.
  *
  * Focused on the one thing the form's own text-to-number conversion can get wrong in a way nothing

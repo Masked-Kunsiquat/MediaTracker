@@ -30,8 +30,7 @@ import kotlin.test.assertTrue
  * Integration test for [DefaultDatabaseBackupUseCase] against a **real, file-backed** [AppDatabase]
  * (unlike `ExportDataUseCaseTest`'s in-memory one) -- backup/restore is precisely the feature area
  * where an in-memory database can't prove anything, since the whole point is exercising real
- * on-disk WAL behavior. Lives in `com.hub.media.features.portability.domain`, already excluded from
- * the android unit-test variant by the package-wide filter in `shared/build.gradle.kts`
+ * on-disk WAL behavior. Lives in `com.hub.media.features.portability.domain`, in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81)
  * (`:shared:jvmTest` is the authoritative gate for this whole package).
  */
 class DatabaseBackupUseCaseTest {

@@ -55,8 +55,7 @@ import kotlin.time.Instant
  * [BookDetailViewModel] tests against a real in-memory [AppDatabase] (via `testAppDatabase()`,
  * same builder as [LibraryViewModelTest] and the DAO/repository tests), so the
  * `observeBookDetail`/`observeSessionsForMedia` -> `combine` -> `stateIn` wiring is exercised end
- * to end. Room-backed, so this class is excluded from the android unit-test variant by exact class
- * name in shared/build.gradle.kts, same as [LibraryViewModelTest] — `:shared:jvmTest` is the
+ * to end. Room-backed, so this class lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81), same as [LibraryViewModelTest] — `:shared:jvmTest` is the
  * authoritative gate.
  *
  * The timer's tick loop is not driven with virtual time here (unlike `ReadingTimerTest`, which

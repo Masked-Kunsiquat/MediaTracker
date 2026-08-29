@@ -33,8 +33,7 @@ import kotlin.time.Instant
  *    pairs, including a timezone edge case proving local-date (not UTC) bucketing is used;
  *  - [StatsRepository.thisWeekBounds]/[StatsRepository.thisMonthBounds]'s pure bound computation.
  *
- * Room-backed (real [AppDatabase]), so this class is excluded from the android unit-test variant
- * by the `com.hub.media.features.stats.*` package filter in shared/build.gradle.kts, same
+ * Room-backed (real [AppDatabase]), so this class lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81), same
  * reasoning as the books DAO/repository tests — `:shared:jvmTest` is the authoritative gate.
  */
 class StatsRepositoryTest {

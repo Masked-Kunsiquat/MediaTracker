@@ -67,7 +67,7 @@ import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
-import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.domain.BookMetadataValidation
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditBookUiState
 import com.hub.media.ui.EditBookViewModel
@@ -267,9 +267,9 @@ fun EditBookScreen(
  * [BookRepository.updateBookMetadata][com.hub.media.features.books.data.BookRepository.updateBookMetadata]
  * rejects for purchase price/total pages — can never be typed in the first place, same as the
  * position fields on [BookDetailScreen]'s session dialogs. The release-year bound is sourced from
- * [BookRepository.MIN_RELEASE_YEAR]/[BookRepository.MAX_RELEASE_YEAR] (the same constants the
- * repository itself validates against) rather than a second hardcoded copy, so client-side and
- * server-side validation can never drift apart. The purchase-price field gets a "$" [prefix] and
+ * [BookMetadataValidation.MIN_RELEASE_YEAR]/[BookMetadataValidation.MAX_RELEASE_YEAR] (the same
+ * constants the repository itself validates against) rather than a second hardcoded copy, so
+ * client-side and server-side validation can never drift apart. The purchase-price field gets a "$" [prefix] and
  * total pages a "pages" [suffix] (new this phase) so each reads as the unit it represents rather
  * than a bare number box; both keep their existing [KeyboardType.Decimal]/[KeyboardType.Number]
  * keyboards.
@@ -306,7 +306,8 @@ private fun EditBookForm(
         parsedReleaseYear != null &&
             (
                 validatedReleaseYear == null ||
-                    validatedReleaseYear in BookRepository.MIN_RELEASE_YEAR..BookRepository.MAX_RELEASE_YEAR
+                    validatedReleaseYear in
+                    BookMetadataValidation.MIN_RELEASE_YEAR..BookMetadataValidation.MAX_RELEASE_YEAR
             )
 
     val parsedPurchasePrice = parseOptionalNumber(purchasePriceText, String::toDoubleOrNull)
@@ -365,8 +366,8 @@ private fun EditBookForm(
                                 Text(
                                     stringResource(
                                         R.string.edit_release_year_invalid_error,
-                                        BookRepository.MIN_RELEASE_YEAR,
-                                        BookRepository.MAX_RELEASE_YEAR,
+                                        BookMetadataValidation.MIN_RELEASE_YEAR,
+                                        BookMetadataValidation.MAX_RELEASE_YEAR,
                                     ),
                                 )
                             }

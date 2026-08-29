@@ -28,8 +28,7 @@ import kotlin.test.assertTrue
 /**
  * [EditBookViewModel] tests against a real in-memory [AppDatabase], mirroring
  * [BookDetailViewModelTest]'s style (same `testAppDatabase()` builder, `Dispatchers.Main` set to
- * an eager test dispatcher via [ViewModelRegistry.installMain]). Room-backed, so excluded from the
- * android unit-test variant by exact class name in `shared/build.gradle.kts` —
+ * an eager test dispatcher via [ViewModelRegistry.installMain]). Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) —
  * `:shared:jvmTest` is the authoritative gate.
  */
 @OptIn(ExperimentalCoroutinesApi::class)

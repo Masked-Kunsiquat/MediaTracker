@@ -56,14 +56,17 @@ public data class ReadingTimerResult(
  * request/response style use cases: stateless, constructed per call or held only for their
  * dependencies, `execute(...)`-and-done. [ReadingTimer] is the opposite shape — a mutable,
  * long-lived object with its own internal ticking coroutine and externally-observed state — so it
- * gets its own subpackage rather than being squeezed into the use-case package. This also matters
- * mechanically: shared/build.gradle.kts excludes `com.hub.media.features.books.domain.*` from the
- * Android unit-test variant because those tests build a real Room `AppDatabase`, which needs an
- * `android.content.Context` unavailable there (see the comment on that exclusion block).
+ * gets its own subpackage rather than being squeezed into the use-case package.
+ *
  * [ReadingTimer] is pure common Kotlin with no Room and no Android API dependency at all, so its
- * tests are *not* excluded and must keep passing on both `:shared:jvmTest` and
- * `testDebugUnitTest`/`testReleaseUnitTest` — keeping it out of `features.books.domain` keeps it
- * off that wildcard exclusion instead of relying on a test being carved out by exact class name.
+ * tests belong in `commonTest` and must keep passing on both `:shared:jvmTest` and
+ * `testDebugUnitTest`/`testReleaseUnitTest`. Until #81 that was also a *mechanical* argument for
+ * the subpackage: `shared/build.gradle.kts` excluded `com.hub.media.features.books.domain.*` from
+ * the Android unit-test variant by wildcard, so a pure test sitting in that package would have been
+ * swept up and silently stopped running. That exclusion list is gone — Room-backed tests now live
+ * in `jvmTest` and are separated by source set rather than by package pattern — so the subpackage
+ * now rests on the design argument above alone. The requirement that these tests run on every
+ * variant is unchanged.
  *
  * ### Time-source design: wall-clock timestamps vs. tick-counted duration
  * Two independent time sources are used on purpose:

@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  * the real Open Library -> Google Books fallback chain and cover downloader run against a single
  * [MockEngine], and a real (in-memory) [AppDatabase] / temp-dir [LocalImageStorageManager] verify
  * the on-disk and on-database side effects. This is why the test lives in a Room-touching
- * package and is excluded from the android unit-test variant (see shared/build.gradle.kts) —
+ * package and lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) —
  * :shared:jvmTest is the authoritative gate, same as the DAO/repository tests.
  */
 class AddBookByIsbnUseCaseTest {

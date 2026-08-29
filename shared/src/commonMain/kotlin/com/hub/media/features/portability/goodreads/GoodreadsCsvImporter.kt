@@ -96,8 +96,8 @@ import kotlin.time.Instant
  * for a book Goodreads *did* record a year for.
  *
  * Business-rule bounds (title non-blank, pages `> 0`, release year in
- * [com.hub.media.features.books.data.BookRepository.MIN_RELEASE_YEAR]..
- * [com.hub.media.features.books.data.BookRepository.MAX_RELEASE_YEAR]) are delegated to
+ * [BookMetadataValidation.MIN_RELEASE_YEAR]..
+ * [BookMetadataValidation.MAX_RELEASE_YEAR]) are delegated to
  * [BookMetadataValidation] -- the exact same rules every other row source in this app is held to
  * (AGENTS.md §7 "reuse, don't fork"). A Goodreads row for a work older than that lower bound (an
  * ancient text, say) is rejected with a per-row reason like any other out-of-range year, not a
