@@ -148,12 +148,12 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 * **Verification Command:** AI agents MUST run:
 
   ```bash
-  ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:verifyRoborazziDebug
+  ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:testDebugUnitTest :app:verifyRoborazziDebug
   ```
 
-  `:app:verifyRoborazziDebug` is the Robolectric lane described below. It joined this gate in #96 and CI runs the same three tasks — if you add tests there without adding the task to both places, they exist without ever running, which is the shape of the problem #96 was opened about.
+  `:app:testDebugUnitTest` is the Robolectric lane described below. It joined this gate in #96 and CI runs the same four tasks — if you add tests there without adding the task to both places, they exist without ever running, which is the shape of the problem #96 was opened about.
 
-  **It is not an extra task on top of `:app:testDebugUnitTest`; it *is* that task**, run with Roborazzi's verify property set, so the app's unit tests execute exactly once and the screenshot goldens are compared in the same pass (#102). Running plain `:app:testDebugUnitTest` still executes the golden tests' paired assertions but leaves Roborazzi comparing nothing — identical output, one fewer gate.
+  **`:app:verifyRoborazziDebug` is the screenshot-golden gate (#102), named separately on purpose.** It does not run the suite a second time: it *is* `testDebugUnitTest` with Roborazzi's verify property set, so Gradle executes the tests once and compares the goldens in the same pass. Both are named because they are two different gates, and `:app:testDebugUnitTest` **on its own is assertion-only** — the golden tests' paired assertions run, but Roborazzi compares nothing, which looks identical in the log. If you run one task by hand while iterating, run the verify one.
 
   **Do NOT use `./gradlew test` as the verification command.** It resolves to `:app:testDebugUnitTest` + `:shared:testDebugUnitTest` and does **not** include `:shared:jvmTest` — which is the authoritative run for the entire data layer. `shared/build.gradle.kts` excludes every Room-touching test (all DAO tests, repository tests, `MigrationTest`, backup/restore) from the `testDebugUnitTest`/`testReleaseUnitTest` variants, because those run on the host JVM against Android's stub `android.jar` with no Robolectric, where Room cannot obtain a real `Context`. Running only `./gradlew test` therefore passes while silently skipping the data layer entirely. (Robolectric now exists in `:app` — see the UI-test lanes below — but **not** in `:shared`, and adding it there would not help: `:shared:jvmTest` already runs the data layer against a real bundled SQLite driver, which is a better test than a shadowed one, so the exclusions stay.) Read that file's comment block before adding or moving a test.
 * **Also build the app module when touching anything outside Kotlin source** — manifest entries, `res/xml/` rules, resources, Gradle config:
@@ -186,6 +186,8 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
 * **Compose screens are also covered by a gated Robolectric lane**, in `app/src/test/`, which runs on the host JVM and therefore *is* part of the verification command above:
 
   ```bash
+  # Assertion lane only. Use verifyRoborazziDebug instead if the lane's goldens matter to
+  # what you are changing -- this task leaves Roborazzi comparing nothing.
   ./gradlew :app:testDebugUnitTest
   ```
 

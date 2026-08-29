@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.kotlin.dsl.support.serviceOf
 import java.io.ByteArrayOutputStream
 
@@ -99,6 +100,28 @@ android {
             isIncludeAndroidResources = true
         }
     }
+}
+
+// Make the committed goldens an input of the unit-test task (#102).
+//
+// Without this the screenshot gate silently does not gate. Roborazzi reads
+// `src/test/screenshots/` at runtime, so Gradle knows nothing about those PNGs: replace one with a
+// completely different image, run `verifyRoborazziDebug`, and both it and `testDebugUnitTest`
+// report UP-TO-DATE and the build succeeds. Verified by doing exactly that -- a stats golden
+// overwritten with the library screenshot passed in 10 seconds, and failed only under
+// `--rerun-tasks`.
+//
+// That matters most in the place it is hardest to notice. CI restores a Gradle cache, so a PR whose
+// only change is a re-recorded golden is precisely the change that would find the task up to date
+// and verify nothing -- and re-recording by reflex is the failure mode #102 exists to prevent.
+//
+// Declared as an input rather than an output even though `recordRoborazziDebug` writes here: after a
+// recording the task is simply out of date and reruns, which is correct and cheap.
+tasks.withType<Test>().configureEach {
+    inputs
+        .dir(layout.projectDirectory.dir("src/test/screenshots"))
+        .withPropertyName("roborazziGoldens")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 /**

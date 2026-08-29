@@ -340,18 +340,20 @@ jobs:
       # protect-main ruleset is updated to match, so it could fail with the PR still merging --
       # which is the exact hole this lane exists to close. Adding the task to a job that is already
       # required needs no ruleset change at all.
-      # `:app:verifyRoborazziDebug` rather than `:app:testDebugUnitTest`, and it is not an extra
-      # task: it *is* that task, run with Roborazzi's verify property set, so the app's unit tests
-      # execute exactly once and the screenshot goldens (#102) are compared against the committed
-      # PNGs in the same pass. Plain `testDebugUnitTest` still runs the golden tests' assertions but
-      # leaves Roborazzi in its no-op mode, comparing nothing -- which would look identical in the
-      # log and gate nothing at all.
+      # Both app tasks are named, and they do not run the suite twice: `verifyRoborazziDebug` is
+      # `testDebugUnitTest` with Roborazzi's verify property set, so Gradle executes the tests once
+      # with the screenshot goldens (#102) compared in the same pass. Naming them separately keeps
+      # the two gates legible -- `testDebugUnitTest` is the assertion lane, `verifyRoborazziDebug`
+      # is the golden lane -- rather than hiding one inside the other's name.
+      #
+      # Order does not matter here, which was checked rather than assumed: with a golden
+      # deliberately replaced by a different screenshot, this command fails on it.
       #
       # Verify never writes a PNG. Recording is `recordRoborazziDebug`, run by a human who then
       # looks at the images (#102 rule 3) -- a CI job that can regenerate a golden is a golden that
       # silently agrees with whatever the code now does.
       - name: Run unit tests
-        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:verifyRoborazziDebug
+        run: ./gradlew :shared:jvmTest :shared:testDebugUnitTest :app:testDebugUnitTest :app:verifyRoborazziDebug
 
       # Catches what unit tests never can: a malformed res/xml rule, a broken manifest merge, a
       # missing string resource. Every one of those has happened in this repository.
