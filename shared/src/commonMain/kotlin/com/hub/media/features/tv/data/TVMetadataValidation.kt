@@ -1,6 +1,6 @@
 package com.hub.media.features.tv.data
 
-import com.hub.media.features.books.domain.BookMetadataValidation
+import com.hub.media.features.media.domain.MediaMetadataValidation
 
 /**
  * Pure TV-metadata validation (ROADMAP Task 13 Phase C). Same contract as
@@ -9,36 +9,32 @@ import com.hub.media.features.books.domain.BookMetadataValidation
  * on the first non-null.
  *
  * ### Two rules are delegated rather than copied
- * [validateTitle] and [validatePurchasePrice] forward to [BookMetadataValidation], exactly as
+ * [validateTitle] and [validatePurchasePrice] forward to [MediaMetadataValidation], exactly as
  * [com.hub.media.features.movies.data.MovieMetadataValidation] does. Those rules are
- * media-agnostic despite that object's name, and its price check in particular encodes a
- * non-obvious lesson -- rejecting non-finite values, because `NaN < 0.0` is `false` under IEEE 754
- * and `"Infinity"` typed into a form parses cleanly. Forking that would mean re-deriving it, and
- * getting it subtly wrong here is exactly how the two would drift.
+ * media-agnostic, and its price check in particular encodes a non-obvious lesson -- rejecting
+ * non-finite values, because `NaN < 0.0` is `false` under IEEE 754 and `"Infinity"` typed into a
+ * form parses cleanly. Forking that would mean re-deriving it, and getting it subtly wrong here is
+ * exactly how the two would drift.
  *
- * Reaching into a book-named object from TV code is admittedly odd, and the honest fix is to
- * rename it to something media-neutral. That is deliberately not done here, for the same reason
- * the movie validation object leaves it alone: it touches `ImportDataUseCase` and `BookRepository`,
- * neither of which this phase is otherwise changing.
+ * Until #81 these forwarded to `BookMetadataValidation` instead, and this KDoc carried an apology
+ * for it: reaching into a book-named object from TV code was odd, and the honest fix was to give
+ * the media-agnostic rules a media-neutral home. That is now done, and this object is a peer of
+ * the book one rather than its debtor.
  */
 public object TVMetadataValidation {
     /** A title must not be blank. Media-agnostic -- see this object's KDoc. */
-    public fun validateTitle(title: String): String? = BookMetadataValidation.validateTitle(title)
+    public fun validateTitle(title: String): String? = MediaMetadataValidation.validateTitle(title)
 
     /** A known price must be finite and `>= 0`. Media-agnostic -- see this object's KDoc. */
     public fun validatePurchasePrice(purchasePrice: Double?): String? =
-        BookMetadataValidation.validatePurchasePrice(purchasePrice)
+        MediaMetadataValidation.validatePurchasePrice(purchasePrice)
 
     /**
      * A known [releaseYear] must fall within [MIN_RELEASE_YEAR]..[MAX_RELEASE_YEAR]; `null`
      * ("unknown") always passes.
      */
     public fun validateReleaseYear(releaseYear: Int?): String? =
-        if (releaseYear != null && releaseYear !in MIN_RELEASE_YEAR..MAX_RELEASE_YEAR) {
-            "Release year must be between $MIN_RELEASE_YEAR and $MAX_RELEASE_YEAR"
-        } else {
-            null
-        }
+        MediaMetadataValidation.validateReleaseYear(releaseYear, MIN_RELEASE_YEAR, MAX_RELEASE_YEAR)
 
     /** A known [totalSeasons] must be `> 0`; `null` ("unknown") always passes. */
     public fun validateTotalSeasons(totalSeasons: Int?): String? =
@@ -77,11 +73,11 @@ public object TVMetadataValidation {
     public const val MIN_RELEASE_YEAR: Int = 1928
 
     /**
-     * Upper bound, matching the movie/book rules' reasoning: a static far-future year keeps the
-     * bound deterministic for tests rather than deriving "current year + N" from a clock, while
-     * still covering announced future releases for decades.
+     * Upper bound. Shared with every other media type and documented on
+     * [MediaMetadataValidation.MAX_RELEASE_YEAR]; re-exported here so a caller validating a show
+     * reads one pair of bounds from one place.
      */
-    public const val MAX_RELEASE_YEAR: Int = 2100
+    public const val MAX_RELEASE_YEAR: Int = MediaMetadataValidation.MAX_RELEASE_YEAR
 
     /**
      * Upper bound for a single quick-fill's episode count. 500 comfortably covers any realistic

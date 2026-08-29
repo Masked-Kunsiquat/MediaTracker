@@ -122,11 +122,13 @@ shared/
  │    │    └── util/          <-- Result wrapper, id generation, Logger facility
  │    ├── features/
  │    │    ├── books/         <-- Timer, Reading Logs, ISBN Fetcher
+ │    │    ├── changelog/     <-- In-app changelog parsing
+ │    │    ├── media/         <-- Type-agnostic: search, delete, metadata rules every medium shares
  │    │    ├── portability/   <-- CSV export/import, .sqlite backup/restore, Goodreads import
  │    │    ├── settings/      <-- Typed access to the app_settings key-value store
  │    │    ├── stats/         <-- Analytics Queries & Aggregate Flow
- │    │    ├── movies/        <-- (planned, Task 13) Movie Logs, TMDB Client
- │    │    └── tv/            <-- (planned, Task 13) Season/Episode Progression
+ │    │    ├── movies/        <-- Movie Logs, TMDB Client
+ │    │    └── tv/            <-- Season/Episode Progression
  │    └── ui/                 <-- Shared ViewModels & UI Contracts, AppContainer (manual DI)
  ├── src/androidMain/, src/jvmMain/   <-- expect/actual platform implementations
  └── src/commonTest/, src/jvmTest/, src/androidUnitTest/   <-- see §7 for which goes where

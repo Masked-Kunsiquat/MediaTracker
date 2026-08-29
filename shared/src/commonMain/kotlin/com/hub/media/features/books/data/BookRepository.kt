@@ -272,7 +272,8 @@ public class BookRepository(
      * - [purchasePrice], if non-null, must be `>= 0`.
      * - [totalPages], if non-null, must be `> 0` (`null` means "page count unknown," which is
      *   valid; `0` or negative is never a valid page count for a real book).
-     * - [releaseYear], if non-null, must fall within [MIN_RELEASE_YEAR]..[MAX_RELEASE_YEAR].
+     * - [releaseYear], if non-null, must fall within
+     *   [BookMetadataValidation.MIN_RELEASE_YEAR]..[BookMetadataValidation.MAX_RELEASE_YEAR].
      *
      * ### No existing [BookDetailsEntity] row (data-integrity edge case)
      * [observeBookDetail]'s KDoc documents that [MediaWithDetails.Book.details] can independently be
@@ -501,21 +502,5 @@ public class BookRepository(
                 oldStatus == ReadingStatus.FINISHED && oldFinishedAt != null -> oldFinishedAt
                 else -> clock.now()
             }
-
-        /**
-         * Lower bound for [updateBookMetadata]'s [BookRepository.updateBookMetadata] `releaseYear`
-         * validation: the Gutenberg Bible (~1455) is the conventional start of the printed-book
-         * era, so nothing this app tracks should legitimately predate it by much; chosen as a
-         * round, generous floor rather than a precise historical cutoff.
-         */
-        public const val MIN_RELEASE_YEAR: Int = 1450
-
-        /**
-         * Upper bound for `releaseYear` validation: a static far-future year (rather than deriving
-         * "current year + N" from a [kotlin.time.Clock]) so the bound is deterministic for tests
-         * and callers alike, while still comfortably covering forthcoming/pre-order release years
-         * for decades without needing to be revisited.
-         */
-        public const val MAX_RELEASE_YEAR: Int = 2100
     }
 }

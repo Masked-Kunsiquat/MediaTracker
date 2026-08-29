@@ -10,7 +10,7 @@ import kotlin.test.assertNull
  * finding). Priority: `"NaN"`/`"Infinity"`/`"-Infinity"` must be rejected, not silently parsed to
  * a non-finite [Double] -- [String.toDoubleOrNull] happily accepts all three (mirroring
  * [Double.parseDouble]'s JLS-defined literals), and `NaN < 0.0` is `false` per IEEE 754, so a
- * downstream `< 0.0` check (e.g. [com.hub.media.features.books.domain.BookMetadataValidation
+ * downstream `< 0.0` check (e.g. [com.hub.media.features.media.domain.MediaMetadataValidation
  * .validatePurchasePrice]) can never catch a `NaN` that slips past this layer. See
  * [com.hub.media.features.books.domain.ReadingSessionValidation.validatePositions] for the
  * precedent this fix follows.

@@ -36,7 +36,7 @@ internal fun parseOptionalLong(
  * [String.toDoubleOrNull] happily accepts `"NaN"`, `"Infinity"`, and `"-Infinity"` as valid
  * doubles -- Kotlin/JVM's parser mirrors [Double.parseDouble], which recognizes those literals per
  * the JLS. Left unchecked, a `purchase_price` cell containing literally `NaN` would parse to
- * [Double.NaN] and sail through [com.hub.media.features.books.domain.BookMetadataValidation
+ * [Double.NaN] and sail through [com.hub.media.features.media.domain.MediaMetadataValidation
  * .validatePurchasePrice]'s `purchasePrice < 0.0` check -- every comparison involving `NaN` other
  * than `!=` is `false` per IEEE 754, so `NaN < 0.0` is `false` and the value is accepted, then
  * poisons every downstream sum/average/comparison that reads it back out. This is the same bug
