@@ -159,6 +159,25 @@ class MediaMetadataValidationTest {
     }
 
     @Test
+    fun eachMediumStillEmitsItsOwnExactRejectionMessage() {
+        // The refactor's headline claim is that no rejection message changed. The floors test above
+        // only asserts "rejected", which a reworded message would still satisfy -- so these pin the
+        // text, and pin that each medium quotes *its own* bounds rather than a shared pair.
+        assertEquals(
+            "Release year must be between 1450 and 2100",
+            BookMetadataValidation.validateReleaseYear(1449),
+        )
+        assertEquals(
+            "Release year must be between 1888 and 2100",
+            MovieMetadataValidation.validateReleaseYear(1887),
+        )
+        assertEquals(
+            "Release year must be between 1928 and 2100",
+            TVMetadataValidation.validateReleaseYear(1927),
+        )
+    }
+
+    @Test
     fun releaseYearCeiling_isSharedByEveryMedium() {
         assertEquals(MediaMetadataValidation.MAX_RELEASE_YEAR, BookMetadataValidation.MAX_RELEASE_YEAR)
         assertEquals(MediaMetadataValidation.MAX_RELEASE_YEAR, MovieMetadataValidation.MAX_RELEASE_YEAR)

@@ -1,17 +1,16 @@
 package com.hub.media.features.books.domain
 
-import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.media.domain.MediaMetadataValidation
 
 /**
- * Pure book-metadata validation rules, extracted from [BookRepository.updateBookMetadata]
+ * Pure book-metadata validation rules, extracted from [BookRepository.updateBookMetadata][com.hub.media.features.books.data.BookRepository.updateBookMetadata]
  * (ROADMAP Task 8 Phase B) so the CSV importer (`ImportDataUseCase`) can apply the exact same
  * title/price/pages/year bounds a manual edit already enforces, rather than forking a second,
  * divergent copy of these checks -- AGENTS.md §7's "reuse, don't fork" requirement for this
  * phase's row validation.
  *
  * Every function returns a human-readable rejection message, or `null` when the value is valid --
- * callers (both [BookRepository.updateBookMetadata] and the importer) short-circuit on the first
+ * callers (both [BookRepository.updateBookMetadata][com.hub.media.features.books.data.BookRepository.updateBookMetadata] and the importer) short-circuit on the first
  * non-null message. Message text is unchanged from the inline checks this replaces, so existing
  * callers observe identical [com.hub.media.core.util.Resource.Error] text.
  *
@@ -49,10 +48,11 @@ public object BookMetadataValidation {
      * of the printed-book era, so nothing this app tracks should legitimately predate it by much;
      * chosen as a round, generous floor rather than a precise historical cutoff.
      *
-     * Lived on [BookRepository] until #81. It moved here because a *validation* bound belongs with
-     * the validation rule that reads it -- the movie and TV floors were already placed that way,
-     * and having the book one on a repository meant this domain object had to import the data
-     * layer to validate a year.
+     * Lived on [BookRepository][com.hub.media.features.books.data.BookRepository] until #81. It moved here because a *validation* bound belongs
+     * with the validation rule that reads it -- the movie and TV floors were already placed that
+     * way, and having the book one on a repository meant this domain object had to import the
+     * data layer to validate a year. It no longer does: the two references above are KDoc links
+     * written in qualified form precisely so no import is needed.
      */
     public const val MIN_RELEASE_YEAR: Int = 1450
 
