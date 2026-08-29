@@ -7,9 +7,13 @@ import com.hub.media.features.media.domain.MediaMetadataValidation
  * [MediaMetadataValidation]: each function returns a human-readable rejection message, or `null`
  * when the value is valid, and callers short-circuit on the first non-null.
  *
- * ### Two rules are delegated rather than copied
- * [validateTitle] and [validatePurchasePrice] forward to [MediaMetadataValidation]. Those rules
- * are media-agnostic, and its price check in particular encodes a non-obvious lesson — rejecting
+ * ### What is delegated, and the one thing that is not
+ * [validateTitle], [validatePurchasePrice] and [validateReleaseYear] all forward to
+ * [MediaMetadataValidation]. The first two are media-agnostic outright; the third delegates only
+ * its *shape* and message, passing this object's own [MIN_RELEASE_YEAR] in as the bound -- the
+ * floor is the one genuinely movie-specific thing here, and it stays below with its reasoning.
+ *
+ * The price check in particular encodes a non-obvious lesson — rejecting
  * non-finite values, because `NaN < 0.0` is `false` under IEEE 754 and `"Infinity"` typed into a
  * form parses cleanly. Forking that would mean re-deriving it, and getting it subtly wrong here is
  * exactly how the two would drift.

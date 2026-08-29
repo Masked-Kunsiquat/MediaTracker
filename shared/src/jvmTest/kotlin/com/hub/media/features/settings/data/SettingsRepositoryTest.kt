@@ -13,7 +13,7 @@ import kotlin.test.assertNull
 /**
  * [SettingsRepository] tests against a real in-memory [AppDatabase] (schema v4's new `app_settings`
  * table, ROADMAP Task 7 Phase A), mirroring [com.hub.media.features.books.data.BookRepositoryTest]'s
- * style. Room-backed, so excluded from the android unit-test variant in `shared/build.gradle.kts` —
+ * style. Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) —
  * `:shared:jvmTest` is the authoritative gate, same as every other Room-touching test.
  */
 class SettingsRepositoryTest {

@@ -42,8 +42,7 @@ import kotlin.time.Instant
  * now reactive to [settingsRepository]'s week-start-day preference (ROADMAP Task 7 Phase B) — see
  * the `uiState_weekStartDayChange_*` tests below for that reactivity specifically.
  *
- * Room-backed, so this class is excluded from the android unit-test variant by exact class name
- * in shared/build.gradle.kts, same as [LibraryViewModelTest]/[BookDetailViewModelTest].
+ * Room-backed, so this class lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81), same as [LibraryViewModelTest]/[BookDetailViewModelTest].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class StatsViewModelTest {

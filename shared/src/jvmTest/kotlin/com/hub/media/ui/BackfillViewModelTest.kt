@@ -51,8 +51,7 @@ import kotlin.test.assertTrue
  * [BulkBackfillUseCase]/[BookRepository]/[SettingsRepository] are concrete classes with no seam to
  * fake at the ViewModel boundary, and because the races this file covers (PR review findings 1, 3,
  * 4) are specifically about ordering against real asynchronous DB completion, not virtual-time
- * scheduling. Room-backed, so excluded from the android unit-test variant in
- * `shared/build.gradle.kts` for the same reason as `BookDetailViewModelTest`.
+ * scheduling. Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) for the same reason as `BookDetailViewModelTest`.
  *
  * Every book in this file already has a cover (`coverImageHash` set at insert time) and only needs
  * authors, so [OpenLibraryIsbnCoverProbe]/[CoverImageDownloader]/[LocalImageStorageManager] are

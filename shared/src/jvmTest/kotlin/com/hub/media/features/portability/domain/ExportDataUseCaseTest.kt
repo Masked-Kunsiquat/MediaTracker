@@ -27,8 +27,7 @@ import kotlin.time.Instant
 /**
  * Integration test for [ExportDataUseCase] against a real (in-memory) [AppDatabase], following the
  * same pattern as `BookRepositoryTest`/`LogReadingSessionUseCaseTest` -- Room-touching, so this
- * lives in `com.hub.media.features.portability.domain` and is excluded from the Android
- * unit-test variant by the package-wide filter in `shared/build.gradle.kts`; `:shared:jvmTest` is
+ * lives in `com.hub.media.features.portability.domain` and lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81); `:shared:jvmTest` is
  * the authoritative gate. Exercises the whole pipeline end to end (repository writes -> use case
  * read -> CSV formatting), complementing `LibraryCsvExporterTest`/`ReadingLogCsvExporterTest`'s
  * pure formatting-only coverage.

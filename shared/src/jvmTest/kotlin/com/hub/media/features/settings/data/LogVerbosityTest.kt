@@ -15,8 +15,8 @@ import kotlin.test.assertNull
  * choice, because the app module wires `persisted ?: buildTypeDefault` and collapsing the two would
  * silence every debug build shortly after startup. See that function's KDoc.
  *
- * Room-backed, so it lives in the already-excluded `com.hub.media.features.settings.*` package (see
- * `shared/build.gradle.kts`) and runs on `:shared:jvmTest`, exactly like [SettingsRepositoryTest].
+ * Room-backed, so it lives in `jvmTest`, the only source set where `testAppDatabase()` is visible
+ * (#81), and runs on `:shared:jvmTest`, exactly like [SettingsRepositoryTest].
  */
 class LogVerbosityTest {
     @Test

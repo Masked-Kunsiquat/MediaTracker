@@ -17,8 +17,7 @@ import kotlin.test.assertEquals
 
 /**
  * [AddMovieViewModel]'s double-tap guard, against a real in-memory [AppDatabase] — that class takes
- * a concrete [MovieRepository], so there is no seam to fake. Room-backed, so excluded from the
- * android unit-test variant by exact class name in `shared/build.gradle.kts`.
+ * a concrete [MovieRepository], so there is no seam to fake. Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81).
  *
  * Narrow on purpose: this class was written when the identical guard in [AddTVShowViewModel] turned
  * out to be half a guard, and covers only that. The rest of [AddMovieViewModel]'s behaviour is

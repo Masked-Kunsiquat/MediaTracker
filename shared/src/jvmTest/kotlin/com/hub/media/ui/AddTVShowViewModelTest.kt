@@ -19,8 +19,7 @@ import kotlin.test.assertTrue
 /**
  * [AddTVShowViewModel] tests against a real in-memory [AppDatabase], mirroring
  * [EditMovieViewModelTest]'s style: [AddTVShowViewModel] takes a concrete [TVShowRepository], so
- * there is no seam to fake. Room-backed, so excluded from the android unit-test variant by exact
- * class name in `shared/build.gradle.kts` — `:shared:jvmTest` is the authoritative gate.
+ * there is no seam to fake. Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) — `:shared:jvmTest` is the authoritative gate.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddTVShowViewModelTest {

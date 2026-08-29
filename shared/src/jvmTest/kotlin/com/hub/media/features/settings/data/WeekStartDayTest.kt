@@ -12,9 +12,7 @@ import kotlin.test.assertEquals
 /**
  * [WeekStartDay]/[SettingsRepository.observeWeekStartDay]/[SettingsRepository.getWeekStartDay]/
  * [SettingsRepository.setWeekStartDay] tests against a real in-memory [AppDatabase] (ROADMAP Task 7
- * Phase B), mirroring [SettingsRepositoryTest]'s style. Room-backed, so excluded from the android
- * unit-test variant by the `com.hub.media.features.settings.*` package filter in
- * `shared/build.gradle.kts` — `:shared:jvmTest` is the authoritative gate.
+ * Phase B), mirroring [SettingsRepositoryTest]'s style. Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) — `:shared:jvmTest` is the authoritative gate.
  */
 class WeekStartDayTest {
     private lateinit var db: AppDatabase

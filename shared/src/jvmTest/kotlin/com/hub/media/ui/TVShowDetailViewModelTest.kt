@@ -31,8 +31,7 @@ import kotlin.test.assertNull
 /**
  * [TVShowDetailViewModel] tests against a real in-memory [AppDatabase], mirroring
  * [EditMovieViewModelTest]'s style: [TVShowDetailViewModel] takes a concrete [TVShowRepository], so
- * there is no seam to fake. Room-backed, so excluded from the android unit-test variant by exact
- * class name in `shared/build.gradle.kts` — `:shared:jvmTest` is the authoritative gate.
+ * there is no seam to fake. Room-backed, so in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) — `:shared:jvmTest` is the authoritative gate.
  *
  * Deletion is exercised through a real [DeleteMediaUseCase] (real storage directory, like
  * [LibraryViewModelTest]) rather than a fake, so these tests fail if the two ever stop fitting

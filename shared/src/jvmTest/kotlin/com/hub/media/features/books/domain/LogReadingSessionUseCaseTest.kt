@@ -22,8 +22,7 @@ import kotlin.time.Instant
  * Tests [LogReadingSessionUseCase] against a real (in-memory) [AppDatabase] via
  * [ReadingSessionRepository], following the same in-memory-Room pattern as
  * `ReadingSessionRepositoryTest` and `AddBookByIsbnUseCaseTest`. Room-touching, so this lives in
- * `com.hub.media.features.books.domain` and is excluded from the Android unit-test variant by the
- * package-wide filter in shared/build.gradle.kts — `:shared:jvmTest` is the authoritative gate.
+ * `com.hub.media.features.books.domain` and lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) — `:shared:jvmTest` is the authoritative gate.
  */
 class LogReadingSessionUseCaseTest {
     private lateinit var db: AppDatabase

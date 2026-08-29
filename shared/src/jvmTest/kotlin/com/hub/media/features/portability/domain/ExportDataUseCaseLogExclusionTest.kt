@@ -28,8 +28,7 @@ import kotlin.time.Instant
  * (`<filesDir>/logs/`, a sibling, in-progress workstream this class deliberately has no dependency
  * on -- see [ExportDataUseCase]'s "why there is no exclude filter" KDoc section). Lives in
  * `com.hub.media.features.portability.domain` next to [ExportDataUseCaseTest] and
- * [DatabaseBackupUseCaseTest] -- Room-backed, so it is excluded from the android unit-test variant
- * by the package-wide filter in `shared/build.gradle.kts`; `:shared:jvmTest` is the authoritative
+ * [DatabaseBackupUseCaseTest] -- Room-backed, so it lives in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81); `:shared:jvmTest` is the authoritative
  * gate. Uses a real, file-backed [AppDatabase] (rather than [ExportDataUseCaseTest]'s in-memory
  * one) purely so a real `logs/` directory can sit beside it on disk, exactly like the real app.
  *

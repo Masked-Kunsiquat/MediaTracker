@@ -40,8 +40,7 @@ import kotlin.test.assertTrue
 /**
  * Integration tests for [DefaultRestoreDatabaseUseCase] against real, file-backed databases
  * (ROADMAP Task 8 Phase C) -- the most dangerous action in the app (AGENTS.md §1), so this is the
- * most thoroughly tested. Lives in `com.hub.media.features.portability.domain`, already excluded
- * from the android unit-test variant by the package-wide filter in `shared/build.gradle.kts`;
+ * most thoroughly tested. Lives in `com.hub.media.features.portability.domain`, in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81);
  * `:shared:jvmTest` is the authoritative gate.
  *
  * Covers every task-brief deliverable: header validation rejects a non-SQLite file, the version

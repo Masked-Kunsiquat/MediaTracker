@@ -14,8 +14,7 @@ import kotlin.test.assertNull
  * [SettingsRepository.observeGoogleBooksApiKey]/[SettingsRepository.getGoogleBooksApiKey]/
  * [SettingsRepository.setGoogleBooksApiKey]/[SettingsRepository.clearGoogleBooksApiKey] tests
  * against a real in-memory [AppDatabase], mirroring [WeekStartDayTest]'s style. Room-backed, so
- * excluded from the android unit-test variant by the `com.hub.media.features.settings.*` package
- * filter in `shared/build.gradle.kts` -- `:shared:jvmTest` is the authoritative gate.
+ * in `jvmTest`, the only source set where `testAppDatabase()` is visible (#81) -- `:shared:jvmTest` is the authoritative gate.
  *
  * None of these assertions print the key values they exercise -- only equality checks against
  * literals already present in this file's source, consistent with the credential handling rule
