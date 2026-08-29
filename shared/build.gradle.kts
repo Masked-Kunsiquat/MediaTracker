@@ -93,81 +93,25 @@ dependencies {
     add("kspJvm", libs.androidx.room.compiler)
 }
 
-// The Room KMP tests (DAO tests and Repository integration tests) build an in-memory AppDatabase.
-// On the JVM target (:shared:jvmTest) that works via Room.inMemoryDatabaseBuilder() + the
-// bundled SQLite driver with no platform handle required — that's the authoritative test run.
-// On the android unit test target the equivalent android actual needs a real
-// android.content.Context (Room reads it during build() for journal-mode resolution and
-// multi-instance invalidation), which local androidUnitTest tasks cannot supply since they run
-// on the host JVM against Android's stub android.jar with no Robolectric wired into this
-// project (see TestDatabaseBuilder.android.kt). Excluding these packages here — rather than
-// weakening the tests themselves — keeps `testDebugUnitTest`/`testReleaseUnitTest` green while
-// `:shared:jvmTest` remains the real gate for the data layer.
-// LibraryViewModelTest and BookDetailViewModelTest build a real AppDatabase via testAppDatabase()
-// (see above) to verify the Flow -> StateFlow wiring against actual DAO behavior, so they hit the
-// same android.content.Context gap as the DAO/repository tests and are excluded here by exact
-// class name rather than by package: AddBookViewModelTest lives in the same com.hub.media.ui
-// package but only depends on a hand-rolled BookIngestionUseCase fake (no Room), so it stays
-// runnable on the android unit-test variant instead of being swept up by a package-wide exclusion.
-// StatsRepositoryTest (ROADMAP Task 5) is likewise Room-backed and excluded by package
-// (com.hub.media.features.stats.*, mirroring com.hub.media.features.books.data.*); StatsDaoTest
-// lives under com.hub.media.core.database and is already covered by that package's exclusion.
-// StatsViewModelTest and EditBookViewModelTest (ROADMAP Task 6 Phase A) are excluded by exact
-// class name for the same reason as LibraryViewModelTest/BookDetailViewModelTest above.
-// BackfillViewModelTest (ROADMAP Task 14 Phase A PR review) is likewise Room-backed (a real
-// AppDatabase, to exercise BackfillViewModel/BulkBackfillUseCase races against genuine async DB
-// reads rather than a fake) and excluded by exact class name for the same reason.
-// SettingsRepositoryTest (ROADMAP Task 7 Phase A) is likewise Room-backed and excluded by package
-// (com.hub.media.features.settings.*, mirroring com.hub.media.features.stats.*/
-// com.hub.media.features.books.data.* above).
-// SettingsViewModelTest (ROADMAP Task 7 Phase B) is excluded by exact class name for the same
-// reason as StatsViewModelTest/EditBookViewModelTest above.
-// ExportDataUseCaseTest (ROADMAP Task 8 Phase A) is likewise Room-backed (builds a real
-// AppDatabase to exercise BookRepository/ReadingSessionRepository end to end) and excluded by
-// package (com.hub.media.features.portability.domain.*, mirroring
-// com.hub.media.features.books.domain.* above). CsvUtilTest/LibraryCsvExporterTest/
-// ReadingLogCsvExporterTest live under com.hub.media.features.portability.csv -- pure Kotlin, no
-// Room, so that package is deliberately NOT excluded and keeps running on every variant.
-// MovieRepositoryTest (ROADMAP Task 13 Phase B) is Room-backed for the same reason
-// BookRepositoryTest is -- it builds a real AppDatabase via testAppDatabase() -- so
-// com.hub.media.features.movies.data.* is excluded by package, mirroring
-// com.hub.media.features.books.data.* above. Without this the android unit-test variants would
-// try to run it against the stub android.jar with no Robolectric and fail.
-// EditMovieViewModelTest (ROADMAP Task 13 Phase B PR review) is Room-backed for the same reason
-// EditBookViewModelTest is -- EditMovieViewModel takes a concrete MovieRepository, so there is no
-// seam to fake and the test builds a real AppDatabase -- and is excluded by exact class name.
-// TVShowRepositoryTest (ROADMAP Task 13 Phase C) is Room-backed for the same reason
-// MovieRepositoryTest is -- it builds a real AppDatabase via testAppDatabase() -- so
-// com.hub.media.features.tv.data.* is excluded by package, mirroring
-// com.hub.media.features.movies.data.* above. Without this the android unit-test variants would
-// try to run it against the stub android.jar with no Robolectric and fail.
-// AddTVShowViewModelTest and TVShowDetailViewModelTest (ROADMAP Task 13 Phase C) are Room-backed
-// for the same reason EditMovieViewModelTest is -- both take a concrete TVShowRepository, so there
-// is no seam to fake and each test builds a real AppDatabase -- and are excluded by exact class
-// name.
-tasks.withType<Test>().configureEach {
-    if (name == "testDebugUnitTest" || name == "testReleaseUnitTest") {
-        filter {
-            excludeTestsMatching("com.hub.media.core.database.*")
-            excludeTestsMatching("com.hub.media.features.books.data.*")
-            excludeTestsMatching("com.hub.media.features.movies.data.*")
-            excludeTestsMatching("com.hub.media.features.tv.data.*")
-            excludeTestsMatching("com.hub.media.features.books.domain.*")
-            excludeTestsMatching("com.hub.media.features.stats.*")
-            excludeTestsMatching("com.hub.media.features.settings.*")
-            excludeTestsMatching("com.hub.media.features.portability.domain.*")
-            excludeTestsMatching("com.hub.media.features.media.domain.DeleteMediaUseCaseTest*")
-            excludeTestsMatching("com.hub.media.ui.LibraryViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.BookDetailViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.BackfillViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.StatsViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.EditBookViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.EditMovieViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.AddMovieViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.AddTVShowViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.TVShowDetailViewModelTest*")
-            excludeTestsMatching("com.hub.media.ui.SettingsViewModelTest*")
-            isFailOnNoMatchingTests = false
-        }
-    }
-}
+// Room-backed tests live in `shared/src/jvmTest/`, and that is now a structural rule rather than
+// a convention (#81 §3).
+//
+// The reason has not changed: those tests build an in-memory AppDatabase, which works on the JVM
+// target via Room.inMemoryDatabaseBuilder() plus the bundled SQLite driver with no platform handle
+// required, and cannot work on the android unit-test target, where Room's builder needs a real
+// android.content.Context that a host-JVM run against the stub android.jar has no way to supply.
+//
+// What changed is how that is enforced. This file used to carry 19 hand-maintained
+// excludeTestsMatching(...) entries, so a Room-backed test could be *written* in commonTest -- where
+// it would never run -- and the only thing catching it was whether the author remembered to come
+// here and register it. Three were added during one phase alone, and an agent had to be told about
+// the requirement explicitly or it would have shipped a red build.
+//
+// The list had also silently drifted, which is what a convention enforced by memory does. It
+// excluded by package, so it swept up SqliteHeaderTest and ResolveWorkToEditionsUseCaseTest -- both
+// pure Kotlin, neither touching Room. SqliteHeaderTest's own KDoc said it "runs on every test
+// variant". It did not, and nothing reported that.
+//
+// Now testAppDatabase() is declared in jvmTest (see TestDatabaseBuilder.kt there) and is simply not
+// visible from commonTest, so a Room-backed test in the wrong source set is a compile error instead
+// of a green build that skipped it. There is nothing left here to keep in sync.
