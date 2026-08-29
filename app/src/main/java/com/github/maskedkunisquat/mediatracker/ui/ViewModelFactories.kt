@@ -23,24 +23,47 @@ import com.hub.media.ui.StatsViewModel
 import com.hub.media.ui.TVShowDetailViewModel
 
 /**
+ * Base [ViewModelProvider.Factory] shared by every factory in this file.
+ *
+ * Before this class existed, all 18 factories below each carried their own copy of the same
+ * `isAssignableFrom` check-then-cast boilerplate; the only parts that ever varied between them
+ * were which [ViewModel] class to check against and how to construct it. This class hoists that
+ * identical ~10-line body into one place, taking the class and a `construct` lambda as the only
+ * two variable parts.
+ *
+ * The 18 named subclasses are kept -- rather than collapsing every call site to a bare
+ * `AppViewModelFactory(X::class.java) { X(...) }` or some DSL -- specifically so every existing
+ * call site keeps compiling unchanged and every `[XyzViewModelFactory]` KDoc link elsewhere in the
+ * codebase keeps resolving to a real, still-documented class.
+ */
+open class AppViewModelFactory<VM : ViewModel>(
+    private val viewModelClass: Class<VM>,
+    private val construct: () -> VM,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (!modelClass.isAssignableFrom(viewModelClass)) {
+            error("Unknown viewmodel class: $modelClass")
+        }
+        return construct() as T
+    }
+}
+
+/**
  * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
  * and bulk-delete dependencies from the [AppContainer].
  */
 class LibraryViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(LibraryViewModel::class.java) -> {
-                LibraryViewModel(
-                    mediaRepository = appContainer.mediaRepository,
-                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<LibraryViewModel>(
+        LibraryViewModel::class.java,
+        {
+            LibraryViewModel(
+                mediaRepository = appContainer.mediaRepository,
+                deleteMediaUseCase = appContainer.deleteMediaUseCase,
+            )
+        },
+    )
 
 /**
  * Factory for creating [AddBookViewModel] with its dependencies from the [AppContainer]:
@@ -49,22 +72,18 @@ class LibraryViewModelFactory(
  * and [com.hub.media.features.books.network.BookSearchProvider] (edition-to-ISBN resolution).
  */
 class AddBookViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(AddBookViewModel::class.java) -> {
-                AddBookViewModel(
-                    addBookByIsbnUseCase = appContainer.addBookByIsbnUseCase,
-                    searchMediaUseCase = appContainer.searchMediaUseCase,
-                    searchProvider = appContainer.searchProvider,
-                    resolveWorkToEditionsUseCase = appContainer.resolveWorkToEditionsUseCase,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<AddBookViewModel>(
+        AddBookViewModel::class.java,
+        {
+            AddBookViewModel(
+                addBookByIsbnUseCase = appContainer.addBookByIsbnUseCase,
+                searchMediaUseCase = appContainer.searchMediaUseCase,
+                searchProvider = appContainer.searchProvider,
+                resolveWorkToEditionsUseCase = appContainer.resolveWorkToEditionsUseCase,
+            )
+        },
+    )
 
 /**
  * Factory for creating [BookDetailViewModel] with its [bookId] and repository/use-case
@@ -72,15 +91,14 @@ class AddBookViewModelFactory(
  * this factory is parameterized per-navigation-argument (one instance per book detail route),
  * so it is constructed fresh in the route wrapper rather than reused.
  */
-class BookDetailViewModelFactory(
-    private val appContainer: AppContainer,
-    private val bookId: String,
-) : ViewModelProvider.Factory {
+class BookDetailViewModelFactory
     @OptIn(kotlin.time.ExperimentalTime::class)
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(BookDetailViewModel::class.java) -> {
+    constructor(
+        appContainer: AppContainer,
+        bookId: String,
+    ) : AppViewModelFactory<BookDetailViewModel>(
+            BookDetailViewModel::class.java,
+            {
                 BookDetailViewModel(
                     bookId = bookId,
                     mediaRepository = appContainer.mediaRepository,
@@ -89,11 +107,9 @@ class BookDetailViewModelFactory(
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,
                     refetchCoverUseCase = appContainer.refetchCoverUseCase,
                     deleteMediaUseCase = appContainer.deleteMediaUseCase,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+                )
+            },
+        )
 
 /**
  * Factory for creating [EditBookViewModel] with its [bookId] and
@@ -102,21 +118,17 @@ class BookDetailViewModelFactory(
  * fresh in the route wrapper for each `Route.EditBook` navigation rather than reused.
  */
 class EditBookViewModelFactory(
-    private val appContainer: AppContainer,
-    private val bookId: String,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(EditBookViewModel::class.java) -> {
-                EditBookViewModel(
-                    bookId = bookId,
-                    bookRepository = appContainer.bookRepository,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+    bookId: String,
+) : AppViewModelFactory<EditBookViewModel>(
+        EditBookViewModel::class.java,
+        {
+            EditBookViewModel(
+                bookId = bookId,
+                bookRepository = appContainer.bookRepository,
+            )
+        },
+    )
 
 /**
  * Factory for creating [StatsViewModel] with its [com.hub.media.features.stats.data.StatsRepository]/
@@ -126,19 +138,14 @@ class EditBookViewModelFactory(
  * the stats screen the same way [LibraryViewModelFactory]/[AddBookViewModelFactory] are (unlike the
  * per-navigation-argument [BookDetailViewModelFactory]).
  */
-class StatsViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
+class StatsViewModelFactory
     @OptIn(kotlin.time.ExperimentalTime::class)
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(StatsViewModel::class.java) -> {
-                StatsViewModel(appContainer.statsRepository, appContainer.settingsRepository) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    constructor(
+        appContainer: AppContainer,
+    ) : AppViewModelFactory<StatsViewModel>(
+            StatsViewModel::class.java,
+            { StatsViewModel(appContainer.statsRepository, appContainer.settingsRepository) },
+        )
 
 /**
  * Factory for creating [SettingsViewModel] with its
@@ -148,17 +155,11 @@ class StatsViewModelFactory(
  * [BookDetailViewModelFactory]/[EditBookViewModelFactory]).
  */
 class SettingsViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(SettingsViewModel::class.java) -> {
-                SettingsViewModel(appContainer.settingsRepository) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<SettingsViewModel>(
+        SettingsViewModel::class.java,
+        { SettingsViewModel(appContainer.settingsRepository) },
+    )
 
 /**
  * Factory for creating [ExportViewModel] with its
@@ -168,17 +169,11 @@ class SettingsViewModelFactory(
  * same route composable.
  */
 class ExportViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(ExportViewModel::class.java) -> {
-                ExportViewModel(appContainer.exportDataUseCase) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<ExportViewModel>(
+        ExportViewModel::class.java,
+        { ExportViewModel(appContainer.exportDataUseCase) },
+    )
 
 /**
  * Factory for creating [ImportViewModel] with its
@@ -188,17 +183,11 @@ class ExportViewModelFactory(
  * same route composable.
  */
 class ImportViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(ImportViewModel::class.java) -> {
-                ImportViewModel(appContainer.importDataUseCase) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<ImportViewModel>(
+        ImportViewModel::class.java,
+        { ImportViewModel(appContainer.importDataUseCase) },
+    )
 
 /**
  * Factory for creating [BackupViewModel] with its
@@ -207,17 +196,11 @@ class ImportViewModelFactory(
  * same way [ExportViewModelFactory] is.
  */
 class BackupViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(BackupViewModel::class.java) -> {
-                BackupViewModel(appContainer.backupDatabaseUseCase) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<BackupViewModel>(
+        BackupViewModel::class.java,
+        { BackupViewModel(appContainer.backupDatabaseUseCase) },
+    )
 
 /**
  * Factory for creating [RestoreViewModel] with its
@@ -227,17 +210,11 @@ class BackupViewModelFactory(
  * exposes the non-destructive "stage" half of restore, not the destructive swap itself.
  */
 class RestoreViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(RestoreViewModel::class.java) -> {
-                RestoreViewModel(appContainer.restoreDatabaseUseCase, appContainer.settingsRepository) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<RestoreViewModel>(
+        RestoreViewModel::class.java,
+        { RestoreViewModel(appContainer.restoreDatabaseUseCase, appContainer.settingsRepository) },
+    )
 
 /**
  * Factory for creating [BackfillViewModel] with its
@@ -246,17 +223,11 @@ class RestoreViewModelFactory(
  * [ExportViewModelFactory] is.
  */
 class BackfillViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(BackfillViewModel::class.java) -> {
-                BackfillViewModel(appContainer.bulkBackfillUseCase) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<BackfillViewModel>(
+        BackfillViewModel::class.java,
+        { BackfillViewModel(appContainer.bulkBackfillUseCase) },
+    )
 
 /**
  * Factory for creating [LogViewerViewModel] with the [com.hub.media.core.storage.LogFileStore]
@@ -264,17 +235,11 @@ class BackfillViewModelFactory(
  * log viewer the same way [SettingsViewModelFactory] is.
  */
 class LogViewerViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(LogViewerViewModel::class.java) -> {
-                LogViewerViewModel(appContainer.logFileStore) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<LogViewerViewModel>(
+        LogViewerViewModel::class.java,
+        { LogViewerViewModel(appContainer.logFileStore) },
+    )
 
 /**
  * Factory for [ChangelogViewModel] (ROADMAP Task 15 Phase B2b). Unlike every other factory here it
@@ -283,35 +248,23 @@ class LogViewerViewModelFactory(
  * imply a dependency it does not have.
  */
 class ChangelogViewModelFactory(
-    private val currentVersion: String,
-    private val readChangelog: suspend () -> String?,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(ChangelogViewModel::class.java) -> {
-                ChangelogViewModel(currentVersion, readChangelog) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    currentVersion: String,
+    readChangelog: suspend () -> String?,
+) : AppViewModelFactory<ChangelogViewModel>(
+        ChangelogViewModel::class.java,
+        { ChangelogViewModel(currentVersion, readChangelog) },
+    )
 
 /**
  * Factory for [AddMovieViewModel] (ROADMAP Task 13 Phase B). Manual entry needs only the
  * repository — no provider client, no rate limiter, no cover storage.
  */
 class AddMovieViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(AddMovieViewModel::class.java) -> {
-                AddMovieViewModel(movieRepository = appContainer.movieRepository) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<AddMovieViewModel>(
+        AddMovieViewModel::class.java,
+        { AddMovieViewModel(movieRepository = appContainer.movieRepository) },
+    )
 
 /**
  * Factory for [MovieDetailViewModel] with its [movieId] (ROADMAP Task 13 Phase B).
@@ -321,40 +274,32 @@ class AddMovieViewModelFactory(
  * poster shared with another item is not removed out from under it.
  */
 class MovieDetailViewModelFactory(
-    private val appContainer: AppContainer,
-    private val movieId: String,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(MovieDetailViewModel::class.java) -> {
-                MovieDetailViewModel(
-                    movieId = movieId,
-                    movieRepository = appContainer.movieRepository,
-                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+    movieId: String,
+) : AppViewModelFactory<MovieDetailViewModel>(
+        MovieDetailViewModel::class.java,
+        {
+            MovieDetailViewModel(
+                movieId = movieId,
+                movieRepository = appContainer.movieRepository,
+                deleteMediaUseCase = appContainer.deleteMediaUseCase,
+            )
+        },
+    )
 
 /** Factory for [EditMovieViewModel] with its [movieId] (ROADMAP Task 13 Phase B). */
 class EditMovieViewModelFactory(
-    private val appContainer: AppContainer,
-    private val movieId: String,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(EditMovieViewModel::class.java) -> {
-                EditMovieViewModel(
-                    movieId = movieId,
-                    movieRepository = appContainer.movieRepository,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+    movieId: String,
+) : AppViewModelFactory<EditMovieViewModel>(
+        EditMovieViewModel::class.java,
+        {
+            EditMovieViewModel(
+                movieId = movieId,
+                movieRepository = appContainer.movieRepository,
+            )
+        },
+    )
 
 /**
  * Factory for [AddTVShowViewModel] (ROADMAP Task 13 Phase C). Manual entry needs only the
@@ -362,17 +307,11 @@ class EditMovieViewModelFactory(
  * cover storage.
  */
 class AddTVShowViewModelFactory(
-    private val appContainer: AppContainer,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(AddTVShowViewModel::class.java) -> {
-                AddTVShowViewModel(tvShowRepository = appContainer.tvShowRepository) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+) : AppViewModelFactory<AddTVShowViewModel>(
+        AddTVShowViewModel::class.java,
+        { AddTVShowViewModel(tvShowRepository = appContainer.tvShowRepository) },
+    )
 
 /**
  * Factory for [TVShowDetailViewModel] with its [showId] (ROADMAP Task 13 Phase C).
@@ -382,19 +321,15 @@ class AddTVShowViewModelFactory(
  * shared with another item is not removed out from under it.
  */
 class TVShowDetailViewModelFactory(
-    private val appContainer: AppContainer,
-    private val showId: String,
-) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        when {
-            modelClass.isAssignableFrom(TVShowDetailViewModel::class.java) -> {
-                TVShowDetailViewModel(
-                    showId = showId,
-                    tvShowRepository = appContainer.tvShowRepository,
-                    deleteMediaUseCase = appContainer.deleteMediaUseCase,
-                ) as T
-            }
-            else -> error("Unknown viewmodel class: $modelClass")
-        }
-}
+    appContainer: AppContainer,
+    showId: String,
+) : AppViewModelFactory<TVShowDetailViewModel>(
+        TVShowDetailViewModel::class.java,
+        {
+            TVShowDetailViewModel(
+                showId = showId,
+                tvShowRepository = appContainer.tvShowRepository,
+                deleteMediaUseCase = appContainer.deleteMediaUseCase,
+            )
+        },
+    )
