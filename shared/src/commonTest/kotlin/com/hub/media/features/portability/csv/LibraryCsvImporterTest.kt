@@ -2,12 +2,15 @@ package com.hub.media.features.portability.csv
 
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.database.entities.WatchStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * Tests [LibraryCsvImporter], the per-row semantic parser (ROADMAP Task 8 Phase B). Priority:
@@ -41,6 +44,10 @@ class LibraryCsvImporterTest {
         finishedAt: String = "",
         trackingMode: String = "PAGES",
         externalIdentifiers: String = "ISBN:9780441013593",
+        runtimeMinutes: String = "",
+        watchStatus: String = "",
+        watchedAt: String = "",
+        totalSeasons: String = "",
     ): List<String> =
         listOf(
             CSV_SCHEMA_VERSION.toString(),
@@ -60,14 +67,13 @@ class LibraryCsvImporterTest {
             trackingMode,
             externalIdentifiers,
             // The v3 movie columns (runtime_minutes/watch_status/watched_at) and the v4
-            // total_seasons column. Blank because every fixture here is a book, and kept present so
-            // these rows stay the width a real current export actually has -- parseRow ignores
-            // them, but a fixture that quietly stayed a format behind would be a poor model of the
-            // file it stands in for.
-            "",
-            "",
-            "",
-            "",
+            // total_seasons column. Blank by default because most fixtures here are books; they
+            // became parameters rather than literals in Issue #106, because the importer now reads
+            // them for a MOVIE or TV_SHOW row instead of rejecting the row outright.
+            runtimeMinutes,
+            watchStatus,
+            watchedAt,
+            totalSeasons,
         )
 
     @Test
@@ -180,6 +186,105 @@ class LibraryCsvImporterTest {
         val result = LibraryCsvImporter.parseRow(validRow(type = "PODCAST"))
         assertIs<LibraryRowParseResult.Rejected>(result)
         assertTrue(result.reason.contains("PODCAST"))
+    }
+
+    // ---- Issue #106: MOVIE and TV_SHOW rows ---------------------------------------------------
+
+    @Test
+    fun parseRow_movieRow_parsesItsOwnColumns() {
+        val result =
+            LibraryCsvImporter.parseRow(
+                validRow(
+                    type = "MOVIE",
+                    title = "Arrival",
+                    releaseYear = "2016",
+                    // A film row carries none of the book columns; a real export leaves them blank.
+                    authors = "",
+                    isbn = "",
+                    format = "",
+                    totalPages = "",
+                    status = "",
+                    trackingMode = "",
+                    externalIdentifiers = "",
+                    runtimeMinutes = "116",
+                    watchStatus = "WATCHED",
+                    watchedAt = "2024-02-03T04:05:06Z",
+                ),
+            )
+
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        val row = result.row
+        assertEquals(MediaType.MOVIE, row.type)
+        assertEquals("Arrival", row.title)
+        assertEquals(116, row.movie.runtimeMinutes)
+        assertEquals(WatchStatus.WATCHED, row.movie.status)
+        assertEquals(Instant.parse("2024-02-03T04:05:06Z"), row.movie.watchedAt)
+    }
+
+    @Test
+    fun parseRow_showRow_parsesTotalSeasons() {
+        val result =
+            LibraryCsvImporter.parseRow(
+                validRow(
+                    type = "TV_SHOW",
+                    title = "Chernobyl",
+                    releaseYear = "2019",
+                    authors = "",
+                    isbn = "",
+                    format = "",
+                    totalPages = "",
+                    status = "",
+                    trackingMode = "",
+                    externalIdentifiers = "",
+                    totalSeasons = "1",
+                ),
+            )
+
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        val row = result.row
+        assertEquals(MediaType.TV_SHOW, row.type)
+        assertEquals(1, row.show.totalSeasons)
+        // A blank watch_status must default rather than reject, exactly as a book's blank `status`
+        // defaults to TO_READ -- the exporter writes this column for films only.
+        assertEquals(WatchStatus.WATCHLIST, row.show.status)
+    }
+
+    /**
+     * Each media type is held to its own release-year floor, not a shared one. 1900 is a perfectly
+     * good year for a book and four centuries too early for television, and the whole reason
+     * `MediaMetadataValidation.validateReleaseYear` takes its bounds as parameters is so this row
+     * is rejected while the equivalent book row is not.
+     */
+    @Test
+    fun parseRow_showReleasedBeforeTelevisionExisted_isRejected() {
+        val asShow =
+            LibraryCsvImporter.parseRow(
+                validRow(type = "TV_SHOW", releaseYear = "1900", authors = "", isbn = "", format = "", status = ""),
+            )
+        assertIs<LibraryRowParseResult.Rejected>(asShow)
+        assertTrue(asShow.reason.contains("1928"), "the message must quote television's floor: ${asShow.reason}")
+
+        assertIs<LibraryRowParseResult.Parsed>(LibraryCsvImporter.parseRow(validRow(releaseYear = "1900")))
+    }
+
+    @Test
+    fun parseRow_movieWithZeroRuntime_isRejected() {
+        val result =
+            LibraryCsvImporter.parseRow(
+                validRow(type = "MOVIE", authors = "", isbn = "", format = "", status = "", runtimeMinutes = "0"),
+            )
+        assertIs<LibraryRowParseResult.Rejected>(result)
+        assertTrue(result.reason.contains("Runtime"))
+    }
+
+    @Test
+    fun parseRow_showWithUnknownWatchStatus_isRejected() {
+        val result =
+            LibraryCsvImporter.parseRow(
+                validRow(type = "TV_SHOW", authors = "", isbn = "", format = "", status = "", watchStatus = "BINGED"),
+            )
+        assertIs<LibraryRowParseResult.Rejected>(result)
+        assertTrue(result.reason.contains("BINGED"))
     }
 
     @Test
