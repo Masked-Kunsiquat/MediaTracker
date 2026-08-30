@@ -52,7 +52,7 @@ class SampleLibraryCsvTest {
 
     @Test
     fun sampleCsv_everyRowParsesThroughTheRealImporter() {
-        assertEquals(19, parsedRows().size, "every row in the fixture must import")
+        assertEquals(20, parsedRows().size, "every row in the fixture must import")
     }
 
     private fun parsedEpisodes(): List<ParsedEpisodeRow> {

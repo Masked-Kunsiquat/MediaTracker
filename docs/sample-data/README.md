@@ -72,23 +72,28 @@ same filter chips that the books exercise for reading status have something to m
 
 ### Shows and episodes
 
-The three shows cover three distinct library states, exercised through `episodes_sample.csv`:
+The four shows cover the distinct states a show's progress can be in, exercised through
+`episodes_sample.csv`:
 
-- **Severance** — 2 declared seasons, 19 regular episodes (9 and 10), **every one watched**, plus a
-  season 0 holding 3 specials of which 1 is watched. Three cases in one show:
-  - It is deliberately the case issue #88 decided. Specials count toward completion, so a show with
-    every regular episode watched and a special outstanding reads **In progress**, not Finished.
-    Getting this wrong is invisible in any single row, which is why it is worth a fixture.
-  - No episode carries a title or an air date, because nothing has backfilled them — that is
-    genuinely what a quick-filled show looks like before ROADMAP Task 13 Phase D runs.
-  - Its specials season is the only one here that is *partly* ticked, which renders differently
-    from an all-ticked or a none-ticked season.
-- **Chernobyl** — 1 season, 5 episodes, all watched, and the only episodes carrying real titles and
-  original air dates. This is the finished-show case and the "already backfilled" render path. Its
-  `runtime_minutes`, `overview` and `community_rating` are left blank along with everything else's
-  — see the note on invented data below.
+- **Severance** — 9 + 10 regular episodes across two seasons, **every one watched**, plus a single
+  unwatched special. This is deliberately the case issue #88 decided: specials count toward
+  completion, so a show with every regular episode watched and a special outstanding reads
+  **In progress**, not Finished. Getting that wrong is invisible in any single row, which is exactly
+  why it is worth a fixture rather than a comment.
+
+  No episode here carries a title or an air date, because nothing has backfilled them yet — that is
+  genuinely what a quick-filled show looks like before ROADMAP Task 13 Phase D runs.
+- **Chernobyl** — 1 season, 5 episodes, all watched, and the only ones carrying titles, air dates,
+  runtimes, synopses and ratings. This is the finished-show case *and* the already-backfilled render
+  path, so the fixture shows both sides of Phase D rather than implying metadata appeared from
+  nowhere. Its synopses are also the longest text in any fixture here, which is the case a list row
+  is most likely to mis-truncate.
+- **Fleabag** — 2 declared seasons, but only season 1 quick-filled, and only 3 of its 6 episodes
+  watched. The only *partly ticked* season in the fixture, which renders differently from an
+  all-ticked or a none-ticked one and is the case an episode checklist is most likely to get wrong.
 - **The Expanse** — 6 declared seasons but zero episode rows, which is a real state (a show added
-  but not yet quick-filled) and exercises the "no episodes" branch that reads "Not started".
+  but not yet quick-filled) and exercises the "no episodes" branch that reads "Not started". It
+  renders with no progress line at all rather than a stray "0 / 0 episodes".
 
 **No `cover_image_hash` or `still_image_hash` values.** A hash here would point at an image file
 that does not exist on the device, so every book, film or show would show a missing cover, and
@@ -99,19 +104,19 @@ author backfill (Task 14) — which is also the honest way to exercise that feat
 and episodes have no such backfill yet (ROADMAP Task 13 Phase D, not shipped), so their blank
 hashes stay blank until it lands.
 
-**No invented provider data.** Every value a provider would supply is blank: `external_identifiers`
-for films and shows, and `runtime_minutes`, `overview` and `community_rating` on every episode. What
-is here instead is only what can be stated without looking anything up — titles, years, season and
-episode structure, and Chernobyl's five episode titles with their original air dates.
+**Every provider value here was looked up, not remembered.** The films and shows carry real TMDB
+ids, Severance and Fleabag have the season and episode counts TMDB reports, and Chernobyl's titles,
+air dates, runtimes, synopses and ratings are that API's values verbatim.
 
-This is a rule, not an omission. A fixture that carries a *wrong* TMDB id is worse than one carrying
-none: the id is blank in one case and confidently points at the wrong show in the other, and only
-the second kind of error survives into whatever is built on top of it. Provider ids belong here once
-they can be filled in from a real lookup, which is Task 13 Phase D's job.
+This is a rule rather than a nicety, and it was learned the hard way: an earlier draft of this
+fixture carried TMDB ids, episode runtimes and ratings written from memory. Two of the three ids
+happened to be right. The runtimes were not, and Severance was given three specials when it has one.
 
-The happy side effect is that the fixture now models both sides of that phase honestly — Severance
-as an un-backfilled show, Chernobyl as a backfilled one — rather than implying metadata arrived from
-nowhere.
+A fixture carrying a *wrong* provider id is worse than one carrying none. A blank is a state the
+importer already handles and tests; a wrong id is confidently wrong, gets fetched, and survives into
+whatever is built on top of it. So the rule is: look it up, or leave it blank — never split the
+difference by guessing. Anything that cannot be verified stays empty, which is a legitimate state
+for every one of these columns.
 
 ## Regenerating
 
