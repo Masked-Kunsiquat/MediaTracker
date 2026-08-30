@@ -33,3 +33,6 @@ keystore.properties
 # rather than merely left untracked so it cannot ride along on an over-broad `git add`, which is
 # what would otherwise happen eventually given it reappears on every session.
 /.artifacts/
+
+# Local-only device pulls (may contain a real API key from app_settings)
+.local-backups/
