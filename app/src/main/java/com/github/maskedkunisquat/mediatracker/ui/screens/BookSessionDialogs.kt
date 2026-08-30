@@ -254,6 +254,81 @@ private fun SessionDialogBottomBar(
 }
 
 /**
+ * The start/end position and pages-read fields, read once for a session dialog.
+ *
+ * [PendingSessionDialog] and [ManualSessionDialog] ask the same three questions of the same three
+ * fields, and until #81 each held its own byte-identical copy of the answer. That is the shape the
+ * maintainability audit was filed about: a fourth field, or a third dialog, pays for it again.
+ *
+ * Only the *reading* of the fields is shared. Whether the dialog can save is deliberately left to
+ * each caller, because they genuinely differ -- the pending dialog requires both positions to be
+ * non-blank, while the manual one also weighs its optional duration.
+ */
+private class SessionPositionFields(
+    /** The start position, or `null` if blank or unreadable. */
+    val startUnit: Double?,
+    /** The end position, or `null` if blank or unreadable. */
+    val endUnit: Double?,
+    /** The manually entered pages read, or `null` if blank or unreadable. */
+    val deltaPages: Int?,
+    val startUnitIsValid: Boolean,
+    val endUnitIsValid: Boolean,
+    val deltaPagesIsValid: Boolean,
+    val startUnitShowsError: Boolean,
+    val endUnitShowsError: Boolean,
+    val deltaPagesShowsError: Boolean,
+    /** Page mode's pages-read, derived from the two positions rather than asked for. */
+    val derivedDeltaPages: Int?,
+)
+
+/**
+ * Reads the three position fields, keeping blank ("incomplete") distinct from unreadable
+ * ("invalid") -- a blank field is not flagged as an error, it is simply not yet filled in.
+ *
+ * [parseOptionalFiniteDouble] rather than a raw `toDoubleOrNull` plus a hand-written `isFinite`
+ * check (#78): an overflowing digit string parses to `POSITIVE_INFINITY` rather than failing, so
+ * "did it parse" is not the question being asked.
+ */
+private fun readSessionPositionFields(
+    startUnitText: String,
+    endUnitText: String,
+    deltaPagesText: String,
+    isPageMode: Boolean,
+): SessionPositionFields {
+    val parsedStartUnit = parseOptionalFiniteDouble(startUnitText)
+    val startUnitIsValid = parsedStartUnit?.value != null
+
+    val parsedEndUnit = parseOptionalFiniteDouble(endUnitText)
+    val endUnitIsValid = parsedEndUnit?.value != null
+
+    // Blank stays distinct from unreadable here too: parseOptionalNumber returns a ParsedNumber
+    // whose value is null for a blank field (an omitted count, which is allowed) and null itself
+    // for text that does not parse -- so `deltaPagesIsValid` is simply "not unreadable".
+    val parsedDeltaPages = parseOptionalNumber(deltaPagesText, String::toIntOrNull)
+    val deltaPagesIsValid = parsedDeltaPages != null
+
+    return SessionPositionFields(
+        startUnit = parsedStartUnit?.value,
+        endUnit = parsedEndUnit?.value,
+        deltaPages = parsedDeltaPages?.value,
+        startUnitIsValid = startUnitIsValid,
+        endUnitIsValid = endUnitIsValid,
+        deltaPagesIsValid = deltaPagesIsValid,
+        startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid,
+        endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid,
+        deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid,
+        // Page-mode: deltaPages is fully determined by the positions the user already entered, so
+        // it needs no separate manual input -- see ManualSessionDialog's KDoc.
+        derivedDeltaPages =
+            if (isPageMode && startUnitIsValid && endUnitIsValid) {
+                (parsedEndUnit.value!! - parsedStartUnit.value!!).roundToInt()
+            } else {
+                null
+            },
+    )
+}
+
+/**
  * Dialog for saving a finished timer run ([pendingSession]). Visibility is entirely
  * state-driven by the caller (rendered only while `state.pendingSession != null`), so unlike
  * [ManualSessionDialog] it never closes itself: a failed [onSave] leaves `pendingSession` set
@@ -278,9 +353,10 @@ private fun SessionDialogBottomBar(
  * field, a lone "." (unparseable), or a long-enough digit string overflowing [String.toDoubleOrNull]
  * to [Double.POSITIVE_INFINITY] (a finite-looking string can still parse to a non-finite value) --
  * all three used to silently collapse to `0.0` via `?: 0.0` at Save time instead of being
- * rejected. Each position field is now parsed once, above the fields (`parsedStartUnit`/
- * `parsedEndUnit`), and `startUnitIsValid`/`endUnitIsValid` require both "parses" and
- * [Double.isFinite]; a non-blank-but-invalid value shows `isError` with [supportingText] and
+ * rejected. Each position field is read once, above the fields, by
+ * [readSessionPositionFields] -- shared with [ManualSessionDialog], which asks the same three
+ * questions of the same three fields -- and `startUnitIsValid`/`endUnitIsValid` require both
+ * "parses" and [Double.isFinite]; a non-blank-but-invalid value shows `isError` with [supportingText] and
  * gates Save disabled, mirroring [ManualSessionDialog]'s duration-field pattern. A blank field is
  * still not flagged as an error (it's simply incomplete, not invalid input), consistent with the
  * pre-existing Save-disabled-while-blank behavior.
@@ -321,33 +397,16 @@ internal fun PendingSessionDialog(
 
     val isPageMode = trackingMode == TrackingMode.PAGES
 
-    // parseOptionalFiniteDouble rather than a raw toDoubleOrNull plus a hand-written isFinite
-    // check (#78): an overflowing digit string parses to POSITIVE_INFINITY rather than failing, so
-    // "did it parse" is not the question. The shared parser folds that in, which is why the
-    // `isValid` lines below no longer restate it.
-    val parsedStartUnit = parseOptionalFiniteDouble(startUnitText)
-    val startUnitIsValid = parsedStartUnit?.value != null
-    val startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid
-
-    val parsedEndUnit = parseOptionalFiniteDouble(endUnitText)
-    val endUnitIsValid = parsedEndUnit?.value != null
-    val endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid
-
-    // Page-mode: deltaPages is fully determined by the positions the user already entered, so it
-    // needs no separate manual input -- see ManualSessionDialog's KDoc.
-    val derivedDeltaPages =
-        if (isPageMode && startUnitIsValid && endUnitIsValid) {
-            (parsedEndUnit.value!! - parsedStartUnit.value!!).roundToInt()
-        } else {
-            null
-        }
-
-    // Blank stays distinct from unreadable here too: parseOptionalNumber returns a ParsedNumber
-    // whose value is null for a blank field (an omitted count, which is allowed) and null itself
-    // for text that does not parse -- so `deltaPagesIsValid` is simply "not unreadable".
-    val parsedDeltaPages = parseOptionalNumber(deltaPagesText, String::toIntOrNull)
-    val deltaPagesIsValid = parsedDeltaPages != null
-    val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
+    // Read once, and shared with the other session dialog -- see readSessionPositionFields.
+    // Bound to locals of the same names the rest of this composable already uses.
+    val positions = readSessionPositionFields(startUnitText, endUnitText, deltaPagesText, isPageMode)
+    val startUnitIsValid = positions.startUnitIsValid
+    val startUnitShowsError = positions.startUnitShowsError
+    val endUnitIsValid = positions.endUnitIsValid
+    val endUnitShowsError = positions.endUnitShowsError
+    val deltaPagesIsValid = positions.deltaPagesIsValid
+    val deltaPagesShowsError = positions.deltaPagesShowsError
+    val derivedDeltaPages = positions.derivedDeltaPages
 
     val canSave =
         startUnitText.isNotBlank() &&
@@ -388,9 +447,9 @@ internal fun PendingSessionDialog(
                 primaryEnabled = canSave,
                 onPrimary = {
                     onSave(
-                        parsedStartUnit?.value ?: 0.0,
-                        parsedEndUnit?.value ?: 0.0,
-                        if (isPageMode) derivedDeltaPages else parsedDeltaPages?.value,
+                        positions.startUnit ?: 0.0,
+                        positions.endUnit ?: 0.0,
+                        if (isPageMode) derivedDeltaPages else positions.deltaPages,
                         notesText.ifBlank { null },
                     )
                 },
@@ -653,7 +712,6 @@ internal const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,00
  * `state.errorMessage` as a banner in [BookDetailContent] once this dialog has closed, exactly as
  * a rejected create already was.
  */
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ManualSessionDialog(
@@ -735,33 +793,16 @@ internal fun ManualSessionDialog(
             validatedDurationMinutes?.let { it * 60 }
         }
 
-    // parseOptionalFiniteDouble rather than a raw toDoubleOrNull plus a hand-written isFinite
-    // check (#78): an overflowing digit string parses to POSITIVE_INFINITY rather than failing, so
-    // "did it parse" is not the question. The shared parser folds that in, which is why the
-    // `isValid` lines below no longer restate it.
-    val parsedStartUnit = parseOptionalFiniteDouble(startUnitText)
-    val startUnitIsValid = parsedStartUnit?.value != null
-    val startUnitShowsError = startUnitText.isNotBlank() && !startUnitIsValid
-
-    val parsedEndUnit = parseOptionalFiniteDouble(endUnitText)
-    val endUnitIsValid = parsedEndUnit?.value != null
-    val endUnitShowsError = endUnitText.isNotBlank() && !endUnitIsValid
-
-    // Page-mode: deltaPages is fully determined by the positions already entered -- see the "Page
-    // vs. percent mode" section of this function's KDoc.
-    val derivedDeltaPages =
-        if (isPageMode && startUnitIsValid && endUnitIsValid) {
-            (parsedEndUnit.value!! - parsedStartUnit.value!!).roundToInt()
-        } else {
-            null
-        }
-
-    // Blank stays distinct from unreadable here too: parseOptionalNumber returns a ParsedNumber
-    // whose value is null for a blank field (an omitted count, which is allowed) and null itself
-    // for text that does not parse -- so `deltaPagesIsValid` is simply "not unreadable".
-    val parsedDeltaPages = parseOptionalNumber(deltaPagesText, String::toIntOrNull)
-    val deltaPagesIsValid = parsedDeltaPages != null
-    val deltaPagesShowsError = !isPageMode && deltaPagesText.isNotBlank() && !deltaPagesIsValid
+    // Read once, and shared with the other session dialog -- see readSessionPositionFields.
+    // Bound to locals of the same names the rest of this composable already uses.
+    val positions = readSessionPositionFields(startUnitText, endUnitText, deltaPagesText, isPageMode)
+    val startUnitIsValid = positions.startUnitIsValid
+    val startUnitShowsError = positions.startUnitShowsError
+    val endUnitIsValid = positions.endUnitIsValid
+    val endUnitShowsError = positions.endUnitShowsError
+    val deltaPagesIsValid = positions.deltaPagesIsValid
+    val deltaPagesShowsError = positions.deltaPagesShowsError
+    val derivedDeltaPages = positions.derivedDeltaPages
 
     val context = LocalContext.current
     // "Defaults" for create mode (today/now); in edit mode these seed the pickers with the
@@ -851,9 +892,9 @@ internal fun ManualSessionDialog(
                             hour = timePickerState.hour,
                             minute = timePickerState.minute,
                         ),
-                        parsedStartUnit?.value ?: 0.0,
-                        parsedEndUnit?.value ?: 0.0,
-                        if (isPageMode) derivedDeltaPages else parsedDeltaPages?.value,
+                        positions.startUnit ?: 0.0,
+                        positions.endUnit ?: 0.0,
+                        if (isPageMode) derivedDeltaPages else positions.deltaPages,
                         notesText.ifBlank { null },
                     )
                 },
