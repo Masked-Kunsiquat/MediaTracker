@@ -350,7 +350,19 @@ public class ImportDataUseCase(
                     it.mediaId
                 }
             val existingSessionsById = readingSessionRepository.observeAllSessions().first().associateBy { it.id }
-            val existingEpisodesById = mediaRepository.observeAllEpisodes().first().associateBy { it.id }
+            val allEpisodes = mediaRepository.observeAllEpisodes().first()
+            val existingEpisodesById = allEpisodes.associateByTo(mutableMapOf()) { it.id }
+            // The second way an episode row can already exist. `episodes` carries a unique index on
+            // (mediaId, seasonNumber, episodeNumber), so a row matching an existing episode's *slot*
+            // is a duplicate even when its `episode_id` matches nothing -- and insertEpisode is
+            // ABORT, so treating it as new does not create a duplicate, it rolls back the entire
+            // import. Both maps are kept current as rows resolve below, so two rows in the same file
+            // claiming one slot cannot collide either (the book path's "In-file duplicates" rule,
+            // applied to episodes).
+            val existingEpisodesBySlot =
+                allEpisodes.associateByTo(mutableMapOf()) {
+                    episodeSlotKey(it.mediaId, it.seasonNumber, it.episodeNumber)
+                }
 
             val mediaResolution =
                 resolveMediaRows(existingMedia, existingIdentifiersByMediaId, libraryParseResults, duplicatePolicy)
@@ -456,23 +468,49 @@ public class ImportDataUseCase(
                                 // show matched under a different id than the file used must still
                                 // collect its episodes. See the class KDoc.
                                 val resolvedMediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
-                                val existing = existingEpisodesById[row.episodeId]
-                                if (existing == null) {
-                                    episodeInserts += toEpisodeEntity(row, resolvedMediaId)
-                                    episodesImported++
-                                } else {
-                                    when (duplicatePolicy) {
-                                        DuplicatePolicy.SKIP -> episodesSkipped++
-                                        DuplicatePolicy.REPLACE -> {
-                                            episodeUpdates += toEpisodeEntity(row, resolvedMediaId)
-                                            episodesReplaced++
-                                        }
-                                        DuplicatePolicy.MERGE -> {
-                                            episodeUpdates += mergeEpisode(existing, row)
-                                            episodesMerged++
+                                // Id first -- it is the primary key, and the strongest statement the
+                                // file can make about which row it means. The slot is the fallback,
+                                // for the case ids did not round-trip: see existingEpisodesBySlot.
+                                val existing =
+                                    existingEpisodesById[row.episodeId]
+                                        ?: existingEpisodesBySlot[
+                                            episodeSlotKey(resolvedMediaId, row.seasonNumber, row.episodeNumber),
+                                        ]
+                                val resolved =
+                                    if (existing == null) {
+                                        val insert = toEpisodeEntity(row, resolvedMediaId)
+                                        episodeInserts += insert
+                                        episodesImported++
+                                        insert
+                                    } else {
+                                        when (duplicatePolicy) {
+                                            DuplicatePolicy.SKIP -> {
+                                                episodesSkipped++
+                                                existing
+                                            }
+                                            DuplicatePolicy.REPLACE -> {
+                                                val update = replacedEpisode(existing, row, resolvedMediaId)
+                                                episodeUpdates += update
+                                                episodesReplaced++
+                                                update
+                                            }
+                                            DuplicatePolicy.MERGE -> {
+                                                val update = mergeEpisode(existing, row)
+                                                episodeUpdates += update
+                                                episodesMerged++
+                                                update
+                                            }
                                         }
                                     }
-                                }
+                                // Record this row's outcome so a later row in the same file sees it,
+                                // under both keys -- the file's own episode_id as well as the row's,
+                                // since a slot match means the two differ and a later row could cite
+                                // either.
+                                existingEpisodesById[resolved.id] = resolved
+                                existingEpisodesById[row.episodeId] = resolved
+                                existingEpisodesBySlot[
+                                    episodeSlotKey(resolved.mediaId, resolved.seasonNumber, resolved.episodeNumber),
+                                ] = resolved
                             }
                         }
                     }
@@ -503,6 +541,7 @@ public class ImportDataUseCase(
                     itemsSkipped = mediaResolution.skipped,
                     itemsMerged = mediaResolution.merged,
                     itemsReplaced = mediaResolution.replaced,
+                    booksImported = mediaResolution.importedBooks,
                     sessionsImported = sessionsImported,
                     sessionsSkipped = sessionsSkipped,
                     sessionsMerged = sessionsMerged,
@@ -603,6 +642,7 @@ public class ImportDataUseCase(
                     itemsSkipped = mediaResolution.skipped,
                     itemsMerged = mediaResolution.merged,
                     itemsReplaced = mediaResolution.replaced,
+                    booksImported = mediaResolution.importedBooks,
                     sessionsImported = 0,
                     sessionsSkipped = 0,
                     sessionsMerged = 0,
@@ -632,6 +672,8 @@ public class ImportDataUseCase(
         val updates: List<ImportMediaUpdate>,
         val rejections: List<ImportRejection>,
         val imported: Int,
+        /** How many of [imported] were books -- see [ImportSummary.booksImported] for why. */
+        val importedBooks: Int,
         val skipped: Int,
         val merged: Int,
         val replaced: Int,
@@ -720,6 +762,7 @@ public class ImportDataUseCase(
         val inserts = mutableListOf<ImportMediaInsert>()
         val updates = mutableListOf<ImportMediaUpdate>()
         var imported = 0
+        var importedBooks = 0
         var skipped = 0
         var merged = 0
         var replaced = 0
@@ -780,6 +823,7 @@ public class ImportDataUseCase(
                         val insert = buildInsert(row)
                         inserts += insert
                         imported++
+                        if (row.type == MediaType.BOOK) importedBooks++
                         knownMediaIds += row.mediaId
                         typeOfKnownMediaId[row.mediaId] = row.type
                         resolvedMediaId[row.mediaId] = row.mediaId
@@ -832,6 +876,7 @@ public class ImportDataUseCase(
             updates,
             rejections,
             imported,
+            importedBooks,
             skipped,
             merged,
             replaced,
@@ -1143,6 +1188,46 @@ public class ImportDataUseCase(
             deltaPages = existing.deltaPages ?: row.deltaPages,
             notes = existing.notes?.takeIf { it.isNotBlank() } ?: row.notes,
             // timestamps/positions/mediaId are the session's identity -- merge never touches them.
+        )
+
+    /**
+     * The `episodes` unique index, as a map key -- see `existingEpisodesBySlot`.
+     *
+     * Season and episode numbers are `Int`, so no normalisation is needed and the separator only has
+     * to be something a `mediaId` cannot contain. It cannot contain `/`: ids are either generated
+     * UUIDs or come from the file, and a file's `media_id` reaches here only after matching a real
+     * item (an unmatched one is rejected as an unknown show before this is called).
+     */
+    private fun episodeSlotKey(
+        mediaId: String,
+        seasonNumber: Int,
+        episodeNumber: Int,
+    ): String = "$mediaId/$seasonNumber/$episodeNumber"
+
+    /**
+     * REPLACE onto an episode that already exists here.
+     *
+     * Two things are taken from the existing row rather than the file, and both are the same rule
+     * [buildReplace] follows for a media item:
+     * - **`id`**, because the match may have been on the season/episode slot rather than on
+     *   `episode_id` (see `existingEpisodesBySlot`). The update is applied by `@Update`, which
+     *   matches on the primary key, so building this with the *file's* id would update nothing and
+     *   then be reported as a replacement that never happened.
+     * - **`stillImageHash`**, because the CSV carries the hash naming an image and never the image
+     *   itself. Taking the file's value would point the row at a file this device does not have;
+     *   clearing it would discard one it does. Neither is what "the file wins" should mean for a
+     *   column whose content the file does not contain.
+     *
+     * A genuinely new episode still gets `null` -- there is no local image to keep.
+     */
+    private fun replacedEpisode(
+        existing: EpisodeEntity,
+        row: ParsedEpisodeRow,
+        mediaId: String,
+    ): EpisodeEntity =
+        toEpisodeEntity(row, mediaId).copy(
+            id = existing.id,
+            stillImageHash = existing.stillImageHash,
         )
 
     /**

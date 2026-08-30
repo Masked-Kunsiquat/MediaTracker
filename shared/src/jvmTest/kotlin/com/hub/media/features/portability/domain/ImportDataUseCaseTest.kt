@@ -37,6 +37,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * Integration tests for [ImportDataUseCase] against a real (in-memory) [AppDatabase].
@@ -1604,6 +1605,248 @@ class ImportDataUseCaseTest {
             val imported = shows.observeEpisodes(showId).first()
             assertEquals(2, imported.size, "the v4 row must join the one already there")
             assertEquals("Vichnaya Pamyat", imported.single { it.id != existing.id }.title)
+        }
+
+    /**
+     * **The whole import must not abort because an episode already exists under a different id.**
+     *
+     * `episodes` carries a unique index on `(mediaId, seasonNumber, episodeNumber)`, and
+     * `insertEpisode` is `OnConflictStrategy.ABORT`. An episodes row whose `episode_id` matches
+     * nothing but whose season/episode slot is already occupied would therefore violate that index
+     * and roll back the *entire* transaction -- turning an ordinary duplicate into total failure,
+     * with nothing imported and an error where a summary should be.
+     *
+     * This is reachable the moment ids stop round-tripping, which is exactly the case CSV import
+     * exists for: restoring into a different library, where the show matched by title rather than by
+     * `media_id` and its episodes were quick-filled locally with their own UUIDs.
+     */
+    @Test
+    fun execute_episodeAlreadyPresentUnderADifferentId_isMatchedRatherThanAborting() =
+        runTest {
+            val shows = TVShowRepository(db)
+            val addResult =
+                shows.addShow(
+                    title = "Chernobyl",
+                    totalSeasons = 1,
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val showId = addResult.data
+            val localEpisodes = shows.observeEpisodes(showId).first()
+
+            // Same show, same season, same episode numbers -- different episode ids, as a backup
+            // taken on another install would carry.
+            val result =
+                useCase.execute(
+                    libraryCsv = null,
+                    readingLogsCsv = null,
+                    episodesCsv =
+                        episodesCsv(
+                            episodeRow(episodeId = "foreign-1", mediaId = showId, episodeNumber = "1"),
+                            episodeRow(episodeId = "foreign-2", mediaId = showId, episodeNumber = "2"),
+                        ),
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(2, result.data.episodesSkipped, "both must be recognised as already present")
+            assertEquals(0, result.data.episodesImported)
+
+            val after = shows.observeEpisodes(showId).first()
+            assertEquals(2, after.size, "no duplicate rows may be created")
+            assertEquals(
+                localEpisodes.map { it.id }.toSet(),
+                after.map { it.id }.toSet(),
+                "the device's own episode rows must survive untouched",
+            )
+        }
+
+    /**
+     * REPLACE onto an episode matched by its season/episode slot rather than its id must *update*
+     * that row, not insert a second one -- which means keeping the existing row's primary key, since
+     * `@Update` matches on it.
+     */
+    @Test
+    fun execute_replaceOntoAnEpisodeMatchedByItsSlot_updatesInPlace() =
+        runTest {
+            val shows = TVShowRepository(db)
+            val addResult =
+                shows.addShow(
+                    title = "Chernobyl",
+                    totalSeasons = 1,
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 1)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val showId = addResult.data
+            val localEpisode = shows.observeEpisodes(showId).first().single()
+
+            val result =
+                useCase.execute(
+                    libraryCsv = null,
+                    readingLogsCsv = null,
+                    episodesCsv =
+                        episodesCsv(
+                            episodeRow(
+                                episodeId = "foreign-1",
+                                mediaId = showId,
+                                episodeNumber = "1",
+                                title = "1:23:45",
+                                watchedAt = "2024-01-01T00:00:00Z",
+                            ),
+                        ),
+                    duplicatePolicy = DuplicatePolicy.REPLACE,
+                )
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(1, result.data.episodesReplaced)
+
+            val after = shows.observeEpisodes(showId).first()
+            assertEquals(1, after.size, "REPLACE must not add a second row for the same slot")
+            assertEquals(localEpisode.id, after.single().id, "the row keeps its own id")
+            assertEquals("1:23:45", after.single().title, "the file's values win under REPLACE")
+            assertEquals(Instant.parse("2024-01-01T00:00:00Z"), after.single().watchedAt)
+        }
+
+    /**
+     * Two rows in one file claiming the same slot are the in-file form of the same collision, and
+     * would abort the import for the same reason. The book path already resolves in-file duplicates
+     * against rows resolved earlier in the same file; episodes now do too.
+     */
+    @Test
+    fun execute_twoEpisodeRowsForTheSameSlot_doNotBothInsert() =
+        runTest {
+            val shows = TVShowRepository(db)
+            val addResult = shows.addShow(title = "Chernobyl", totalSeasons = 1)
+            assertIs<Resource.Success<String>>(addResult)
+            val showId = addResult.data
+            assertEquals(emptyList(), shows.observeEpisodes(showId).first())
+
+            val result =
+                useCase.execute(
+                    libraryCsv = null,
+                    readingLogsCsv = null,
+                    episodesCsv =
+                        episodesCsv(
+                            episodeRow(episodeId = "first", mediaId = showId, episodeNumber = "1"),
+                            episodeRow(episodeId = "second", mediaId = showId, episodeNumber = "1"),
+                        ),
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(1, result.data.episodesImported)
+            assertEquals(1, result.data.episodesSkipped, "the second row loses, as SKIP does elsewhere")
+            assertEquals(1, shows.observeEpisodes(showId).first().size)
+        }
+
+    /**
+     * REPLACE must not wipe a still image the file cannot carry -- the same rule that keeps it away
+     * from a show's Phase D columns and an item's `coverImageHash`.
+     */
+    @Test
+    fun execute_replaceOntoAnEpisodeWithAStillImage_keepsTheImageHash() =
+        runTest {
+            val shows = TVShowRepository(db)
+            val addResult =
+                shows.addShow(
+                    title = "Chernobyl",
+                    totalSeasons = 1,
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 1)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val showId = addResult.data
+            val episode = shows.observeEpisodes(showId).first().single()
+            // No update method on EpisodeDao; the import DAO's is the one that exists.
+            db.importWriteDao().updateEpisode(episode.copy(stillImageHash = "locally-stored-hash"))
+
+            val result =
+                useCase.execute(
+                    libraryCsv = null,
+                    readingLogsCsv = null,
+                    episodesCsv =
+                        episodesCsv(
+                            episodeRow(episodeId = episode.id, mediaId = showId, episodeNumber = "1"),
+                        ),
+                    duplicatePolicy = DuplicatePolicy.REPLACE,
+                )
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(
+                "locally-stored-hash",
+                shows
+                    .observeEpisodes(showId)
+                    .first()
+                    .single()
+                    .stillImageHash,
+                "the CSV carries the hash but never the image bytes, so REPLACE must not clear it",
+            )
+        }
+
+    /**
+     * `booksImported` counts books and nothing else, even though `itemsImported` now counts all
+     * three types.
+     *
+     * The Settings dialog offers to start the bulk cover/author backfill when this is non-zero, and
+     * that backfill seeds itself from books alone -- so a films-and-shows-only import must leave
+     * this at zero, or the user is offered an operation whose only possible outcome is to report
+     * having nothing to do.
+     */
+    @Test
+    fun execute_importOfOnlyAFilmAndAShow_reportsNoBooksImported() =
+        runTest {
+            assertIs<Resource.Success<String>>(
+                MovieRepository(sourceDb).addMovie(title = "Arrival", releaseYear = 2016),
+            )
+            assertIs<Resource.Success<String>>(
+                TVShowRepository(sourceDb).addShow(title = "Chernobyl", releaseYear = 2019),
+            )
+            val exported =
+                ExportDataUseCase(
+                    MediaRepository(sourceDb),
+                    sourceBookRepository,
+                    sourceSessionRepository,
+                ).execute()
+            assertIs<Resource.Success<CsvExportBundle>>(exported)
+
+            val result =
+                useCase.execute(
+                    libraryCsv = exported.data.libraryCsv,
+                    readingLogsCsv = null,
+                    episodesCsv = null,
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(2, result.data.itemsImported, "both items must import")
+            assertEquals(0, result.data.booksImported, "neither of them is a book")
+        }
+
+    @Test
+    fun execute_importOfABookAlongsideAFilm_countsOnlyTheBookAsABook() =
+        runTest {
+            addBook(title = "Dune")
+            assertIs<Resource.Success<String>>(
+                MovieRepository(sourceDb).addMovie(title = "Arrival", releaseYear = 2016),
+            )
+            val exported =
+                ExportDataUseCase(
+                    MediaRepository(sourceDb),
+                    sourceBookRepository,
+                    sourceSessionRepository,
+                ).execute()
+            assertIs<Resource.Success<CsvExportBundle>>(exported)
+
+            val result =
+                useCase.execute(
+                    libraryCsv = exported.data.libraryCsv,
+                    readingLogsCsv = null,
+                    episodesCsv = null,
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(2, result.data.itemsImported)
+            assertEquals(1, result.data.booksImported)
         }
 
     private fun episodeRow(

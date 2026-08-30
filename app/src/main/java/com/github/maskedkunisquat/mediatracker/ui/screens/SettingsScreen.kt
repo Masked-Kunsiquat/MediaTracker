@@ -642,10 +642,15 @@ fun SettingsScreenRoute(
  *
  * @param onBackfillClick Starts the bulk cover/author backfill (ROADMAP Task 14 Phase A) and
  *   dismisses this dialog, offered as a dismiss-button-adjacent action whenever [summary] actually
- *   added items ([ImportSummary.itemsImported] > 0) -- the moment a coverless/authorless import
+ *   added **books** ([ImportSummary.booksImported] > 0) -- the moment a coverless/authorless import
  *   just landed (a Goodreads import above all) is exactly when the need for a backfill is obvious,
  *   per that phase's brief. Never shown for an import that added nothing (a pure duplicate-skip
  *   pass has no new gaps to fill).
+ *
+ *   Books specifically, not [ImportSummary.itemsImported]. That backfill seeds itself from
+ *   `BookRepository.getAllBooksWithDetails()`, so an import of only films and shows gives it
+ *   nothing to do -- offering it there would produce a button whose entire effect is to log
+ *   "nothing pending". The distinction did not exist while only books could be imported.
  */
 
 /**
@@ -789,7 +794,7 @@ private fun ImportSummaryDialog(
             Button(onClick = onDismiss) { Text(stringResource(R.string.ok_button)) }
         },
         dismissButton = {
-            if (summary.itemsImported > 0) {
+            if (summary.booksImported > 0) {
                 TextButton(onClick = onBackfillClick) {
                     Text(stringResource(R.string.settings_backfill_start_button))
                 }

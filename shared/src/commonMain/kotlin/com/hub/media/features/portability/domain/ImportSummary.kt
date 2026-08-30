@@ -51,6 +51,18 @@ public data class ImportSummary(
     public val itemsSkipped: Int,
     public val itemsMerged: Int,
     public val itemsReplaced: Int,
+    /**
+     * How many of [itemsImported] were books. **Not displayed** -- the summary dialog shows the
+     * combined counts above, for the reason this class's KDoc gives.
+     *
+     * This exists because one *behaviour* genuinely does depend on the media type: the dialog offers
+     * to start the bulk cover/author backfill after an import that added something, and that
+     * backfill seeds itself from `BookRepository.getAllBooksWithDetails()` -- it is a books-only
+     * operation. Gating it on [itemsImported] would offer it after a films-and-shows-only import,
+     * where it can only report having nothing to do. That is the shape of bug this field prevents,
+     * and it is why the argument against per-type counts (a display argument) does not apply here.
+     */
+    public val booksImported: Int,
     public val sessionsImported: Int,
     public val sessionsSkipped: Int,
     public val sessionsMerged: Int,

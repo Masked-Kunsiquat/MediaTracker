@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Re-importing a backup can also no longer mark an episode watched. Under the merge policy the device's own record of what you have seen wins, because watched-ness and the date are one and the same field here: there is no way to say "watched, but I don't know when", and no way for a file to say you have *un*watched something. Choosing to replace still replaces.
 
+  An episode is recognised by *which episode it is* — its show, season and number — and not only by its internal identifier. That matters when restoring a backup into a library where you had already added the show by hand: those episodes are the same episodes, but nothing about them was copied from the file, so the identifiers do not agree. Matching on identity alone would have treated all of them as new, and season 1 episode 1 cannot exist twice — the import would have failed outright rather than recognising a duplicate.
+
 - **The episodes file was missing four columns it claimed to carry** (#106). Its own documentation promised every column an episode has; four added later for the upcoming metadata fetch — runtime, synopsis, still image and community rating — were never picked up. Nothing is lost today, because nothing fills them yet. They are written now anyway, on the same reasoning that put the film columns in the file a release before anything could read them: a backup only preserves what it wrote down, and adding a column once it has data in it is too late for every backup taken in between.
 
   Older exports still import. A file written before this change is recognised as the older shape and read as one.

@@ -18,6 +18,7 @@ internal class FakeImportDataUseCase(
                 itemsSkipped = 0,
                 itemsMerged = 0,
                 itemsReplaced = 0,
+                booksImported = 0,
                 sessionsImported = 0,
                 sessionsSkipped = 0,
                 sessionsMerged = 0,

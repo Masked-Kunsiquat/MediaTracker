@@ -43,6 +43,7 @@ class ImportViewModelTest {
             itemsSkipped = 1,
             itemsMerged = 0,
             itemsReplaced = 0,
+            booksImported = 2,
             sessionsImported = 3,
             sessionsSkipped = 0,
             sessionsMerged = 0,
