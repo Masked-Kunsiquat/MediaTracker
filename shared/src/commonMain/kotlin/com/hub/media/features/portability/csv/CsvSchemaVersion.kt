@@ -73,8 +73,30 @@ package com.hub.media.features.portability.csv
  * As with `v3`, [LibraryCsvImporter] still refuses a `TV_SHOW` row, so `total_seasons` is written
  * and not yet read, and `episodes_export.csv` is exported but has no importer at all yet -- see
  * [LibraryCsvExporter]'s KDoc and [EpisodeCsvExporter]'s KDoc respectively.
+ *
+ * **Issue #106 update: `v5`, and the end of "written and not yet read".** Two changes ship under
+ * this bump, and only the first is a column-set change:
+ *
+ * 1. [EpisodeCsvExporter] gained `runtime_minutes`, `overview`, `still_image_hash` and
+ *    `community_rating` -- the four columns PR #86 added to
+ *    [com.hub.media.core.database.entities.EpisodeEntity] and that exporter never picked up.
+ *    Appended after `watched_at` so no existing column moved; a `v4` episodes file still imports via
+ *    [EpisodeCsvImporter.padLegacyV4Row]. See [EpisodeCsvExporter]'s KDoc for why they are written
+ *    before Phase D fills them.
+ * 2. `library_export.csv`'s column set is **unchanged** by this bump -- it writes `5` in this column
+ *    now, but [LibraryCsvExporter.HEADER] is byte-identical to its `v4` shape, so a `v4` library
+ *    file matches the current header directly and needs no adapter. The marker is shared by all
+ *    three files (this KDoc's opening paragraph), and a bump one of them needs is a bump they all
+ *    carry.
+ *
+ * What the two paragraphs above this one describe as "written and not yet read" is no longer true
+ * of anything. [LibraryCsvImporter] now accepts `MOVIE` and `TV_SHOW` rows, so `runtime_minutes`,
+ * `watch_status`, `watched_at` and `total_seasons` are read back; [EpisodeCsvImporter] now exists,
+ * so `episodes_export.csv` is read back too. Those paragraphs are left standing as the record of
+ * why the columns were written early -- the reasoning was sound and is reused verbatim above for
+ * this bump's own four columns.
  */
-public const val CSV_SCHEMA_VERSION: Int = 4
+public const val CSV_SCHEMA_VERSION: Int = 5
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

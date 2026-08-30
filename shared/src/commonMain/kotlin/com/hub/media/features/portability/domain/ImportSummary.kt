@@ -1,9 +1,16 @@
 package com.hub.media.features.portability.domain
 
-/** Which imported file a rejected row came from. */
+/**
+ * Which imported file a rejected row came from.
+ *
+ * [MEDIA] was named `BOOK` until Issue #106, when `library_export.csv` stopped being a books-only
+ * file on the import side; it identifies the file, not the media type of the row that failed, and
+ * that file always held every type on the export side.
+ */
 public enum class ImportRowSource {
-    BOOK,
+    MEDIA,
     SESSION,
+    EPISODE,
 }
 
 /**
@@ -25,19 +32,41 @@ public data class ImportRejection(
 
 /**
  * Outcome of one [ImportDataUseCase.execute] call (ROADMAP Task 8 Phase B): counts for every
- * duplicate-policy outcome, for both files, plus every rejected row's reason. The UI is expected
- * to render this in full -- a silent "import succeeded" that doesn't say what was skipped is
- * exactly the failure mode this phase's brief calls out.
+ * duplicate-policy outcome, for all three files, plus every rejected row's reason. The UI is
+ * expected to render this in full -- a silent "import succeeded" that doesn't say what was skipped
+ * is exactly the failure mode this phase's brief calls out.
+ *
+ * ### Why the media counts are not broken down by type
+ * The `items*` counts were `books*` until Issue #106 made movies and shows importable, at which
+ * point the name stopped being true -- a film landing in a field called `booksImported` is the kind
+ * of quiet mislabelling this class exists to prevent. Renaming was preferred over splitting into
+ * per-type counts (twelve fields where there are now four) because the number the user is checking
+ * is "did my library come back", and `library_export.csv` is one file with one row shape; the
+ * per-type detail is visible in the library itself the moment the dialog is dismissed. Episodes are
+ * counted separately because they are a *different file*, on the same principle that already gives
+ * sessions their own counts.
  */
 public data class ImportSummary(
-    public val booksImported: Int,
-    public val booksSkipped: Int,
-    public val booksMerged: Int,
-    public val booksReplaced: Int,
+    public val itemsImported: Int,
+    public val itemsSkipped: Int,
+    public val itemsMerged: Int,
+    public val itemsReplaced: Int,
     public val sessionsImported: Int,
     public val sessionsSkipped: Int,
     public val sessionsMerged: Int,
     public val sessionsReplaced: Int,
+    /**
+     * Episodes read back from `episodes_export.csv` (Issue #106).
+     *
+     * These exist so a zero is *visible*. Before them the file was exported and never read, and the
+     * summary had no field in which that could show up -- an import that dropped every episode a
+     * user had ticked off reported the same clean success as one that kept them. A count that reads
+     * `0 episodes imported` is the difference between a silent loss and a reported one.
+     */
+    public val episodesImported: Int,
+    public val episodesSkipped: Int,
+    public val episodesMerged: Int,
+    public val episodesReplaced: Int,
     public val rejections: List<ImportRejection>,
     /**
      * Free-text advisory notes about this import that aren't per-row problems and don't fit the

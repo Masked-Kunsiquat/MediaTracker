@@ -3,6 +3,7 @@ package com.hub.media.features.portability.data
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.ImportMediaInsert
 import com.hub.media.core.database.dao.ImportMediaUpdate
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -27,7 +28,7 @@ public class ImportWriteRepository(
     private val logger: Logger = AppLogger,
 ) {
     /**
-     * Applies every queued book/session insert/update in one database transaction (see
+     * Applies every queued media/session/episode insert/update in one database transaction (see
      * [com.hub.media.core.database.dao.ImportWriteDao.importAtomically]).
      *
      * @return [Resource.Success] if every write applied, or [Resource.Error] if any of them threw
@@ -35,13 +36,22 @@ public class ImportWriteRepository(
      *   throws itself).
      */
     public suspend fun importAtomically(
-        bookInserts: List<ImportMediaInsert>,
-        bookUpdates: List<ImportMediaUpdate>,
+        mediaInserts: List<ImportMediaInsert>,
+        mediaUpdates: List<ImportMediaUpdate>,
         sessionInserts: List<ReadingSessionEntity>,
         sessionUpdates: List<ReadingSessionEntity>,
+        episodeInserts: List<EpisodeEntity> = emptyList(),
+        episodeUpdates: List<EpisodeEntity> = emptyList(),
     ): Resource<Unit> =
         try {
-            db.importWriteDao().importAtomically(bookInserts, bookUpdates, sessionInserts, sessionUpdates)
+            db.importWriteDao().importAtomically(
+                mediaInserts,
+                mediaUpdates,
+                sessionInserts,
+                sessionUpdates,
+                episodeInserts,
+                episodeUpdates,
+            )
             Resource.Success(Unit)
         } catch (e: CancellationException) {
             // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so

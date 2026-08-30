@@ -10,6 +10,7 @@ import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.BookMetadataValidation
 import com.hub.media.features.portability.csv.LibraryRowParseResult
 import com.hub.media.features.portability.csv.ParsedLibraryRow
+import com.hub.media.features.portability.csv.ParsedRowDetails
 import com.hub.media.features.portability.csv.RowRejectedException
 import com.hub.media.features.portability.csv.parseOptionalInt
 import com.hub.media.features.portability.csv.reject
@@ -32,7 +33,7 @@ import kotlin.time.Instant
  * - [GoodreadsColumns.TITLE] -> [ParsedLibraryRow.title] (required; blank/missing rejects the row,
  *   validated through the same [BookMetadataValidation.validateTitle] a manual edit uses).
  * - [GoodreadsColumns.AUTHOR] + [GoodreadsColumns.ADDITIONAL_AUTHORS] ->
- *   [ParsedLibraryRow.authors] (schema v5, ROADMAP Task 9 Phase A). Goodreads splits one book's
+ *   [ParsedRowDetails.Book.authors] (schema v5, ROADMAP Task 9 Phase A). Goodreads splits one book's
  *   authorship across three columns; this importer combines exactly two of them: [GoodreadsColumns.AUTHOR]
  *   (the primary author, already in `"First Last"` order) first, followed by every name in
  *   [GoodreadsColumns.ADDITIONAL_AUTHORS] (co-authors, which Goodreads itself comma-separates --
@@ -43,30 +44,30 @@ import kotlin.time.Instant
  *   [GoodreadsColumns.AUTHOR], just re-formatted `"Last, First"`; including it too would duplicate
  *   that one person as a second, differently-punctuated entry rather than add a name this importer
  *   doesn't already have. Both source columns are optional -- a row with neither present, or both
- *   blank, gets `null` [ParsedLibraryRow.authors] like any other book with no author on record.
- * - [GoodreadsColumns.NUMBER_OF_PAGES] -> [ParsedLibraryRow.totalPages].
- * - [GoodreadsColumns.BINDING] -> [ParsedLibraryRow.format]; see [mapBinding]'s KDoc for the exact
+ *   blank, gets `null` [ParsedRowDetails.Book.authors] like any other book with no author on record.
+ * - [GoodreadsColumns.NUMBER_OF_PAGES] -> [ParsedRowDetails.Book.totalPages].
+ * - [GoodreadsColumns.BINDING] -> [ParsedRowDetails.Book.format]; see [mapBinding]'s KDoc for the exact
  *   mapping table and its fallback.
- * - [GoodreadsColumns.EXCLUSIVE_SHELF] -> [ParsedLibraryRow.status]; see [mapExclusiveShelf]'s KDoc
+ * - [GoodreadsColumns.EXCLUSIVE_SHELF] -> [ParsedRowDetails.Book.status]; see [mapExclusiveShelf]'s KDoc
  *   for the mapping and why nothing maps to [ReadingStatus.DNF].
- * - [GoodreadsColumns.DATE_READ] -> [ParsedLibraryRow.finishedAt], only when [ReadingStatus.FINISHED]
+ * - [GoodreadsColumns.DATE_READ] -> [ParsedRowDetails.Book.finishedAt], only when [ReadingStatus.FINISHED]
  *   was derived above (see [mapExclusiveShelf]'s KDoc for why).
  * - [GoodreadsColumns.DATE_ADDED] -> [ParsedLibraryRow.createdAt], falling back to [clock] if blank
  *   or unparseable (every book needs *some* `createdAt`; Goodreads' own "when I added this" is the
  *   best available substitute for "when this device first learned about the book").
  * - [GoodreadsColumns.ISBN13] preferred over [GoodreadsColumns.ISBN] (the 13-digit form is the
- *   modern standard and what Goodreads itself prefers to display) -> [ParsedLibraryRow.isbn], after
+ *   modern standard and what Goodreads itself prefers to display) -> [ParsedRowDetails.Book.isbn], after
  *   stripping Goodreads' Excel-armor wrapper (see [stripGoodreadsIsbnArmor]). A resolved ISBN is
  *   also recorded as an [IdentifierProvider.ISBN] external identifier, matching
  *   [com.hub.media.features.books.domain.AddBookByIsbnUseCase]'s convention of always pairing
- *   [ParsedLibraryRow.isbn]/`BookDetailsEntity.isbn` with the equivalent
+ *   [ParsedRowDetails.Book.isbn]/`BookDetailsEntity.isbn` with the equivalent
  *   [com.hub.media.core.database.entities.ExternalIdentifierEntity] row.
  * - [ParsedLibraryRow.purchasePrice] and [ParsedLibraryRow.coverImageHash] -- Goodreads carries
  *   neither concept (no price paid, and no downloaded cover image bytes -- see
  *   [com.hub.media.features.portability.domain.ImportDataUseCase]'s KDoc "Cover images are never
  *   restored by CSV import" for why a cover *URL*, even if Goodreads exported one, still wouldn't
  *   be written here) -- both are always `null`.
- * - [ParsedLibraryRow.trackingMode] -- [TrackingMode.PAGES] when [totalPages] is known,
+ * - [ParsedRowDetails.Book.trackingMode] -- [TrackingMode.PAGES] when [totalPages] is known,
  *   [TrackingMode.PERCENT] otherwise, the same derivation
  *   [com.hub.media.features.books.data.BookRepository.addBook] and
  *   [com.hub.media.features.portability.csv.LibraryCsvImporter] both already apply.
@@ -210,22 +211,27 @@ public object GoodreadsCsvImporter {
 
         val trackingMode = if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT
 
+        // Always a book -- a Goodreads export has no other media type in it, so this is the one
+        // ParsedRowDetails variant this importer can ever produce. ParsedLibraryRow.type derives
+        // MediaType.BOOK from it (see that property's KDoc), which is why no `type` is passed here.
         return ParsedLibraryRow(
             mediaId = newId(),
-            type = MediaType.BOOK,
             title = title,
-            authors = authors,
             releaseYear = releaseYear,
             purchasePrice = null,
             createdAt = createdAt,
             coverImageHash = null,
-            isbn = isbn,
-            format = format,
-            totalPages = totalPages,
-            status = status,
-            finishedAt = finishedAt,
-            trackingMode = trackingMode,
             externalIdentifiers = isbn?.let { listOf(IdentifierProvider.ISBN to it) }.orEmpty(),
+            details =
+                ParsedRowDetails.Book(
+                    authors = authors,
+                    isbn = isbn,
+                    format = format,
+                    totalPages = totalPages,
+                    status = status,
+                    finishedAt = finishedAt,
+                    trackingMode = trackingMode,
+                ),
         )
     }
 

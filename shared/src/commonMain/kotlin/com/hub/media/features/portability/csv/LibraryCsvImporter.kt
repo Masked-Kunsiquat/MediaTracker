@@ -5,34 +5,91 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.books.domain.BookMetadataValidation
+import com.hub.media.features.movies.data.MovieMetadataValidation
+import com.hub.media.features.tv.data.TVMetadataValidation
 import kotlin.time.Instant
 
-/** One successfully parsed `library_export.csv` data row -- mirrors [LibraryCsvExporter]'s column set. */
+/**
+ * The half of a parsed `library_export.csv` row that belongs to one specific media type (Issue
+ * #106) -- exactly one variant per row, chosen by the row's `type` column.
+ *
+ * Sealed rather than a flat row carrying every type's columns as nullables, for the reason
+ * [com.hub.media.core.database.dao.ImportDetails] gives on the write side: a flat shape makes "a
+ * film with a book's `tracking_mode`" representable, and something has to then decide, at every
+ * read, whether that field meant anything. Here the question cannot be asked. It also keeps the
+ * book fields non-null, which is what they were before movies and shows became importable -- a
+ * flat shape would have had to make [Book.format]/[Book.status]/[Book.trackingMode] nullable and
+ * push that nullability into every existing book consumer.
+ */
+public sealed class ParsedRowDetails {
+    /** @see ParsedLibraryRow */
+    public data class Book(
+        /**
+         * [com.hub.media.core.database.entities.BookDetailsEntity.authors]' stored form, passed
+         * through verbatim (schema v5 / CSV `v2`, ROADMAP Task 9 Phase A) -- already `"; "`-joined
+         * by whichever writer produced this row, never re-split/re-joined here. `null` for a blank
+         * cell, including every row read from a `v1` file via [LibraryCsvExporter.HEADER_V1]'s
+         * legacy adapter (see [LibraryCsvImporter.padLegacyV1Row]).
+         */
+        public val authors: String?,
+        public val isbn: String?,
+        public val format: BookFormat,
+        public val totalPages: Int?,
+        public val status: ReadingStatus,
+        public val finishedAt: Instant?,
+        public val trackingMode: TrackingMode,
+    ) : ParsedRowDetails()
+
+    /** @see ParsedLibraryRow */
+    public data class Movie(
+        public val runtimeMinutes: Int?,
+        public val status: WatchStatus,
+        public val watchedAt: Instant?,
+    ) : ParsedRowDetails()
+
+    /**
+     * A show's own row. Its *episodes* are not here -- they are one-to-many under the show and live
+     * in `episodes_export.csv`, read by [EpisodeCsvImporter].
+     *
+     * @see ParsedLibraryRow
+     */
+    public data class TVShow(
+        public val totalSeasons: Int?,
+        public val status: WatchStatus,
+    ) : ParsedRowDetails()
+}
+
+/**
+ * One successfully parsed `library_export.csv` data row -- mirrors [LibraryCsvExporter]'s column
+ * set, split into the columns every media type shares and the [details] only one type uses.
+ */
 public data class ParsedLibraryRow(
     public val mediaId: String,
-    public val type: MediaType,
     public val title: String,
-    /**
-     * [com.hub.media.core.database.entities.BookDetailsEntity.authors]' stored form, passed
-     * through verbatim (schema v5 / CSV `v2`, ROADMAP Task 9 Phase A) -- already `"; "`-joined by
-     * whichever writer produced this row, never re-split/re-joined here. `null` for a blank cell,
-     * including every row read from a `v1` file via [LibraryCsvExporter.HEADER_V1]'s legacy adapter
-     * (see [padLegacyV1Row]).
-     */
-    public val authors: String?,
     public val releaseYear: Int?,
     public val purchasePrice: Double?,
     public val createdAt: Instant,
     public val coverImageHash: String?,
-    public val isbn: String?,
-    public val format: BookFormat,
-    public val totalPages: Int?,
-    public val status: ReadingStatus,
-    public val finishedAt: Instant?,
-    public val trackingMode: TrackingMode,
     public val externalIdentifiers: List<Pair<IdentifierProvider, String>>,
-)
+    public val details: ParsedRowDetails,
+) {
+    /**
+     * Derived from [details] rather than stored alongside it, so the two can never disagree about
+     * what this row is -- the duplicate-matching keys in
+     * [com.hub.media.features.portability.domain.ImportDataUseCase] are all scoped by this value,
+     * and a row whose `type` said `MOVIE` while its details said book would match against the wrong
+     * half of the library.
+     */
+    public val type: MediaType
+        get() =
+            when (details) {
+                is ParsedRowDetails.Book -> MediaType.BOOK
+                is ParsedRowDetails.Movie -> MediaType.MOVIE
+                is ParsedRowDetails.TVShow -> MediaType.TV_SHOW
+            }
+}
 
 /** Outcome of parsing one `library_export.csv` data row. */
 public sealed class LibraryRowParseResult {
@@ -56,10 +113,25 @@ public sealed class LibraryRowParseResult {
  * semantic problems are skip-with-report rather than whole-file failures, unlike the structural
  * problems [CsvTableReader] already fails closed on.
  *
- * Business-rule bounds (title non-blank, price `>= 0`, pages `> 0`, release year in range) are
- * NOT re-derived here -- they delegate to [BookMetadataValidation], the exact same rules
- * [com.hub.media.features.books.data.BookRepository.updateBookMetadata] enforces on a manual edit,
- * so an imported row can never be held to a looser or stricter standard than a hand-typed one.
+ * Business-rule bounds (title non-blank, price `>= 0`, pages `> 0`, runtime and seasons `> 0`,
+ * release year in range) are NOT re-derived here -- they delegate to
+ * [BookMetadataValidation]/[MovieMetadataValidation]/[TVMetadataValidation], the exact same rules
+ * [com.hub.media.features.books.data.BookRepository.updateBookMetadata] and its movie/show
+ * counterparts enforce on a manual edit, so an imported row can never be held to a looser or
+ * stricter standard than a hand-typed one.
+ *
+ * ### All three media types, since Issue #106
+ * This importer used to reject every row whose `type` was not `BOOK`, with the reason "not yet
+ * supported for import" -- written when there was genuinely nowhere to put a film or a show. The
+ * consequence was that `library_export.csv` had been *writing* movie and show columns since CSV
+ * `v3`/`v4` (deliberately -- see [LibraryCsvExporter]'s KDoc) that nothing could read back, so
+ * exporting a library and importing it into a fresh install silently returned only its books.
+ *
+ * A row's `type` column now selects one [ParsedRowDetails] variant instead, and the media-specific
+ * columns are read into it. The rejection that remains is for a `type` this app does not know at
+ * all, which is still the right answer: an unrecognised media type means the file was written by a
+ * newer build, and guessing at which columns it filled is exactly what
+ * [CsvTableReader]'s version check exists to prevent.
  */
 public object LibraryCsvImporter {
     public fun parseRow(row: List<String>): LibraryRowParseResult =
@@ -99,25 +171,58 @@ public object LibraryCsvImporter {
             } catch (e: IllegalArgumentException) {
                 reject("Unknown media type '${row[COL_TYPE]}'")
             }
-        if (type != MediaType.BOOK) {
-            // Forward-compatible: a future export may carry MOVIE/TV_SHOW rows once Task 13 lands.
-            // This app has no domain to import them into yet, so they're reported, not crashed on.
-            reject("Media type $type is not yet supported for import (only BOOK is)")
-        }
 
         val title = row[COL_TITLE]
-        BookMetadataValidation.validateTitle(title)?.let { reject(it) }
-
-        val authors = row[COL_AUTHORS].ifBlank { null }
+        // Validated against the medium's own rules from here on. The title/price checks are
+        // media-agnostic and identical whichever object they are reached through (they all forward
+        // to MediaMetadataValidation), but the release-year floor is not -- see
+        // MediaMetadataValidation's KDoc -- so each branch below must go through its own validator
+        // rather than a shared one, or a film released before film existed would import cleanly.
+        when (type) {
+            MediaType.BOOK -> BookMetadataValidation.validateTitle(title)
+            MediaType.MOVIE -> MovieMetadataValidation.validateTitle(title)
+            MediaType.TV_SHOW -> TVMetadataValidation.validateTitle(title)
+        }?.let { reject(it) }
 
         val releaseYear = parseOptionalInt(row[COL_RELEASE_YEAR], "release_year")
-        BookMetadataValidation.validateReleaseYear(releaseYear)?.let { reject(it) }
+        when (type) {
+            MediaType.BOOK -> BookMetadataValidation.validateReleaseYear(releaseYear)
+            MediaType.MOVIE -> MovieMetadataValidation.validateReleaseYear(releaseYear)
+            MediaType.TV_SHOW -> TVMetadataValidation.validateReleaseYear(releaseYear)
+        }?.let { reject(it) }
 
         val purchasePrice = parseOptionalDouble(row[COL_PURCHASE_PRICE], "purchase_price")
-        BookMetadataValidation.validatePurchasePrice(purchasePrice)?.let { reject(it) }
+        when (type) {
+            MediaType.BOOK -> BookMetadataValidation.validatePurchasePrice(purchasePrice)
+            MediaType.MOVIE -> MovieMetadataValidation.validatePurchasePrice(purchasePrice)
+            MediaType.TV_SHOW -> TVMetadataValidation.validatePurchasePrice(purchasePrice)
+        }?.let { reject(it) }
 
         val createdAt = parseRequiredInstant(row[COL_CREATED_AT], "created_at")
         val coverImageHash = row[COL_COVER_IMAGE_HASH].ifBlank { null }
+        val externalIdentifiers = unpackIdentifiers(row[COL_EXTERNAL_IDENTIFIERS])
+
+        val details =
+            when (type) {
+                MediaType.BOOK -> buildBookDetails(row)
+                MediaType.MOVIE -> buildMovieDetails(row)
+                MediaType.TV_SHOW -> buildTvDetails(row)
+            }
+
+        return ParsedLibraryRow(
+            mediaId = mediaId,
+            title = title,
+            releaseYear = releaseYear,
+            purchasePrice = purchasePrice,
+            createdAt = createdAt,
+            coverImageHash = coverImageHash,
+            externalIdentifiers = externalIdentifiers,
+            details = details,
+        )
+    }
+
+    private fun buildBookDetails(row: List<String>): ParsedRowDetails.Book {
+        val authors = row[COL_AUTHORS].ifBlank { null }
         val isbn = row[COL_ISBN].ifBlank { null }
 
         val format =
@@ -164,26 +269,59 @@ public object LibraryCsvImporter {
                 }
             }
 
-        val externalIdentifiers = unpackIdentifiers(row[COL_EXTERNAL_IDENTIFIERS])
-
-        return ParsedLibraryRow(
-            mediaId = mediaId,
-            type = type,
-            title = title,
+        return ParsedRowDetails.Book(
             authors = authors,
-            releaseYear = releaseYear,
-            purchasePrice = purchasePrice,
-            createdAt = createdAt,
-            coverImageHash = coverImageHash,
             isbn = isbn,
             format = format,
             totalPages = totalPages,
             status = status,
             finishedAt = finishedAt,
             trackingMode = trackingMode,
-            externalIdentifiers = externalIdentifiers,
         )
     }
+
+    private fun buildMovieDetails(row: List<String>): ParsedRowDetails.Movie {
+        val runtimeMinutes = parseOptionalInt(row[COL_RUNTIME_MINUTES], "runtime_minutes")
+        MovieMetadataValidation.validateRuntimeMinutes(runtimeMinutes)?.let { reject(it) }
+
+        return ParsedRowDetails.Movie(
+            runtimeMinutes = runtimeMinutes,
+            status = parseWatchStatus(row[COL_WATCH_STATUS]),
+            watchedAt = parseOptionalInstant(row[COL_WATCHED_AT], "watched_at"),
+        )
+    }
+
+    private fun buildTvDetails(row: List<String>): ParsedRowDetails.TVShow {
+        val totalSeasons = parseOptionalInt(row[COL_TOTAL_SEASONS], "total_seasons")
+        TVMetadataValidation.validateTotalSeasons(totalSeasons)?.let { reject(it) }
+
+        // A show's watch_status shares the movie column -- see LibraryCsvExporter's KDoc for why
+        // watch state is its own column rather than sharing `status` with books. The exporter writes
+        // it only for movies today, so a show row's cell is blank and defaults below; reading it
+        // here anyway costs nothing and means a hand-written file that fills it in is honoured.
+        return ParsedRowDetails.TVShow(
+            totalSeasons = totalSeasons,
+            status = parseWatchStatus(row[COL_WATCH_STATUS]),
+        )
+    }
+
+    /**
+     * Shared by the movie and show branches. Blank defaults to [WatchStatus.WATCHLIST], matching
+     * both [com.hub.media.core.database.entities.MovieDetailsEntity] and
+     * [com.hub.media.core.database.entities.TVDetailsEntity]'s own declared default -- so a row with
+     * no watch state imports as "not watched yet" rather than being rejected, exactly as a book row
+     * with a blank `status` defaults to [ReadingStatus.TO_READ] above.
+     */
+    private fun parseWatchStatus(raw: String): WatchStatus =
+        if (raw.isBlank()) {
+            WatchStatus.WATCHLIST
+        } else {
+            try {
+                WatchStatus.valueOf(raw)
+            } catch (e: IllegalArgumentException) {
+                reject("Unknown watch status '$raw'")
+            }
+        }
 
     // Column indices, matching LibraryCsvExporter.HEADER's order exactly.
     private const val COL_MEDIA_ID = 1
@@ -201,6 +339,10 @@ public object LibraryCsvImporter {
     private const val COL_FINISHED_AT = 13
     private const val COL_TRACKING_MODE = 14
     private const val COL_EXTERNAL_IDENTIFIERS = 15
+    private const val COL_RUNTIME_MINUTES = 16
+    private const val COL_WATCH_STATUS = 17
+    private const val COL_WATCHED_AT = 18
+    private const val COL_TOTAL_SEASONS = 19
 
     /**
      * Adapts one `csv_schema_version=1` data row (shaped like [LibraryCsvExporter.HEADER_V1], i.e.
@@ -209,7 +351,7 @@ public object LibraryCsvImporter {
      * [com.hub.media.features.portability.csv.CsvTableReader.read]'s `legacyHeaders` parameter
      * (ROADMAP Task 9 Phase A) so a pre-existing `v1` export still imports cleanly rather than being
      * rejected outright by the header check. A blank `authors` cell parses to `null` exactly like a
-     * blank cell in a genuine `v2` file would (see [ParsedLibraryRow.authors]) -- there is no author
+     * blank cell in a genuine `v2` file would (see [ParsedRowDetails.Book.authors]) -- there is no author
      * to recover from a file that never recorded one.
      *
      * Since `v3` (ROADMAP Task 13 Phase B) and `v4` (ROADMAP Task 13 Phase C) it also pads every

@@ -255,14 +255,16 @@ public class AppContainer(
     /**
      * CSV data-import workflow (ROADMAP Task 8 Phase B), consumed by [ImportViewModel] from the
      * Settings screen. [importWriteRepository] wraps the single all-or-nothing write transaction
-     * ([com.hub.media.core.database.dao.ImportWriteDao.importAtomically]); [bookRepository]/
-     * [readingSessionRepository] are reused for reading the current-library snapshot import needs
-     * for duplicate matching, same as [exportDataUseCase] reuses them for reading everything out.
+     * ([com.hub.media.core.database.dao.ImportWriteDao.importAtomically]); [mediaRepository]/
+     * [bookRepository]/[readingSessionRepository] are reused for reading the current-library
+     * snapshot import needs for duplicate matching, same as [exportDataUseCase] reuses them for
+     * reading everything out.
      */
     private val importWriteRepository: ImportWriteRepository = ImportWriteRepository(database)
 
     public val importDataUseCase: ImportDataUseCase =
         ImportDataUseCase(
+            mediaRepository = mediaRepository,
             bookRepository = bookRepository,
             readingSessionRepository = readingSessionRepository,
             importWriteRepository = importWriteRepository,

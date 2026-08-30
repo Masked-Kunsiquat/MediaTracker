@@ -1,12 +1,18 @@
 package com.hub.media.features.portability.domain
 
+import com.hub.media.core.database.MediaRepository
+import com.hub.media.core.database.dao.ImportDetails
 import com.hub.media.core.database.dao.ImportMediaInsert
 import com.hub.media.core.database.dao.ImportMediaUpdate
 import com.hub.media.core.database.entities.BookDetailsEntity
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -18,10 +24,15 @@ import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.portability.csv.CsvTableReader
 import com.hub.media.features.portability.csv.CsvTableResult
+import com.hub.media.features.portability.csv.EpisodeCsvExporter
+import com.hub.media.features.portability.csv.EpisodeCsvImporter
+import com.hub.media.features.portability.csv.EpisodeRowParseResult
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvImporter
 import com.hub.media.features.portability.csv.LibraryRowParseResult
+import com.hub.media.features.portability.csv.ParsedEpisodeRow
 import com.hub.media.features.portability.csv.ParsedLibraryRow
+import com.hub.media.features.portability.csv.ParsedRowDetails
 import com.hub.media.features.portability.csv.ParsedSessionRow
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvImporter
@@ -38,6 +49,7 @@ public interface ImportUseCase {
     public suspend fun execute(
         libraryCsv: String?,
         readingLogsCsv: String?,
+        episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
     ): Resource<ImportSummary>
 
@@ -210,6 +222,7 @@ private const val TAG = "ImportDataUseCase"
 private const val MAX_LOGGED_REJECTED_ROWS = 20
 
 public class ImportDataUseCase(
+    private val mediaRepository: MediaRepository,
     private val bookRepository: BookRepository,
     private val readingSessionRepository: ReadingSessionRepository,
     private val importWriteRepository: ImportWriteRepository,
@@ -260,9 +273,10 @@ public class ImportDataUseCase(
     public override suspend fun execute(
         libraryCsv: String?,
         readingLogsCsv: String?,
+        episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
     ): Resource<ImportSummary> {
-        if (libraryCsv == null && readingLogsCsv == null) {
+        if (libraryCsv == null && readingLogsCsv == null && episodesCsv == null) {
             return refuse("Nothing to import -- no file was selected.")
         }
 
@@ -302,18 +316,46 @@ public class ImportDataUseCase(
                 emptyList()
             }
 
+        val episodeDataRows =
+            if (episodesCsv != null) {
+                when (
+                    val table =
+                        CsvTableReader.read(
+                            episodesCsv,
+                            EpisodeCsvExporter.HEADER,
+                            // A v4 episodes file predates the four columns CSV v5 appended -- see
+                            // EpisodeCsvImporter.padLegacyV4Row.
+                            legacyHeaders =
+                                mapOf(
+                                    EpisodeCsvExporter.HEADER_V4 to EpisodeCsvImporter::padLegacyV4Row,
+                                ),
+                        )
+                ) {
+                    is CsvTableResult.Failure -> return refuse("episodes_export.csv: ${table.message}")
+                    is CsvTableResult.Success -> table.rows
+                }
+            } else {
+                emptyList()
+            }
+
         return try {
-            val existingBooks = bookRepository.observeAllBooksWithDetails().first()
+            // Every media type, not just books. This read went through
+            // BookRepository.observeAllBooksWithDetails() until Issue #106, which filters to
+            // MediaType.BOOK at the DAO -- so an existing film was invisible to duplicate matching
+            // and a re-import would have inserted a second copy of it rather than recognising the
+            // first. ExportDataUseCase had already made exactly this move, for the same reason.
+            val existingMedia = mediaRepository.observeAllMediaWithDetails().first()
             val existingIdentifiersByMediaId =
                 bookRepository.observeAllExternalIdentifiers().first().groupBy {
                     it.mediaId
                 }
             val existingSessionsById = readingSessionRepository.observeAllSessions().first().associateBy { it.id }
+            val existingEpisodesById = mediaRepository.observeAllEpisodes().first().associateBy { it.id }
 
-            val bookResolution =
-                resolveBookRows(existingBooks, existingIdentifiersByMediaId, libraryParseResults, duplicatePolicy)
-            val rejections = bookResolution.rejections.toMutableList()
-            val knownMediaIds = bookResolution.knownMediaIds.toMutableSet()
+            val mediaResolution =
+                resolveMediaRows(existingMedia, existingIdentifiersByMediaId, libraryParseResults, duplicatePolicy)
+            val rejections = mediaResolution.rejections.toMutableList()
+            val knownMediaIds = mediaResolution.knownMediaIds.toMutableSet()
 
             val sessionInserts = mutableListOf<ReadingSessionEntity>()
             val sessionUpdates = mutableListOf<ReadingSessionEntity>()
@@ -345,7 +387,7 @@ public class ImportDataUseCase(
                             // the isbn or title+year tier (see class KDoc, "Ordering and orphan
                             // sessions"). Falls back to row.mediaId itself for a book that was
                             // already in the database and untouched by this import's library file.
-                            val resolvedMediaId = bookResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
+                            val resolvedMediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
                             val existing = existingSessionsById[row.sessionId]
                             if (existing == null) {
                                 sessionInserts += toSessionEntity(row, resolvedMediaId)
@@ -368,33 +410,109 @@ public class ImportDataUseCase(
                 }
             }
 
+            val episodeInserts = mutableListOf<EpisodeEntity>()
+            val episodeUpdates = mutableListOf<EpisodeEntity>()
+            var episodesImported = 0
+            var episodesSkipped = 0
+            var episodesMerged = 0
+            var episodesReplaced = 0
+
+            episodeDataRows.forEachIndexed { index, rawRow ->
+                val rowNumber = index + 2
+                when (val parsed = EpisodeCsvImporter.parseRow(rawRow)) {
+                    is EpisodeRowParseResult.Rejected ->
+                        rejections += ImportRejection(ImportRowSource.EPISODE, rowNumber, parsed.reason)
+
+                    is EpisodeRowParseResult.Parsed -> {
+                        val row = parsed.row
+                        val showType = mediaResolution.typeOfKnownMediaId[row.mediaId]
+                        when {
+                            showType == null ->
+                                rejections +=
+                                    ImportRejection(
+                                        ImportRowSource.EPISODE,
+                                        rowNumber,
+                                        "media_id '${row.mediaId}' is not a known show (not already in your " +
+                                            "library, and not present in the library file being imported) -- " +
+                                            "episode skipped",
+                                    )
+
+                            // An episode hanging off a book or a film is not an orphan, it is a
+                            // category error -- and one the database would catch far less clearly.
+                            // `episodes.mediaId` only constrains the row to *some* media item, so
+                            // without this check the episode would insert cleanly against a book and
+                            // simply never be shown by anything, which is worse than a rejection.
+                            showType != MediaType.TV_SHOW ->
+                                rejections +=
+                                    ImportRejection(
+                                        ImportRowSource.EPISODE,
+                                        rowNumber,
+                                        "media_id '${row.mediaId}' is a $showType, not a TV show -- " +
+                                            "episode skipped",
+                                    )
+
+                            else -> {
+                                // Same rewrite the session loop performs, for the same reason: a
+                                // show matched under a different id than the file used must still
+                                // collect its episodes. See the class KDoc.
+                                val resolvedMediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
+                                val existing = existingEpisodesById[row.episodeId]
+                                if (existing == null) {
+                                    episodeInserts += toEpisodeEntity(row, resolvedMediaId)
+                                    episodesImported++
+                                } else {
+                                    when (duplicatePolicy) {
+                                        DuplicatePolicy.SKIP -> episodesSkipped++
+                                        DuplicatePolicy.REPLACE -> {
+                                            episodeUpdates += toEpisodeEntity(row, resolvedMediaId)
+                                            episodesReplaced++
+                                        }
+                                        DuplicatePolicy.MERGE -> {
+                                            episodeUpdates += mergeEpisode(existing, row)
+                                            episodesMerged++
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             val writeResult =
                 importWriteRepository.importAtomically(
-                    bookInserts = bookResolution.inserts,
-                    bookUpdates = bookResolution.updates,
+                    mediaInserts = mediaResolution.inserts,
+                    mediaUpdates = mediaResolution.updates,
                     sessionInserts = sessionInserts,
                     sessionUpdates = sessionUpdates,
+                    episodeInserts = episodeInserts,
+                    episodeUpdates = episodeUpdates,
                 )
             if (writeResult is Resource.Error) return writeResult
 
             logger.info(TAG) {
-                "CSV import completed: ${bookResolution.imported} imported, " +
-                    "${bookResolution.skipped} skipped, ${bookResolution.merged} merged, " +
-                    "${bookResolution.replaced} replaced, $sessionsImported session(s) imported"
+                "CSV import completed: ${mediaResolution.imported} imported, " +
+                    "${mediaResolution.skipped} skipped, ${mediaResolution.merged} merged, " +
+                    "${mediaResolution.replaced} replaced, $sessionsImported session(s) imported, " +
+                    "$episodesImported episode(s) imported"
             }
             logRejectionSummary("CSV import", rejections)
             Resource.Success(
                 ImportSummary(
-                    booksImported = bookResolution.imported,
-                    booksSkipped = bookResolution.skipped,
-                    booksMerged = bookResolution.merged,
-                    booksReplaced = bookResolution.replaced,
+                    itemsImported = mediaResolution.imported,
+                    itemsSkipped = mediaResolution.skipped,
+                    itemsMerged = mediaResolution.merged,
+                    itemsReplaced = mediaResolution.replaced,
                     sessionsImported = sessionsImported,
                     sessionsSkipped = sessionsSkipped,
                     sessionsMerged = sessionsMerged,
                     sessionsReplaced = sessionsReplaced,
+                    episodesImported = episodesImported,
+                    episodesSkipped = episodesSkipped,
+                    episodesMerged = episodesMerged,
+                    episodesReplaced = episodesReplaced,
                     rejections = rejections,
-                    notes = bookResolution.reviewNotes,
+                    notes = mediaResolution.reviewNotes,
                 ),
             )
         } catch (e: CancellationException) {
@@ -448,42 +566,54 @@ public class ImportDataUseCase(
             }
 
         return try {
-            val existingBooks = bookRepository.observeAllBooksWithDetails().first()
+            // Every media type, for duplicate-matching reasons rather than because a Goodreads file
+            // can contain one: matching is scoped by type (see titleYearKey), so a books-only
+            // snapshot would work here -- but reading the same whole-library view execute() reads
+            // keeps one definition of "what is already in the library" instead of two that could
+            // drift.
+            val existingMedia = mediaRepository.observeAllMediaWithDetails().first()
             val existingIdentifiersByMediaId =
                 bookRepository.observeAllExternalIdentifiers().first().groupBy {
                     it.mediaId
                 }
 
-            val bookResolution =
-                resolveBookRows(existingBooks, existingIdentifiersByMediaId, parseResults, duplicatePolicy)
+            val mediaResolution =
+                resolveMediaRows(existingMedia, existingIdentifiersByMediaId, parseResults, duplicatePolicy)
 
             val writeResult =
                 importWriteRepository.importAtomically(
-                    bookInserts = bookResolution.inserts,
-                    bookUpdates = bookResolution.updates,
+                    mediaInserts = mediaResolution.inserts,
+                    mediaUpdates = mediaResolution.updates,
                     sessionInserts = emptyList(),
                     sessionUpdates = emptyList(),
+                    episodeInserts = emptyList(),
+                    episodeUpdates = emptyList(),
                 )
             if (writeResult is Resource.Error) return writeResult
 
             logger.info(TAG) {
-                "Goodreads import completed: ${bookResolution.imported} imported, " +
-                    "${bookResolution.skipped} skipped, ${bookResolution.merged} merged, " +
-                    "${bookResolution.replaced} replaced"
+                "Goodreads import completed: ${mediaResolution.imported} imported, " +
+                    "${mediaResolution.skipped} skipped, ${mediaResolution.merged} merged, " +
+                    "${mediaResolution.replaced} replaced"
             }
-            logRejectionSummary("Goodreads import", bookResolution.rejections)
+            logRejectionSummary("Goodreads import", mediaResolution.rejections)
             Resource.Success(
                 ImportSummary(
-                    booksImported = bookResolution.imported,
-                    booksSkipped = bookResolution.skipped,
-                    booksMerged = bookResolution.merged,
-                    booksReplaced = bookResolution.replaced,
+                    itemsImported = mediaResolution.imported,
+                    itemsSkipped = mediaResolution.skipped,
+                    itemsMerged = mediaResolution.merged,
+                    itemsReplaced = mediaResolution.replaced,
                     sessionsImported = 0,
                     sessionsSkipped = 0,
                     sessionsMerged = 0,
                     sessionsReplaced = 0,
-                    rejections = bookResolution.rejections,
-                    notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE) + bookResolution.reviewNotes,
+                    // A Goodreads export has no episodes any more than it has reading sessions.
+                    episodesImported = 0,
+                    episodesSkipped = 0,
+                    episodesMerged = 0,
+                    episodesReplaced = 0,
+                    rejections = mediaResolution.rejections,
+                    notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE) + mediaResolution.reviewNotes,
                 ),
             )
         } catch (e: CancellationException) {
@@ -496,8 +626,8 @@ public class ImportDataUseCase(
         }
     }
 
-    /** Outcome of [resolveBookRows] -- everything [execute]/[executeGoodreads] need to finish the job. */
-    private data class BookRowResolution(
+    /** Outcome of [resolveMediaRows] -- everything [execute]/[executeGoodreads] need to finish the job. */
+    private data class MediaRowResolution(
         val inserts: List<ImportMediaInsert>,
         val updates: List<ImportMediaUpdate>,
         val rejections: List<ImportRejection>,
@@ -525,47 +655,64 @@ public class ImportDataUseCase(
          * [ImportSummary.notes] so a lower-confidence match is never silently applied (Finding 2).
          */
         val reviewNotes: List<String>,
+        /**
+         * What each id in [knownMediaIds] actually is. An episode row must land on a `TV_SHOW` and
+         * nothing else -- `episodes.mediaId` alone would happily accept a book, producing a row no
+         * screen ever reads rather than an error (Issue #106). Keyed by the same ids
+         * [knownMediaIds] holds, so a show matched under the file's id resolves through either.
+         */
+        val typeOfKnownMediaId: Map<String, MediaType>,
     )
 
     /**
-     * The book-row half of [execute]'s original inline logic (ROADMAP Task 8 Phase B), extracted
+     * The library-row half of [execute]'s original inline logic (ROADMAP Task 8 Phase B), extracted
      * (Phase D) so [executeGoodreads] can reuse the exact same duplicate-matching precedence,
      * per-[DuplicatePolicy] field rules, and insert/update construction documented in this class's
      * KDoc -- operating on already-parsed [LibraryRowParseResult]s rather than raw CSV text, which
      * is what makes it reusable across two completely different file formats. See this class's
      * top-level KDoc for the matching precedence (`media_id` -> `isbn` -> `title`+`release_year` ->
-     * `title` only) and the per-policy field rules; nothing about that logic changed by being
-     * extracted here, only where it lives.
+     * `title` only) and the per-policy field rules.
+     *
+     * Called `resolveBookRows` and typed to [MediaWithDetails.Book] until Issue #106. Every matching
+     * key was *already* scoped by media type (see [titleYearKey]/[titleOnlyKey]), so widening it to
+     * the whole library changed no matching behaviour for books: a film and a book sharing a title
+     * could not match each other before and still cannot. What changed is that films and shows are
+     * now in the snapshot at all, so a re-import recognises one instead of inserting a duplicate.
      */
-    private fun resolveBookRows(
-        existingBooks: List<MediaWithDetails.Book>,
+    private fun resolveMediaRows(
+        existingMedia: List<MediaWithDetails>,
         existingIdentifiersByMediaId: Map<String, List<ExternalIdentifierEntity>>,
         parseResults: List<LibraryRowParseResult>,
         duplicatePolicy: DuplicatePolicy,
-    ): BookRowResolution {
+    ): MediaRowResolution {
         // Seeded from the pre-existing library, then kept current as each row below resolves, so a
         // later row in *this same file* matches an earlier one too -- see class KDoc, "In-file
         // duplicates" -- not only rows already in the database before this import started.
-        val byMediaId = existingBooks.associateByTo(mutableMapOf()) { it.item.id }
+        val byMediaId = existingMedia.associateByTo(mutableMapOf()) { it.item.id }
+        // Books only, and not for want of generality: `isbn` is a column on BookDetailsEntity and
+        // nothing else, because it identifies an edition of a printed work. A film has no ISBN to
+        // match on, so tier 2 simply never fires for one -- it falls through to title+year.
         val byIsbn =
-            existingBooks
-                .mapNotNull { book ->
-                    book.details
+            existingMedia
+                .mapNotNull { media ->
+                    (media as? MediaWithDetails.Book)
+                        ?.details
                         ?.isbn
                         ?.takeIf { it.isNotBlank() }
-                        ?.let { it to book }
+                        ?.let { it to (media as MediaWithDetails) }
                 }.toMap(mutableMapOf())
         val byTitleYear =
-            existingBooks.associateByTo(mutableMapOf()) {
+            existingMedia.associateByTo(mutableMapOf()) {
                 titleYearKey(it.item.type, it.item.title, it.item.releaseYear)
             }
         // Tier 4 (title only, ignoring release_year) -- see class KDoc. Deliberately last resort:
-        // two different pre-existing books sharing a title would collide here (the later one wins
+        // two different pre-existing items sharing a title would collide here (the later one wins
         // the map entry), a strictly higher collision risk than tier 3's title+year pairing. Every
         // match resolved *through this map* is reported via reviewNotes below, never applied silently.
-        val byTitleOnly = existingBooks.associateByTo(mutableMapOf()) { titleOnlyKey(it.item.type, it.item.title) }
+        val byTitleOnly = existingMedia.associateByTo(mutableMapOf()) { titleOnlyKey(it.item.type, it.item.title) }
         val currentIdentifiersByMediaId = existingIdentifiersByMediaId.toMutableMap()
-        val knownMediaIds = existingBooks.mapTo(mutableSetOf()) { it.item.id }
+        val knownMediaIds = existingMedia.mapTo(mutableSetOf()) { it.item.id }
+        val typeOfKnownMediaId = existingMedia.associateTo(mutableMapOf()) { it.item.id to it.item.type }
         val resolvedMediaId = mutableMapOf<String, String>()
         val reviewNotes = mutableListOf<String>()
 
@@ -577,18 +724,21 @@ public class ImportDataUseCase(
         var merged = 0
         var replaced = 0
 
-        // Records a book's current-as-of-this-file state into the four lookup tiers plus the
+        // Records an item's current-as-of-this-file state into the four lookup tiers plus the
         // identifier tracker, so a later row in the file that duplicates `id` sees this row's
         // result rather than either nothing (Finding 1) or a stale pre-import snapshot.
         fun registerCurrentState(
             id: String,
-            mediaItem: MediaItemEntity,
-            details: BookDetailsEntity,
+            state: MediaWithDetails,
             identifiers: List<ExternalIdentifierEntity>,
         ) {
-            val state = MediaWithDetails.Book(mediaItem, details)
+            val mediaItem = state.item
             byMediaId[id] = state
-            details.isbn?.takeIf { it.isNotBlank() }?.let { byIsbn[it] = state }
+            (state as? MediaWithDetails.Book)
+                ?.details
+                ?.isbn
+                ?.takeIf { it.isNotBlank() }
+                ?.let { byIsbn[it] = state }
             byTitleYear[titleYearKey(mediaItem.type, mediaItem.title, mediaItem.releaseYear)] = state
             byTitleOnly[titleOnlyKey(mediaItem.type, mediaItem.title)] = state
             currentIdentifiersByMediaId[id] = identifiers
@@ -598,13 +748,13 @@ public class ImportDataUseCase(
             val rowNumber = index + 2
             when (parsed) {
                 is LibraryRowParseResult.Rejected ->
-                    rejections += ImportRejection(ImportRowSource.BOOK, rowNumber, parsed.reason)
+                    rejections += ImportRejection(ImportRowSource.MEDIA, rowNumber, parsed.reason)
 
                 is LibraryRowParseResult.Parsed -> {
                     val row = parsed.row
                     val strongMatch =
                         byMediaId[row.mediaId]
-                            ?: row.isbn?.let(byIsbn::get)
+                            ?: (row.details as? ParsedRowDetails.Book)?.isbn?.let(byIsbn::get)
                             ?: byTitleYear[titleYearKey(row.type, row.title, row.releaseYear)]
                     // Tier 4 only runs when tiers 1-3 all failed -- reached when the release years
                     // disagree (edition year vs. work year, Finding 2) or either side is missing one.
@@ -631,15 +781,22 @@ public class ImportDataUseCase(
                         inserts += insert
                         imported++
                         knownMediaIds += row.mediaId
+                        typeOfKnownMediaId[row.mediaId] = row.type
                         resolvedMediaId[row.mediaId] = row.mediaId
-                        registerCurrentState(row.mediaId, insert.mediaItem, insert.details, insert.identifiers)
+                        registerCurrentState(row.mediaId, stateOf(insert.mediaItem, insert.details), insert.identifiers)
                     } else {
                         val matchedId = match.item.id
-                        // Both ids are "known": the book's real id, and this row's own media_id,
-                        // which may differ from it (isbn/title+year/title-only tier) -- a session
-                        // referencing either must not be treated as an orphan (Finding 2).
+                        // Both ids are "known": the item's real id, and this row's own media_id,
+                        // which may differ from it (isbn/title+year/title-only tier) -- a session or
+                        // episode referencing either must not be treated as an orphan (Finding 2).
                         knownMediaIds += matchedId
                         knownMediaIds += row.mediaId
+                        // The *matched* item's type under both ids, not the row's. They can only
+                        // differ if the row was rejected already (every matching key is scoped by
+                        // type), but an episode must be checked against what is actually in the
+                        // library, not what the file claimed.
+                        typeOfKnownMediaId[matchedId] = match.item.type
+                        typeOfKnownMediaId[row.mediaId] = match.item.type
                         resolvedMediaId[row.mediaId] = matchedId
                         when (duplicatePolicy) {
                             DuplicatePolicy.SKIP -> skipped++
@@ -647,7 +804,11 @@ public class ImportDataUseCase(
                                 val update = buildReplace(match, row)
                                 updates += update
                                 replaced++
-                                registerCurrentState(matchedId, update.mediaItem, update.details, update.identifiers)
+                                registerCurrentState(
+                                    matchedId,
+                                    stateOf(update.mediaItem, update.details),
+                                    update.identifiers,
+                                )
                             }
                             DuplicatePolicy.MERGE -> {
                                 val existingIdentifiers = currentIdentifiersByMediaId[matchedId].orEmpty()
@@ -656,8 +817,7 @@ public class ImportDataUseCase(
                                 merged++
                                 registerCurrentState(
                                     matchedId,
-                                    update.mediaItem,
-                                    update.details,
+                                    stateOf(update.mediaItem, update.details),
                                     existingIdentifiers + update.identifiers,
                                 )
                             }
@@ -667,7 +827,7 @@ public class ImportDataUseCase(
             }
         }
 
-        return BookRowResolution(
+        return MediaRowResolution(
             inserts,
             updates,
             rejections,
@@ -678,8 +838,24 @@ public class ImportDataUseCase(
             knownMediaIds,
             resolvedMediaId,
             reviewNotes,
+            typeOfKnownMediaId,
         )
     }
+
+    /**
+     * Re-pairs an item with its details as a [MediaWithDetails], so a row this import just resolved
+     * can be matched against by a later row in the same file (see `registerCurrentState`). The
+     * inverse of the [ImportDetails] split, and exhaustive over it for the same reason.
+     */
+    private fun stateOf(
+        mediaItem: MediaItemEntity,
+        details: ImportDetails,
+    ): MediaWithDetails =
+        when (details) {
+            is ImportDetails.Book -> MediaWithDetails.Book(mediaItem, details.details)
+            is ImportDetails.Movie -> MediaWithDetails.Movie(mediaItem, details.details)
+            is ImportDetails.TVShow -> MediaWithDetails.TVShow(mediaItem, details.details)
+        }
 
     private fun titleYearKey(
         type: MediaType,
@@ -720,26 +896,63 @@ public class ImportDataUseCase(
                 // Never restored from CSV -- see class KDoc's cover-image note.
                 coverImageHash = null,
             )
-        val details =
-            BookDetailsEntity(
-                mediaId = row.mediaId,
-                isbn = row.isbn,
-                format = row.format,
-                totalPages = row.totalPages,
-                status = row.status,
-                finishedAt = row.finishedAt,
-                trackingMode = row.trackingMode,
-                authors = row.authors,
-            )
         val identifiers =
             row.externalIdentifiers.map { (provider, id) ->
                 ExternalIdentifierEntity(mediaId = row.mediaId, provider = provider, externalId = id)
             }
-        return ImportMediaInsert(mediaItem, details, identifiers)
+        return ImportMediaInsert(mediaItem, freshDetails(row.mediaId, row.details), identifiers)
     }
 
+    /**
+     * Builds the details row for a fresh insert, or for a REPLACE (which overwrites every managed
+     * field, so it wants the same full-row construction).
+     *
+     * The show branch leaves `airingStatus`/`overview`/`firstAirDate`/`lastAirDate` at their
+     * defaults, and the film branch has no such columns: `library_export.csv` has never carried
+     * them. They were added to the schema in PR #86 for the Task 13 Phase D backfill to fill from
+     * TMDB, and a CSV round trip legitimately drops what the file does not contain -- unlike the
+     * episode columns this same change added to `episodes_export.csv`, which it does now carry.
+     * Widening the library file to match is a separate decision from making it readable at all.
+     */
+    private fun freshDetails(
+        mediaId: String,
+        details: ParsedRowDetails,
+    ): ImportDetails =
+        when (details) {
+            is ParsedRowDetails.Book ->
+                ImportDetails.Book(
+                    BookDetailsEntity(
+                        mediaId = mediaId,
+                        isbn = details.isbn,
+                        format = details.format,
+                        totalPages = details.totalPages,
+                        status = details.status,
+                        finishedAt = details.finishedAt,
+                        trackingMode = details.trackingMode,
+                        authors = details.authors,
+                    ),
+                )
+            is ParsedRowDetails.Movie ->
+                ImportDetails.Movie(
+                    MovieDetailsEntity(
+                        mediaId = mediaId,
+                        runtimeMinutes = details.runtimeMinutes,
+                        status = details.status,
+                        watchedAt = details.watchedAt,
+                    ),
+                )
+            is ParsedRowDetails.TVShow ->
+                ImportDetails.TVShow(
+                    TVDetailsEntity(
+                        mediaId = mediaId,
+                        totalSeasons = details.totalSeasons,
+                        status = details.status,
+                    ),
+                )
+        }
+
     private fun buildReplace(
-        existing: MediaWithDetails.Book,
+        existing: MediaWithDetails,
         row: ParsedLibraryRow,
     ): ImportMediaUpdate {
         val mediaId = existing.item.id
@@ -751,26 +964,59 @@ public class ImportDataUseCase(
                 purchasePrice = row.purchasePrice,
                 // createdAt/coverImageHash intentionally untouched -- see class KDoc.
             )
-        val details =
-            BookDetailsEntity(
-                mediaId = mediaId,
-                isbn = row.isbn,
-                format = row.format,
-                totalPages = row.totalPages,
-                status = row.status,
-                finishedAt = row.finishedAt,
-                trackingMode = row.trackingMode,
-                authors = row.authors,
-            )
         val identifiers =
             row.externalIdentifiers.map { (provider, id) ->
                 ExternalIdentifierEntity(mediaId = mediaId, provider = provider, externalId = id)
             }
-        return ImportMediaUpdate(mediaItem, details, identifiers, replaceIdentifiers = true)
+        return ImportMediaUpdate(
+            mediaItem,
+            replacedDetails(mediaId, existing, row.details),
+            identifiers,
+            replaceIdentifiers = true,
+        )
     }
 
+    /**
+     * REPLACE's rule -- overwrite every field this importer manages -- applied to whichever details
+     * table this item has.
+     *
+     * Identical to [freshDetails] except for a show's `airingStatus`/`overview`/`firstAirDate`/
+     * `lastAirDate`, which are **preserved rather than overwritten**. REPLACE overwrites what the
+     * *file* says, and the file says nothing about those four: they were added in PR #86 for the
+     * Task 13 Phase D backfill to fill from TMDB and `library_export.csv` has never carried them.
+     * Building the row from [freshDetails] here would have defaulted all four to `null`, so
+     * re-importing a backup under REPLACE would silently delete every piece of metadata a backfill
+     * had fetched -- the same class of loss that already keeps REPLACE away from `createdAt` and
+     * `coverImageHash` on the item itself (see class KDoc).
+     */
+    private fun replacedDetails(
+        mediaId: String,
+        existing: MediaWithDetails,
+        row: ParsedRowDetails,
+    ): ImportDetails =
+        when (row) {
+            is ParsedRowDetails.TVShow -> {
+                val existingDetails = (existing as? MediaWithDetails.TVShow)?.details
+                ImportDetails.TVShow(
+                    TVDetailsEntity(
+                        mediaId = mediaId,
+                        totalSeasons = row.totalSeasons,
+                        status = row.status,
+                        airingStatus = existingDetails?.airingStatus,
+                        overview = existingDetails?.overview,
+                        firstAirDate = existingDetails?.firstAirDate,
+                        lastAirDate = existingDetails?.lastAirDate,
+                    ),
+                )
+            }
+            // Books and films carry no column the file omits, so a full rebuild loses nothing.
+            is ParsedRowDetails.Book,
+            is ParsedRowDetails.Movie,
+            -> freshDetails(mediaId, row)
+        }
+
     private fun buildMerge(
-        existing: MediaWithDetails.Book,
+        existing: MediaWithDetails,
         row: ParsedLibraryRow,
         existingIdentifiers: List<ExternalIdentifierEntity>,
     ): ImportMediaUpdate {
@@ -781,18 +1027,6 @@ public class ImportDataUseCase(
                 purchasePrice = existing.item.purchasePrice ?: row.purchasePrice,
                 // type/title/createdAt/coverImageHash never backfilled -- identity/local-owned fields.
             )
-        val existingDetails = existing.details
-        val details =
-            BookDetailsEntity(
-                mediaId = mediaId,
-                isbn = existingDetails?.isbn?.takeIf { it.isNotBlank() } ?: row.isbn,
-                format = existingDetails?.format ?: row.format,
-                totalPages = existingDetails?.totalPages ?: row.totalPages,
-                status = existingDetails?.status ?: row.status,
-                finishedAt = existingDetails?.finishedAt ?: row.finishedAt,
-                trackingMode = existingDetails?.trackingMode ?: row.trackingMode,
-                authors = existingDetails?.authors?.takeIf { it.isNotBlank() } ?: row.authors,
-            )
         val existingProviders = existingIdentifiers.map { it.provider }.toSet()
         val newIdentifiers =
             row.externalIdentifiers
@@ -800,8 +1034,89 @@ public class ImportDataUseCase(
                 .map { (provider, id) ->
                     ExternalIdentifierEntity(mediaId = mediaId, provider = provider, externalId = id)
                 }
-        return ImportMediaUpdate(mediaItem, details, newIdentifiers, replaceIdentifiers = false)
+        return ImportMediaUpdate(
+            mediaItem,
+            mergedDetails(mediaId, existing, row.details),
+            newIdentifiers,
+            replaceIdentifiers = false,
+        )
     }
+
+    /**
+     * MERGE's per-field rule -- backfill only what the existing row left null/blank -- applied to
+     * whichever details table this item has.
+     *
+     * The `existing` and `row` variants always agree, because every duplicate-matching key is scoped
+     * by media type (see [titleYearKey]), so a book row can only ever match a book. The `else`
+     * branches below are therefore unreachable rather than defensive; each falls back to treating
+     * the imported row as authoritative, which is the same thing [freshDetails] would produce, so a
+     * future change that did break the scoping would degrade to REPLACE semantics for that row
+     * rather than silently dropping it.
+     *
+     * Watch state is *not* backfilled onto a film or show that already has one, matching how a
+     * book's `status`/`finishedAt` are left alone: whether you have seen something is a fact about
+     * this device's owner, not metadata a re-import should overwrite. `WATCHLIST` is the default a
+     * row carries when the file said nothing, so treating it as "unset" is what makes a merge from
+     * a file that never recorded watch state leave the real value in place.
+     */
+    private fun mergedDetails(
+        mediaId: String,
+        existing: MediaWithDetails,
+        row: ParsedRowDetails,
+    ): ImportDetails =
+        when (row) {
+            is ParsedRowDetails.Book -> {
+                val existingDetails = (existing as? MediaWithDetails.Book)?.details
+                ImportDetails.Book(
+                    BookDetailsEntity(
+                        mediaId = mediaId,
+                        isbn = existingDetails?.isbn?.takeIf { it.isNotBlank() } ?: row.isbn,
+                        format = existingDetails?.format ?: row.format,
+                        totalPages = existingDetails?.totalPages ?: row.totalPages,
+                        status = existingDetails?.status ?: row.status,
+                        finishedAt = existingDetails?.finishedAt ?: row.finishedAt,
+                        trackingMode = existingDetails?.trackingMode ?: row.trackingMode,
+                        authors = existingDetails?.authors?.takeIf { it.isNotBlank() } ?: row.authors,
+                    ),
+                )
+            }
+            is ParsedRowDetails.Movie -> {
+                val existingDetails = (existing as? MediaWithDetails.Movie)?.details
+                ImportDetails.Movie(
+                    MovieDetailsEntity(
+                        mediaId = mediaId,
+                        runtimeMinutes = existingDetails?.runtimeMinutes ?: row.runtimeMinutes,
+                        status =
+                            existingDetails
+                                ?.status
+                                ?.takeIf { it != WatchStatus.WATCHLIST }
+                                ?: row.status,
+                        watchedAt = existingDetails?.watchedAt ?: row.watchedAt,
+                    ),
+                )
+            }
+            is ParsedRowDetails.TVShow -> {
+                val existingDetails = (existing as? MediaWithDetails.TVShow)?.details
+                ImportDetails.TVShow(
+                    TVDetailsEntity(
+                        mediaId = mediaId,
+                        totalSeasons = existingDetails?.totalSeasons ?: row.totalSeasons,
+                        status =
+                            existingDetails
+                                ?.status
+                                ?.takeIf { it != WatchStatus.WATCHLIST }
+                                ?: row.status,
+                        // Phase D's columns are preserved rather than defaulted away: they are not
+                        // in the file, so a merge has nothing to say about them and must not blank
+                        // what a backfill already wrote.
+                        airingStatus = existingDetails?.airingStatus,
+                        overview = existingDetails?.overview,
+                        firstAirDate = existingDetails?.firstAirDate,
+                        lastAirDate = existingDetails?.lastAirDate,
+                    ),
+                )
+            }
+        }
 
     private fun toSessionEntity(
         row: ParsedSessionRow,
@@ -828,5 +1143,53 @@ public class ImportDataUseCase(
             deltaPages = existing.deltaPages ?: row.deltaPages,
             notes = existing.notes?.takeIf { it.isNotBlank() } ?: row.notes,
             // timestamps/positions/mediaId are the session's identity -- merge never touches them.
+        )
+
+    /**
+     * `stillImageHash` is deliberately dropped, never written -- see [ParsedEpisodeRow.stillImageHash]
+     * and the class KDoc's image note. Everything else the file carries is restored.
+     */
+    private fun toEpisodeEntity(
+        row: ParsedEpisodeRow,
+        mediaId: String,
+    ): EpisodeEntity =
+        EpisodeEntity(
+            id = row.episodeId,
+            mediaId = mediaId,
+            seasonNumber = row.seasonNumber,
+            episodeNumber = row.episodeNumber,
+            title = row.title,
+            airDate = row.airDate,
+            watchedAt = row.watchedAt,
+            runtimeMinutes = row.runtimeMinutes,
+            overview = row.overview,
+            stillImageHash = null,
+            communityRating = row.communityRating,
+        )
+
+    /**
+     * MERGE onto an episode that already exists here: backfill only what the existing row left
+     * unknown.
+     *
+     * **`watchedAt` is never touched**, and it is the one that matters. It is simultaneously this
+     * row's watched *state* and its timestamp ([EpisodeEntity]'s "watched state and its timestamp
+     * are one column deliberately"), so backfilling it would let a re-import mark episodes watched
+     * that the user has not watched on this device -- and clearing it is not representable either.
+     * Under MERGE the device's own view of what it has seen wins outright; REPLACE is the policy
+     * that exists for "the file is authoritative".
+     *
+     * `seasonNumber`/`episodeNumber`/`mediaId` are the episode's identity and are left alone for the
+     * same reason [mergeSession] leaves a session's timestamps and positions alone.
+     */
+    private fun mergeEpisode(
+        existing: EpisodeEntity,
+        row: ParsedEpisodeRow,
+    ): EpisodeEntity =
+        existing.copy(
+            title = existing.title?.takeIf { it.isNotBlank() } ?: row.title,
+            airDate = existing.airDate ?: row.airDate,
+            runtimeMinutes = existing.runtimeMinutes ?: row.runtimeMinutes,
+            overview = existing.overview?.takeIf { it.isNotBlank() } ?: row.overview,
+            communityRating = existing.communityRating ?: row.communityRating,
         )
 }
