@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **The sample library used for development stopped being books-only** (#87). The fixture that seeds a development device — the one that makes the library screen worth looking at instead of empty — was written when books were the only media type, and stayed that way because nothing could import anything else. Now that films, shows and episodes read back, it carries them: four films covering every watch state, three shows covering the three states a show's progress can be in, and twenty-seven episodes across them.
+
+  One show is arranged so that every regular episode is watched and a special is not, because that is the case where a rule becomes visible: specials count toward completion, so that show reads as in progress rather than finished. It is not a thing any single row can demonstrate, which is exactly why it is worth putting in a fixture rather than a comment.
+
+  Nothing a provider would supply is invented. No catalogue identifiers, no runtimes, no synopses, no ratings — only what can be stated without looking it up. A fixture carrying a *wrong* catalogue id would be worse than one carrying none, because the wrong one is confidently wrong and survives into whatever gets built on it. The pleasant side effect is that the sample data now shows both sides of the metadata fetch that has not been built yet: one show as it looks before, one as it looks after.
+
 ### Fixed
 
 - **A CSV backup gave you back your books and quietly kept the rest** (#106, closes the round-trip clause of #74). Exporting your library writes three files, and has done since films and TV arrived. Importing them read one. Every film, every show, and every episode you had ever ticked off came back from a backup as nothing at all — and nothing said so. The summary counted books and reading sessions, so the numbers it showed were all true; there was simply no line on which the loss could appear. Restore onto a new phone and a library of four hundred films was a library of books, reported as a clean success.

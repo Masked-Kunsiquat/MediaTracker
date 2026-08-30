@@ -48,12 +48,19 @@ import com.hub.media.features.media.data.MediaWithDetails
  *     `runtime_minutes` -- the show's *episodes*, being one-to-many, get their own file instead;
  *     see [com.hub.media.features.portability.csv.EpisodeCsvExporter].
  *
- * ### Why movie/show columns exist here before the importer can read them
- * [LibraryCsvImporter] still rejects both a `MOVIE` row and a `TV_SHOW` row (only `BOOK` is
- * supported), so the three movie columns and `total_seasons` are written and not yet read. That is
- * deliberate: this file is the user's backup, and a movie's runtime/watch status or a show's season
- * count only survive a lost device if they were *written down* at export time. Adding a column once
- * the importer can consume it would be too late for every export taken in between.
+ * ### Why movie/show columns existed here before the importer could read them
+ * For two releases they were written and not read: [LibraryCsvImporter] rejected every row that was
+ * not a `BOOK`, so the three movie columns and `total_seasons` went into the file with nothing able
+ * to consume them. That was deliberate, and the reasoning is worth keeping because it generalises:
+ * this file is the user's backup, and a movie's runtime/watch status or a show's season count only
+ * survive a lost device if they were *written down* at export time. Adding a column once the
+ * importer can consume it would be too late for every export taken in between.
+ *
+ * Issue #106 closed the gap — all four columns are read back now, and so is
+ * [EpisodeCsvExporter]'s whole file. The rule the paragraph above states still applies to the next
+ * column that gets added here before its reader exists; what it must **not** be taken to mean is
+ * that a missing reader is acceptable indefinitely. It shipped that way for two releases and the
+ * consequence was a restored backup that silently returned only its books.
  */
 public object LibraryCsvExporter {
     /** Header row, in column order -- see class KDoc for what each column holds. */
