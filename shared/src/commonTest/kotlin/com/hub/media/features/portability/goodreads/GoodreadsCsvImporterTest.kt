@@ -325,7 +325,11 @@ class GoodreadsCsvImporterTest {
     fun parseRow_dateRead_mapsToFinishedAt_whenShelfIsRead() {
         val (columnIndex, row) = validRow(exclusiveShelf = "read", dateRead = "2023/05/12")
         val result = GoodreadsCsvImporter.parseRow(columnIndex, row) as LibraryRowParseResult.Parsed
-        assertEquals(2023, result.row.book.finishedAt?.let { instantYear(it) })
+        assertEquals(
+            2023,
+            result.row.book.finishedAt
+                ?.let { instantYear(it) },
+        )
     }
 
     @Test

@@ -47,7 +47,14 @@ class ImportWriteDaoTest {
                     )
                 }
 
-            db.importWriteDao().importAtomically(inserts, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+            db.importWriteDao().importAtomically(
+                inserts,
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+            )
 
             assertEquals(
                 3,
@@ -90,7 +97,14 @@ class ImportWriteDaoTest {
                 )
 
             assertFailsWith<Exception> {
-                db.importWriteDao().importAtomically(inserts, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+                db.importWriteDao().importAtomically(
+                    inserts,
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                )
             }
 
             // "media-1" was inserted successfully before the exception on "media-2" -- it must NOT

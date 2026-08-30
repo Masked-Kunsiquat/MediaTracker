@@ -24,10 +24,10 @@ import com.hub.media.features.portability.csv.EpisodeCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.data.ImportWriteRepository
-import com.hub.media.features.tv.data.SeasonQuickFill
-import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.portability.goodreads.GoodreadsColumns
 import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
+import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -122,7 +122,12 @@ class ImportDataUseCaseTest {
                     logger = recorder,
                 )
 
-            useCase.execute(libraryCsv = null, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            useCase.execute(
+                libraryCsv = null,
+                readingLogsCsv = null,
+                episodesCsv = null,
+                duplicatePolicy = DuplicatePolicy.SKIP,
+            )
 
             assertEquals(1, recorder.entries.count { it.level == LogLevel.WARN })
             assertFalse(
@@ -150,7 +155,13 @@ class ImportDataUseCaseTest {
                 2,22222222-2222-4222-8222-222222222222,BOOK,A Title That Must Never Reach The Log,An Author,SECRET_CELL_VALUE,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
                 """.trimIndent()
 
-            val result = useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            val result =
+                useCase.execute(
+                    csv,
+                    readingLogsCsv = null,
+                    episodesCsv = null,
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
 
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.rejections.size, "the bad row is still reported to the user in full")
@@ -183,7 +194,13 @@ class ImportDataUseCaseTest {
             val rejectedRowCount = 25
             val csv = libraryCsvWithInvalidReleaseYears(rejectedRowCount)
 
-            val result = useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            val result =
+                useCase.execute(
+                    csv,
+                    readingLogsCsv = null,
+                    episodesCsv = null,
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
 
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(
@@ -230,7 +247,13 @@ class ImportDataUseCaseTest {
                 2,33333333-3333-4333-8333-333333333333,BOOK,Fine Book,An Author,1969,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
                 """.trimIndent()
 
-            val result = useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            val result =
+                useCase.execute(
+                    csv,
+                    readingLogsCsv = null,
+                    episodesCsv = null,
+                    duplicatePolicy = DuplicatePolicy.SKIP,
+                )
 
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(emptyList(), recorder.entries.filter { it.level == LogLevel.WARN })
