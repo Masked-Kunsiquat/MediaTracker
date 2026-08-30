@@ -40,7 +40,7 @@ class SampleLibraryCsvTest {
     private fun parsedRows(): List<ParsedLibraryRow> {
         val table = CsvTableReader.read(sampleFile("library_sample.csv").readText(), LibraryCsvExporter.HEADER)
         val rows = assertIs<CsvTableResult.Success>(table, "the fixture must read as a valid CSV table").rows
-        assertTrue(rows.isNotEmpty(), "the fixture must actually contain books")
+        assertTrue(rows.isNotEmpty(), "the fixture must actually contain media")
         return rows.mapIndexed { index, row ->
             val result = LibraryCsvImporter.parseRow(row)
             assertIs<LibraryRowParseResult.Parsed>(
@@ -197,8 +197,15 @@ class SampleLibraryCsvTest {
         val sessions = parsedSessions()
         assertTrue(sessions.isNotEmpty(), "no sessions means this would pass vacuously")
 
-        val knownIds = parsedRows().map { it.mediaId }.toSet()
-        val orphans = sessions.map { it.mediaId }.filterNot { it in knownIds }
+        // Books only, not every row. The fixture stopped being books-only in #87, and a session
+        // pointing at a film's media_id would satisfy a check against all of them -- which is
+        // exactly what this test's name promises it does not allow.
+        val bookIds =
+            parsedRows()
+                .filter { it.type == MediaType.BOOK }
+                .map { it.mediaId }
+                .toSet()
+        val orphans = sessions.map { it.mediaId }.filterNot { it in bookIds }
 
         assertTrue(orphans.isEmpty(), "reading sessions reference unknown books: $orphans")
     }
@@ -279,7 +286,7 @@ class SampleLibraryCsvTest {
             "a watched film must carry when it was watched, or that column is never exercised",
         )
         assertTrue(
-            shows.any { it.show.totalSeasons != null && it.show.totalSeasons!! > 1 },
+            shows.any { (it.show.totalSeasons ?: 0) > 1 },
             "a multi-season show is what exercises grouping on the show screen",
         )
     }
