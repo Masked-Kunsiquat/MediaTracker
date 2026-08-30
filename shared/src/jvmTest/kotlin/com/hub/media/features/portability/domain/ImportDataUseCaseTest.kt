@@ -1,6 +1,7 @@
 package com.hub.media.features.portability.domain
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.ReadingStatus
@@ -42,6 +43,7 @@ class ImportDataUseCaseTest {
     private lateinit var sourceSessionRepository: ReadingSessionRepository
 
     private lateinit var db: AppDatabase
+    private lateinit var mediaRepository: MediaRepository
     private lateinit var bookRepository: BookRepository
     private lateinit var sessionRepository: ReadingSessionRepository
     private lateinit var useCase: ImportDataUseCase
@@ -53,9 +55,10 @@ class ImportDataUseCaseTest {
         sourceSessionRepository = ReadingSessionRepository(sourceDb)
 
         db = testAppDatabase()
+        mediaRepository = MediaRepository(db)
         bookRepository = BookRepository(db)
         sessionRepository = ReadingSessionRepository(db)
-        useCase = ImportDataUseCase(bookRepository, sessionRepository, ImportWriteRepository(db))
+        useCase = ImportDataUseCase(mediaRepository, bookRepository, sessionRepository, ImportWriteRepository(db))
     }
 
     @AfterTest
@@ -72,6 +75,7 @@ class ImportDataUseCaseTest {
             val recorder = RecordingLogger()
             val useCase =
                 ImportDataUseCase(
+                    mediaRepository,
                     bookRepository,
                     sessionRepository,
                     ImportWriteRepository(db),
@@ -86,6 +90,7 @@ class ImportDataUseCaseTest {
                         1,2,3,4
                         """.trimIndent(),
                     readingLogsCsv = null,
+                    episodesCsv = null,
                     duplicatePolicy = DuplicatePolicy.SKIP,
                 )
 
@@ -105,13 +110,14 @@ class ImportDataUseCaseTest {
             val recorder = RecordingLogger()
             val useCase =
                 ImportDataUseCase(
+                    mediaRepository,
                     bookRepository,
                     sessionRepository,
                     ImportWriteRepository(db),
                     logger = recorder,
                 )
 
-            useCase.execute(libraryCsv = null, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            useCase.execute(libraryCsv = null, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
 
             assertEquals(1, recorder.entries.count { it.level == LogLevel.WARN })
             assertFalse(
@@ -126,6 +132,7 @@ class ImportDataUseCaseTest {
             val recorder = RecordingLogger()
             val useCase =
                 ImportDataUseCase(
+                    mediaRepository,
                     bookRepository,
                     sessionRepository,
                     ImportWriteRepository(db),
@@ -138,7 +145,7 @@ class ImportDataUseCaseTest {
                 2,22222222-2222-4222-8222-222222222222,BOOK,A Title That Must Never Reach The Log,An Author,SECRET_CELL_VALUE,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
                 """.trimIndent()
 
-            val result = useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            val result = useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
 
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.rejections.size, "the bad row is still reported to the user in full")
@@ -162,6 +169,7 @@ class ImportDataUseCaseTest {
             val recorder = RecordingLogger()
             val useCase =
                 ImportDataUseCase(
+                    mediaRepository,
                     bookRepository,
                     sessionRepository,
                     ImportWriteRepository(db),
@@ -170,7 +178,7 @@ class ImportDataUseCaseTest {
             val rejectedRowCount = 25
             val csv = libraryCsvWithInvalidReleaseYears(rejectedRowCount)
 
-            val result = useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            val result = useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
 
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(
@@ -187,13 +195,13 @@ class ImportDataUseCaseTest {
             // are within MAX_LOGGED_REJECTED_ROWS and must each be named.
             for (row in 2..21) {
                 assertTrue(
-                    warning.message.contains("BOOK#$row"),
+                    warning.message.contains("MEDIA#$row"),
                     "row #$row is within the logged cap and must be named: ${warning.message}",
                 )
             }
             // Row #26 is the 25th (last) data row -- beyond the 20-row cap -- and must NOT be named.
             assertFalse(
-                warning.message.contains("BOOK#26"),
+                warning.message.contains("MEDIA#26"),
                 "a row beyond the logged cap must not be named individually: ${warning.message}",
             )
             assertTrue(warning.message.contains("and 5 more"), "the omitted count must be reported: ${warning.message}")
@@ -205,6 +213,7 @@ class ImportDataUseCaseTest {
             val recorder = RecordingLogger()
             val useCase =
                 ImportDataUseCase(
+                    mediaRepository,
                     bookRepository,
                     sessionRepository,
                     ImportWriteRepository(db),
@@ -216,7 +225,7 @@ class ImportDataUseCaseTest {
                 2,33333333-3333-4333-8333-333333333333,BOOK,Fine Book,An Author,1969,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
                 """.trimIndent()
 
-            val result = useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            val result = useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
 
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(emptyList(), recorder.entries.filter { it.level == LogLevel.WARN })
@@ -228,6 +237,7 @@ class ImportDataUseCaseTest {
             val recorder = RecordingLogger()
             val useCase =
                 ImportDataUseCase(
+                    mediaRepository,
                     bookRepository,
                     sessionRepository,
                     ImportWriteRepository(db),
@@ -239,7 +249,7 @@ class ImportDataUseCaseTest {
                 2,44444444-4444-4444-8444-444444444444,BOOK,A Title That Must Never Reach The Log,An Author,1969,,2026-01-05T09:15:00Z,,,PAPERBACK,304,TO_READ,,PAGES,
                 """.trimIndent()
 
-            useCase.execute(csv, readingLogsCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
+            useCase.execute(csv, readingLogsCsv = null, episodesCsv = null, duplicatePolicy = DuplicatePolicy.SKIP)
 
             val info = recorder.entries.single { it.level == LogLevel.INFO }
             assertEquals("ImportDataUseCase", info.tag)
@@ -318,7 +328,7 @@ class ImportDataUseCaseTest {
     @Test
     fun execute_bothFilesNull_returnsError() =
         runTest {
-            val result = useCase.execute(null, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(null, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Error>(result)
         }
 
@@ -326,9 +336,9 @@ class ImportDataUseCaseTest {
     fun execute_emptyExportFiles_succeedsWithZeroCounts() =
         runTest {
             val (libraryCsv, logsCsv) = exportCurrentSourceDb()
-            val result = useCase.execute(libraryCsv, logsCsv, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, logsCsv, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(0, result.data.itemsImported)
             assertEquals(0, result.data.sessionsImported)
             assertTrue(result.data.rejections.isEmpty())
         }
@@ -360,9 +370,9 @@ class ImportDataUseCaseTest {
 
             val (libraryCsv, logsCsv) = exportCurrentSourceDb()
 
-            val result = useCase.execute(libraryCsv, logsCsv, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, logsCsv, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
+            assertEquals(1, result.data.itemsImported)
             assertEquals(1, result.data.sessionsImported)
             assertTrue(result.data.rejections.isEmpty())
 
@@ -385,9 +395,9 @@ class ImportDataUseCaseTest {
             addBook(title = "Multi-Author Anthology", authors = "Ann Sample Author; B. Other Author")
             val (libraryCsv, _) = exportCurrentSourceDb()
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
+            assertEquals(1, result.data.itemsImported)
 
             val imported = bookRepository.observeAllBooksWithDetails().first().single()
             assertEquals("Ann Sample Author; B. Other Author", imported.details?.authors)
@@ -422,9 +432,9 @@ class ImportDataUseCaseTest {
                     )
                 }
 
-            val result = useCase.execute(v1Csv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(v1Csv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
+            assertEquals(1, result.data.itemsImported)
             assertTrue(result.data.rejections.isEmpty())
 
             val imported = bookRepository.observeAllBooksWithDetails().first().single()
@@ -449,10 +459,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksSkipped)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(1, result.data.itemsSkipped)
+            assertEquals(0, result.data.itemsImported)
 
             assertEquals(existingBefore, getDetails(mediaId))
         }
@@ -476,9 +486,9 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.REPLACE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.REPLACE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksReplaced)
+            assertEquals(1, result.data.itemsReplaced)
 
             val updated = getDetails(mediaId)
             assertEquals("Replaced Title", updated?.item?.title)
@@ -508,7 +518,7 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.REPLACE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.REPLACE)
             assertIs<Resource.Success<ImportSummary>>(result)
 
             val after = getDetails(mediaId)
@@ -543,9 +553,9 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksMerged)
+            assertEquals(1, result.data.itemsMerged)
 
             val merged = getDetails(mediaId)
             assertEquals("Existing Title", merged?.item?.title)
@@ -579,7 +589,7 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, incomingIdentifiers)
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(result)
 
             val identifiers = bookRepository.observeAllExternalIdentifiers().first().filter { it.mediaId == mediaId }
@@ -610,7 +620,7 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, incomingIdentifiers)
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
 
             val byProvider =
@@ -641,10 +651,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksSkipped)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(1, result.data.itemsSkipped)
+            assertEquals(0, result.data.itemsImported)
 
             assertEquals(null, getDetails("a-completely-different-media-id"))
             assertTrue(getDetails(existingMediaId) != null)
@@ -670,9 +680,9 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksSkipped)
+            assertEquals(1, result.data.itemsSkipped)
             assertTrue(getDetails(existingMediaId) != null)
         }
 
@@ -701,10 +711,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksMerged)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(1, result.data.itemsMerged)
+            assertEquals(0, result.data.itemsImported)
 
             val merged = getDetails(existingMediaId)
             assertEquals(2026, merged?.item?.releaseYear)
@@ -736,10 +746,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksMerged)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(1, result.data.itemsMerged)
+            assertEquals(0, result.data.itemsImported)
             assertEquals(1, result.data.notes.size)
 
             assertTrue(getDetails(existingMediaId) != null)
@@ -765,10 +775,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksMerged)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(1, result.data.itemsMerged)
+            assertEquals(0, result.data.itemsImported)
             assertEquals(1, result.data.notes.size)
 
             assertTrue(getDetails(existingMediaId) != null)
@@ -799,10 +809,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.MERGE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksMerged)
-            assertEquals(0, result.data.booksImported)
+            assertEquals(1, result.data.itemsMerged)
+            assertEquals(0, result.data.itemsImported)
             assertTrue(result.data.notes.isEmpty())
 
             assertTrue(getDetails(existingMediaId) != null)
@@ -825,10 +835,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
-            assertEquals(1, result.data.booksSkipped)
+            assertEquals(1, result.data.itemsImported)
+            assertEquals(1, result.data.itemsSkipped)
 
             val items = bookRepository.observeAllBooksWithDetails().first()
             assertEquals(1, items.size)
@@ -852,10 +862,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.REPLACE)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.REPLACE)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
-            assertEquals(1, result.data.booksReplaced)
+            assertEquals(1, result.data.itemsImported)
+            assertEquals(1, result.data.itemsReplaced)
 
             val items = bookRepository.observeAllBooksWithDetails().first()
             assertEquals(1, items.size)
@@ -882,10 +892,10 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(incomingMedia, emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
-            assertEquals(1, result.data.booksSkipped)
+            assertEquals(1, result.data.itemsImported)
+            assertEquals(1, result.data.itemsSkipped)
 
             val items = bookRepository.observeAllBooksWithDetails().first()
             assertEquals(1, items.size)
@@ -911,7 +921,7 @@ class ImportDataUseCaseTest {
             val session = sampleReadingSession(mediaId = fileMediaId)
             val logsCsv = ReadingLogCsvExporter.export(listOf(session))
 
-            val result = useCase.execute(libraryCsv, logsCsv, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, logsCsv, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
             assertTrue(result.data.rejections.isEmpty())
             assertEquals(1, result.data.sessionsImported)
@@ -943,7 +953,7 @@ class ImportDataUseCaseTest {
             val session = sampleReadingSession(mediaId = fileMediaId)
             val logsCsv = ReadingLogCsvExporter.export(listOf(session))
 
-            val result = useCase.execute(libraryCsv, logsCsv, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, logsCsv, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
             assertTrue(result.data.rejections.isEmpty())
             assertEquals(1, result.data.sessionsImported)
@@ -962,7 +972,7 @@ class ImportDataUseCaseTest {
             val orphanSession = sampleReadingSession(mediaId = "no-such-book-id")
             val logsCsv = ReadingLogCsvExporter.export(listOf(knownSession, orphanSession))
 
-            val result = useCase.execute(null, logsCsv, DuplicatePolicy.SKIP)
+            val result = useCase.execute(null, logsCsv, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
             assertEquals(1, result.data.sessionsImported)
             assertEquals(1, result.data.rejections.size)
@@ -989,12 +999,12 @@ class ImportDataUseCaseTest {
                 )
             val libraryCsv = LibraryCsvExporter.export(listOf(validRow, invalidRow), emptyMap())
 
-            val result = useCase.execute(libraryCsv, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(libraryCsv, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
+            assertEquals(1, result.data.itemsImported)
             assertEquals(1, result.data.rejections.size)
             assertEquals(
-                ImportRowSource.BOOK,
+                ImportRowSource.MEDIA,
                 result.data.rejections
                     .single()
                     .source,
@@ -1021,7 +1031,7 @@ class ImportDataUseCaseTest {
             val wellFormedCsv = LibraryCsvExporter.export(listOf(validRow), emptyMap())
             val corrupted = wellFormedCsv.trimEnd().substringBeforeLast(",") + "\r\n"
 
-            val result = useCase.execute(corrupted, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(corrupted, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Error>(result)
 
             assertTrue(bookRepository.observeAllBooksWithDetails().first().isEmpty())
@@ -1038,7 +1048,7 @@ class ImportDataUseCaseTest {
             val wellFormedCsv = LibraryCsvExporter.export(listOf(validRow), emptyMap())
             val bumped = wellFormedCsv.replaceFirst("\r\n${CSV_SCHEMA_VERSION},", "\r\n${CSV_SCHEMA_VERSION + 1},")
 
-            val result = useCase.execute(bumped, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(bumped, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Error>(result)
             assertTrue(result.message.contains("newer", ignoreCase = true))
             assertTrue(bookRepository.observeAllBooksWithDetails().first().isEmpty())
@@ -1050,7 +1060,7 @@ class ImportDataUseCaseTest {
             val header = LibraryCsvExporter.HEADER.joinToString(",")
             val malformed = "$header\r\n1,media-1,BOOK,\"unterminated,,,,,,,,,,\r\n"
 
-            val result = useCase.execute(malformed, null, DuplicatePolicy.SKIP)
+            val result = useCase.execute(malformed, null, null, DuplicatePolicy.SKIP)
             assertIs<Resource.Error>(result)
             assertTrue(bookRepository.observeAllBooksWithDetails().first().isEmpty())
         }
@@ -1155,7 +1165,7 @@ class ImportDataUseCaseTest {
 
             val result = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(3, result.data.booksImported)
+            assertEquals(3, result.data.itemsImported)
             assertTrue(result.data.rejections.isEmpty())
             assertEquals(listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE), result.data.notes)
 
@@ -1203,10 +1213,10 @@ class ImportDataUseCaseTest {
 
             val result = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(result)
-            assertEquals(1, result.data.booksImported)
+            assertEquals(1, result.data.itemsImported)
             assertEquals(1, result.data.rejections.size)
             assertEquals(
-                ImportRowSource.BOOK,
+                ImportRowSource.MEDIA,
                 result.data.rejections
                     .single()
                     .source,
@@ -1231,12 +1241,12 @@ class ImportDataUseCaseTest {
 
             val first = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(first)
-            assertEquals(1, first.data.booksImported)
+            assertEquals(1, first.data.itemsImported)
 
             val second = useCase.executeGoodreads(csv, DuplicatePolicy.SKIP)
             assertIs<Resource.Success<ImportSummary>>(second)
-            assertEquals(0, second.data.booksImported)
-            assertEquals(1, second.data.booksSkipped)
+            assertEquals(0, second.data.itemsImported)
+            assertEquals(1, second.data.itemsSkipped)
             assertEquals(1, bookRepository.observeAllBooksWithDetails().first().size)
         }
 
@@ -1254,7 +1264,7 @@ class ImportDataUseCaseTest {
                 )
             val first = useCase.executeGoodreads(firstCsv, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(first)
-            assertEquals(1, first.data.booksImported)
+            assertEquals(1, first.data.itemsImported)
             assertEquals(
                 null,
                 bookRepository
@@ -1276,7 +1286,7 @@ class ImportDataUseCaseTest {
                 )
             val second = useCase.executeGoodreads(secondCsv, DuplicatePolicy.MERGE)
             assertIs<Resource.Success<ImportSummary>>(second)
-            assertEquals(1, second.data.booksMerged)
+            assertEquals(1, second.data.itemsMerged)
 
             val merged = bookRepository.observeAllBooksWithDetails().first().single()
             assertEquals("Backfill Candidate", merged.item.title)

@@ -73,6 +73,10 @@ class SampleDataSeedTest {
                 container.importDataUseCase.execute(
                     libraryCsv = asset("library_sample.csv"),
                     readingLogsCsv = asset("reading_logs_sample.csv"),
+                    // The sample library is still books-only, which is what #87 tracks. Now that
+                    // the importer can read shows and episodes, that fixture is the only thing
+                    // standing between this seed and a library with films and TV in it.
+                    episodesCsv = null,
                     duplicatePolicy = DuplicatePolicy.SKIP,
                 )
 

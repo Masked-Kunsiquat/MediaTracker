@@ -12,6 +12,7 @@ import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION
 import com.hub.media.features.portability.csv.CsvUtil
+import com.hub.media.features.portability.csv.EpisodeCsvExporter
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.flow.first
@@ -154,11 +155,23 @@ class ExportDataUseCaseTest {
 
             val watchedLine = lines.single { it.contains(watchedEpisode.id) }
             val watchedFields = watchedLine.split(",")
-            assertTrue(watchedFields.last().isNotEmpty(), "watched_at must reach the CSV: $watchedLine")
+            // Located by name rather than by `last()`, which is what this asserted until CSV v5
+            // appended four more columns after watched_at and quietly moved the assertion onto
+            // community_rating -- where "not empty" would have been false for the right reason and
+            // told us nothing about watched state.
+            val watchedAtIndex = EpisodeCsvExporter.HEADER.indexOf("watched_at")
+            assertTrue(
+                watchedFields[watchedAtIndex].isNotEmpty(),
+                "watched_at must reach the CSV: $watchedLine",
+            )
 
             val unwatchedLine = lines.single { it.contains(unwatchedEpisode.id) }
             val unwatchedFields = unwatchedLine.split(",")
-            assertEquals("", unwatchedFields.last(), "an unwatched episode's watched_at must be empty")
+            assertEquals(
+                "",
+                unwatchedFields[watchedAtIndex],
+                "an unwatched episode's watched_at must be empty",
+            )
         }
 
     @Test

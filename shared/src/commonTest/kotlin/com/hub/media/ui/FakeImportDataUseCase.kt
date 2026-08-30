@@ -14,14 +14,18 @@ internal class FakeImportDataUseCase(
     private val result: Resource<ImportSummary> =
         Resource.Success(
             ImportSummary(
-                booksImported = 0,
-                booksSkipped = 0,
-                booksMerged = 0,
-                booksReplaced = 0,
+                itemsImported = 0,
+                itemsSkipped = 0,
+                itemsMerged = 0,
+                itemsReplaced = 0,
                 sessionsImported = 0,
                 sessionsSkipped = 0,
                 sessionsMerged = 0,
                 sessionsReplaced = 0,
+                episodesImported = 0,
+                episodesSkipped = 0,
+                episodesMerged = 0,
+                episodesReplaced = 0,
                 rejections = emptyList(),
             ),
         ),
@@ -30,9 +34,23 @@ internal class FakeImportDataUseCase(
     var callCount: Int = 0
         private set
 
-    /** The arguments [execute] was most recently called with, or `null` if never called. */
-    var lastArgs: Triple<String?, String?, DuplicatePolicy>? = null
+    /**
+     * The arguments [execute] was most recently called with, or `null` if never called.
+     *
+     * A named type rather than the `Triple` this held before Issue #106 added the episodes file:
+     * a four-field positional tuple of three same-typed nullable strings is one where a test
+     * asserting on the wrong member still compiles.
+     */
+    var lastArgs: ExecuteArgs? = null
         private set
+
+    /** @see lastArgs */
+    internal data class ExecuteArgs(
+        val libraryCsv: String?,
+        val readingLogsCsv: String?,
+        val episodesCsv: String?,
+        val duplicatePolicy: DuplicatePolicy,
+    )
 
     /** Number of times [executeGoodreads] has been called (ROADMAP Task 8 Phase D). */
     var goodreadsCallCount: Int = 0
@@ -50,10 +68,11 @@ internal class FakeImportDataUseCase(
     override suspend fun execute(
         libraryCsv: String?,
         readingLogsCsv: String?,
+        episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
     ): Resource<ImportSummary> {
         callCount++
-        lastArgs = Triple(libraryCsv, readingLogsCsv, duplicatePolicy)
+        lastArgs = ExecuteArgs(libraryCsv, readingLogsCsv, episodesCsv, duplicatePolicy)
         if (awaitGate) gate.await()
         return result
     }
