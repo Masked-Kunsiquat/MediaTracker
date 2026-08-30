@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.time.ExperimentalTime
 
 /**
  * Imports the CSV fixtures under `docs/sample-data` into the debug app's real database (ROADMAP Task 14 Phase B).
@@ -45,6 +46,7 @@ import org.junit.runner.RunWith
  * database on real hardware — everything else covering import runs in-memory on the JVM. It just
  * is not a seeding mechanism there.
  */
+@OptIn(ExperimentalTime::class)
 @RunWith(AndroidJUnit4::class)
 class SampleDataSeedTest {
     private val application: MediaTrackerApplication
@@ -73,10 +75,7 @@ class SampleDataSeedTest {
                 container.importDataUseCase.execute(
                     libraryCsv = asset("library_sample.csv"),
                     readingLogsCsv = asset("reading_logs_sample.csv"),
-                    // The sample library is still books-only, which is what #87 tracks. Now that
-                    // the importer can read shows and episodes, that fixture is the only thing
-                    // standing between this seed and a library with films and TV in it.
-                    episodesCsv = null,
+                    episodesCsv = asset("episodes_sample.csv"),
                     duplicatePolicy = DuplicatePolicy.SKIP,
                 )
 
@@ -106,6 +105,36 @@ class SampleDataSeedTest {
                     .observeAllSessions()
                     .first()
                     .isNotEmpty(),
+            )
+
+            // Films and shows (#87). Asserted by name for the same reason the books are: this test
+            // is the only end-to-end exercise of the CSV import path against a real database on real
+            // hardware, and until #106 it could not have carried these rows at all.
+            val allTitles =
+                container.mediaRepository
+                    .observeAllMediaWithDetails()
+                    .first()
+                    .map { it.item.title }
+            listOf("Arrival", "Severance", "Chernobyl").forEach { expected ->
+                assertTrue("fixture film/show missing after import: $expected", expected in allTitles)
+            }
+
+            // The episodes are the part that has no equivalent for any other media type, and the
+            // part #106 existed to make possible. A count alone would be satisfied by the show rows,
+            // so this checks watched state specifically -- the column episode tracking exists for.
+            val episodes = container.mediaRepository.observeAllEpisodes().first()
+            assertTrue("the fixture's episodes must import", episodes.isNotEmpty())
+            assertTrue(
+                "some episodes must arrive watched, or progress can never be seen to be partial",
+                episodes.any { it.watchedAt != null },
+            )
+            assertTrue(
+                "some must arrive unwatched, for the same reason",
+                episodes.any { it.watchedAt == null },
+            )
+            assertTrue(
+                "a specials season must survive the import -- season 0 is legal and #88 decided it counts",
+                episodes.any { it.seasonNumber == 0 },
             )
         }
 }

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **The sample library used for development stopped being books-only** (#87). The fixture that seeds a development device — the one that makes the library screen worth looking at instead of empty — was written when books were the only media type, and stayed that way because nothing could import anything else. Now that films, shows and episodes read back, it carries them: four films covering every watch state, four shows covering the states a show's progress can be in, and thirty-one episodes across them.
+
+  One show is arranged so that every regular episode is watched and a single special is not, because that is where a rule becomes visible: specials count toward completion, so that show reads as in progress rather than finished. It is not something any single row can demonstrate, which is exactly why it belongs in a fixture rather than a comment. Another has a half-watched season, which draws differently from a fully watched or untouched one and is the case an episode checklist is most likely to get wrong. A third has no episodes at all — a show added but not yet filled in — which should draw no progress line rather than an empty one.
+
+  Every value a catalogue would supply was looked up rather than recalled: the identifiers, the season and episode counts, and one show's episode titles, air dates, lengths, synopses and scores. An earlier draft of this had several of those written from memory, and while some happened to be right, the episode lengths were wrong and one show was given three specials when it has one. A fixture carrying a *wrong* identifier is worse than one carrying none — a blank is a state the importer already handles, while a wrong one is confidently wrong and survives into whatever gets built on top of it. What cannot be verified stays empty, which is why one show is deliberately bare: it stands for how a show looks before any metadata is fetched, with the other standing for after.
+
 ### Fixed
 
 - **A CSV backup gave you back your books and quietly kept the rest** (#106, closes the round-trip clause of #74). Exporting your library writes three files, and has done since films and TV arrived. Importing them read one. Every film, every show, and every episode you had ever ticked off came back from a backup as nothing at all — and nothing said so. The summary counted books and reading sessions, so the numbers it showed were all true; there was simply no line on which the loss could appear. Restore onto a new phone and a library of four hundred films was a library of books, reported as a clean success.

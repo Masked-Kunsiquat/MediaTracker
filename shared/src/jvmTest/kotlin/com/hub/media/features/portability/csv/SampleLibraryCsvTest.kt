@@ -1,5 +1,6 @@
 package com.hub.media.features.portability.csv
 
+import com.hub.media.core.database.entities.MediaType
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,7 +40,7 @@ class SampleLibraryCsvTest {
     private fun parsedRows(): List<ParsedLibraryRow> {
         val table = CsvTableReader.read(sampleFile("library_sample.csv").readText(), LibraryCsvExporter.HEADER)
         val rows = assertIs<CsvTableResult.Success>(table, "the fixture must read as a valid CSV table").rows
-        assertTrue(rows.isNotEmpty(), "the fixture must actually contain books")
+        assertTrue(rows.isNotEmpty(), "the fixture must actually contain media")
         return rows.mapIndexed { index, row ->
             val result = LibraryCsvImporter.parseRow(row)
             assertIs<LibraryRowParseResult.Parsed>(
@@ -51,7 +52,115 @@ class SampleLibraryCsvTest {
 
     @Test
     fun sampleCsv_everyRowParsesThroughTheRealImporter() {
-        assertEquals(12, parsedRows().size, "every row in the fixture must import")
+        assertEquals(20, parsedRows().size, "every row in the fixture must import")
+    }
+
+    private fun parsedEpisodes(): List<ParsedEpisodeRow> {
+        val table =
+            CsvTableReader.read(sampleFile("episodes_sample.csv").readText(), EpisodeCsvExporter.HEADER)
+        val rows =
+            assertIs<CsvTableResult.Success>(table, "the episode fixture must read as a valid CSV table").rows
+        return rows.mapIndexed { index, row ->
+            val result = EpisodeCsvImporter.parseRow(row)
+            assertIs<EpisodeRowParseResult.Parsed>(
+                result,
+                "row ${index + 2} of the episode fixture no longer parses: $result",
+            ).row
+        }
+    }
+
+    @Test
+    fun sampleEpisodes_everyRowParsesThroughTheRealImporter() {
+        assertTrue(parsedEpisodes().isNotEmpty(), "the fixture must contain episodes")
+    }
+
+    /**
+     * An episode whose `media_id` matches no show is skipped and reported rather than failing the
+     * import, so this would otherwise degrade silently -- exactly as
+     * [sampleReadingLogs_referenceOnlyBooksThatExistInTheLibraryFixture] guards the session fixture.
+     */
+    @Test
+    fun sampleEpisodes_referenceOnlyShowsThatExistInTheLibraryFixture() {
+        val episodes = parsedEpisodes()
+        assertTrue(episodes.isNotEmpty(), "no episodes means this would pass vacuously")
+
+        val showIds =
+            parsedRows()
+                .filter { it.type == MediaType.TV_SHOW }
+                .map { it.mediaId }
+                .toSet()
+        val orphans = episodes.map { it.mediaId }.filterNot { it in showIds }
+
+        assertTrue(orphans.isEmpty(), "episodes reference unknown shows: $orphans")
+    }
+
+    @Test
+    fun sampleEpisodes_stillCoverTheirEdgeCases() {
+        val episodes = parsedEpisodes()
+
+        assertTrue(
+            episodes.any { it.seasonNumber == 0 },
+            "a specials season is what exercises #88's rule that specials count toward completion",
+        )
+        assertTrue(
+            episodes.any { it.title == null },
+            "a quick-filled episode has no title yet -- the render path that must not show a blank row",
+        )
+        assertTrue(
+            episodes.any { it.title != null },
+            "a backfilled episode has one, so both render paths are covered",
+        )
+        assertTrue(
+            episodes.any { it.watchedAt == null } && episodes.any { it.watchedAt != null },
+            "a partially watched show is the only way progress can be seen to be partial",
+        )
+        assertTrue(
+            episodes
+                .groupBy { it.mediaId to it.seasonNumber }
+                .values
+                .any { season ->
+                    season.any { it.watchedAt != null } && season.any { it.watchedAt == null }
+                },
+            "a season that is only partly ticked renders differently from an all- or none-ticked " +
+                "one, and is the case the show screen's checklist is most likely to get wrong",
+        )
+        assertTrue(
+            episodes.all { it.stillImageHash.isNullOrEmpty() },
+            "still hashes must stay blank: a hash here names a file no device has, so every " +
+                "episode would render a broken still -- the same rule cover_image_hash follows",
+        )
+    }
+
+    /**
+     * The fixture must contain a show that is fully watched *except* for specials. That is the exact
+     * shape #88 decided on -- specials count, so such a show reads In progress rather than Finished
+     * -- and it cannot be checked by looking at any one row.
+     */
+    @Test
+    fun sampleEpisodes_containAShowWatchedExceptForItsSpecials() {
+        val bySpecialness =
+            parsedEpisodes()
+                .groupBy { it.mediaId }
+                .mapValues { (_, eps) -> eps.partition { it.seasonNumber == 0 } }
+
+        val match =
+            bySpecialness.entries.any { (_, split) ->
+                val (specials, regular) = split
+                // `all`, not `any`. An earlier version of this asserted only that *some* regular
+                // episode was watched, which a show that is simply half-finished satisfies -- so it
+                // passed while the fixture did not actually contain the case, and the show it
+                // pointed at read In progress for an ordinary reason. The whole point is a show
+                // that would be Finished if specials did not count.
+                regular.isNotEmpty() &&
+                    regular.all { it.watchedAt != null } &&
+                    specials.any { it.watchedAt == null }
+            }
+
+        assertTrue(
+            match,
+            "no show has every regular episode watched and a special still unwatched -- without " +
+                "one, nothing in the fixture demonstrates that specials affect completion",
+        )
     }
 
     private fun parsedSessions(): List<ParsedSessionRow> {
@@ -88,8 +197,15 @@ class SampleLibraryCsvTest {
         val sessions = parsedSessions()
         assertTrue(sessions.isNotEmpty(), "no sessions means this would pass vacuously")
 
-        val knownIds = parsedRows().map { it.mediaId }.toSet()
-        val orphans = sessions.map { it.mediaId }.filterNot { it in knownIds }
+        // Books only, not every row. The fixture stopped being books-only in #87, and a session
+        // pointing at a film's media_id would satisfy a check against all of them -- which is
+        // exactly what this test's name promises it does not allow.
+        val bookIds =
+            parsedRows()
+                .filter { it.type == MediaType.BOOK }
+                .map { it.mediaId }
+                .toSet()
+        val orphans = sessions.map { it.mediaId }.filterNot { it in bookIds }
 
         assertTrue(orphans.isEmpty(), "reading sessions reference unknown books: $orphans")
     }
@@ -118,17 +234,18 @@ class SampleLibraryCsvTest {
         // fail here rather than quietly leave manual testing weaker than it looks.
         val parsed = parsedRows()
 
+        val books = parsed.filter { it.type == MediaType.BOOK }
         assertEquals(
             4,
-            parsed.mapNotNull { it.book.status }.toSet().size,
+            books.map { it.book.status }.toSet().size,
             "every reading status must be represented, or the filter chips cannot all be exercised",
         )
         assertTrue(
-            parsed.any { it.book.authors?.contains(";") == true },
+            books.any { it.book.authors?.contains(";") == true },
             "a multi-author book is what proves author search matches inside the joined string",
         )
         assertTrue(
-            parsed.any { it.book.isbn.isNullOrEmpty() },
+            books.any { it.book.isbn.isNullOrEmpty() },
             "a book with no ISBN is the case the cover backfill must skip rather than retry",
         )
         assertTrue(
@@ -139,6 +256,38 @@ class SampleLibraryCsvTest {
             parsed.all { it.coverImageHash.isNullOrEmpty() },
             "cover hashes must stay blank: a hash here points at a file no device has, so every " +
                 "book would render a missing cover instead of one the backfill can fetch",
+        )
+    }
+
+    /**
+     * The fixture stopped being books-only in #87. These are the film and show cases it now claims
+     * to cover, held to the same standard as the book ones above.
+     */
+    @Test
+    fun sampleCsv_stillCoversItsFilmAndShowCases() {
+        val parsed = parsedRows()
+        val movies = parsed.filter { it.type == MediaType.MOVIE }
+        val shows = parsed.filter { it.type == MediaType.TV_SHOW }
+
+        assertTrue(movies.isNotEmpty(), "the fixture must contain films")
+        assertTrue(shows.isNotEmpty(), "the fixture must contain shows")
+
+        assertEquals(
+            4,
+            movies.map { it.movie.status }.toSet().size,
+            "every watch status must be represented, or the film filter chips cannot all be exercised",
+        )
+        assertTrue(
+            movies.any { it.movie.runtimeMinutes == null },
+            "a film with no runtime is the case that renders as a blank rather than a stray 0",
+        )
+        assertTrue(
+            movies.any { it.movie.watchedAt != null },
+            "a watched film must carry when it was watched, or that column is never exercised",
+        )
+        assertTrue(
+            shows.any { (it.show.totalSeasons ?: 0) > 1 },
+            "a multi-season show is what exercises grouping on the show screen",
         )
     }
 }
