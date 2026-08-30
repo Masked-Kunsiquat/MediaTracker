@@ -102,3 +102,22 @@ public fun String.filterDecimalInput(decimalSeparator: Char): String {
     }
     return builder.toString()
 }
+
+/**
+ * Reads an optional decimal field whose value must be a **finite** number, treating an overflowing
+ * digit string as unreadable rather than as a number.
+ *
+ * [String.toDoubleOrNull] is not a sufficient guard on its own: a long-enough run of digits parses
+ * cleanly to [Double.POSITIVE_INFINITY] rather than failing, so a field that only checks "did it
+ * parse" accepts a value that is not a number in any useful sense. The reading-session position
+ * fields hit this exactly -- they are digit-filtered, so `"Infinity"` cannot be typed, but forty
+ * digits can be, and the result would then flow into a saved session's start/end position.
+ *
+ * Folding the finite check into the parse rather than leaving it to each caller is what makes the
+ * three outcomes line up with [parseOptionalNumber]'s: blank is *unknown*, a finite number is
+ * *readable*, and anything else -- unparseable text or an overflow -- is *unreadable*. Callers that
+ * did this by hand wrote `parsed != null && parsed.isFinite()` and then needed a separate blank
+ * check to tell an incomplete field from a bad one, which is the re-derivation this removes.
+ */
+public fun parseOptionalFiniteDouble(text: String): ParsedNumber<Double>? =
+    parseOptionalNumber(text) { it.toDoubleOrNull()?.takeIf(Double::isFinite) }

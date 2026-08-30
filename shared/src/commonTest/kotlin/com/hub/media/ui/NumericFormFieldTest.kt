@@ -102,4 +102,36 @@ class NumericFormFieldTest {
         assertNull(parseRequiredInt("abc"))
         assertEquals(10, parseRequiredInt(" 10 "))
     }
+
+    @Test
+    fun parseOptionalFiniteDouble_blankIsUnknown_notUnreadable() {
+        // The distinction #73 established: a blank field means "I do not know", which is a value
+        // the caller may legitimately store, and must not collapse into the error case.
+        assertNotNull(parseOptionalFiniteDouble(""))
+        assertNull(parseOptionalFiniteDouble("")?.value)
+        assertNull(parseOptionalFiniteDouble("   ")?.value)
+    }
+
+    @Test
+    fun parseOptionalFiniteDouble_readsAFiniteNumber() {
+        assertEquals(42.0, parseOptionalFiniteDouble("42")?.value)
+        assertEquals(78.5, parseOptionalFiniteDouble(" 78.5 ")?.value)
+        assertEquals(0.0, parseOptionalFiniteDouble("0")?.value)
+    }
+
+    @Test
+    fun parseOptionalFiniteDouble_unparseableIsUnreadable() {
+        assertNull(parseOptionalFiniteDouble("."))
+        assertNull(parseOptionalFiniteDouble("abc"))
+    }
+
+    @Test
+    fun parseOptionalFiniteDouble_overflowIsUnreadable_notInfinity() {
+        // The case this function exists for. toDoubleOrNull does not fail here -- it succeeds and
+        // returns POSITIVE_INFINITY -- so a caller checking only "did it parse" would accept it.
+        // The field is digit-filtered, so "Infinity" cannot be typed, but a long run of digits can.
+        val overflowing = "9".repeat(400)
+        assertEquals(Double.POSITIVE_INFINITY, overflowing.toDoubleOrNull())
+        assertNull(parseOptionalFiniteDouble(overflowing))
+    }
 }

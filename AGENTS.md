@@ -136,8 +136,25 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
  └── src/main/java/com/github/maskedkunisquat/mediatracker/
       ├── ui/screens/         <-- Compose screens
       ├── ui/navigation/      <-- NavHost + Route definitions
+      ├── ui/components/      <-- composables shared across screens
+      ├── ui/insets/          <-- shared window-inset padding helpers
+      ├── ui/text/            <-- numeric input filtering and display formatting
+      ├── ui/theme/           <-- MediaTrackerTheme, colour scheme, typography
+      ├── ui/TestTags.kt      <-- testTag constants (see §7)
       └── ui/ViewModelFactories.kt   <-- bridges AppContainer to androidx ViewModel factories
 ```
+
+**A screen larger than a file is split by region, not by layer.** `BookDetailScreen` reached 3,255
+lines and 45 composables before #81 broke it up, and the seams that worked were the ones a *user*
+would name: the details tab, the reading-history tab, the session dialogs, the formatting helpers,
+the previews. Splitting it by layer instead — every `@Composable` here, every helper there — would
+have produced files nobody could hold in their head either. The route composable, the stateless
+screen and the content dispatcher stay together in the screen's own file, because that trio is what
+someone opening `BookDetailScreen.kt` is looking for.
+
+Note the cost, so it is chosen rather than discovered: Kotlin's top-level `private` is *file*-scoped,
+so every helper whose callers end up in a sibling file must widen to `internal`. That split widened
+15. Keep it to the ones the compiler forces.
 
 ---
 ## 7. Testing Standards & Quality Assurance
