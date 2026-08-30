@@ -108,32 +108,19 @@ internal fun formatTimeOfDay(
 }
 
 /**
- * Formats [instant] for session history display as a local date/time. Converted through
- * `java.time` (rather than `kotlinx-datetime`, which is a `shared`-module dependency not exposed
- * to this Android-only app module) since `java.time` is available unconditionally on this
+ * Converts [instant] to a local [java.time.LocalDateTime] (device timezone) -- this screen's one
+ * Instant-to-local conversion, used for seeding [ManualSessionDialog]'s date/time pickers in edit
+ * mode and for deriving the calendar day a session belongs to.
+ *
+ * Through `java.time` rather than `kotlinx-datetime`, which is a `shared`-module dependency not
+ * exposed to this Android-only app module, and `java.time` is available unconditionally on this
  * project's `minSdk 28`.
- */
-private fun formatSessionDate(instant: Instant): String {
-    val javaInstant = java.time.Instant.ofEpochMilli(instant.toEpochMilliseconds())
-    val zoned = javaInstant.atZone(java.time.ZoneId.systemDefault())
-    return SESSION_DATE_FORMATTER.format(zoned)
-}
-
-/**
- * Converts [instant] to a local [java.time.LocalDateTime] (device timezone), for seeding
- * [ManualSessionDialog]'s date/time pickers when it's opened in edit mode -- same conversion
- * approach as [formatSessionDate], just kept as a `LocalDateTime` rather than formatted to a
- * string.
  */
 internal fun instantToLocalDateTime(instant: Instant): java.time.LocalDateTime =
     java.time.Instant
         .ofEpochMilli(instant.toEpochMilliseconds())
         .atZone(java.time.ZoneId.systemDefault())
         .toLocalDateTime()
-
-private val SESSION_DATE_FORMATTER: java.time.format.DateTimeFormatter =
-    java.time.format.DateTimeFormatter
-        .ofPattern("MMM d, yyyy HH:mm")
 
 internal val DATE_ONLY_FORMATTER: java.time.format.DateTimeFormatter =
     java.time.format.DateTimeFormatter
@@ -161,8 +148,8 @@ internal fun formatUtcMidnightMillis(utcMidnightMillis: Long?): String {
 /**
  * Derives a [kotlin.time.Instant] end-of-session timestamp from a `DatePickerState`-style
  * UTC-midnight date millis plus an hour/minute of day, combined in the device's local timezone
- * (same conversion approach as [formatSessionDate], just inverted). [hour]/[minute] are clamped
- * to valid ranges so out-of-range typed input (e.g. "99") can't throw.
+ * (the inverse of [instantToLocalDateTime], through the same `java.time` conversion).
+ * [hour]/[minute] are clamped to valid ranges so out-of-range typed input (e.g. "99") can't throw.
  */
 internal fun deriveTimestampEnd(
     dateUtcMidnightMillis: Long,

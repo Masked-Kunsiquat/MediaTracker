@@ -171,7 +171,7 @@ private sealed class TimelineEntry {
  * [sessions] is already sorted by time -- every session for a given day is guaranteed contiguous,
  * so no re-sort/merge step is needed. The calendar day itself is derived via the existing
  * [instantToLocalDateTime] conversion (device-local timezone), the same helper
- * [formatSessionDate]/[ManualSessionDialog]'s edit-mode prefill already use, so the book detail
+ * [ManualSessionDialog]'s edit-mode prefill already uses, so the book detail
  * screen has exactly one Instant-to-local-day conversion rather than one per caller. (That helper
  * sits in `BookDetailFormatting.kt` since #81 split this screen up; it was in the same file when
  * this was written.)

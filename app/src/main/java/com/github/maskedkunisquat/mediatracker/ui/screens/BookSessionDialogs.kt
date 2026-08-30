@@ -636,7 +636,8 @@ internal const val MAX_MANUAL_DURATION_MINUTES = 10L * 365 * 24 * 60 // 5,256,00
  * drives `is24Hour` on the [TimePicker] itself, via `DateFormat.is24HourFormat`).
  *
  * [timestampEnd] passed to [onSave] is derived from the selected date + hour/minute in the
- * device's local timezone (same `java.time` conversion approach as [formatSessionDate]); the
+ * device's local timezone (via [deriveTimestampEnd], the inverse of the [instantToLocalDateTime]
+ * conversion this screen reads sessions back out with); the
  * caller derives `timestampStart` by subtracting the entered duration from it -- or, when the
  * duration field is left blank (see below), by setting `timestampStart = timestampEnd` instead.
  *

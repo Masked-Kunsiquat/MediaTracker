@@ -455,8 +455,8 @@ private fun BookDetailContent(
     var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
     var showManualEntry by remember { mutableStateOf(false) }
     // Non-null while the manual-entry dialog is open in *edit* mode (opened from a session row's
-    // edit icon, prefilled from this row); null while it's open in *create* mode (opened from the
-    // "Log session manually" button below). See ManualSessionDialog's KDoc.
+    // edit icon, prefilled from this row); null while it's open in *create* mode (opened from
+    // ReadingHistoryTab's "Log session manually" button). See ManualSessionDialog's KDoc.
     var sessionToEdit by remember { mutableStateOf<ReadingSessionEntity?>(null) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
