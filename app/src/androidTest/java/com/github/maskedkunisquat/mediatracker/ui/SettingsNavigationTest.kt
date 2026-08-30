@@ -3,6 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui
 import androidx.annotation.StringRes
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -99,6 +101,24 @@ class SettingsNavigationTest {
     fun clearApiKeyAfter() = removeStoredApiKey()
 
     /**
+     * Brings the Google Books API key section into view.
+     *
+     * It is the last section on a `LazyColumn`, so on a shorter screen -- or a larger display size,
+     * or a longer translation -- it is not composed when Settings opens, and nothing in it can be
+     * found by text at all. `performScrollTo()` cannot fix that: it needs the node to already exist.
+     * Scrolling the list itself to a node that matches works either way, which is what
+     * [TestTags.Settings.LIST] is there for.
+     *
+     * Without this the API key tests pass or fail by screen geometry, which is precisely the class
+     * of "fails on someone else's device" that #114 was.
+     */
+    private fun scrollToApiKeyRow() {
+        composeRule
+            .onNodeWithTag(TestTags.Settings.LIST)
+            .performScrollToNode(hasTestTag(TestTags.Settings.API_KEY_FIELD))
+    }
+
+    /**
      * Polls until the status line reads [text], then returns; fails with the assertion's own
      * message if it never does.
      *
@@ -183,18 +203,17 @@ class SettingsNavigationTest {
     @Test
     fun googleBooksApiKeySave_isWiredToARealCallback() {
         openSettings()
+        scrollToApiKeyRow()
 
         // Asserted, not assumed. clearApiKeyBefore establishes it, so a failure here means the
         // status line does not track the repository at all -- a different bug from a broken Save,
         // and worth being told apart from it.
         composeRule
             .onNodeWithText(string(R.string.settings_google_books_key_not_saved), substring = true)
-            .performScrollTo()
             .assertIsDisplayed()
 
         composeRule
             .onNodeWithTag(TestTags.Settings.API_KEY_FIELD)
-            .performScrollTo()
             .performTextInput(TEST_KEY)
 
         // Save is `enabled = entered.isNotBlank()`, so text entry that silently landed nowhere
@@ -218,18 +237,21 @@ class SettingsNavigationTest {
      * is only composed when a key is stored, so it was not merely unasserted -- it was absent), and
      * the report pointed at whichever line the cleanup happened to reach.
      *
-     * **The save's snackbar sits over the Clear button.** The API key row is the last section on
-     * this screen, so a tap aimed at Clear immediately after a save lands on "Google Books API key
-     * saved" instead. Waiting for that snackbar to retire is not an option here: under this harness
-     * it stays in the tree indefinitely (ten seconds of polling still found it), so a test that
-     * saves and then clears can only ever race it. Arranging the stored key through the repository
-     * skips the snackbar entirely, and is the honest arrangement anyway -- this test is about Clear.
+     * **Clearing straight after a save does not work, and waiting it out is not available.** With
+     * the save's "Google Books API key saved" snackbar up -- and the API key row is the last section
+     * on this screen, so the two overlap -- a Clear tap was observed to leave the status line
+     * unchanged. Whether the snackbar swallows the tap or something else about that moment does is
+     * not established here; what is established is that the snackbar does not retire under this
+     * harness (ten seconds of polling still found it in the tree), so a test cannot simply wait for
+     * a clean screen. Arranging the stored key through the repository never raises the snackbar at
+     * all, and is the honest arrangement anyway -- this test is about Clear, not about Save.
      */
     @Test
     fun googleBooksApiKeyClear_isWiredToARealCallback() {
         runBlocking { application.appContainer.settingsRepository.setGoogleBooksApiKey(TEST_KEY) }
 
         openSettings()
+        scrollToApiKeyRow()
 
         // The row has to see the arranged key before clearing it means anything.
         awaitStatus(string(R.string.settings_google_books_key_saved))
