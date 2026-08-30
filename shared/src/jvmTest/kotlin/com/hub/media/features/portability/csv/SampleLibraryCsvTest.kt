@@ -120,15 +120,15 @@ class SampleLibraryCsvTest {
 
         assertEquals(
             4,
-            parsed.mapNotNull { it.status }.toSet().size,
+            parsed.mapNotNull { it.book.status }.toSet().size,
             "every reading status must be represented, or the filter chips cannot all be exercised",
         )
         assertTrue(
-            parsed.any { it.authors?.contains(";") == true },
+            parsed.any { it.book.authors?.contains(";") == true },
             "a multi-author book is what proves author search matches inside the joined string",
         )
         assertTrue(
-            parsed.any { it.isbn.isNullOrEmpty() },
+            parsed.any { it.book.isbn.isNullOrEmpty() },
             "a book with no ISBN is the case the cover backfill must skip rather than retry",
         )
         assertTrue(

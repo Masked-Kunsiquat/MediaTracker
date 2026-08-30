@@ -31,10 +31,49 @@ import com.hub.media.core.database.entities.EpisodeEntity
  *    ("Watched state and its timestamp are one column deliberately"). Everything else in this file
  *    exists so this column has somewhere to live; a backup that dropped it would silently discard
  *    every episode a user had ticked off.
+ * 9. `runtime_minutes` (CSV `v5`) -- [EpisodeEntity.runtimeMinutes]; empty when null.
+ * 10. `overview` -- [EpisodeEntity.overview]; empty when null.
+ * 11. `still_image_hash` -- [EpisodeEntity.stillImageHash]; empty when null. The hash only, never
+ *     the image bytes -- see [LibraryCsvImporter]'s cover-image note, which applies identically:
+ *     this column round-trips for completeness and the importer deliberately never writes it.
+ * 12. `community_rating` -- [EpisodeEntity.communityRating]; empty when null.
+ *
+ * ### Why the four `v5` columns were added before anything populates them
+ * Columns 9-12 were added to [EpisodeEntity] in PR #86, sized for the Task 13 Phase D backfill, and
+ * this exporter did not pick them up -- so its own promise above ("every column that entity holds")
+ * had quietly stopped being true. Nothing is lost by that today, because nothing writes those
+ * columns until Phase D. They are added now anyway, for the same reason [LibraryCsvExporter] wrote
+ * its movie columns before [LibraryCsvImporter] could read them: this file is the user's backup, and
+ * a column only survives a lost device if it was written down at export time. Adding them once
+ * Phase D starts filling them would be too late for every export taken in between.
  */
 public object EpisodeCsvExporter {
     /** Header row, in column order -- see class KDoc for what each column holds. */
     public val HEADER: List<String> =
+        listOf(
+            CSV_SCHEMA_VERSION_COLUMN,
+            "episode_id",
+            "media_id",
+            "season_number",
+            "episode_number",
+            "title",
+            "air_date",
+            "watched_at",
+            "runtime_minutes",
+            "overview",
+            "still_image_hash",
+            "community_rating",
+        )
+
+    /**
+     * The `csv_schema_version=4` header shape (ROADMAP Task 13 Phase C), before `v5` appended the
+     * four [EpisodeEntity] columns PR #86 added.
+     *
+     * They went on the **end** so every column a `v4` file already had keeps its index -- which is
+     * what lets [EpisodeCsvImporter.padLegacyV4Row] be a pad rather than a reshuffle, exactly as
+     * [LibraryCsvExporter.HEADER_V3] does for the library file.
+     */
+    public val HEADER_V4: List<String> =
         listOf(
             CSV_SCHEMA_VERSION_COLUMN,
             "episode_id",
@@ -71,5 +110,9 @@ public object EpisodeCsvExporter {
             episode.title.orEmpty(),
             episode.airDate?.toString().orEmpty(),
             episode.watchedAt?.toString().orEmpty(),
+            episode.runtimeMinutes?.toString().orEmpty(),
+            episode.overview.orEmpty(),
+            episode.stillImageHash.orEmpty(),
+            episode.communityRating?.toString().orEmpty(),
         )
 }

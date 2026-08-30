@@ -342,6 +342,19 @@ demand, and depends on exactly the cloud this app's premise rejects — it is no
   reuses the existing use-case-layer rules (`BookMetadataValidation`/`ReadingSessionValidation`,
   extracted from `BookRepository`/`ReadingSessionRepository`/`LogReadingSessionUseCase`) rather
   than forking a divergent copy. No schema change; Room stays at v4.
+
+  **Books-only until #106.** Everything above was written when a book was the only media type, and
+  the importer rejected every other `type` outright with "not yet supported for import" — while the
+  exporter, correctly, had been writing film and show columns since CSV `v3`/`v4` and a whole
+  `episodes_export.csv` since Task 13 Phase C. The round trip therefore returned a library's books
+  and silently dropped the rest, which is the DoD clause #74 failed on. All three types import now:
+  a row's `type` selects one `ParsedRowDetails` variant, `ImportDetails` carries whichever details
+  table the item has through the same one atomic transaction, and `EpisodeCsvImporter` reads the
+  third file. An episode whose `media_id` names nothing known — or names a book or a film — is
+  skipped and reported, the same treatment an orphaned reading session already got. The duplicate
+  matching above is unchanged in behaviour: every tier was already scoped by media type, so
+  widening the snapshot from books to the whole library only means an existing film is now
+  *recognised* rather than duplicated.
 - **`.sqlite` backup + restore (done)**: a new "Backup & restore" Settings section, visually and
   structurally separated from CSV export/import by risk. Backup runs SQLite's own `VACUUM INTO`
   against the live database (via Room KMP's `useWriterConnection`/`Transactor.usePrepared`) rather

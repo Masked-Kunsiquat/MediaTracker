@@ -39,14 +39,19 @@ class ImportViewModelTest {
 
     private val sampleSummary =
         ImportSummary(
+            itemsImported = 2,
+            itemsSkipped = 1,
+            itemsMerged = 0,
+            itemsReplaced = 0,
             booksImported = 2,
-            booksSkipped = 1,
-            booksMerged = 0,
-            booksReplaced = 0,
             sessionsImported = 3,
             sessionsSkipped = 0,
             sessionsMerged = 0,
             sessionsReplaced = 0,
+            episodesImported = 4,
+            episodesSkipped = 0,
+            episodesMerged = 0,
+            episodesReplaced = 0,
             rejections = emptyList(),
         )
 
@@ -64,13 +69,21 @@ class ImportViewModelTest {
 
             assertEquals(ImportUiState.Idle, viewModel.uiState.value)
 
-            viewModel.importData("library-csv", "logs-csv", DuplicatePolicy.MERGE)
+            viewModel.importData("library-csv", "logs-csv", "episodes-csv", DuplicatePolicy.MERGE)
             assertEquals(ImportUiState.Loading, viewModel.uiState.value)
 
             fake.release()
             val finalState = viewModel.uiState.first { it is ImportUiState.Success }
             assertEquals(ImportUiState.Success(sampleSummary), finalState)
-            assertEquals(Triple("library-csv", "logs-csv", DuplicatePolicy.MERGE), fake.lastArgs)
+            assertEquals(
+                FakeImportDataUseCase.ExecuteArgs(
+                    "library-csv",
+                    "logs-csv",
+                    "episodes-csv",
+                    DuplicatePolicy.MERGE,
+                ),
+                fake.lastArgs,
+            )
         }
 
     @Test
@@ -79,7 +92,7 @@ class ImportViewModelTest {
             val fake = FakeImportDataUseCase(result = Resource.Error("Import failed: boom"))
             val viewModel = newViewModel(fake)
 
-            viewModel.importData(null, "logs-csv", DuplicatePolicy.SKIP)
+            viewModel.importData(null, "logs-csv", null, DuplicatePolicy.SKIP)
 
             val finalState = viewModel.uiState.value
             assertIs<ImportUiState.Error>(finalState)
@@ -92,10 +105,10 @@ class ImportViewModelTest {
             val fake = FakeImportDataUseCase().apply { awaitGate = true }
             val viewModel = newViewModel(fake)
 
-            viewModel.importData("a", null, DuplicatePolicy.SKIP)
+            viewModel.importData("a", null, null, DuplicatePolicy.SKIP)
             assertEquals(ImportUiState.Loading, viewModel.uiState.value)
 
-            viewModel.importData("b", null, DuplicatePolicy.REPLACE)
+            viewModel.importData("b", null, null, DuplicatePolicy.REPLACE)
             assertEquals(1, fake.callCount)
 
             fake.release()
@@ -108,7 +121,7 @@ class ImportViewModelTest {
         runTest {
             val viewModel = newViewModel(FakeImportDataUseCase(result = Resource.Success(sampleSummary)))
 
-            viewModel.importData("a", null, DuplicatePolicy.SKIP)
+            viewModel.importData("a", null, null, DuplicatePolicy.SKIP)
             assertIs<ImportUiState.Success>(viewModel.uiState.value)
 
             viewModel.reset()
@@ -122,9 +135,9 @@ class ImportViewModelTest {
             val fake = FakeImportDataUseCase(result = Resource.Success(sampleSummary))
             val viewModel = newViewModel(fake)
 
-            viewModel.importData("a", null, DuplicatePolicy.SKIP)
+            viewModel.importData("a", null, null, DuplicatePolicy.SKIP)
             viewModel.reset()
-            viewModel.importData("b", null, DuplicatePolicy.SKIP)
+            viewModel.importData("b", null, null, DuplicatePolicy.SKIP)
 
             assertEquals(2, fake.callCount)
             assertIs<ImportUiState.Success>(viewModel.uiState.value)
@@ -173,7 +186,7 @@ class ImportViewModelTest {
             val fake = FakeImportDataUseCase().apply { awaitGate = true }
             val viewModel = newViewModel(fake)
 
-            viewModel.importData("a", null, DuplicatePolicy.SKIP)
+            viewModel.importData("a", null, null, DuplicatePolicy.SKIP)
             assertEquals(ImportUiState.Loading, viewModel.uiState.value)
 
             viewModel.importGoodreads("goodreads-csv", DuplicatePolicy.SKIP)

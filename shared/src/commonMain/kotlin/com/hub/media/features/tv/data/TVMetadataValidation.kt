@@ -53,6 +53,59 @@ public object TVMetadataValidation {
         if (seasonNumber < 0) "Season number must not be negative" else null
 
     /**
+     * A single episode's number within its season. Must be `> 0` --
+     * [com.hub.media.core.database.entities.EpisodeEntity.episodeNumber] is documented as 1-based,
+     * and unlike [validateSeasonNumber] there is no specials-style exception that makes `0`
+     * meaningful here.
+     *
+     * Distinct from [validateEpisodeCount] despite the near-identical rule, because they bound
+     * different things: a count is "how many rows to generate" and is capped at [MAX_EPISODE_COUNT]
+     * to stop a typo attempting a million-row insert, whereas a *number* identifies one already-
+     * existing row and has no such ceiling -- a long-running series legitimately numbers episodes
+     * past 500 when a season is catalogued as one continuous run. Quick-fill never needed this
+     * (it generates `1..n` itself); [com.hub.media.features.portability.csv.EpisodeCsvImporter] is
+     * the first caller, because a file can say anything.
+     */
+    public fun validateEpisodeNumber(episodeNumber: Int): String? =
+        if (episodeNumber <= 0) "Episode number must be a positive number" else null
+
+    /**
+     * A known episode runtime must be `> 0`; `null` ("not known yet") always passes.
+     *
+     * A peer of [com.hub.media.features.movies.data.MovieMetadataValidation.validateRuntimeMinutes]
+     * rather than a call into it. The rule reads the same, but reaching into the movie object from
+     * TV code is the exact shape #81 removed when it stopped both of these delegating to a
+     * book-named one -- and the two are free to diverge: an episode runtime is per-episode by
+     * design (see [com.hub.media.core.database.entities.EpisodeEntity.runtimeMinutes] on why TMDB
+     * reports `episode_run_time` as an array), which is not a constraint a film has.
+     */
+    public fun validateEpisodeRuntimeMinutes(runtimeMinutes: Int?): String? =
+        if (runtimeMinutes != null && runtimeMinutes <= 0) "Runtime must be a positive number" else null
+
+    /**
+     * A known community rating must be finite and within `0.0..10.0`; `null` ("unknown") always
+     * passes.
+     *
+     * The bound is the normalisation
+     * [com.hub.media.core.database.entities.EpisodeEntity.communityRating] declares -- providers
+     * disagree on scale (TMDB out of 10, Goodreads out of 5) and that column's contract is that
+     * everything stored in it has already been converted to a 0-10 scale. A file is the one place
+     * an un-normalised value can arrive from, so this is where the contract gets enforced.
+     *
+     * Non-finite is rejected for the reason
+     * [com.hub.media.features.media.domain.MediaMetadataValidation.validatePurchasePrice] spells
+     * out: `NaN` compares `false` against every bound, so a range check alone would admit it and
+     * poison any later average.
+     */
+    public fun validateCommunityRating(communityRating: Double?): String? =
+        when {
+            communityRating == null -> null
+            !communityRating.isFinite() -> "Community rating must be a finite number"
+            communityRating !in 0.0..10.0 -> "Community rating must be between 0 and 10"
+            else -> null
+        }
+
+    /**
      * The quick-fill episode count for one season. Must be `> 0` and no greater than
      * [MAX_EPISODE_COUNT] -- this value directly drives a loop that generates one
      * [com.hub.media.core.database.entities.EpisodeEntity] row per episode

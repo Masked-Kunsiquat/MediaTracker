@@ -202,33 +202,61 @@ fun SettingsScreenRoute(
     // writes to the user's real library.
     var duplicatePolicy by remember { mutableStateOf(DuplicatePolicy.SKIP) }
 
-    // Holds the library file's text between the two sequential SAF "open document" picks below,
-    // mirroring pendingBundle's export-side role: the reading-logs file is optional, so the second
-    // picker's Cancel still runs the import with just the library file, rather than the
-    // first-picker Cancel semantics below (which abort the whole import request).
+    // Holds each earlier file's text between the three sequential SAF "open document" picks below,
+    // mirroring pendingBundle's export-side role: the reading-logs and episodes files are both
+    // optional, so a later picker's Cancel still runs the import with whatever was gathered so far,
+    // rather than the first-picker Cancel semantics below (which abort the whole import request).
+    //
+    // Three picks now rather than two (Issue #106): the export side has written three files since
+    // Task 13 Phase C, and the import side asked for two, which is the shape the episodes half of
+    // that bug took at the UI layer. The order matches the export chain's.
     var pendingLibraryCsvForImport by remember { mutableStateOf<String?>(null) }
+    var pendingReadingLogsCsvForImport by remember { mutableStateOf<String?>(null) }
+
+    val episodesImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            val libraryCsv = pendingLibraryCsvForImport
+            val readingLogsCsv = pendingReadingLogsCsvForImport
+            pendingLibraryCsvForImport = null
+            pendingReadingLogsCsvForImport = null
+            // Off the main thread -- see the launchers below; an episodes export of a large TV
+            // library is easily the biggest of the three files.
+            coroutineScope.launch {
+                val episodesCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
+                // Same split as readingLogsImportLauncher: a cancelled picker is a legitimate
+                // "no episodes file" import, a failed read of a file the user *did* pick is not.
+                if (uri != null && episodesCsv == null) {
+                    snackbarHostState.showSnackbar(importFailureMessage)
+                    return@launch
+                }
+                importViewModel.importData(libraryCsv, readingLogsCsv, episodesCsv, duplicatePolicy)
+            }
+        }
 
     val readingLogsImportLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
         ) { uri ->
-            val libraryCsv = pendingLibraryCsvForImport
-            pendingLibraryCsvForImport = null
             // Off the main thread: reading a whole document via SAF is blocking I/O that runs
             // straight inside this launcher callback, which is itself dispatched on the main thread --
             // an unbounded read here (a large reading-logs export) would otherwise ANR the app.
             coroutineScope.launch {
                 val readingLogsCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
                 // A null uri means the user cancelled this second, optional picker -- that's a
-                // legitimate "library only" import (see pendingLibraryCsvForImport's KDoc above). A
-                // null readingLogsCsv from a uri the user *did* pick means the read itself failed --
-                // matching libraryImportLauncher's own null-content handling below, report it and stop
-                // before importData silently drops the reading logs and reports a clean success.
+                // legitimate "no reading logs" import (see pendingLibraryCsvForImport's comment
+                // above). A null readingLogsCsv from a uri the user *did* pick means the read itself
+                // failed -- matching libraryImportLauncher's own null-content handling below, report
+                // it and stop. Stopping here abandons the whole chain, including the episodes pick,
+                // rather than importing part of what the user selected.
                 if (uri != null && readingLogsCsv == null) {
+                    pendingLibraryCsvForImport = null
                     snackbarHostState.showSnackbar(importFailureMessage)
                     return@launch
                 }
-                importViewModel.importData(libraryCsv, readingLogsCsv, duplicatePolicy)
+                pendingReadingLogsCsvForImport = readingLogsCsv
+                episodesImportLauncher.launch(arrayOf("text/*"))
             }
         }
 
@@ -241,7 +269,7 @@ fun SettingsScreenRoute(
                 return@rememberLauncherForActivityResult
             }
             // Off the main thread -- see readingLogsImportLauncher above; a large library export is
-            // the more likely of the two files to be big enough to matter.
+            // the more likely of the three files to be big enough to matter.
             coroutineScope.launch {
                 val content = withContext(Dispatchers.IO) { readCsvFromUri(context, uri) }
                 if (content == null) {
@@ -614,10 +642,15 @@ fun SettingsScreenRoute(
  *
  * @param onBackfillClick Starts the bulk cover/author backfill (ROADMAP Task 14 Phase A) and
  *   dismisses this dialog, offered as a dismiss-button-adjacent action whenever [summary] actually
- *   added books ([ImportSummary.booksImported] > 0) -- the moment a coverless/authorless import
+ *   added **books** ([ImportSummary.booksImported] > 0) -- the moment a coverless/authorless import
  *   just landed (a Goodreads import above all) is exactly when the need for a backfill is obvious,
  *   per that phase's brief. Never shown for an import that added nothing (a pure duplicate-skip
  *   pass has no new gaps to fill).
+ *
+ *   Books specifically, not [ImportSummary.itemsImported]. That backfill seeds itself from
+ *   `BookRepository.getAllBooksWithDetails()`, so an import of only films and shows gives it
+ *   nothing to do -- offering it there would produce a button whose entire effect is to log
+ *   "nothing pending". The distinction did not exist while only books could be imported.
  */
 
 /**
@@ -778,11 +811,11 @@ private fun ImportSummaryDialog(
             ) {
                 Text(
                     stringResource(
-                        R.string.import_summary_books_line,
-                        summary.booksImported,
-                        summary.booksSkipped,
-                        summary.booksReplaced,
-                        summary.booksMerged,
+                        R.string.import_summary_items_line,
+                        summary.itemsImported,
+                        summary.itemsSkipped,
+                        summary.itemsReplaced,
+                        summary.itemsMerged,
                     ),
                 )
                 Text(
@@ -792,6 +825,19 @@ private fun ImportSummaryDialog(
                         summary.sessionsSkipped,
                         summary.sessionsReplaced,
                         summary.sessionsMerged,
+                    ),
+                )
+                // Always rendered, including when every count is zero -- that is the entire point
+                // of the line (Issue #106). An import that silently dropped every episode used to
+                // look identical to one that had none to carry; "Episodes: 0 imported" is what
+                // makes the difference visible.
+                Text(
+                    stringResource(
+                        R.string.import_summary_episodes_line,
+                        summary.episodesImported,
+                        summary.episodesSkipped,
+                        summary.episodesReplaced,
+                        summary.episodesMerged,
                     ),
                 )
                 // Advisory notes (ROADMAP Task 8 Phase D) -- e.g. the Goodreads importer's "these

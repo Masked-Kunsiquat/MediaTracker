@@ -1,5 +1,6 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.database.dao.ImportDetails
 import com.hub.media.core.database.dao.ImportMediaInsert
 import com.hub.media.core.database.dao.ImportMediaUpdate
 import kotlinx.coroutines.flow.first
@@ -41,12 +42,19 @@ class ImportWriteDaoTest {
                     val mediaId = "media-$i"
                     ImportMediaInsert(
                         mediaItem = sampleMediaItem(id = mediaId, title = "Book $i"),
-                        details = sampleBookDetails(mediaId = mediaId),
+                        details = ImportDetails.Book(sampleBookDetails(mediaId = mediaId)),
                         identifiers = emptyList(),
                     )
                 }
 
-            db.importWriteDao().importAtomically(inserts, emptyList(), emptyList(), emptyList())
+            db.importWriteDao().importAtomically(
+                inserts,
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+            )
 
             assertEquals(
                 3,
@@ -72,24 +80,31 @@ class ImportWriteDaoTest {
                 listOf(
                     ImportMediaInsert(
                         mediaItem = sampleMediaItem(id = "media-1", title = "Book 1"),
-                        details = sampleBookDetails(mediaId = "media-1"),
+                        details = ImportDetails.Book(sampleBookDetails(mediaId = "media-1")),
                         identifiers = emptyList(),
                     ),
                     ImportMediaInsert(
                         // Duplicate primary key against the pre-existing row -- forces a mid-batch failure.
                         mediaItem = sampleMediaItem(id = "media-2", title = "Colliding book"),
-                        details = sampleBookDetails(mediaId = "media-2"),
+                        details = ImportDetails.Book(sampleBookDetails(mediaId = "media-2")),
                         identifiers = emptyList(),
                     ),
                     ImportMediaInsert(
                         mediaItem = sampleMediaItem(id = "media-3", title = "Book 3"),
-                        details = sampleBookDetails(mediaId = "media-3"),
+                        details = ImportDetails.Book(sampleBookDetails(mediaId = "media-3")),
                         identifiers = emptyList(),
                     ),
                 )
 
             assertFailsWith<Exception> {
-                db.importWriteDao().importAtomically(inserts, emptyList(), emptyList(), emptyList())
+                db.importWriteDao().importAtomically(
+                    inserts,
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                )
             }
 
             // "media-1" was inserted successfully before the exception on "media-2" -- it must NOT
@@ -115,13 +130,13 @@ class ImportWriteDaoTest {
             val insert =
                 ImportMediaInsert(
                     mediaItem = sampleMediaItem(id = "media-1", title = "Fresh Book"),
-                    details = sampleBookDetails(mediaId = "media-1"),
+                    details = ImportDetails.Book(sampleBookDetails(mediaId = "media-1")),
                     identifiers = emptyList(),
                 )
             val updateForMissingBook =
                 ImportMediaUpdate(
                     mediaItem = sampleMediaItem(id = "media-missing", title = "Ghost"),
-                    details = sampleBookDetails(mediaId = "media-missing"),
+                    details = ImportDetails.Book(sampleBookDetails(mediaId = "media-missing")),
                     identifiers = emptyList(),
                     replaceIdentifiers = false,
                 )
@@ -130,6 +145,8 @@ class ImportWriteDaoTest {
                 db.importWriteDao().importAtomically(
                     listOf(insert),
                     listOf(updateForMissingBook),
+                    emptyList(),
+                    emptyList(),
                     emptyList(),
                     emptyList(),
                 )
@@ -147,7 +164,7 @@ class ImportWriteDaoTest {
             val bookInsert =
                 ImportMediaInsert(
                     mediaItem = sampleMediaItem(id = "media-1", title = "Fresh Book"),
-                    details = sampleBookDetails(mediaId = "media-1"),
+                    details = ImportDetails.Book(sampleBookDetails(mediaId = "media-1")),
                     identifiers = emptyList(),
                 )
             val updateForMissingSession = sampleReadingSession(mediaId = "media-1", id = "session-missing")
@@ -158,6 +175,8 @@ class ImportWriteDaoTest {
                     emptyList(),
                     emptyList(),
                     listOf(updateForMissingSession),
+                    emptyList(),
+                    emptyList(),
                 )
             }
 
