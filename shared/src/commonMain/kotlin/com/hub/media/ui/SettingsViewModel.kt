@@ -7,11 +7,14 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.clearGoogleBooksApiKey
+import com.hub.media.features.settings.data.clearTmdbCredential
 import com.hub.media.features.settings.data.observeGoogleBooksApiKey
 import com.hub.media.features.settings.data.observeLogVerbosity
+import com.hub.media.features.settings.data.observeTmdbCredential
 import com.hub.media.features.settings.data.observeWeekStartDay
 import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import com.hub.media.features.settings.data.setLogVerbosity
+import com.hub.media.features.settings.data.setTmdbCredential
 import com.hub.media.features.settings.data.setWeekStartDay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
@@ -56,11 +59,15 @@ public class SettingsViewModel(
             // SettingsUiState.googleBooksApiKeySet's KDoc. The raw key never enters uiState, so it
             // can never be recomposed with, snapshotted, or logged from here.
             settingsRepository.observeGoogleBooksApiKey().map { it != null },
-        ) { weekStartDay, logVerbosity, apiKeySet ->
+            // Same mapping-to-presence rule, same reason: the credential itself must never reach
+            // uiState. See SettingsUiState.tmdbCredentialSet.
+            settingsRepository.observeTmdbCredential().map { it != null },
+        ) { weekStartDay, logVerbosity, apiKeySet, tmdbSet ->
             SettingsUiState(
                 weekStartDay = weekStartDay,
                 logVerbosity = logVerbosity,
                 googleBooksApiKeySet = apiKeySet,
+                tmdbCredentialSet = tmdbSet,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -135,5 +142,49 @@ public class SettingsViewModel(
             throw e
         } catch (e: Exception) {
             Resource.Error("Failed to clear API key", e)
+        }
+
+    /**
+     * Persists [value] as the user's TMDB credential, or clears it when [value] is blank (#75).
+     *
+     * Accepts either credential TMDB issues -- a v3 API key or a v4 read access token -- without
+     * inspecting which. Shape recognition happens where the request is built, not here; see
+     * [com.hub.media.features.settings.data.setTmdbCredential] for why a validating setter would
+     * turn a format change at TMDB into a credential the app refuses to store.
+     *
+     * [value] is passed straight through and never retained, logged, or echoed back through
+     * [uiState], exactly as in [setGoogleBooksApiKey].
+     *
+     * @return [Resource.Success] if the write completed, or [Resource.Error] with a message.
+     */
+    public suspend fun setTmdbCredential(value: String): Resource<Unit> =
+        try {
+            settingsRepository.setTmdbCredential(value)
+            Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Resource.Error("Failed to save TMDB credential", e)
+        }
+
+    /**
+     * Removes the stored TMDB credential.
+     *
+     * Unlike [clearGoogleBooksApiKey] this does not fall back to a keyless path -- TMDB refuses
+     * anonymous requests, so clearing it means no film or show metadata until another is entered.
+     * That is a supported state rather than a broken one (manual entry is unaffected, per AGENTS.md
+     * §1's offline-first rule), but it is a bigger consequence than clearing the books key, so the
+     * screen is the right place to say so before the user confirms.
+     *
+     * @return [Resource.Success] if the credential was cleared, or [Resource.Error] with a message.
+     */
+    public suspend fun clearTmdbCredential(): Resource<Unit> =
+        try {
+            settingsRepository.clearTmdbCredential()
+            Resource.Success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Resource.Error("Failed to clear TMDB credential", e)
         }
 }

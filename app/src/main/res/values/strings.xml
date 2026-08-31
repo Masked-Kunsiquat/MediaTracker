@@ -208,6 +208,16 @@
     <string name="settings_google_books_key_clear_button">Clear key</string>
     <string name="settings_google_books_key_saved_message">Google Books API key saved</string>
     <string name="settings_google_books_key_cleared_message">Google Books API key cleared</string>
+    <string name="settings_tmdb_key_label">TMDB API key</string>
+    <string name="settings_tmdb_key_description">Required for films and shows. TMDB gives you two credentials on the same page — an API key and a read access token. Either one works here; paste whichever you copied. Without one, films and shows can still be added and tracked by hand, but nothing is looked up for you.</string>
+    <string name="settings_tmdb_key_saved">A credential is saved. It stays on this device: it is never included in a backup or an export, so a restore will ask you for it again.</string>
+    <string name="settings_tmdb_key_not_saved">Nothing saved. Films and shows must be entered by hand.</string>
+    <string name="settings_tmdb_key_field_label">API key or read access token</string>
+    <string name="settings_tmdb_key_save_button">Save credential</string>
+    <string name="settings_tmdb_key_replace_button">Replace credential</string>
+    <string name="settings_tmdb_key_clear_button">Clear credential</string>
+    <string name="settings_tmdb_key_saved_message">TMDB credential saved</string>
+    <string name="settings_tmdb_key_cleared_message">TMDB credential cleared</string>
 
     <!-- SettingsScreen: data export (ROADMAP Task 8 Phase A) -->
     <string name="settings_section_data">Data</string>
@@ -279,7 +289,7 @@
     <string name="restore_confirm_title">Replace your entire library?</string>
     <string name="restore_confirm_message">This will permanently delete everything currently in your library — every book, reading session, and setting — and replace it with the contents of the selected backup file. This cannot be undone.</string>
     <string name="restore_confirm_message_older_version">The selected backup is from an older version of the app (database version %1$d). It will be upgraded automatically after restoring.</string>
-    <string name="restore_confirm_message_api_key">Your Google Books API key is not included in backups. After this restore, you\'ll need to enter it again in Settings.</string>
+    <string name="restore_confirm_message_credentials">Provider API keys are not included in backups. After this restore, you\'ll need to enter them again in Settings.</string>
     <string name="restore_confirm_checkbox_label">I understand this will permanently delete my current library and replace it with the backup file</string>
     <string name="restore_confirm_button">Restore &amp; restart app</string>
     <string name="restore_cancel_button">Cancel</string>

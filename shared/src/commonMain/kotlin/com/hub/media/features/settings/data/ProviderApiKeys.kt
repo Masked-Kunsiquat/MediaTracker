@@ -161,6 +161,25 @@ public suspend fun SettingsRepository.clearTmdbCredential() {
 }
 
 /**
+ * Whether *any* provider credential is currently stored.
+ *
+ * Backs the restore confirmation's "you will have to enter your keys again" warning. A restore
+ * replaces the whole database file, and backups have every credential row scrubbed out before they
+ * are written, so confirming one silently clears whatever the user had entered.
+ *
+ * Reads [CREDENTIAL_SETTING_KEYS] for the same reason the scrub does: the warning has to stay true
+ * as providers are added, and a warning that quietly stops mentioning a credential it should is
+ * worse than no warning -- the user finds out by discovering the app can no longer reach TMDB. This
+ * deliberately reports only *whether* something will be lost, not which: naming providers would
+ * re-introduce the per-provider list this list exists to remove, and the user's next step ("re-enter
+ * your keys in Settings") is the same either way.
+ *
+ * Presence only. No credential value is read, returned, or held.
+ */
+public suspend fun SettingsRepository.hasAnyStoredCredential(): Boolean =
+    CREDENTIAL_SETTING_KEYS.any { getString(it).toApiKeyOrNull() != null }
+
+/**
  * Collapses a raw stored value to `null` for both the never-set case ([this] itself is `null`) and a
  * blank/whitespace-only stored value -- the latter should be unreachable via [setGoogleBooksApiKey]
  * or [setTmdbCredential], but a row written by any other path (a future migration, direct DB edit,

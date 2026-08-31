@@ -38,7 +38,16 @@ class SettingsScreenGoldenTest {
     fun settings() {
         composeRule.captureGolden(
             name = "settings",
-            alsoAssert = { assertTagsExist(TestTags.Settings.LIST, TestTags.Settings.API_KEY_FIELD) },
+            alsoAssert = {
+                assertTagsExist(
+                    TestTags.Settings.LIST,
+                    TestTags.Settings.API_KEY_FIELD,
+                    // Both credential rows, not just the first: they are two calls to one
+                    // generalised composable (#75), so a wiring mistake that drops one would
+                    // leave the other rendering perfectly and this assertion is what notices.
+                    TestTags.Settings.TMDB_KEY_FIELD,
+                )
+            },
         ) { Fixture() }
     }
 
@@ -50,6 +59,8 @@ class SettingsScreenGoldenTest {
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
+            onTmdbCredentialSave = {},
+            onTmdbCredentialClear = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,

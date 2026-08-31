@@ -36,9 +36,20 @@ import com.hub.media.features.settings.data.WeekStartDay
  *   recomputed on every settings change, and trivially captured by any future "log the UI state"
  *   debugging line -- for no capability the screen actually needs. `false` is the right first-
  *   composition default: it renders the no-key state, which is also what a fresh install has.
+ * @property tmdbCredentialSet Whether a user-supplied TMDB credential is currently stored (#75).
+ *   A boolean for exactly the reasons [googleBooksApiKeySet] is one, which apply here unchanged.
+ *
+ *   One difference is worth stating, because it changes what the *screen* should say and not what
+ *   this property holds: an absent Google Books key falls back to keyless requests, while an absent
+ *   TMDB credential means no TMDB requests at all. That makes the copy next to this control more
+ *   load-bearing -- it has to explain a capability the user does not have -- but it is still not a
+ *   reason to treat `false` as an error state. Manual entry works with no credential, which is the
+ *   offline-first guarantee in AGENTS.md §1, and every restored backup starts here because the
+ *   credential is scrubbed out of backups by design.
  */
 public data class SettingsUiState(
     val weekStartDay: WeekStartDay = WeekStartDay.MONDAY,
     val logVerbosity: LogLevel = DEFAULT_LOG_VERBOSITY,
     val googleBooksApiKeySet: Boolean = false,
+    val tmdbCredentialSet: Boolean = false,
 )

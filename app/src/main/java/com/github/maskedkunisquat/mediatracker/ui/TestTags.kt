@@ -67,5 +67,6 @@ object TestTags {
     object Settings {
         const val LIST = "settings:list"
         const val API_KEY_FIELD = "settings:apiKey"
+        const val TMDB_KEY_FIELD = "settings:tmdbKey"
     }
 }

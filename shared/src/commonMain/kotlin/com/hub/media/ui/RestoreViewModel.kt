@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
-import com.hub.media.features.settings.data.getGoogleBooksApiKey
+import com.hub.media.features.settings.data.hasAnyStoredCredential
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,10 +34,10 @@ import kotlinx.coroutines.launch
  * @param restoreDatabaseUseCase Validates/stages a candidate file. Typed as the narrow
  *   [RestoreDatabaseUseCase] interface so tests can hand-roll a fake with no Room dependency
  *   (AGENTS.md §5).
- * @param settingsRepository Read-only source for [RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared]
- *   -- only ever asked whether a Google Books API key is currently set
- *   ([com.hub.media.features.settings.data.getGoogleBooksApiKey] returning non-null), never asked for
- *   the key's value. Taken as the same concrete [SettingsRepository] type
+ * @param settingsRepository Read-only source for [RestoreUiState.AwaitingConfirmation.credentialsWillBeCleared]
+ *   -- only ever asked whether any provider credential is currently set
+ *   ([com.hub.media.features.settings.data.hasAnyStoredCredential]), never asked for a credential's
+ *   value. Taken as the same concrete [SettingsRepository] type
  *   [com.hub.media.ui.SettingsViewModel]/[com.hub.media.ui.StatsViewModel] already depend on, rather
  *   than a narrower interface, to match their precedent.
  */
@@ -59,17 +59,17 @@ public class RestoreViewModel(
 
         _uiState.value = RestoreUiState.Validating
         viewModelScope.launch {
-            // Read now, while the live database still holds whatever key it holds -- see
-            // RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared's KDoc for why this can't
-            // be deferred to any later point in the restore flow. Presence only; the key's
-            // value is never read here or held by this ViewModel.
+            // Read now, while the live database still holds whatever credentials it holds -- see
+            // RestoreUiState.AwaitingConfirmation.credentialsWillBeCleared's KDoc for why this
+            // can't be deferred to any later point in the restore flow. Presence only; no
+            // credential value is read here or held by this ViewModel.
             val keyCheckResult: Resource<Boolean> =
                 try {
-                    Resource.Success(settingsRepository.getGoogleBooksApiKey() != null)
+                    Resource.Success(settingsRepository.hasAnyStoredCredential())
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Resource.Error("Failed to check existing API key")
+                    Resource.Error("Failed to check existing provider credentials")
                 }
 
             _uiState.value =
@@ -79,7 +79,7 @@ public class RestoreViewModel(
                             is Resource.Success -> {
                                 RestoreUiState.AwaitingConfirmation(
                                     result.data,
-                                    apiKeyWillBeCleared = keyCheckResult.data,
+                                    credentialsWillBeCleared = keyCheckResult.data,
                                 )
                             }
                             is Resource.Error -> RestoreUiState.Error(result.message)
