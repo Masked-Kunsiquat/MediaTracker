@@ -33,6 +33,8 @@ private object FrozenClock : Clock {
 
 class TmdbClientTest {
     private val jwt = "eyJ-fake-tmdb-read-access-token-for-tests"
+
+    /** Not hex, and deliberately so -- see TmdbCredentialTest.v3Key. */
     private val v3Key = "fake-v3-api-key-for-tests"
 
     private fun MockRequestHandleScope.jsonResponse(

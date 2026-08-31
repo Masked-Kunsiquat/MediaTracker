@@ -31,7 +31,14 @@ class TmdbCredentialTest {
      */
     private val jwt: String = "eyJ-fake-tmdb-read-access-token-for-tests"
 
-    /** TMDB v3 keys are 32 hex characters. */
+    /**
+     * A real TMDB v3 key is 32 hexadecimal characters. This fixture deliberately is not.
+     *
+     * `TmdbCredential.of` claims only the `eyJ` prefix and sends *everything else* as an `api_key`,
+     * so the shape of a non-JWT value is irrelevant to what is being tested here -- and a 32-char
+     * hex literal is exactly what a secret scanner treats as a key, which failed CI once already.
+     * Being unmistakably fake is worth more than being realistic.
+     */
     private val v3Key: String = "fake-v3-api-key-for-tests"
 
     @Test
@@ -40,7 +47,7 @@ class TmdbCredentialTest {
     }
 
     @Test
-    fun aHexKeyIsAnApiKey() {
+    fun aValueThatIsNotAJwtIsAnApiKey() {
         assertIs<TmdbCredential.ApiKey>(TmdbCredential.of(v3Key))
     }
 
