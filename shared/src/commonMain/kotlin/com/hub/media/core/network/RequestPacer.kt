@@ -88,12 +88,19 @@ public const val OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND: Int = 3
 /**
  * A [RequestPacer] sized to [OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND].
  *
- * Intended for bulk passes over openlibrary.org only. The interactive single-book paths deliberately
- * go unpaced: one lookup at a time is nowhere near the ceiling, and spending user-visible latency to
- * protect a background crawl is the wrong trade. That does mean a lookup issued *during* a backfill
- * is not counted against the crawl's pacing -- accepted knowingly, because the crawl is already the
- * overwhelming majority of the traffic and the alternative slows down the only request a person is
- * actually waiting on.
+ * Intended for bulk passes over openlibrary.org only. The *single-request* user-facing paths --
+ * adding a book by ISBN, re-fetching one cover -- deliberately go unpaced: one lookup is nowhere
+ * near the ceiling, and spending user-visible latency to protect a background crawl is the wrong
+ * trade. That does mean a lookup issued *during* a backfill is not counted against the crawl's
+ * pacing -- accepted knowingly, because the crawl is already the overwhelming majority of the
+ * traffic and the alternative slows down the only request a person is actually waiting on.
+ *
+ * "Single-request" is the load-bearing word, not "interactive". A user-facing path that issues
+ * *several* requests has neither excuse, and one exists:
+ * [com.hub.media.features.books.network.OpenLibrarySearchClient.fetchEditionsForWork] paginates a
+ * work's editions in an uncapped loop, so one tap on a much-reprinted classic is a dozen or more
+ * back-to-back requests against this same budget. That is #120, filed rather than fixed here --
+ * it is a different path with a different owner, not an oversight in the crawl's pacing.
  */
 public fun openLibraryIdentifiedPacer(
     clock: Clock = Clock.System,
