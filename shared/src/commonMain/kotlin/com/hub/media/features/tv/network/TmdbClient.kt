@@ -2,6 +2,7 @@ package com.hub.media.features.tv.network
 
 import com.hub.media.core.network.RequestPacer
 import com.hub.media.core.network.TmdbCredential
+import com.hub.media.core.network.networkJson
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -17,6 +18,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.isSuccess
+import kotlinx.serialization.json.JsonObject
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Base for every TMDB v3 endpoint this app calls. */
@@ -32,6 +34,31 @@ private const val TAG = "TmdbClient"
  * user has to go and fix something in Settings, not retry.
  */
 private val CREDENTIAL_REJECTION_STATUS_CODES = setOf(401)
+
+/** TMDB's documented ceiling on how many items one `append_to_response` may carry. */
+public const val MAX_APPENDED_SEASONS: Int = 20
+
+/**
+ * A show plus whichever seasons came back with it from [TmdbClient.showWithSeasons].
+ *
+ * @property seasons Keyed by season number. Contains only regular seasons -- season 0 is never
+ *   requested -- and only those TMDB actually returned.
+ * @property missingSeasonNumbers Regular seasons the show declares but this response does not carry:
+ *   either beyond [MAX_APPENDED_SEASONS], or dropped because their payload would not decode. Empty
+ *   for the overwhelming majority of shows. A caller that needs them must fetch each with
+ *   [TmdbClient.seasonDetails]; one that does not can ignore this and still hold a coherent show.
+ */
+public data class TmdbShowWithSeasons(
+    public val show: TmdbShowDetailsDto,
+    public val seasons: Map<Int, TmdbSeasonDetailsDto>,
+) {
+    public val missingSeasonNumbers: List<Int>
+        get() =
+            show.seasons
+                .map { it.seasonNumber }
+                .filter { it >= 1 && it !in seasons }
+                .sorted()
+}
 
 /**
  * Client for the TMDB v3 API (AGENTS.md §4: primary source for films and TV).
@@ -150,6 +177,77 @@ public class TmdbClient(
         when (val result = getAuthenticated<TmdbAuthenticationDto>("/authentication")) {
             is Resource.Success -> Resource.Success(Unit)
             is Resource.Error -> result
+        }
+
+    /**
+     * A show and its seasons' episodes in **one** request, via TMDB's `append_to_response`.
+     *
+     * ### Why this exists rather than a loop over [seasonDetails]
+     * The obvious shape -- fetch the show, then one request per season -- costs `1 + n` round trips,
+     * so a five-season show is six. `append_to_response` folds the same data into a single response
+     * for the same total bytes, which on a phone is the difference between one round trip and six.
+     *
+     * ### Seasons are requested blind, and that is safe
+     * The caller does not know how many seasons a show has until the response arrives, so this asks
+     * for `season/1..`[MAX_APPENDED_SEASONS] unconditionally. Verified against the live API: TMDB
+     * silently omits seasons that do not exist rather than erroring -- Chernobyl, a single-season
+     * miniseries, answers `200` with only `season/1` appended.
+     *
+     * Season 0 is never requested. Specials are not created by this app's add-by-search path (#75,
+     * revisited in #122), so fetching them would be bytes spent on rows nothing writes.
+     *
+     * ### The 20-season ceiling
+     * TMDB caps `append_to_response` at 20 items. A show with more seasons than that comes back with
+     * the first [MAX_APPENDED_SEASONS] appended and the rest absent -- **not** an error, and not
+     * detectable from the appended keys alone, which is why [TmdbShowWithSeasons.missingSeasonNumbers]
+     * reports them explicitly rather than leaving a caller to compare lists. Callers that need every
+     * season must follow up with [seasonDetails] for those numbers.
+     *
+     * The response is decoded by hand because `append_to_response` puts its payload under *dynamic*
+     * keys (`season/1`, `season/2`, ...) that no declared `@Serializable` class can name.
+     */
+    public suspend fun showWithSeasons(showId: Int): Resource<TmdbShowWithSeasons> {
+        val appended = (1..MAX_APPENDED_SEASONS).joinToString(",") { "season/$it" }
+        return when (
+            val result =
+                getAuthenticated<JsonObject>(
+                    "/tv/$showId",
+                    mapOf("append_to_response" to appended),
+                )
+        ) {
+            is Resource.Error -> result
+            is Resource.Success -> decodeShowWithSeasons(result.data)
+        }
+    }
+
+    /**
+     * Splits one `append_to_response` body into the show and its appended seasons.
+     *
+     * A season that fails to decode is dropped rather than failing the whole show: the show record
+     * and every other season are still usable, and the alternative -- refusing to add a show because
+     * one season's payload was malformed -- trades a complete failure for a partial one. Dropped
+     * seasons reappear in [TmdbShowWithSeasons.missingSeasonNumbers], so a caller that cares is told.
+     */
+    private fun decodeShowWithSeasons(body: JsonObject): Resource<TmdbShowWithSeasons> =
+        try {
+            val show = networkJson.decodeFromJsonElement(TmdbShowDetailsDto.serializer(), body)
+            val seasons =
+                body
+                    .entries
+                    .mapNotNull { (key, value) ->
+                        val number = key.removePrefix("season/").toIntOrNull()?.takeIf { key.startsWith("season/") }
+                        if (number == null) {
+                            null
+                        } else {
+                            runCatching {
+                                number to networkJson.decodeFromJsonElement(TmdbSeasonDetailsDto.serializer(), value)
+                            }.getOrNull()
+                        }
+                    }.toMap()
+            Resource.Success(TmdbShowWithSeasons(show = show, seasons = seasons))
+        } catch (e: Exception) {
+            logger.warn(TAG) { "A TMDB show payload could not be decoded (${e::class.simpleName})" }
+            Resource.Error("TMDB returned a show record this app could not read")
         }
 
     /** Searches shows by name. Interactive: one request, and normally unpaced. */
