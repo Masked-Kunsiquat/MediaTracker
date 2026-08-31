@@ -2,6 +2,8 @@ package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.joinAuthors
+import com.hub.media.core.network.RequestPacer
+import com.hub.media.core.network.openLibraryIdentifiedPacer
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -494,6 +496,10 @@ private fun BulkBackfillState.toProgress(
  *   defaulting to no key. This is the path that benefits most from one: a backfill walks the whole
  *   library, so it is the request pattern most likely to exhaust the keyless quota Google never
  *   documented in the first place.
+ * @param metadataPacer Holds this pass's openlibrary.org requests to the documented identified-traffic
+ *   rate (#42). Defaults to a fresh pacer at that rate, so a caller cannot get an unpaced crawl by
+ *   omitting an argument -- the previous behaviour, and the bug. Only this factory takes one: the
+ *   interactive paths are deliberately unpaced, see [openLibraryIdentifiedPacer].
  */
 public fun createDefaultBulkBackfillUseCase(
     httpClient: HttpClient,
@@ -502,11 +508,12 @@ public fun createDefaultBulkBackfillUseCase(
     settingsRepository: SettingsRepository,
     coverRateLimiter: OpenLibraryCoverRateLimiter,
     googleBooksApiKeyProvider: suspend () -> String? = { null },
+    metadataPacer: RequestPacer = openLibraryIdentifiedPacer(),
 ): BulkBackfillUseCase =
     BulkBackfillUseCase(
         metadataProvider =
             FallbackBookMetadataProvider(
-                primary = OpenLibraryClient(httpClient),
+                primary = OpenLibraryClient(httpClient, pacer = metadataPacer),
                 secondary = GoogleBooksClient(httpClient, googleBooksApiKeyProvider),
                 isbnCoverProbe = null,
             ),
