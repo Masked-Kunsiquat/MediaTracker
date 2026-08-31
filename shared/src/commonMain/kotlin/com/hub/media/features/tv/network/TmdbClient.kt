@@ -34,6 +34,13 @@ private const val TAG = "TmdbClient"
  */
 private val CREDENTIAL_REJECTION_STATUS_CODES = setOf(401)
 
+/**
+ * Shown when nothing is stored to send. A constant because both request paths return it, and two
+ * copies of a sentence the user reads are two sentences that drift.
+ */
+private const val NO_CREDENTIAL_MESSAGE =
+    "No TMDB credential is set. Add one in Settings to look up films and shows."
+
 /** TMDB's documented ceiling on how many items one `append_to_response` may carry. */
 public const val MAX_APPENDED_SEASONS: Int = 20
 
@@ -114,13 +121,14 @@ public class TmdbClient(
      * had just accepted it -- the single most misleading answer that screen can give.
      */
     private suspend fun requestStatusOnly(path: String): Resource<Unit> {
-        val raw = credentialProvider()
-        if (raw == null) {
-            return Resource.Error("No TMDB credential is set. Add one in Settings to look up films and shows.")
-        }
-        val credential = TmdbCredential.of(raw)
-
         return try {
+            // Inside the try: reading the credential is a database read, so it can fail like any
+            // other, and every other failure in this class comes back as a Resource. A read that
+            // threw past this point would make the contract "returns a Resource, except sometimes"
+            // -- which only holds while every caller happens to wrap it.
+            val credential =
+                credentialProvider()?.let { TmdbCredential.of(it) }
+                    ?: return Resource.Error(NO_CREDENTIAL_MESSAGE)
             pacer?.acquire()
             val response = client.get("$TMDB_BASE_URL$path") { credential.applyTo(this) }
             if (response.status.isSuccess()) {
@@ -162,15 +170,13 @@ public class TmdbClient(
         path: String,
         queryParams: Map<String, String> = emptyMap(),
     ): Resource<T> {
-        val raw = credentialProvider()
-        if (raw == null) {
-            // Not logged as a warning: having no credential is an ordinary state for this app, not
-            // a fault. The screen that asked is responsible for saying so.
-            return Resource.Error("No TMDB credential is set. Add one in Settings to look up films and shows.")
-        }
-        val credential = TmdbCredential.of(raw)
-
         return try {
+            // Read inside the try for the reason [requestStatusOnly] gives. Absence itself is not
+            // logged as a warning: having no credential is an ordinary state for this app, not a
+            // fault, and the screen that asked is responsible for saying so.
+            val credential =
+                credentialProvider()?.let { TmdbCredential.of(it) }
+                    ?: return Resource.Error(NO_CREDENTIAL_MESSAGE)
             pacer?.acquire()
             val response: HttpResponse =
                 client.get("$TMDB_BASE_URL$path") {
@@ -179,18 +185,7 @@ public class TmdbClient(
                 }
 
             if (!response.status.isSuccess()) {
-                val status = response.status.value
-                if (status in CREDENTIAL_REJECTION_STATUS_CODES) {
-                    // Which credential *shape* was sent is worth recording and is not sensitive --
-                    // it is the single most useful fact when someone reports "my key does not work",
-                    // because pasting the wrong one of TMDB's two is the expected mistake.
-                    logger.warn(TAG) {
-                        "TMDB rejected the credential (${credential::class.simpleName}) with $status for $path"
-                    }
-                    return Resource.Error("TMDB rejected the credential. Check the key or token saved in Settings.")
-                }
-                logger.warn(TAG) { "TMDB returned $status for $path" }
-                return Resource.Error("TMDB request failed with status $status")
+                return failureFor(credential, response.status.value, path)
             }
 
             Resource.Success(response.body<T>())

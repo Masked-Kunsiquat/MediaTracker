@@ -1189,8 +1189,11 @@ fun SettingsScreen(
                             credentialSet = uiState.tmdbCredentialSet,
                             onSave = onTmdbCredentialSave,
                             onClear = onTmdbCredentialClear,
-                            onTest = onTmdbCredentialTest,
-                            testLabelRes = R.string.settings_tmdb_key_test_button,
+                            testAction =
+                                CredentialTestAction(
+                                    labelRes = R.string.settings_tmdb_key_test_button,
+                                    onTest = onTmdbCredentialTest,
+                                ),
                         )
                     }
                 }
@@ -1298,6 +1301,19 @@ private fun SettingsSection(
 }
 
 /**
+ * A credential row's optional "test this" button: its label and what pressing it does.
+ *
+ * One nullable parameter rather than two, because two independently-nullable ones can disagree: a
+ * caller passing the action and forgetting the label gets no button and no complaint. That is the
+ * failure shape this screen has already produced twice on this branch -- a control present but
+ * wrong, and silent about it -- so the type makes half-specifying it unrepresentable.
+ */
+private data class CredentialTestAction(
+    @StringRes val labelRes: Int,
+    val onTest: () -> Unit,
+)
+
+/**
  * One provider credential row: label, explanation, saved/not-saved status, a masked field, and
  * Save/Clear.
  *
@@ -1338,11 +1354,10 @@ private fun SettingsSection(
  * @param onSave Called with the trimmed-by-the-repository field contents when Save is tapped.
  * @param onClear Called when Clear is tapped -- offered only when [credentialSet], since clearing
  *   nothing is not an action.
- * @param onTest Optional "check this actually works" action, shown only when non-null *and* a
- *   credential is stored. Optional because only TMDB has an endpoint for it: Google Books has no
+ * @param testAction Optional "check this actually works" affordance, shown only when non-null *and*
+ *   a credential is stored. Optional because only TMDB has an endpoint for it: Google Books has no
  *   equivalent, and a button that could only ever report "we tried a book lookup" would be a
  *   different, vaguer promise wearing the same label.
- * @param testLabelRes Text for that button. Ignored when [onTest] is null.
  */
 @Composable
 private fun ProviderCredentialSetting(
@@ -1358,8 +1373,7 @@ private fun ProviderCredentialSetting(
     credentialSet: Boolean,
     onSave: (String) -> Unit,
     onClear: () -> Unit,
-    onTest: (() -> Unit)? = null,
-    @StringRes testLabelRes: Int? = null,
+    testAction: CredentialTestAction? = null,
 ) {
     var entered by remember { mutableStateOf("") }
     var revealed by remember { mutableStateOf(false) }
@@ -1437,9 +1451,9 @@ private fun ProviderCredentialSetting(
                 // Only offered once something is stored: testing nothing is not an action, and the
                 // answer would be a foregone "no credential" rather than anything about the
                 // provider.
-                if (onTest != null && testLabelRes != null) {
-                    TextButton(onClick = onTest) {
-                        Text(stringResource(testLabelRes))
+                if (testAction != null) {
+                    TextButton(onClick = testAction.onTest) {
+                        Text(stringResource(testAction.labelRes))
                     }
                 }
             }
