@@ -61,6 +61,7 @@ class SettingsScreenGoldenTest {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,

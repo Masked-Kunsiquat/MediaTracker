@@ -2,10 +2,15 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.network.createHttpClient
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import com.hub.media.features.settings.data.setWeekStartDay
+import com.hub.media.features.tv.network.TmdbClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -56,7 +61,21 @@ class SettingsViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel() = viewModels.track(SettingsViewModel(settingsRepository = repository))
+    /**
+     * A client wired to an engine that refuses everything. These tests exercise settings storage,
+     * not credential verification -- a client that answered would let a test pass for the wrong
+     * reason. `verifyTmdbCredential` has its own coverage in `TmdbClientTest`.
+     */
+    private fun offlineTmdbClient() =
+        TmdbClient(
+            client = createHttpClient(MockEngine { respondError(HttpStatusCode.ServiceUnavailable) }),
+            credentialProvider = { null },
+        )
+
+    private fun newViewModel() =
+        viewModels.track(
+            SettingsViewModel(settingsRepository = repository, tmdbClient = offlineTmdbClient()),
+        )
 
     @Test
     fun uiState_initialValue_defaultsToMonday() {

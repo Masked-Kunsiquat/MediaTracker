@@ -6,6 +6,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.warn
+import com.hub.media.features.tv.network.dto.TmdbAuthenticationDto
 import com.hub.media.features.tv.network.dto.TmdbMovieDetailsDto
 import com.hub.media.features.tv.network.dto.TmdbSearchResponseDto
 import com.hub.media.features.tv.network.dto.TmdbSeasonDetailsDto
@@ -123,6 +124,33 @@ public class TmdbClient(
             Resource.Error("Could not reach TMDB")
         }
     }
+
+    /**
+     * Asks TMDB whether the stored credential is usable, via `GET /authentication`.
+     *
+     * Exists because the alternative is a user saving a credential, seeing "A credential is saved",
+     * and only discovering it is wrong the next time a search comes back empty-handed -- at which
+     * point the cause is several steps behind them. One request converts that into an immediate
+     * yes or no.
+     *
+     * Works for both credential shapes: the endpoint accepts a Bearer token and an `api_key` query
+     * parameter alike, answering `200 {"success":true}` or `401` with TMDB's `status_code: 7`
+     * ("Invalid API key"). Verified against the live API for a valid token, an invalid token and an
+     * invalid key.
+     *
+     * Note what a success does **not** prove: that the credential will still be valid later, or that
+     * any particular endpoint is permitted. It proves TMDB accepted it just now, which is the
+     * question the user is actually asking when they press the button.
+     *
+     * The response body is ignored deliberately -- the status code already carries the answer, and
+     * decoding a body would add a failure mode ("valid credential, unparseable envelope") that
+     * cannot mean anything useful to a user.
+     */
+    public suspend fun verifyCredential(): Resource<Unit> =
+        when (val result = getAuthenticated<TmdbAuthenticationDto>("/authentication")) {
+            is Resource.Success -> Resource.Success(Unit)
+            is Resource.Error -> result
+        }
 
     /** Searches shows by name. Interactive: one request, and normally unpaced. */
     public suspend fun searchShows(query: String): Resource<TmdbSearchResponseDto> {

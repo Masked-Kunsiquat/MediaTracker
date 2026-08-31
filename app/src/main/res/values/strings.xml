@@ -218,6 +218,9 @@
     <string name="settings_tmdb_key_clear_button">Clear credential</string>
     <string name="settings_tmdb_key_saved_message">TMDB credential saved</string>
     <string name="settings_tmdb_key_cleared_message">TMDB credential cleared</string>
+    <string name="settings_tmdb_key_test_button">Test</string>
+    <string name="settings_tmdb_key_test_checking">Checking with TMDB…</string>
+    <string name="settings_tmdb_key_test_ok">TMDB accepted this credential</string>
 
     <!-- SettingsScreen: data export (ROADMAP Task 8 Phase A) -->
     <string name="settings_section_data">Data</string>

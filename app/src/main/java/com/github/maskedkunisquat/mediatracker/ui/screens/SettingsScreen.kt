@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -48,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -183,6 +185,8 @@ fun SettingsScreenRoute(
     val apiKeyClearedMessage = stringResource(R.string.settings_google_books_key_cleared_message)
     val tmdbSavedMessage = stringResource(R.string.settings_tmdb_key_saved_message)
     val tmdbClearedMessage = stringResource(R.string.settings_tmdb_key_cleared_message)
+    val tmdbCheckingMessage = stringResource(R.string.settings_tmdb_key_test_checking)
+    val tmdbTestOkMessage = stringResource(R.string.settings_tmdb_key_test_ok)
 
     // Surfaced exactly once per Settings-screen visit (see AppContainer.pendingRestoreMarker's
     // KDoc): the outcome of a restore that completed just before this process was killed and
@@ -631,6 +635,31 @@ fun SettingsScreenRoute(
                 }
             }
         },
+        onTmdbCredentialTest = {
+            coroutineScope.launch {
+                // showSnackbar suspends until the snackbar is dismissed, so calling it inline would
+                // hold the request behind the message meant to cover it -- the check would not start
+                // until "Checking" timed out. Instead it runs in its own coroutine, Indefinite so it
+                // cannot expire early, and is cancelled the moment the answer arrives; cancelling
+                // the caller is what dismisses a snackbar.
+                val checking =
+                    launch {
+                        snackbarHostState.showSnackbar(
+                            tmdbCheckingMessage,
+                            duration = SnackbarDuration.Indefinite,
+                        )
+                    }
+                val outcome = viewModel.verifyTmdbCredential()
+                checking.cancel()
+                when (val result = outcome) {
+                    is Resource.Success -> snackbarHostState.showSnackbar(tmdbTestOkMessage)
+                    // The client's own message is used verbatim: it already distinguishes "TMDB
+                    // rejected the credential" from "could not reach TMDB", which is the whole
+                    // point of pressing this, and restating it here would only blur that.
+                    is Resource.Error -> snackbarHostState.showSnackbar(result.message)
+                }
+            }
+        },
         onNavigateToLogViewer = onNavigateToLogViewer,
         onNavigateToChangelog = onNavigateToChangelog,
         exportInProgress = exportUiState is ExportUiState.Loading,
@@ -993,6 +1022,9 @@ private fun RestoreConfirmationDialog(
  *   see that method's KDoc for why nothing here inspects which.
  * @param onTmdbCredentialClear Called when the TMDB credential's Clear button is tapped, wired to
  *   [SettingsViewModel.clearTmdbCredential].
+ * @param onTmdbCredentialTest Called when the TMDB credential's Test button is tapped, wired to
+ *   [SettingsViewModel.verifyTmdbCredential]. Costs one request and reports the answer in the
+ *   snackbar -- see that method's KDoc for what a success does and does not prove.
  * @param exportInProgress Whether a CSV export is currently being generated (ROADMAP Task 8 Phase
  *   A) -- wired to `ExportUiState.Loading`, disables the export button and shows a progress
  *   indicator so a double-tap can't fire two concurrent exports.
@@ -1052,6 +1084,7 @@ fun SettingsScreen(
     onGoogleBooksApiKeyClear: () -> Unit,
     onTmdbCredentialSave: (String) -> Unit,
     onTmdbCredentialClear: () -> Unit,
+    onTmdbCredentialTest: () -> Unit,
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
     exportInProgress: Boolean,
@@ -1147,6 +1180,8 @@ fun SettingsScreen(
                             credentialSet = uiState.tmdbCredentialSet,
                             onSave = onTmdbCredentialSave,
                             onClear = onTmdbCredentialClear,
+                            onTest = onTmdbCredentialTest,
+                            testLabelRes = R.string.settings_tmdb_key_test_button,
                         )
                     }
                 }
@@ -1294,6 +1329,11 @@ private fun SettingsSection(
  * @param onSave Called with the trimmed-by-the-repository field contents when Save is tapped.
  * @param onClear Called when Clear is tapped -- offered only when [credentialSet], since clearing
  *   nothing is not an action.
+ * @param onTest Optional "check this actually works" action, shown only when non-null *and* a
+ *   credential is stored. Optional because only TMDB has an endpoint for it: Google Books has no
+ *   equivalent, and a button that could only ever report "we tried a book lookup" would be a
+ *   different, vaguer promise wearing the same label.
+ * @param testLabelRes Text for that button. Ignored when [onTest] is null.
  */
 @Composable
 private fun ProviderCredentialSetting(
@@ -1309,6 +1349,8 @@ private fun ProviderCredentialSetting(
     credentialSet: Boolean,
     onSave: (String) -> Unit,
     onClear: () -> Unit,
+    onTest: (() -> Unit)? = null,
+    @StringRes testLabelRes: Int? = null,
 ) {
     var entered by remember { mutableStateOf("") }
     var revealed by remember { mutableStateOf(false) }
@@ -1350,9 +1392,14 @@ private fun ProviderCredentialSetting(
             },
             modifier = Modifier.fillMaxWidth().testTag(fieldTestTag),
         )
-        Row(
+        // FlowRow, not Row: three buttons of provider-length labels overflow 1080px at default font
+        // scale -- verified on device, where the third simply never rendered and no test noticed,
+        // because the golden asserts the *field's* tag rather than the buttons. Two of them already
+        // came close enough that a larger font scale would have clipped Clear, so this fixes a
+        // latent bug as well as the new one.
+        FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Button(
                 onClick = {
@@ -1377,6 +1424,14 @@ private fun ProviderCredentialSetting(
                     },
                 ) {
                     Text(stringResource(clearButtonRes))
+                }
+                // Only offered once something is stored: testing nothing is not an action, and the
+                // answer would be a foregone "no credential" rather than anything about the
+                // provider.
+                if (onTest != null && testLabelRes != null) {
+                    TextButton(onClick = onTest) {
+                        Text(stringResource(testLabelRes))
+                    }
                 }
             }
         }
@@ -1889,6 +1944,7 @@ private fun SettingsScreenMondayPreview() {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1926,6 +1982,7 @@ private fun SettingsScreenSundayPreview() {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1963,6 +2020,7 @@ private fun SettingsScreenExportingPreview() {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = true,
@@ -2000,6 +2058,7 @@ private fun SettingsScreenBackingUpPreview() {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -2037,6 +2096,7 @@ private fun SettingsScreenValidatingRestorePreview() {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,

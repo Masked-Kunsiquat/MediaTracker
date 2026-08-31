@@ -158,7 +158,7 @@ class SettingsViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<SettingsViewModel>(
         SettingsViewModel::class.java,
-        { SettingsViewModel(appContainer.settingsRepository) },
+        { SettingsViewModel(appContainer.settingsRepository, appContainer.tmdbClient) },
     )
 
 /**

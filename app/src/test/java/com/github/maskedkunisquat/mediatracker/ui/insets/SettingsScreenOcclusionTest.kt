@@ -60,6 +60,7 @@ class SettingsScreenOcclusionTest {
             onGoogleBooksApiKeyClear = {},
             onTmdbCredentialSave = {},
             onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,

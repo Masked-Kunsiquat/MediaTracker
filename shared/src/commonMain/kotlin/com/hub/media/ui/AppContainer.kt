@@ -33,8 +33,10 @@ import com.hub.media.features.portability.domain.ImportDataUseCase
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
+import com.hub.media.features.settings.data.getTmdbCredential
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
 
 /**
@@ -168,6 +170,35 @@ public class AppContainer(
     private val googleBooksApiKeyProvider: suspend () -> String? = {
         settingsRepository.getGoogleBooksApiKey()
     }
+
+    /**
+     * The user-supplied TMDB credential, read fresh on every request (#75).
+     *
+     * Every word of [googleBooksApiKeyProvider]'s reasoning applies here unchanged, and one thing
+     * does not: a `null` Google Books key degrades to keyless requests, while a `null` here means
+     * TMDB cannot be called at all. That makes the stale-value hazard worse rather than better --
+     * a captured credential would keep working after the user cleared it, which is precisely the
+     * state a restore leaves them in, since backups have credentials scrubbed out of them.
+     */
+    private val tmdbCredentialProvider: suspend () -> String? = {
+        settingsRepository.getTmdbCredential()
+    }
+
+    /**
+     * TMDB client for films and shows (#75), consumed by the Settings screen's credential check.
+     *
+     * **Unpaced, deliberately.** Every current caller is interactive and issues a single request, so
+     * paying an interval would be latency for nothing -- the same trade [openLibraryIdentifiedPacer]
+     * documents. When a bulk backfill arrives it must construct its *own* client with a
+     * [com.hub.media.core.network.tmdbPacer], not add one here: a pacer shared between a crawl and a
+     * user-facing path lands the crawl's sleeps on a request someone is waiting on, which is the
+     * mistake #42 exists to prevent.
+     */
+    public val tmdbClient: TmdbClient =
+        TmdbClient(
+            client = httpClient,
+            credentialProvider = tmdbCredentialProvider,
+        )
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */
     public val addBookByIsbnUseCase: AddBookByIsbnUseCase =
