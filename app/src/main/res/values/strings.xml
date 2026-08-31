@@ -196,6 +196,7 @@
 
     <!-- SettingsScreen: Google Books API key -->
     <string name="settings_section_book_lookups">Book lookups</string>
+    <string name="settings_section_film_tv_lookups">Film &amp; TV lookups</string>
     <string name="settings_google_books_key_label">Google Books API key</string>
     <string name="settings_google_books_key_description">Optional. Books are looked up on Open Library first, with Google Books as the backup. Without a key, that backup shares an unofficial allowance that can run out — including at the moment Open Library is down and it is all you have. A free key from the Google Cloud console gives it an allowance of its own.</string>
     <string name="settings_google_books_key_saved">A key is saved. It stays on this device: it is never included in a backup or an export, so a restore will ask you for it again.</string>

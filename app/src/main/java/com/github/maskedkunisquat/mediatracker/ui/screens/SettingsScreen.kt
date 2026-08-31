@@ -1167,6 +1167,15 @@ fun SettingsScreen(
                             onSave = onGoogleBooksApiKeySave,
                             onClear = onGoogleBooksApiKeyClear,
                         )
+                    }
+                }
+                item {
+                    // Its own section rather than sharing "Book lookups", which is what the first
+                    // recording of this golden actually showed: a TMDB credential filed under a
+                    // heading that says books. The tag assertion could not see that -- the control
+                    // was present and correct, under the wrong words. This is the case #102 rule 3
+                    // exists for.
+                    SettingsSection(title = stringResource(R.string.settings_section_film_tv_lookups)) {
                         ProviderCredentialSetting(
                             labelRes = R.string.settings_tmdb_key_label,
                             descriptionRes = R.string.settings_tmdb_key_description,

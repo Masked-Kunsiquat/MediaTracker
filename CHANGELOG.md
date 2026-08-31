@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Films and shows can be looked up: a TMDB credential can be entered, tested, and is kept out of backups** (#75). TMDB refuses anonymous requests, so it needs a key the user supplies. It is entered in Settings, stored on the device, and never leaves it: the backup scrub removes it before a `.sqlite` snapshot is written, and the restore confirmation says so.
+
+  Which credential shape you have does not matter. TMDB issues two things from the same page — a v3 API key and a v4 read access token — with similar names, so pasting the wrong one is the expected mistake. Either works; the app recognises which it was given and sends it the way that credential is meant to travel. Nothing validates the shape when it is saved, because a check that refused an unfamiliar format would turn a change at TMDB into an app that rejects a credential which works.
+
+  There is a **Test** button once something is saved. Without it, "a credential is saved" is a statement about storage that reads as a statement about working, and the difference only surfaces later when a search comes back with nothing and the cause is several steps behind you. One request now answers it outright. It is offered for TMDB only, because Google Books has no equivalent endpoint and a button that could merely attempt a book lookup would be a vaguer promise wearing the same label.
+
+  The scrub that keeps credentials out of backups now reads a list of them rather than naming one. A whole-file snapshot copies every setting, so each new provider key has to be removed explicitly, and forgetting is a plaintext credential in a file people share rather than a missing feature. The list sits beside the credentials themselves, so adding one is a single edit in the file already being changed.
+
+- **Adding a show from TMDB will cost one request, not one per season** (#75). Fetching a show and then each of its seasons in turn makes a five-season show six round trips. TMDB can fold all of it into a single response, which carries the same bytes over one connection instead of six — the difference is felt on a phone, not on a desk.
+
+  Seasons that do not exist are simply absent from the reply rather than an error, so the request does not need to know a show's shape in advance. Two cases are reported rather than left to be discovered: TMDB caps how much can be folded into one response, and a season whose data cannot be read is dropped on its own instead of failing the whole show. Both are named explicitly, because both otherwise look exactly like a show that genuinely has fewer seasons.
+
+  Specials are not fetched. Nothing creates them yet (#122 revisits that), so asking for them would be data downloaded for rows nothing writes.
+
 - **The bulk backfill no longer walks the library as fast as it can** (#42). Open Library publishes a ceiling of three requests a second for traffic that identifies itself, which this app's `User-Agent` does. Nothing enforced it. The one throttled call in the whole pass was the last-resort cover probe, which answers to a separate per-IP quota; every metadata lookup went out at whatever rate the loop could manage.
 
   It had not bitten yet, and that is a property of small libraries rather than of the code — a few hundred books is a few hundred requests fired in a burst against a budget of three a second. Two earlier changes had quietly made it worse: an edition record whose authors live on the work costs an extra round trip, and the candidate set widened so that a library previously considered complete is now walked in full exactly once.

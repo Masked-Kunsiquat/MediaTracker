@@ -20,7 +20,15 @@ import kotlin.test.assertTrue
  * one recognised wrongly.
  */
 class TmdbCredentialTest {
-    /** A structurally real JWT header prefix; the payload is irrelevant to classification. */
+    /**
+     * Deliberately *not* a structurally valid JWT, only one that starts like one.
+     *
+     * `TmdbCredential.of` classifies on the `eyJ` prefix alone, so three real base64 segments would
+     * over-specify the fixture -- and a well-formed `header.payload.signature` string is exactly
+     * what secret scanners match on, which failed CI once already. There is no secret in a fake
+     * token, but a scanner cannot know that, and suppressing it in `.gitleaksignore` would mean a
+     * permanent exception keyed to a commit SHA that rots on the next rebase.
+     */
     private val jwt: String = "eyJ-fake-tmdb-read-access-token-for-tests"
 
     /** TMDB v3 keys are 32 hex characters. */
