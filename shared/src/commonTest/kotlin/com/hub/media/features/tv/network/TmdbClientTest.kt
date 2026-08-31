@@ -241,6 +241,60 @@ class TmdbClientTest {
             }
         }
 
+    /**
+     * A 2xx with a body this app cannot parse still means the credential works.
+     *
+     * `verifyCredential` asks TMDB one question -- "do you accept this?" -- and TMDB answers it with
+     * the status code. Decoding the envelope would add a second way to fail *after* the server has
+     * said yes, and the user would be told their credential was rejected when it was not. That is
+     * the most misleading answer this button can give, so the body is never read at all.
+     *
+     * The fixture is deliberately not JSON: an HTML error page or a proxy's interstitial served with
+     * a 200 is exactly the real-world shape of this, and it must not be reported as a bad key.
+     */
+    @Test
+    fun verifyCredential_succeedsOnA2xxWithABodyThatCannotBeDecoded() =
+        runTest {
+            val engine =
+                MockEngine {
+                    respond(
+                        content = "<html><body>Success, but not JSON</body></html>",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "text/html"),
+                    )
+                }
+            val client = TmdbClient(createHttpClient(engine), credentialProvider = { jwt })
+
+            val result = client.verifyCredential()
+
+            assertIs<Resource.Success<Unit>>(
+                result,
+                "a 2xx means TMDB accepted the credential; the body is not this question's answer",
+            )
+        }
+
+    @Test
+    fun verifyCredential_stillReportsARejection() =
+        runTest {
+            val engine = MockEngine { respondError(HttpStatusCode.Unauthorized) }
+            val client = TmdbClient(createHttpClient(engine), credentialProvider = { jwt })
+
+            val result = client.verifyCredential()
+
+            assertIs<Resource.Error>(result)
+            assertTrue(result.message.contains("Settings"), "the message must point at the remedy")
+        }
+
+    @Test
+    fun verifyCredential_withNoCredentialSpendsNoRequest() =
+        runTest {
+            val engine = MockEngine { jsonResponse("{}") }
+            val client = TmdbClient(createHttpClient(engine), credentialProvider = { null })
+
+            assertIs<Resource.Error>(client.verifyCredential())
+            assertTrue(engine.requestHistory.isEmpty(), "nothing to verify must not cost a request")
+        }
+
     @Test
     fun anEmptyQuerySpendsNoRequest() =
         runTest {

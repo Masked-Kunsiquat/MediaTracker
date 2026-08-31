@@ -7,7 +7,6 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.warn
-import com.hub.media.features.tv.network.dto.TmdbAuthenticationDto
 import com.hub.media.features.tv.network.dto.TmdbMovieDetailsDto
 import com.hub.media.features.tv.network.dto.TmdbSearchResponseDto
 import com.hub.media.features.tv.network.dto.TmdbSeasonDetailsDto
@@ -106,6 +105,59 @@ public class TmdbClient(
      *   safe precisely because it is the path *without* the query string the credential lives in.
      * @param queryParams Extra query parameters. Never logged.
      */
+    /**
+     * Issues one paced, authenticated GET and reports only whether it succeeded.
+     *
+     * Separate from [getAuthenticated] because a caller that needs no payload must not be able to
+     * fail on one. Deserialisation is a second way to lose after the server has already said yes,
+     * and for [verifyCredential] that would mean telling a user their credential is bad when TMDB
+     * had just accepted it -- the single most misleading answer that screen can give.
+     */
+    private suspend fun requestStatusOnly(path: String): Resource<Unit> {
+        val raw = credentialProvider()
+        if (raw == null) {
+            return Resource.Error("No TMDB credential is set. Add one in Settings to look up films and shows.")
+        }
+        val credential = TmdbCredential.of(raw)
+
+        return try {
+            pacer?.acquire()
+            val response = client.get("$TMDB_BASE_URL$path") { credential.applyTo(this) }
+            if (response.status.isSuccess()) {
+                Resource.Success(Unit)
+            } else {
+                failureFor(credential, response.status.value, path)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG) { "TMDB request to $path failed (${e::class.simpleName})" }
+            Resource.Error("Could not reach TMDB")
+        }
+    }
+
+    /**
+     * The user-facing message and log line for a non-2xx answer, shared by both request paths so a
+     * credential rejection reads identically whichever one noticed it.
+     */
+    private fun failureFor(
+        credential: TmdbCredential,
+        status: Int,
+        path: String,
+    ): Resource.Error {
+        if (status in CREDENTIAL_REJECTION_STATUS_CODES) {
+            // Which credential *shape* was sent is worth recording and is not sensitive -- it is the
+            // single most useful fact when someone reports "my key does not work", because pasting
+            // the wrong one of TMDB's two is the expected mistake.
+            logger.warn(TAG) {
+                "TMDB rejected the credential (${credential::class.simpleName}) with $status for $path"
+            }
+            return Resource.Error("TMDB rejected the credential. Check the key or token saved in Settings.")
+        }
+        logger.warn(TAG) { "TMDB returned $status for $path" }
+        return Resource.Error("TMDB request failed with status $status")
+    }
+
     private suspend inline fun <reified T> getAuthenticated(
         path: String,
         queryParams: Map<String, String> = emptyMap(),
@@ -169,15 +221,13 @@ public class TmdbClient(
      * any particular endpoint is permitted. It proves TMDB accepted it just now, which is the
      * question the user is actually asking when they press the button.
      *
-     * The response body is ignored deliberately -- the status code already carries the answer, and
-     * decoding a body would add a failure mode ("valid credential, unparseable envelope") that
-     * cannot mean anything useful to a user.
+     * The response body is never read -- not parsed and discarded, but never parsed. The status code
+     * already carries the answer, and decoding would add a second way to fail *after* TMDB has said
+     * yes: an unexpected envelope would be reported to the user as a bad credential, which is the
+     * most misleading answer this screen can give. Goes through a status-only request path for that
+     * reason rather than through the decoding one.
      */
-    public suspend fun verifyCredential(): Resource<Unit> =
-        when (val result = getAuthenticated<TmdbAuthenticationDto>("/authentication")) {
-            is Resource.Success -> Resource.Success(Unit)
-            is Resource.Error -> result
-        }
+    public suspend fun verifyCredential(): Resource<Unit> = requestStatusOnly("/authentication")
 
     /**
      * A show and its seasons' episodes in **one** request, via TMDB's `append_to_response`.

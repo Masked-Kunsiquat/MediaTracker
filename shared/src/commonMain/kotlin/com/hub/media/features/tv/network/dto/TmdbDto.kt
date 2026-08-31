@@ -139,15 +139,3 @@ public data class TmdbMovieDetailsDto(
     @SerialName("poster_path") val posterPath: String? = null,
     val status: String? = null,
 )
-
-/**
- * `GET /authentication`'s envelope.
- *
- * Only [success] is modelled. TMDB also returns `status_code`/`status_message` on failure, but a
- * failure never reaches this type -- the client turns a non-2xx into a [com.hub.media.core.util.Resource.Error]
- * before decoding, so the only body this ever parses is the success one.
- */
-@Serializable
-public data class TmdbAuthenticationDto(
-    val success: Boolean = false,
-)

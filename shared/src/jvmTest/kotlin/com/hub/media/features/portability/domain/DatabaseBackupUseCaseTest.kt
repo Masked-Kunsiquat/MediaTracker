@@ -24,6 +24,7 @@ import kotlin.io.path.exists
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -410,6 +411,48 @@ class DatabaseBackupUseCaseTest {
                     "keep-me",
                     rows["unrelated_setting"],
                     "a non-credential app_settings row must still survive the scrub into the backup",
+                )
+            } finally {
+                stagedFile.delete()
+            }
+        }
+
+    /**
+     * The credential's *bytes* are gone from the file, not merely its row from the table.
+     *
+     * A `DELETE` removes a row from the b-tree; it does not by itself overwrite the bytes the row
+     * occupied. SQLite's `secure_delete` is off by default, so freed content can sit in the page
+     * until something happens to reuse it -- and a backup is a file the user is expected to export
+     * and possibly hand to someone else, where "the row is gone from the table" is not the property
+     * that matters. Querying `app_settings` cannot see this at all: the row is absent either way.
+     *
+     * So this reads the staged file as raw bytes and looks for a sentinel that could only have come
+     * from the credential. Falsified by removing the `secure_delete` pragma from
+     * [DefaultDatabaseBackupUseCase], which leaves the sentinel in the file and fails this test
+     * while every row-level assertion above still passes.
+     */
+    @Test
+    fun execute_credentialBytesAreNotRecoverableFromTheStagedFile() =
+        runTest {
+            // Long, unique, and not a substring of anything else the schema writes, so a hit is
+            // unambiguously this value rather than an incidental byte sequence.
+            val sentinel = "SENTINEL-CREDENTIAL-VALUE-c7f3a91e-DO-NOT-LEAK-INTO-A-BACKUP"
+            val liveDb = openLiveDatabase()
+            val settingsRepository = SettingsRepository(liveDb.appSettingsDao())
+            settingsRepository.setString(CREDENTIAL_SETTING_KEYS.first(), sentinel)
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            val stagedFile = File(result.data.stagedFilePath)
+            liveDb.close()
+
+            try {
+                val bytes = stagedFile.readBytes().decodeToString(throwOnInvalidSequence = false)
+                assertFalse(
+                    sentinel in bytes,
+                    "the credential's bytes are still present in the staged backup file even though " +
+                        "its row was deleted -- a DELETE alone does not overwrite freed page content",
                 )
             } finally {
                 stagedFile.delete()

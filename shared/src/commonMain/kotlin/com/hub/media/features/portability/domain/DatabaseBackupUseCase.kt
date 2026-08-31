@@ -202,6 +202,22 @@ public class DefaultDatabaseBackupUseCase(
     private suspend fun scrubCredentials(path: String) {
         withContext(Dispatchers.IO) {
             BundledSQLiteDriver().open(path).use { connection ->
+                // Overwrite freed content rather than merely unlinking it. A DELETE removes a row
+                // from the b-tree; it does not promise to overwrite the bytes that row occupied, and
+                // SQLite's secure_delete defaults to off. For an ordinary row that is a performance
+                // choice; for a credential in a file the user is expected to export, "the row is
+                // gone from the table" is not the property that matters -- the bytes are.
+                //
+                // Measured rather than assumed: with the current schema the bytes do *not* survive a
+                // plain DELETE, because app_settings is small enough that removing a cell
+                // defragments the page and overwrites it. That is page layout being convenient, not
+                // a guarantee -- it depends on row sizes and how full the page is, neither of which
+                // this class controls or should have to reason about. The pragma makes it
+                // structural, and costs one statement on a file that is about to be handed away.
+                //
+                // Set before any DELETE, since it governs how the delete itself writes.
+                connection.prepare("PRAGMA secure_delete = ON").use { it.step() }
+
                 // One connection, every credential -- iterating the list rather than naming a key
                 // means a provider added to CREDENTIAL_SETTING_KEYS is scrubbed without this file
                 // being touched at all. That is the whole point of the list; see its KDoc.

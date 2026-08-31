@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
-- **Films and shows can be looked up: a TMDB credential can be entered, tested, and is kept out of backups** (#75). TMDB refuses anonymous requests, so it needs a key the user supplies. It is entered in Settings, stored on the device, and never leaves it: the backup scrub removes it before a `.sqlite` snapshot is written, and the restore confirmation says so.
+- **Films and shows can be looked up: a TMDB credential can be entered, tested, and is kept out of backups** (#75). TMDB refuses anonymous requests, so it needs a key the user supplies. It is entered in Settings and stored on the device. It goes to TMDB, because that is what it is for — but nowhere else: the backup scrub removes it before a `.sqlite` snapshot is written, so it is never in a file you export or share, and the restore confirmation warns that you will have to enter it again afterwards. It is also kept out of the application log, including out of the request URLs a log line might otherwise carry.
 
   Which credential shape you have does not matter. TMDB issues two things from the same page — a v3 API key and a v4 read access token — with similar names, so pasting the wrong one is the expected mistake. Either works; the app recognises which it was given and sends it the way that credential is meant to travel. Nothing validates the shape when it is saved, because a check that refused an unfamiliar format would turn a change at TMDB into an app that rejects a credential which works.
 
