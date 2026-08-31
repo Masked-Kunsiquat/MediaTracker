@@ -21,7 +21,20 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Instant
+
+/**
+ * A [Clock] that never advances, so a [RequestPacer] under test is driven purely by the grants it
+ * records and not by however long the surrounding machine happened to take.
+ *
+ * `RequestPacerTest` owns the mutable version of this; the frozen one belongs here because this
+ * file only ever needs "real time did not pass", never "real time passed by exactly this much".
+ */
+private object FrozenClock : Clock {
+    override fun now(): Instant = Instant.fromEpochMilliseconds(0)
+}
 
 class OpenLibraryClientTest {
     private fun MockRequestHandleScope.jsonResponse(
@@ -191,6 +204,12 @@ class OpenLibraryClientTest {
      *
      * `sleeps` is one short of the request count by design: the first request has no predecessor to
      * be spaced from, which [RequestPacer.acquire] documents.
+     *
+     * The pacer gets [FrozenClock] rather than the system clock, because the injected `sleep`
+     * counts without advancing anything: on a real clock the due times march ahead 300ms at a time
+     * while the mock engine answers in microseconds, so a machine that stalled longer than an
+     * interval between two requests would make one of them legitimately late, skip its sleep, and
+     * fail this assertion for a reason that has nothing to do with pacing.
      */
     @Test
     fun everyRequestIsPaced_notJustTheFirst() =
@@ -209,7 +228,12 @@ class OpenLibraryClientTest {
             val client =
                 OpenLibraryClient(
                     createHttpClient(engine),
-                    pacer = RequestPacer(minInterval = 300.milliseconds, sleep = { sleeps++ }),
+                    pacer =
+                        RequestPacer(
+                            minInterval = 300.milliseconds,
+                            clock = FrozenClock,
+                            sleep = { sleeps++ },
+                        ),
                 )
 
             val result = client.fetchByIsbn("9780547928227")
