@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The bulk backfill no longer walks the library as fast as it can** (#42). Open Library publishes a ceiling of three requests a second for traffic that identifies itself, which this app's `User-Agent` does. Nothing enforced it. The one throttled call in the whole pass was the last-resort cover probe, which answers to a separate per-IP quota; every metadata lookup went out at whatever rate the loop could manage.
+
+  It had not bitten yet, and that is a property of small libraries rather than of the code — a few hundred books is a few hundred requests fired in a burst against a budget of three a second. Two earlier changes had quietly made it worse: an edition record whose authors live on the work costs an extra round trip, and the candidate set widened so that a library previously considered complete is now walked in full exactly once.
+
+  Requests are now spaced rather than refused, which matters more than it sounds. Refusing would mean books that finish the run unresolved while the run reports itself done — silent partial results, this project's recurring failure mode. Waiting means the pass takes longer and still finishes.
+
+  The spacing is applied per *request*, not per book, because a single lookup is anywhere from one to five of them depending on whether the edition carries its own authors and how many it has. That ratio has already moved once; anything counting books would have drifted out of compliance the next time it moved, without failing.
+
+  The interactive paths — adding a book by ISBN, re-fetching one cover — stay unpaced on purpose. One lookup at a time is nowhere near the ceiling, and spending latency a person is waiting on to protect a background crawl is the wrong trade.
+
 - **The instrumented suite is green on a clean checkout again** (#114). One test in `SettingsNavigationTest` had been failing on the device against an untouched `main`, and the cost of that is not the red line itself — it is that the next person to run the suite has to work out that the failure is not theirs, and the person after that stops looking. Nothing was wrong with the app: saving a Google Books API key writes the key, the status line follows it, and clearing it puts the line back. The test was reading the result before it existed.
 
   It asserted straight after `waitForIdle()`, which settles Compose recomposition and the main-thread queue and waits for neither a Room write nor the `Flow` emission that carries the result back to the screen. So it raced, and lost from whichever end the run happened to land on — the reported failure and the one reproduced here were different lines in different halves of the same test.

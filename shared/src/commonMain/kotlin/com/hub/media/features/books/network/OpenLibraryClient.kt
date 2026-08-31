@@ -1,6 +1,7 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.network.RequestPacer
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -13,6 +14,7 @@ import com.hub.media.features.books.network.dto.OpenLibraryWorkDto
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.isSuccess
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -46,10 +48,26 @@ private const val TAG = "OpenLibraryClient"
 public class OpenLibraryClient(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
+    private val pacer: RequestPacer? = null,
 ) : BookMetadataProvider {
+    /**
+     * One request against openlibrary.org, held to [pacer]'s rate when there is one.
+     *
+     * Every `client.get` in this class goes through here rather than being paced at the three call
+     * sites, because the interesting number is *requests*, not lookups: one `fetchByIsbn` issues
+     * between one and five of them depending on whether the edition record carries its own authors
+     * and how many it has. That ratio has already moved once (#42 was filed when it went from ~2 to
+     * ~3, and MAX_AUTHOR_LOOKUPS makes the ceiling 5), so pacing anywhere that counts books instead
+     * would have silently stopped matching the budget the moment it moved again.
+     */
+    private suspend fun pacedGet(url: String): HttpResponse {
+        pacer?.acquire()
+        return client.get(url)
+    }
+
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
         return try {
-            val response = client.get("$OPEN_LIBRARY_BASE_URL/isbn/$isbn.json")
+            val response = pacedGet("$OPEN_LIBRARY_BASE_URL/isbn/$isbn.json")
             if (!response.status.isSuccess()) {
                 // Logged for the same reason the thrown-exception path below is: this is the primary
                 // provider on the add-book flow, and a status failure is the one failure mode that
@@ -150,7 +168,7 @@ public class OpenLibraryClient(
      */
     private suspend fun fetchWorkAuthorRefs(workKey: String): List<OpenLibraryAuthorRefDto> {
         return try {
-            val response = client.get("$OPEN_LIBRARY_BASE_URL$workKey.json")
+            val response = pacedGet("$OPEN_LIBRARY_BASE_URL$workKey.json")
             if (!response.status.isSuccess()) {
                 logger.warn(TAG) {
                     "Open Library work lookup returned ${response.status.value} for key=$workKey"
@@ -187,7 +205,7 @@ public class OpenLibraryClient(
 
     private suspend fun fetchAuthorName(key: String): String? {
         return try {
-            val response = client.get("$OPEN_LIBRARY_BASE_URL$key.json")
+            val response = pacedGet("$OPEN_LIBRARY_BASE_URL$key.json")
             if (!response.status.isSuccess()) {
                 // The other half of the silent drop, and the likelier half: a non-2xx answer
                 // returns here without ever throwing, so the catch below never sees it. Status

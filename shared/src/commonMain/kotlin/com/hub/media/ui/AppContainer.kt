@@ -230,6 +230,16 @@ public class AppContainer(
      * [addBookByIsbnUseCase]/[refetchCoverUseCase] -- see [coverRateLimiter]'s KDoc -- and
      * [settingsRepository] for its persisted resume state (see
      * [com.hub.media.features.settings.data.BulkBackfillState]).
+     *
+     * Its openlibrary.org metadata requests are additionally paced to the documented
+     * identified-traffic rate (#42). That is *not* wired here, deliberately, and the asymmetry with
+     * [coverRateLimiter] one line above is the point: a quota is per-IP so every caller has to share
+     * one tracker, which only this file can arrange, while a pacer must be exclusive to the crawl --
+     * the single-request paths ([addBookByIsbnUseCase]/[refetchCoverUseCase]) are meant to stay
+     * unpaced, and [resolveWorkToEditionsUseCase] is unpaced today but should not be (#120, and it
+     * would want its own pacer, not this one). Making it an argument here would invite
+     * exactly the sharing that would be wrong, so
+     * [com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase] defaults it privately.
      */
     public val bulkBackfillUseCase: BulkBackfillUseCase =
         createDefaultBulkBackfillUseCase(
