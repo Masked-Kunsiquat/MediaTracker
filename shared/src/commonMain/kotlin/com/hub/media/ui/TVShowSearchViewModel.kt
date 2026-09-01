@@ -2,7 +2,11 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
@@ -11,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+private const val TAG = "TVShowSearchViewModel"
 
 /**
  * One row in the search results, carrying only what the list draws and what selecting it needs.
@@ -64,6 +70,16 @@ public data class TVShowSearchUiState(
  * TMDB meant lives in that translation, which is why this class is as thin as it looks: it is
  * sequencing and error reporting, not interpretation.
  *
+ * ### What this logs, and what it deliberately does not
+ * A failed search or a failed fetch is already logged by [TmdbClient] with its status code, and a
+ * rejected write by [TVShowRepository]; repeating either here would put the same failure in the log
+ * twice with less detail. What is logged is what nothing else can see: that a show entered the
+ * library *from a provider* rather than by hand, and the one failure that is neither a request nor a
+ * write -- a record TMDB returned that could not be translated.
+ *
+ * The search text is never logged. It is something the user typed, it adds nothing a TMDB id does
+ * not, and this app has an in-app log viewer and a log export.
+ *
  * ### The credential is not checked up front
  * [TmdbClient] answers a missing credential with a [Resource.Error] carrying a sentence that names
  * Settings, so it arrives through the same channel as any other failure and the screen shows it the
@@ -73,6 +89,7 @@ public data class TVShowSearchUiState(
 public class TVShowSearchViewModel(
     private val tmdbClient: TmdbClient,
     private val tvShowRepository: TVShowRepository,
+    private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TVShowSearchUiState())
     public val uiState: StateFlow<TVShowSearchUiState> = _uiState.asStateFlow()
@@ -131,6 +148,10 @@ public class TVShowSearchViewModel(
                     if (mapping == null) {
                         // Only reachable when TMDB returned a record with no usable name. Reported
                         // rather than silently skipped: the user tapped a row and is owed an answer.
+                        // Logged because nothing else sees it -- the request succeeded and no write
+                        // was attempted, so neither TmdbClient nor TVShowRepository has anything to
+                        // say about it.
+                        logger.warn(TAG) { "TMDB record $tmdbId could not be translated: no usable title" }
                         failAdd("TMDB returned a show record without a title")
                         return@launch
                     }
@@ -149,9 +170,13 @@ public class TVShowSearchViewModel(
                                 communityRating = mapping.communityRating,
                             )
                     ) {
-                        is Resource.Success ->
+                        is Resource.Success -> {
+                            logger.info(TAG) {
+                                "Added show from TMDB $tmdbId: ${mapping.seasons.size} season(s)"
+                            }
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
+                        }
                         is Resource.Error -> failAdd(saved.message)
                     }
                 }

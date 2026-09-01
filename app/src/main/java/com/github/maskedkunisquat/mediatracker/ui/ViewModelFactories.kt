@@ -21,6 +21,7 @@ import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
 import com.hub.media.ui.TVShowDetailViewModel
+import com.hub.media.ui.TVShowSearchViewModel
 
 /**
  * Base [ViewModelProvider.Factory] shared by every factory in this file.
@@ -311,6 +312,24 @@ class AddTVShowViewModelFactory(
 ) : AppViewModelFactory<AddTVShowViewModel>(
         AddTVShowViewModel::class.java,
         { AddTVShowViewModel(tvShowRepository = appContainer.tvShowRepository) },
+    )
+
+/**
+ * Factory for [TVShowSearchViewModel] (ROADMAP Task 13 Phase D). Unlike [AddTVShowViewModelFactory]
+ * this one needs the provider client as well, because the search path is the only add path that
+ * talks to TMDB. `appContainer.tmdbClient` reads its credential per request, so a key entered after
+ * this factory ran is still picked up -- see [AppContainer] on why it is never captured.
+ */
+class TVShowSearchViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<TVShowSearchViewModel>(
+        TVShowSearchViewModel::class.java,
+        {
+            TVShowSearchViewModel(
+                tmdbClient = appContainer.tmdbClient,
+                tvShowRepository = appContainer.tvShowRepository,
+            )
+        },
     )
 
 /**

@@ -64,6 +64,15 @@ object TestTags {
         const val SAVE_BUTTON = "addTVShow:save"
     }
 
+    object TVShowSearch {
+        /** The results list. Tagged because a scrolling container has no perceivable identity of
+         * its own, and the occlusion lane measures this node's rectangle. */
+        const val RESULTS = "tvShowSearch:results"
+        const val QUERY_FIELD = "tvShowSearch:query"
+        const val SEARCH_BUTTON = "tvShowSearch:search"
+        const val MANUAL_ENTRY = "tvShowSearch:manualEntry"
+    }
+
     object Settings {
         const val LIST = "settings:list"
         const val API_KEY_FIELD = "settings:apiKey"
