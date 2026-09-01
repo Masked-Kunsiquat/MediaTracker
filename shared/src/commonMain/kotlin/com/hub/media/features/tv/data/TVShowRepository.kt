@@ -19,8 +19,29 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 private const val TAG = "TVShowRepository"
+
+/**
+ * One season being created as part of [TVShowRepository.addShow], in whichever of the two forms the
+ * caller actually has.
+ *
+ * The two exist because the app populates a season from two genuinely different inputs, and #75
+ * settled that they are different operations rather than one with a flag. A person typing into a
+ * form knows only how many episodes there were ([SeasonQuickFill]); a provider hands over the
+ * episodes themselves ([SeasonEpisodes]). Modelling that as one type with an optional list would
+ * make `episodeCount = 10` and a list of three representable at once, which is a state nothing
+ * downstream could resolve.
+ *
+ * Sealed rather than two parameters on [TVShowRepository.addShow] for the same reason: two lists
+ * could both name season 1, and a single list makes a repeated season the ordinary duplicate check
+ * it already was.
+ */
+public sealed interface NewSeason {
+    /** Which season this is. `0` means specials -- see [TVMetadataValidation.validateSeasonNumber]. */
+    public val seasonNumber: Int
+}
 
 /**
  * One season's quick-fill request: "Season [seasonNumber] has [episodeCount] episodes." Backs
@@ -29,8 +50,67 @@ private const val TAG = "TVShowRepository"
  * unknown title/airDate, unwatched, ready to be ticked off individually.
  */
 public data class SeasonQuickFill(
-    val seasonNumber: Int,
+    override val seasonNumber: Int,
     val episodeCount: Int,
+) : NewSeason
+
+/**
+ * One season whose episodes are already known, each with whatever metadata came with it -- the
+ * add-by-search counterpart of [SeasonQuickFill] (ROADMAP Task 13 Phase D).
+ *
+ * ### Why this is a creation path and not the backfill
+ * #75 draws a hard line between *enrichment* (filling `null` columns on rows that already exist) and
+ * *population* (creating rows). The backfill only ever enriches, because it runs against a library
+ * the user has already been ticking off and must never move a denominator or touch `watchedAt`.
+ * Adding a show by search has no prior state to disturb, so it populates -- and it populates with
+ * titles already in place, rather than creating blank rows and immediately enriching them, which
+ * would be two passes over data the caller is already holding and would show the user a screen of
+ * untitled episodes in between.
+ *
+ * ### Specials are not filtered here
+ * [seasonNumber] `0` is accepted, exactly as [TVMetadataValidation.validateSeasonNumber] accepts it.
+ * Which seasons an operation creates is that operation's policy (#75 creates regular seasons only;
+ * #122 tracks revisiting that), and a repository that quietly dropped season 0 would take that
+ * decision invisibly, away from the place it is actually made. This mirrors
+ * [com.hub.media.features.tv.network.TmdbClient.showDetails], which returns TMDB's season list
+ * unfiltered for the same reason.
+ *
+ * @property episodes The season's episodes. May be empty: TMDB lists announced-but-unaired seasons
+ *   with `episode_count: 0` (Severance's season 3), and a season that creates no rows is a truthful
+ *   representation of one that has no episodes yet -- not an error to reject.
+ */
+public data class SeasonEpisodes(
+    override val seasonNumber: Int,
+    val episodes: List<NewEpisode>,
+) : NewSeason
+
+/**
+ * One episode's worth of provider metadata, ready to become an [EpisodeEntity] row.
+ *
+ * Every field except [episodeNumber] is optional, because every one of them is legitimately absent
+ * from a real TMDB response: an unaired episode has no runtime and no air date, and an obscure one
+ * has no synopsis and no votes. A missing value is stored as `null` ("not known"), never as a zero
+ * or empty-string stand-in -- the rule [EpisodeEntity] states for itself.
+ *
+ * [EpisodeEntity.watchedAt] is deliberately absent from this type. A newly created episode has not
+ * been watched, and no provider can say otherwise; leaving it un-settable means no add path can ever
+ * claim a viewing the user did not have.
+ *
+ * [EpisodeEntity.stillImageHash] is absent for a different reason: it holds the hash of a *locally
+ * stored* file, so it cannot be known until an image has actually been downloaded. It is filled by
+ * whatever fetches stills, not by whoever describes an episode.
+ *
+ * @property communityRating Must already be on the 0-10 scale [EpisodeEntity.communityRating]
+ *   declares. TMDB's `vote_average` is out of 10 and needs no conversion; a provider that scores out
+ *   of 5 must be converted by its own mapping layer, not stored raw.
+ */
+public data class NewEpisode(
+    val episodeNumber: Int,
+    val title: String? = null,
+    val airDate: Instant? = null,
+    val runtimeMinutes: Int? = null,
+    val overview: String? = null,
+    val communityRating: Double? = null,
 )
 
 /**
@@ -101,15 +181,17 @@ public class TVShowRepository(
      * Values still arrive fully formed from whoever is calling -- this validates and writes them,
      * it does not fetch. Manual entry passes what the user typed; an add-by-search path
      * (ROADMAP Task 13 Phase D) passes what it read from [com.hub.media.features.tv.network.TmdbClient]
-     * plus the show's TMDB id in [externalIdentifiers]. Every generated [EpisodeEntity] has
-     * [EpisodeEntity.title] and [EpisodeEntity.airDate] `null` either way, per that entity's "rows
-     * exist before their titles do" rule -- an episode's title is filled by the backfill, and
-     * [externalIdentifiers] is what lets the backfill know whose titles to ask for.
+     * plus the show's TMDB id in [externalIdentifiers].
      *
      * @param totalSeasons Advisory season count, or null for "unknown" -- see [TVDetailsEntity.totalSeasons].
-     * @param seasons The quick-fill request: one [SeasonQuickFill] per season being pre-populated
-     *   with episode rows now. May be empty -- a show can be added with no episodes yet and have
-     *   seasons quick-filled later via [setSeasonLength].
+     * @param seasons One [NewSeason] per season being populated now, in whichever form the caller
+     *   has: [SeasonQuickFill] generates numbered rows with no metadata (manual entry), while
+     *   [SeasonEpisodes] carries the episodes themselves (add-by-search). The two may be mixed in one
+     *   call -- nothing here couples a show to a single source, and a show quick-filled by hand whose
+     *   later seasons came from a provider is a perfectly coherent row.
+     *
+     *   May be empty -- a show can be added with no episodes yet and have seasons quick-filled later
+     *   via [setSeasonLength].
      * @param externalIdentifiers Optional (provider, externalId) mappings recording which catalog
      *   record this row came from -- normally a single [IdentifierProvider.TMDB] pair carrying the
      *   show id as its decimal string. Defaults to empty, which is a hand-entered show: correct, and
@@ -129,7 +211,7 @@ public class TVShowRepository(
         purchasePrice: Double? = null,
         totalSeasons: Int? = null,
         coverImageHash: String? = null,
-        seasons: List<SeasonQuickFill> = emptyList(),
+        seasons: List<NewSeason> = emptyList(),
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
     ): Resource<String> {
         TVMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
@@ -138,7 +220,7 @@ public class TVShowRepository(
         TVMetadataValidation.validateTotalSeasons(totalSeasons)?.let { return Resource.Error(it) }
         for (season in seasons) {
             TVMetadataValidation.validateSeasonNumber(season.seasonNumber)?.let { return Resource.Error(it) }
-            TVMetadataValidation.validateEpisodeCount(season.episodeCount)?.let { return Resource.Error(it) }
+            validateSeasonContents(season)?.let { return Resource.Error(it) }
         }
         // Caught here rather than left to the unique (mediaId, seasonNumber, episodeNumber) index.
         // The insert would abort and roll back cleanly either way -- nothing is corrupted -- but the
@@ -153,17 +235,7 @@ public class TVShowRepository(
         return try {
             val mediaId = newId()
             val now = clock.now()
-            val episodes =
-                seasons.flatMap { season ->
-                    (1..season.episodeCount).map { episodeNumber ->
-                        EpisodeEntity(
-                            id = newId(),
-                            mediaId = mediaId,
-                            seasonNumber = season.seasonNumber,
-                            episodeNumber = episodeNumber,
-                        )
-                    }
-                }
+            val episodes = seasons.flatMap { season -> episodeRowsFor(mediaId, season) }
             db.tvWriteDao().insertShowAtomically(
                 item =
                     MediaItemEntity(
@@ -199,6 +271,83 @@ public class TVShowRepository(
             Resource.Error("Failed to add TV show: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
+
+    /**
+     * Validates whatever one [NewSeason] carries beyond its season number, returning a rejection
+     * message or `null`.
+     *
+     * Split out of [addShow] so the two shapes' rules sit side by side and the difference between
+     * them is visible, rather than being an `is` check buried in a validation run.
+     *
+     * ### Why [SeasonEpisodes] has no length ceiling
+     * [SeasonQuickFill] is capped at [TVMetadataValidation.MAX_EPISODE_COUNT] because its count is a
+     * number a person typed, and `1000000` for `10` is a realistic typo that would otherwise reach a
+     * row-generating loop. A [SeasonEpisodes] list is not typed, it is enumerated -- every entry
+     * already exists as an object, so the same typo cannot produce one. Applying the cap anyway would
+     * reject exactly the case [TVMetadataValidation.validateEpisodeNumber] documents as legitimate:
+     * a long-running series catalogued as one continuous season, numbering past 500.
+     */
+    private fun validateSeasonContents(season: NewSeason): String? =
+        when (season) {
+            is SeasonQuickFill -> TVMetadataValidation.validateEpisodeCount(season.episodeCount)
+            is SeasonEpisodes -> validateEpisodes(season)
+        }
+
+    private fun validateEpisodes(season: SeasonEpisodes): String? {
+        for (episode in season.episodes) {
+            TVMetadataValidation.validateEpisodeNumber(episode.episodeNumber)?.let { return it }
+            TVMetadataValidation.validateEpisodeRuntimeMinutes(episode.runtimeMinutes)?.let { return it }
+            TVMetadataValidation.validateCommunityRating(episode.communityRating)?.let { return it }
+        }
+        // Caught here rather than left to the unique (mediaId, seasonNumber, episodeNumber) index,
+        // for the reason the duplicate-season check gives: the constraint failure would name three
+        // columns and not the episode that was listed twice. A provider repeating an episode number
+        // within one season is a mapping bug, and this is the sentence that says so.
+        val numbers = season.episodes.map { it.episodeNumber }
+        val duplicate = numbers.firstOrNull { number -> numbers.count { it == number } > 1 }
+        return duplicate?.let { "Season ${season.seasonNumber} lists episode $it more than once" }
+    }
+
+    /**
+     * Turns one validated [NewSeason] into the [EpisodeEntity] rows it describes.
+     *
+     * [EpisodeEntity.watchedAt] is left `null` by both branches and is not settable from either input
+     * type: a show being created has been watched by nobody, and no provider can say otherwise.
+     *
+     * Blank strings are normalised to `null` rather than stored. `EpisodeEntity` documents `null` as
+     * "not known", and a provider that answers with an empty title is saying it does not know one --
+     * storing `""` would make that indistinguishable from a real title that happens to be empty, and
+     * would defeat the backfill, which fills only columns that are `null`.
+     */
+    private fun episodeRowsFor(
+        mediaId: String,
+        season: NewSeason,
+    ): List<EpisodeEntity> =
+        when (season) {
+            is SeasonQuickFill ->
+                (1..season.episodeCount).map { episodeNumber ->
+                    EpisodeEntity(
+                        id = newId(),
+                        mediaId = mediaId,
+                        seasonNumber = season.seasonNumber,
+                        episodeNumber = episodeNumber,
+                    )
+                }
+            is SeasonEpisodes ->
+                season.episodes.map { episode ->
+                    EpisodeEntity(
+                        id = newId(),
+                        mediaId = mediaId,
+                        seasonNumber = season.seasonNumber,
+                        episodeNumber = episode.episodeNumber,
+                        title = episode.title?.takeIf { it.isNotBlank() },
+                        airDate = episode.airDate,
+                        runtimeMinutes = episode.runtimeMinutes,
+                        overview = episode.overview?.takeIf { it.isNotBlank() },
+                        communityRating = episode.communityRating,
+                    )
+                }
+        }
 
     /**
      * Makes one season exactly [episodeCount] episodes long, whether that means growing it,
