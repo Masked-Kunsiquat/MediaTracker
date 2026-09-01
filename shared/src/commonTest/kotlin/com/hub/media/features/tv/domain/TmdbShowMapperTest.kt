@@ -4,6 +4,7 @@ import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.features.tv.data.SeasonEpisodes
 import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.data.TVMetadataValidation
 import com.hub.media.features.tv.network.TmdbShowWithSeasons
 import com.hub.media.features.tv.network.dto.TmdbEpisodeDto
 import com.hub.media.features.tv.network.dto.TmdbSeasonDetailsDto
@@ -144,6 +145,57 @@ class TmdbShowMapperTest {
         val quickFilled = mapping!!.seasons.single { it.seasonNumber == 21 }
         assertIs<SeasonQuickFill>(quickFilled)
         assertEquals(12, quickFilled.episodeCount)
+    }
+
+    @Test
+    fun aMissingSeasonTooLargeToQuickFillIsSkippedRatherThanFailingTheWholeShow() {
+        // validateEpisodeCount caps a quick-fill at MAX_EPISODE_COUNT, and that rejection fails the
+        // entire addShow rather than just its own season. A continuous-season catalogue past 500 is
+        // precisely the case this mapper cannot quick-fill -- so it is skipped, and the other
+        // seasons still arrive. Before this bound, one such season lost the user the whole show.
+        val oversized = TVMetadataValidation.MAX_EPISODE_COUNT + 1
+        val mapping =
+            TmdbShowWithSeasons(
+                show =
+                    show(
+                        seasons =
+                            listOf(
+                                TmdbSeasonSummaryDto(seasonNumber = 21, episodeCount = oversized),
+                                TmdbSeasonSummaryDto(seasonNumber = 22, episodeCount = 8),
+                            ),
+                    ),
+                seasons = mapOf(1 to seasonDetails(1, listOf(episode(1)))),
+            ).toShowMapping()
+
+        assertEquals(
+            listOf(1, 22),
+            mapping!!.seasons.map { it.seasonNumber },
+            "the oversized season is skipped; season 22 and the fetched season still arrive",
+        )
+    }
+
+    @Test
+    fun aMissingSeasonExactlyAtTheCapIsStillQuickFilled() {
+        // The boundary is inclusive -- a positive control for the skip above, so the bound cannot
+        // silently tighten to something that drops ordinary seasons.
+        val mapping =
+            TmdbShowWithSeasons(
+                show =
+                    show(
+                        seasons =
+                            listOf(
+                                TmdbSeasonSummaryDto(
+                                    seasonNumber = 21,
+                                    episodeCount = TVMetadataValidation.MAX_EPISODE_COUNT,
+                                ),
+                            ),
+                    ),
+                seasons = mapOf(1 to seasonDetails(1, listOf(episode(1)))),
+            ).toShowMapping()
+
+        val quickFilled = mapping!!.seasons.single { it.seasonNumber == 21 }
+        assertIs<SeasonQuickFill>(quickFilled)
+        assertEquals(TVMetadataValidation.MAX_EPISODE_COUNT, quickFilled.episodeCount)
     }
 
     @Test

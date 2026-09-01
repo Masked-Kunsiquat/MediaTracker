@@ -6,6 +6,7 @@ import com.hub.media.features.tv.data.NewEpisode
 import com.hub.media.features.tv.data.NewSeason
 import com.hub.media.features.tv.data.SeasonEpisodes
 import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.data.TVMetadataValidation
 import com.hub.media.features.tv.network.TmdbShowWithSeasons
 import com.hub.media.features.tv.network.dto.TmdbEpisodeDto
 import kotlin.time.Instant
@@ -61,6 +62,14 @@ public data class TmdbShowMapping(
  * Skipping them would leave a 22-season show holding 20 seasons with nothing recording that two are
  * missing.
  *
+ * The count is bounded by [TVMetadataValidation.MAX_EPISODE_COUNT], because a quick-fill is checked
+ * against it and a rejection fails the *entire* `addShow`, not just its own season. That bound does
+ * not apply to a [SeasonEpisodes] list -- this PR argues at length that a continuous-season
+ * catalogue legitimately runs past 500 -- so a season large enough to hit it is exactly the case
+ * that cannot be quick-filled. It is skipped rather than allowed to cost the whole show, which is
+ * the same trade [com.hub.media.features.tv.network.TmdbClient] makes when one season's payload will
+ * not decode.
+ *
  * ### Empty seasons are dropped
  * A season with `episode_count: 0` and no episodes -- Severance's announced season 3 -- creates
  * nothing either way. It is dropped rather than passed through as an empty [SeasonEpisodes], because
@@ -74,7 +83,6 @@ public fun TmdbShowWithSeasons.toShowMapping(): TmdbShowMapping? {
     val fetched =
         seasons
             .filterKeys { it >= REGULAR_SEASON_FLOOR }
-            .toSortedMap()
             .mapNotNull { (number, season) ->
                 season.episodes
                     .takeIf { it.isNotEmpty() }
@@ -86,7 +94,7 @@ public fun TmdbShowWithSeasons.toShowMapping(): TmdbShowMapping? {
         missingSeasonNumbers.mapNotNull { number ->
             declaredCounts[number]
                 ?.episodeCount
-                ?.takeIf { it > 0 }
+                ?.takeIf { it in 1..TVMetadataValidation.MAX_EPISODE_COUNT }
                 ?.let { SeasonQuickFill(seasonNumber = number, episodeCount = it) }
         }
 
