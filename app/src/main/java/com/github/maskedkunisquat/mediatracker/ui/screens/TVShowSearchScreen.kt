@@ -119,13 +119,18 @@ fun TVShowSearchScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val keyboard = LocalSoftwareKeyboardController.current
 
-    // Failures are shown in a snackbar rather than inline, because both kinds here are transient and
-    // neither belongs to a field: a search that failed and an add that failed are about the request,
-    // not about what the user typed.
-    val error = uiState.searchError ?: uiState.addError
-    LaunchedEffect(error) {
-        if (error != null) {
-            snackbarHostState.showSnackbar(error)
+    // Only an *add* failure goes to the snackbar. A failed add is transient -- the results are still
+    // on screen and the row can be tapped again -- so a message that fades is right for it.
+    //
+    // A failed *search* is not transient: it leaves the results area empty, and that emptiness has to
+    // explain itself. Showing it only in a snackbar meant the body fell through to "No shows matched
+    // that search", which is confidently wrong -- nothing matched because the request never
+    // succeeded. Caught on a device with no credential saved, where the snackbar named the real
+    // problem while the body underneath contradicted it.
+    LaunchedEffect(uiState.addError) {
+        val addError = uiState.addError
+        if (addError != null) {
+            snackbarHostState.showSnackbar(addError)
             onDismissError()
         }
     }
@@ -220,8 +225,15 @@ fun TVShowSearchScreen(
                     ) {
                         CircularProgressIndicator()
                     }
-                // The empty list means two different things, so the screen must not draw one message
-                // for both -- see TVShowSearchUiState.hasSearched.
+                // The results area has four states, not two. Collapsing the first three into one
+                // "nothing here" message is how a failed search ends up claiming the catalogue was
+                // empty.
+                uiState.searchError != null ->
+                    Text(
+                        text = uiState.searchError!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 !uiState.hasSearched ->
                     Text(
                         text = stringResource(R.string.tv_show_search_prompt),

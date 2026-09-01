@@ -100,6 +100,21 @@ class TVShowSearchScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.tv_show_search_prompt)).assertDoesNotExist()
     }
 
+    @Test
+    fun afterASearchThatFailed_saysWhyRatherThanClaimingNothingMatched() {
+        // Caught on a device with no credential saved: the snackbar named the real problem while the
+        // body underneath said "No shows matched that search", which is confidently wrong -- nothing
+        // matched because the request never succeeded. The empty results area has to explain itself,
+        // because the snackbar fades and the emptiness does not.
+        val message = "No TMDB credential is set. Add one in Settings to look up films and shows."
+        setContent(TVShowSearchUiState(query = "chernobyl", hasSearched = true, searchError = message))
+
+        composeRule.onNodeWithText(message).assertExists()
+        composeRule
+            .onNodeWithText(context.getString(R.string.tv_show_search_no_results))
+            .assertDoesNotExist()
+    }
+
     // ---- the search action ---------------------------------------------------------------------
 
     @Test
