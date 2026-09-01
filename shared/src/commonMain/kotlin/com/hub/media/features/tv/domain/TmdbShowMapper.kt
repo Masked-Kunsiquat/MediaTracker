@@ -100,7 +100,7 @@ public fun TmdbShowWithSeasons.toShowMapping(): TmdbShowMapping? {
 
     return TmdbShowMapping(
         title = title,
-        releaseYear = show.firstAirDate.toYearOrNull(),
+        releaseYear = show.firstAirDate.toYearOrNull()?.takeIf { it in RELEASE_YEAR_RANGE },
         // TMDB's own count, not the number of seasons created. It excludes specials (#88), which is
         // the same set this creates, and it stays right for a show whose later seasons arrived as
         // quick-fills. TVDetailsEntity.totalSeasons is advisory anyway -- the episode rows are the
@@ -119,6 +119,18 @@ public fun TmdbShowWithSeasons.toShowMapping(): TmdbShowMapping? {
 
 /** Season 0 is specials; everything this app's add-by-search creates starts at 1 (#75, #122). */
 private const val REGULAR_SEASON_FLOOR = 1
+
+/**
+ * The window [com.hub.media.features.tv.data.TVShowRepository.addShow] will accept a release year in.
+ *
+ * A year outside it is not a release year, it is the first four characters of a date this app could
+ * not read -- `"0001-01-01"` yields `1`. Dropping it costs one display field; passing it through
+ * costs the **whole show**, because `validateReleaseYear` rejects it and one rejected field fails the
+ * entire insert. That is the wrong trade for a value nobody typed, and the same trade the quick-fill
+ * ceiling above already makes.
+ */
+private val RELEASE_YEAR_RANGE =
+    TVMetadataValidation.MIN_RELEASE_YEAR..TVMetadataValidation.MAX_RELEASE_YEAR
 
 private fun TmdbEpisodeDto.toNewEpisode(): NewEpisode =
     NewEpisode(
