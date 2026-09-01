@@ -375,6 +375,308 @@ class TVShowRepositoryTest {
             assertNothingPersisted()
         }
 
+    // ---- addShow: seasons carrying their episodes (add-by-search population) --------------------
+
+    @Test
+    fun addShow_withSeasonEpisodes_createsRowsCarryingTheirMetadata() =
+        runTest {
+            val airDate = Instant.parse("2019-05-06T00:00:00Z")
+            val result =
+                repo.addShow(
+                    title = "Chernobyl",
+                    releaseYear = 2019,
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes =
+                                    listOf(
+                                        NewEpisode(
+                                            episodeNumber = 1,
+                                            // A real title with a colon in it -- Chernobyl's first
+                                            // episode -- because that is the character the episode
+                                            // CSV round-trip has to survive.
+                                            title = "1:23:45",
+                                            airDate = airDate,
+                                            runtimeMinutes = 61,
+                                            overview = "An explosion at the plant.",
+                                            communityRating = 9.1,
+                                        ),
+                                        NewEpisode(episodeNumber = 2, title = "Please Remain Calm"),
+                                    ),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val episodes = repo.observeEpisodes(result.data).first()
+            assertEquals(2, episodes.size)
+
+            val first = episodes.single { it.episodeNumber == 1 }
+            assertEquals("1:23:45", first.title)
+            assertEquals(airDate, first.airDate)
+            assertEquals(61, first.runtimeMinutes)
+            assertEquals("An explosion at the plant.", first.overview)
+            assertEquals(9.1, first.communityRating)
+            assertNull(
+                first.watchedAt,
+                "a show being created has been watched by nobody, and no provider may say otherwise",
+            )
+
+            val second = episodes.single { it.episodeNumber == 2 }
+            assertEquals("Please Remain Calm", second.title)
+            assertNull(second.airDate, "an absent field must stay null rather than gaining a stand-in")
+            assertNull(second.runtimeMinutes)
+            assertNull(second.communityRating)
+        }
+
+    @Test
+    fun addShow_mixingQuickFillAndSeasonEpisodes_createsBoth() =
+        runTest {
+            // Nothing couples a show to a single source: a season typed in by hand and one that came
+            // from a provider are both ordinary seasons of the same show.
+            val result =
+                repo.addShow(
+                    title = "Half And Half",
+                    seasons =
+                        listOf(
+                            SeasonQuickFill(seasonNumber = 1, episodeCount = 3),
+                            SeasonEpisodes(
+                                seasonNumber = 2,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, title = "Known Title")),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val episodes = repo.observeEpisodes(result.data).first()
+            assertEquals(4, episodes.size)
+            assertTrue(
+                episodes.filter { it.seasonNumber == 1 }.all { it.title == null },
+                "quick-filled rows keep their unknown titles",
+            )
+            assertEquals("Known Title", episodes.single { it.seasonNumber == 2 }.title)
+        }
+
+    @Test
+    fun addShow_seasonEpisodesWithBlankStrings_storesNullRatherThanEmpty() =
+        runTest {
+            // A provider answering with an empty title is saying it does not know one. Storing ""
+            // would make that indistinguishable from a real (empty) title and would defeat the
+            // backfill, which fills only columns that are null.
+            val result =
+                repo.addShow(
+                    title = "Blank Fields",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, title = "   ", overview = "")),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val episode = repo.observeEpisodes(result.data).first().single()
+            assertNull(episode.title)
+            assertNull(episode.overview)
+        }
+
+    @Test
+    fun addShow_seasonEpisodesWithEmptyList_succeedsAndCreatesNoRows() =
+        runTest {
+            // TMDB lists announced-but-unaired seasons with episode_count 0 (Severance's season 3).
+            // A season that creates no rows is a truthful representation of one with no episodes yet.
+            val result =
+                repo.addShow(
+                    title = "Announced Only",
+                    seasons = listOf(SeasonEpisodes(seasonNumber = 3, episodes = emptyList())),
+                )
+            assertIs<Resource.Success<String>>(result)
+            assertTrue(repo.observeEpisodes(result.data).first().isEmpty())
+        }
+
+    @Test
+    fun addShow_seasonZeroWithEpisodes_isAccepted() =
+        runTest {
+            // The repository holds no policy on specials. Which seasons an operation creates belongs
+            // to that operation (#75 creates regular seasons only; #122 revisits it), and a
+            // repository that silently dropped season 0 would take that decision out of sight of
+            // where it is actually made.
+            val result =
+                repo.addShow(
+                    title = "With Specials",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 0,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, title = "A Special")),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+            assertEquals(
+                0,
+                repo
+                    .observeEpisodes(result.data)
+                    .first()
+                    .single()
+                    .seasonNumber,
+            )
+        }
+
+    @Test
+    fun addShow_seasonEpisodesLongerThanTheQuickFillCap_isAccepted() =
+        runTest {
+            // MAX_EPISODE_COUNT bounds a number a person typed, where 1000000 for 10 is a realistic
+            // typo. An enumerated list cannot be produced by that typo, and capping it would reject
+            // the case validateEpisodeNumber documents as legitimate: a long-running series
+            // catalogued as one continuous season, numbering past 500.
+            val episodeCount = TVMetadataValidation.MAX_EPISODE_COUNT + 1
+            val result =
+                repo.addShow(
+                    title = "One Continuous Season",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes = (1..episodeCount).map { NewEpisode(episodeNumber = it) },
+                            ),
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+            assertEquals(episodeCount, repo.observeEpisodes(result.data).first().size)
+        }
+
+    // ---- addShow: seasons carrying episodes, validation rejects --------------------------------
+
+    @Test
+    fun addShow_seasonEpisodesRepeatingAnEpisodeNumber_rejectedNamingItAndPersistsNothing() =
+        runTest {
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 2,
+                                episodes =
+                                    listOf(
+                                        NewEpisode(episodeNumber = 1),
+                                        NewEpisode(episodeNumber = 1),
+                                    ),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+            assertTrue(
+                result.message.contains("Season 2") && result.message.contains("episode 1"),
+                "the rejection must name the season and the repeated episode rather than surface a " +
+                    "raw UNIQUE-constraint message: got '${result.message}'",
+            )
+
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_seasonEpisodesWithZeroEpisodeNumber_rejectedAndPersistsNothing() =
+        runTest {
+            // episodeNumber is documented 1-based, and unlike seasonNumber there is no specials-style
+            // exception that makes 0 meaningful.
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(seasonNumber = 1, episodes = listOf(NewEpisode(episodeNumber = 0))),
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_seasonEpisodesWithZeroRuntime_rejectedAndPersistsNothing() =
+        runTest {
+            // 0 is never a valid runtime -- unknown is null, never a zero stand-in.
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, runtimeMinutes = 0)),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_seasonEpisodesWithOutOfScaleCommunityRating_rejectedAndPersistsNothing() =
+        runTest {
+            // communityRating's contract is a 0-10 scale. A provider scoring out of 5 must be
+            // converted by its own mapping layer; an unconverted value is caught here.
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, communityRating = 11.0)),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_seasonEpisodesWithNaNCommunityRating_rejectedAndPersistsNothing() =
+        runTest {
+            // NaN compares false against every bound, so a range check alone would admit it and
+            // poison any later average.
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons =
+                        listOf(
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, communityRating = Double.NaN)),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_sameSeasonNumberAcrossBothForms_rejectedAndPersistsNothing() =
+        runTest {
+            // The duplicate-season check has to see across the two shapes, which is the whole reason
+            // they share one parameter rather than getting one each.
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons =
+                        listOf(
+                            SeasonQuickFill(seasonNumber = 1, episodeCount = 3),
+                            SeasonEpisodes(
+                                seasonNumber = 1,
+                                episodes = listOf(NewEpisode(episodeNumber = 1, title = "Clash")),
+                            ),
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+            assertTrue(result.message.contains("Season 1"))
+
+            assertNothingPersisted()
+        }
+
     // ---- addShow: external identifiers --------------------------------------------------------
 
     @Test
