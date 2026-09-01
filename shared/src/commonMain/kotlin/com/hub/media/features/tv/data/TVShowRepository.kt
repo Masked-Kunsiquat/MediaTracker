@@ -303,9 +303,14 @@ public class TVShowRepository(
         // for the reason the duplicate-season check gives: the constraint failure would name three
         // columns and not the episode that was listed twice. A provider repeating an episode number
         // within one season is a mapping bug, and this is the sentence that says so.
-        val numbers = season.episodes.map { it.episodeNumber }
-        val duplicate = numbers.firstOrNull { number -> numbers.count { it == number } > 1 }
-        return duplicate?.let { "Season ${season.seasonNumber} lists episode $it more than once" }
+        //
+        // A set rather than the nested `count {}` the duplicate-*season* check uses, deliberately:
+        // that one scans a handful of seasons, where O(n^2) is free, but this list is explicitly
+        // unbounded (see [validateSeasonContents] on why no MAX_EPISODE_COUNT applies here), so the
+        // same pattern would make the cost quadratic in exactly the case that decision permits.
+        val seen = mutableSetOf<Int>()
+        val duplicate = season.episodes.firstOrNull { !seen.add(it.episodeNumber) }
+        return duplicate?.let { "Season ${season.seasonNumber} lists episode ${it.episodeNumber} more than once" }
     }
 
     /**
