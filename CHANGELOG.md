@@ -9,9 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **What TMDB says is now translated into what the app stores** (#75). The client could fetch a show and the add path could store one, with nothing in between to turn the first into the second. This is that piece — and it is where every judgement about what a catalogue's answer actually *means* now lives, in one file, rather than being scattered across whatever screen happened to need it.
+
+  Three of those judgements are worth stating, because each one is a wrong answer the app would otherwise have shipped confidently.
+
+  **An unrated show is unknown, not zero out of ten.** TMDB answers a title nobody has rated with a score of `0.0` rather than with nothing — it is the average of no votes. Taken at face value that marks every obscure show and half-forgotten episode as universally panned, and unlike a blank it is a *number*, so it survives into any average built on top of it looking like real data. The vote count is the only thing that separates the two cases, so it is now read for that purpose alone.
+
+  **A season the catalogue mentions but does not send still gets its episodes.** A single request can only carry twenty seasons, and a very long-running show has more. Those extra seasons arrive as a count without titles — which is exactly the shape a hand-filled season already has, so they are created that way and can be ticked off immediately, with their titles filled in later. The alternative was silently ending up with twenty seasons of a twenty-two season show.
+
+  **A show that is still running is recorded as still running.** The library has always been able to tell *up-to-date on a show that is still airing* apart from *finished, with nothing more coming*; it had never been told which was which. Announced seasons with no episodes yet are skipped rather than created as empty.
+
+  Dates are anchored to UTC so the same show entered on two devices stores the same values, and a date the catalogue sends in a form the app cannot read is treated as unknown rather than failing the whole show.
+
 - **A show or film can now be created with everything a catalogue knows about it** (#75). Schema v6 added seven columns specifically for this — a show's airing status, synopsis and first/last air dates, and a community score on any title — while they were still cheap to add. None of them had a way in: the add path took a title, a year, a price and a cover, so a show looked up in a catalogue arrived knowing less than the catalogue had said.
 
-  The airing status is the one that changes behaviour rather than just filling a field. The library already distinguishes *up to date on a show that is still running* from *finished, with nothing more coming* — it just had no way to know which a show was, so every fully-watched show read as finished. Nothing wrote the column until now.
+  The airing status is the one that changes behaviour rather than just filling a field. The library already distinguishes *up-to-date on a show that is still running* from *finished, with nothing more coming* — it just had no way to know which a show was, so every fully-watched show read as finished. Nothing wrote the column until now.
 
   Community score is deliberately the provider's number and not yours. Your own rating is a separate thing that may well belong to a viewing rather than to the title, and it stays unbuilt rather than being conflated with this one.
 

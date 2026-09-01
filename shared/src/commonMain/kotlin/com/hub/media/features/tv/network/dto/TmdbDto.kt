@@ -73,6 +73,8 @@ public data class TmdbShowDetailsDto(
     @SerialName("poster_path") val posterPath: String? = null,
     val status: String? = null,
     @SerialName("in_production") val inProduction: Boolean? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
     val seasons: List<TmdbSeasonSummaryDto> = emptyList(),
 )
 
@@ -114,6 +116,13 @@ public data class TmdbSeasonDetailsDto(
  *   elsewhere -- Chernobyl's first episode is titled `1:23:45`. Anything that serialises these
  *   (the episode CSV round-trip) has to handle that; nothing here escapes it.
  * @property runtime Minutes, and frequently `null` for unaired episodes.
+ * @property voteAverage Out of 10, and **`0.0` when nothing has been rated rather than when
+ *   something scored zero.** TMDB does not send `null` for an unrated title; it sends the arithmetic
+ *   mean of an empty set. Stored naively that would mark every obscure episode 0/10 -- worse than
+ *   unknown, because it is a number that averages. [voteCount] is what tells the two apart.
+ * @property voteCount How many votes [voteAverage] is the mean of. Modelled solely so the previous
+ *   property can be read correctly; `0` means unrated. Without it the only alternative is treating
+ *   `0.0` as unrated by convention, which is a guess that happens to be right rather than a fact.
  */
 @Serializable
 public data class TmdbEpisodeDto(
@@ -126,6 +135,7 @@ public data class TmdbEpisodeDto(
     val runtime: Int? = null,
     @SerialName("still_path") val stillPath: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
 )
 
 /** A film's top-level record. */
@@ -138,4 +148,6 @@ public data class TmdbMovieDetailsDto(
     val runtime: Int? = null,
     @SerialName("poster_path") val posterPath: String? = null,
     val status: String? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
 )
