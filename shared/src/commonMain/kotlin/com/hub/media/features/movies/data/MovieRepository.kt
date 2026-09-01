@@ -1,6 +1,8 @@
 package com.hub.media.features.movies.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.ExternalIdentifierEntity
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
@@ -64,10 +66,25 @@ public class MovieRepository(
         }
 
     /**
-     * Adds a movie and its details in one transaction. Manual entry only — no provider is involved
-     * at this phase, so every field is whatever the user typed.
+     * Adds a movie, its details, and any provider mappings in one transaction.
+     *
+     * Values arrive fully formed from whoever is calling — this validates and writes them, it does
+     * not fetch. Manual entry passes what the user typed; an add-by-search path (ROADMAP Task 13
+     * Phase D) passes what it read from [com.hub.media.features.tv.network.TmdbClient] plus the
+     * film's TMDB id in [externalIdentifiers].
      *
      * @param runtimeMinutes Length in minutes, or null for "unknown". Never 0 as a stand-in.
+     * @param externalIdentifiers Optional (provider, externalId) mappings recording which catalog
+     *   record this row came from — normally a single [IdentifierProvider.TMDB] pair carrying the
+     *   film id as its decimal string. Defaults to empty, which is a hand-entered film: correct, and
+     *   distinguishable from one added by search precisely because it holds no mapping.
+     *
+     *   Not validated here, and deliberately so. The composite `(mediaId, provider)` primary key
+     *   already rejects a duplicate provider under ABORT and rolls the whole insert back with it,
+     *   and a repeated provider can only come from a caller assembling this list wrongly, never from
+     *   something a user typed. Duplicating [com.hub.media.features.books.data.BookRepository.addBook]
+     *   and [com.hub.media.features.tv.data.TVShowRepository.addShow]'s handling of the same
+     *   parameter, rather than inventing a third rule for it.
      * @return [Resource.Success] with the new media id, or [Resource.Error] (never throws).
      */
     public suspend fun addMovie(
@@ -77,6 +94,7 @@ public class MovieRepository(
         runtimeMinutes: Int? = null,
         status: WatchStatus = WatchStatus.WATCHLIST,
         coverImageHash: String? = null,
+        externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
     ): Resource<String> {
         MovieMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
@@ -106,6 +124,14 @@ public class MovieRepository(
                         // date to claim, and leaving it null would lose the fact entirely.
                         watchedAt = if (status == WatchStatus.WATCHED) now else null,
                     ),
+                externalIdentifiers =
+                    externalIdentifiers.map { (provider, externalId) ->
+                        ExternalIdentifierEntity(
+                            mediaId = mediaId,
+                            provider = provider,
+                            externalId = externalId,
+                        )
+                    },
             )
             Resource.Success(mediaId)
         } catch (e: CancellationException) {
