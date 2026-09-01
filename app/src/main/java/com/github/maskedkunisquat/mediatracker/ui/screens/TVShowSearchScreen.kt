@@ -131,8 +131,17 @@ fun TVShowSearchScreen(
     }
 
     Scaffold(
-        // The query field sits above a list, and Scaffold's default insets do not include the IME --
-        // without safeDrawing the keyboard covers the very field being typed into.
+        // safeDrawing rather than the default, which excludes the IME. Kept because it is correct
+        // and because the `Compose IME insets` gate requires any Scaffold-plus-text-field screen to
+        // declare one -- but deliberately **not** guarded by an occlusion test.
+        //
+        // One was written and then deleted: it passed with this line removed, which makes it a green
+        // no-op of the kind AGENTS.md section 7 rejects. The reason is structural rather than a
+        // fixture that needed more work -- the query field, its search button and the manual-entry
+        // action are the top three nodes on the screen, so a keyboard rising from the bottom cannot
+        // strand any of them, and the results below are a LazyColumn that scrolls. There is nothing
+        // here for the rule to catch. If an interactive control is ever added *below* the list, add
+        // the test back -- and prove it fails first.
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
