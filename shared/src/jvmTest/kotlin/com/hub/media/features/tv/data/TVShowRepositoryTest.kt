@@ -2,6 +2,7 @@ package com.hub.media.features.tv.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
@@ -69,9 +70,10 @@ class TVShowRepositoryTest {
     }
 
     /**
-     * Asserts a rejected write left **all three** tables untouched, not merely the one a given test
-     * was about. A validation failure must not persist a `media_items` row without its details, or
-     * episode rows for a show that was never created -- and checking one table would not notice.
+     * Asserts a rejected write left **all four** tables untouched, not merely the one a given test
+     * was about. A validation failure must not persist a `media_items` row without its details,
+     * episode rows for a show that was never created, or a provider mapping pointing at a show that
+     * does not exist -- and checking one table would not notice.
      */
     private suspend fun assertNothingPersisted() {
         assertTrue(
@@ -90,6 +92,14 @@ class TVShowRepositoryTest {
                 .first()
                 .isEmpty(),
             "a rejected addShow must leave no episode rows",
+        )
+        assertTrue(
+            db
+                .externalIdentifierDao()
+                .observeAll()
+                .first()
+                .isEmpty(),
+            "a rejected addShow must leave no external_identifiers row",
         )
     }
 
@@ -361,6 +371,98 @@ class TVShowRepositoryTest {
                 result.message.contains("Season 1"),
                 "the rejection must name the offending season rather than surface a raw UNIQUE-constraint message",
             )
+
+            assertNothingPersisted()
+        }
+
+    // ---- addShow: external identifiers --------------------------------------------------------
+
+    @Test
+    fun addShow_withTmdbIdentifier_recordsWhichProviderRecordTheRowCameFrom() =
+        runTest {
+            val result =
+                repo.addShow(
+                    title = "Chernobyl",
+                    releaseYear = 2019,
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 5)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val mediaId = result.data
+
+            val identifier = db.externalIdentifierDao().getByKey(mediaId, IdentifierProvider.TMDB)
+            assertEquals(
+                "87108",
+                identifier?.externalId,
+                "without this row nothing can tell an added-by-search show from a hand-typed one, " +
+                    "and the episode-title backfill has no show to ask TMDB about",
+            )
+        }
+
+    @Test
+    fun addShow_withNoIdentifiers_writesNoneAndStaysAHandEnteredShow() =
+        runTest {
+            // The default, and the pre-existing manual-entry behaviour: absence of a mapping is
+            // exactly what marks a show as one nobody looked up.
+            val result = repo.addShow(title = "Typed In By Hand")
+            assertIs<Resource.Success<String>>(result)
+
+            assertTrue(
+                db
+                    .externalIdentifierDao()
+                    .observeForMedia(result.data)
+                    .first()
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun addShow_withTwoProviders_writesBothMappings() =
+        runTest {
+            val result =
+                repo.addShow(
+                    title = "Two Catalogues",
+                    externalIdentifiers =
+                        listOf(
+                            IdentifierProvider.TMDB to "1396",
+                            IdentifierProvider.TVDB to "81189",
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val mediaId = result.data
+
+            val byProvider =
+                db
+                    .externalIdentifierDao()
+                    .observeForMedia(mediaId)
+                    .first()
+                    .associate { it.provider to it.externalId }
+            assertEquals(
+                mapOf(IdentifierProvider.TMDB to "1396", IdentifierProvider.TVDB to "81189"),
+                byProvider,
+            )
+        }
+
+    @Test
+    fun addShow_sameProviderListedTwice_rejectedAndPersistsNothing() =
+        runTest {
+            // The composite (mediaId, provider) primary key rejects this under ABORT, which is only
+            // useful if it takes the rest of the show down with it -- a show left in the library
+            // holding one of the two ids, or none, would be the partial write the transaction exists
+            // to prevent. Unlike a duplicate season number this is not pre-validated, because a
+            // repeated provider can only come from a caller building the list wrongly, never from
+            // something a user typed.
+            val result =
+                repo.addShow(
+                    title = "Show",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 3)),
+                    externalIdentifiers =
+                        listOf(
+                            IdentifierProvider.TMDB to "1396",
+                            IdentifierProvider.TMDB to "1399",
+                        ),
+                )
+            assertIs<Resource.Error>(result)
 
             assertNothingPersisted()
         }

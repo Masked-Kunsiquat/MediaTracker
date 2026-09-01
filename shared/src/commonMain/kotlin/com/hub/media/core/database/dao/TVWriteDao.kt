@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchStatus
@@ -37,20 +38,37 @@ interface TVWriteDao {
     suspend fun insertEpisodes(episodes: List<EpisodeEntity>)
 
     /**
-     * Inserts a show's [MediaItemEntity], [TVDetailsEntity], and its quick-filled [EpisodeEntity]
-     * rows in one transaction. If any part fails, none of it remains -- a show that exists in the
-     * library with no details row, or with details but no episodes, is not a state any caller
-     * should have to handle.
+     * Inserts one provider mapping for a show, mirroring [BookWriteDao.insertExternalIdentifier] --
+     * ABORT for the same reason: a duplicate `(mediaId, provider)` inside a single add is a caller
+     * bug, and rolling the whole insert back is the right answer to it.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertExternalIdentifier(identifier: ExternalIdentifierEntity)
+
+    /**
+     * Inserts a show's [MediaItemEntity], [TVDetailsEntity], its quick-filled [EpisodeEntity] rows,
+     * and any [ExternalIdentifierEntity] mappings in one transaction. If any part fails, none of it
+     * remains -- a show that exists in the library with no details row, or with details but no
+     * episodes, is not a state any caller should have to handle.
+     *
+     * [externalIdentifiers] joins the transaction rather than being written afterwards because the
+     * mapping is what a later pass matches a library row *back* to its provider record on. A show
+     * inserted without its TMDB id is not merely missing a field: nothing can tell that row apart
+     * from one typed in by hand, so the backfill that fills episode titles has no way to know which
+     * show to ask about, and the only repair is the user identifying it again. Written second-best
+     * -- outside the transaction -- a process death between the two writes produces exactly that row.
      */
     @Transaction
     suspend fun insertShowAtomically(
         item: MediaItemEntity,
         details: TVDetailsEntity,
         episodes: List<EpisodeEntity>,
+        externalIdentifiers: List<ExternalIdentifierEntity>,
     ) {
         insertMediaItem(item)
         insertTVDetails(details)
         insertEpisodes(episodes)
+        externalIdentifiers.forEach { insertExternalIdentifier(it) }
     }
 
     /** The episode numbers already recorded for one season, for [insertMissingEpisodes]. */

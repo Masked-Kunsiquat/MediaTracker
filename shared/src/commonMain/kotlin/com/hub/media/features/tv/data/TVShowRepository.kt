@@ -2,6 +2,8 @@ package com.hub.media.features.tv.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.ExternalIdentifierEntity
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
@@ -93,15 +95,32 @@ public class TVShowRepository(
     public fun observeEpisodes(mediaId: String): Flow<List<EpisodeEntity>> = db.episodeDao().observeByMediaId(mediaId)
 
     /**
-     * Adds a show, its details, and its quick-filled episodes in one transaction. Manual entry
-     * only -- no provider is involved at this phase (TMDB backfill is Phase D), so every field is
-     * whatever the user typed, and every generated [EpisodeEntity] has [EpisodeEntity.title] and
-     * [EpisodeEntity.airDate] `null` per that entity's "rows exist before their titles do" rule.
+     * Adds a show, its details, its quick-filled episodes, and any provider mappings in one
+     * transaction.
+     *
+     * Values still arrive fully formed from whoever is calling -- this validates and writes them,
+     * it does not fetch. Manual entry passes what the user typed; an add-by-search path
+     * (ROADMAP Task 13 Phase D) passes what it read from [com.hub.media.features.tv.network.TmdbClient]
+     * plus the show's TMDB id in [externalIdentifiers]. Every generated [EpisodeEntity] has
+     * [EpisodeEntity.title] and [EpisodeEntity.airDate] `null` either way, per that entity's "rows
+     * exist before their titles do" rule -- an episode's title is filled by the backfill, and
+     * [externalIdentifiers] is what lets the backfill know whose titles to ask for.
      *
      * @param totalSeasons Advisory season count, or null for "unknown" -- see [TVDetailsEntity.totalSeasons].
      * @param seasons The quick-fill request: one [SeasonQuickFill] per season being pre-populated
      *   with episode rows now. May be empty -- a show can be added with no episodes yet and have
      *   seasons quick-filled later via [setSeasonLength].
+     * @param externalIdentifiers Optional (provider, externalId) mappings recording which catalog
+     *   record this row came from -- normally a single [IdentifierProvider.TMDB] pair carrying the
+     *   show id as its decimal string. Defaults to empty, which is a hand-entered show: correct, and
+     *   distinguishable from one added by search precisely because it holds no mapping.
+     *
+     *   Not validated here, and deliberately so. The composite `(mediaId, provider)` primary key
+     *   already rejects a duplicate provider under ABORT and rolls the whole insert back with it, and
+     *   unlike a repeated season number -- which a user can type into a form and deserves a sentence
+     *   naming the season -- a repeated provider can only come from a caller assembling this list
+     *   wrongly. Duplicating [com.hub.media.features.books.data.BookRepository.addBook]'s handling of
+     *   the same parameter, rather than inventing a second rule for it.
      * @return [Resource.Success] with the new media id, or [Resource.Error] (never throws).
      */
     public suspend fun addShow(
@@ -111,6 +130,7 @@ public class TVShowRepository(
         totalSeasons: Int? = null,
         coverImageHash: String? = null,
         seasons: List<SeasonQuickFill> = emptyList(),
+        externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
     ): Resource<String> {
         TVMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
@@ -162,6 +182,14 @@ public class TVShowRepository(
                         status = WatchStatus.WATCHLIST,
                     ),
                 episodes = episodes,
+                externalIdentifiers =
+                    externalIdentifiers.map { (provider, externalId) ->
+                        ExternalIdentifierEntity(
+                            mediaId = mediaId,
+                            provider = provider,
+                            externalId = externalId,
+                        )
+                    },
             )
             Resource.Success(mediaId)
         } catch (e: CancellationException) {
