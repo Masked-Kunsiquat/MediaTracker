@@ -233,6 +233,50 @@ class MovieRepositoryTest {
             assertTrue(db.movieDetailsDao().getAll().isEmpty())
         }
 
+    // ---- addMovie: community rating ----------------------------------------------------------
+
+    @Test
+    fun addMovie_withCommunityRating_storesItOnTheMediaItem() =
+        runTest {
+            val result = repo.addMovie(title = "The Matrix", communityRating = 8.2)
+            assertIs<Resource.Success<String>>(result)
+
+            assertEquals(8.2, db.mediaItemDao().getById(result.data)?.communityRating)
+        }
+
+    @Test
+    fun addMovie_communityRatingOutOfScale_rejectedAndPersistsNothing() =
+        runTest {
+            val result = repo.addMovie(title = "Movie", communityRating = 11.0)
+            assertIs<Resource.Error>(result)
+
+            assertTrue(
+                db
+                    .mediaItemDao()
+                    .observeAll()
+                    .first()
+                    .isEmpty(),
+            )
+            assertTrue(db.movieDetailsDao().getAll().isEmpty())
+        }
+
+    @Test
+    fun addMovie_communityRatingNaN_rejectedAndPersistsNothing() =
+        runTest {
+            // NaN compares false against every bound, so a range check alone would admit it.
+            val result = repo.addMovie(title = "Movie", communityRating = Double.NaN)
+            assertIs<Resource.Error>(result)
+
+            assertTrue(
+                db
+                    .mediaItemDao()
+                    .observeAll()
+                    .first()
+                    .isEmpty(),
+            )
+            assertTrue(db.movieDetailsDao().getAll().isEmpty())
+        }
+
     // ---- addMovie: external identifiers ------------------------------------------------------
 
     @Test

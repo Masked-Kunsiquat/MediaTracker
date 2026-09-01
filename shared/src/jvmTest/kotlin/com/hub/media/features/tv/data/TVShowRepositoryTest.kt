@@ -432,6 +432,35 @@ class TVShowRepositoryTest {
             )
         }
 
+    @Test
+    fun addShow_withCommunityRating_storesItOnTheMediaItem() =
+        runTest {
+            // media_items rather than tv_details, because every media type has one -- see
+            // MediaItemEntity.communityRating. Per-episode scores live on the episode row instead.
+            val result = repo.addShow(title = "Chernobyl", communityRating = 8.6)
+            assertIs<Resource.Success<String>>(result)
+
+            assertEquals(8.6, db.mediaItemDao().getById(result.data)?.communityRating)
+        }
+
+    @Test
+    fun addShow_communityRatingOutOfScale_rejectedAndPersistsNothing() =
+        runTest {
+            // The column's contract is a 0-10 scale; a provider scoring out of 5 must be converted
+            // by its own mapping layer rather than stored raw.
+            val result = repo.addShow(title = "Show", communityRating = 10.5)
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_communityRatingNaN_rejectedAndPersistsNothing() =
+        runTest {
+            val result = repo.addShow(title = "Show", communityRating = Double.NaN)
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
     // ---- addShow: seasons carrying their episodes (add-by-search population) --------------------
 
     @Test

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **A show or film can now be created with everything a catalogue knows about it** (#75). Schema v6 added seven columns specifically for this — a show's airing status, synopsis and first/last air dates, and a community score on any title — while they were still cheap to add. None of them had a way in: the add path took a title, a year, a price and a cover, so a show looked up in a catalogue arrived knowing less than the catalogue had said.
+
+  The airing status is the one that changes behaviour rather than just filling a field. The library already distinguishes *up to date on a show that is still running* from *finished, with nothing more coming* — it just had no way to know which a show was, so every fully-watched show read as finished. Nothing wrote the column until now.
+
+  Community score is deliberately the provider's number and not yours. Your own rating is a separate thing that may well belong to a viewing rather than to the title, and it stays unbuilt rather than being conflated with this one.
+
+  The 0-to-10 check that guards it now lives in one place instead of being written out per media type. It reads like a one-line range check and is not: a `NaN` slips through any bound comparison and would quietly poison every average it later reached. That is the kind of rule where a second hand-written copy is wrong more often than right.
+
 - **A show can now be created with its episodes already titled** (#75). Adding a show could only ever say *how many* episodes a season had — the user types "Season 1: 10 episodes" and ten blank rows appear, which is exactly right for someone working from memory. But a show looked up in a catalogue arrives with every episode's title, air date, length, synopsis and score already in hand, from a single request, and there was nowhere to put any of it.
 
   Without this, adding a show by search would have had to create ten blank rows and then immediately go back over data it was already holding to fill them in — two passes, and a screen of untitled episodes in between. Worse, it would have run that fill through the backfill, which is the one operation in the app that must never create or delete an episode row, because it runs against shows you have already been ticking off. Keeping the two apart is what stops a background refresh from ever changing what your library says you have watched.

@@ -84,26 +84,16 @@ public object TVMetadataValidation {
 
     /**
      * A known community rating must be finite and within `0.0..10.0`; `null` ("unknown") always
-     * passes.
+     * passes. Media-agnostic -- see this object's KDoc.
      *
-     * The bound is the normalisation
-     * [com.hub.media.core.database.entities.EpisodeEntity.communityRating] declares -- providers
-     * disagree on scale (TMDB out of 10, Goodreads out of 5) and that column's contract is that
-     * everything stored in it has already been converted to a 0-10 scale. A file is the one place
-     * an un-normalised value can arrive from, so this is where the contract gets enforced.
-     *
-     * Non-finite is rejected for the reason
-     * [com.hub.media.features.media.domain.MediaMetadataValidation.validatePurchasePrice] spells
-     * out: `NaN` compares `false` against every bound, so a range check alone would admit it and
-     * poison any later average.
+     * Delegated rather than kept here even though its first caller was
+     * [com.hub.media.core.database.entities.EpisodeEntity.communityRating], which is *not* a media
+     * item. The rule is identical either way, and the normalisation contract it enforces is stated
+     * on both columns in the same words. Keeping a second copy on the grounds that episodes are a
+     * different table is exactly the reasoning that produced the fork #81 removed.
      */
     public fun validateCommunityRating(communityRating: Double?): String? =
-        when {
-            communityRating == null -> null
-            !communityRating.isFinite() -> "Community rating must be a finite number"
-            communityRating !in 0.0..10.0 -> "Community rating must be between 0 and 10"
-            else -> null
-        }
+        MediaMetadataValidation.validateCommunityRating(communityRating)
 
     /**
      * The quick-fill episode count for one season. Must be `> 0` and no greater than

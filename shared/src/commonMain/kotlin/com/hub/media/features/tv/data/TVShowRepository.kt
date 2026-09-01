@@ -196,6 +196,10 @@ public class TVShowRepository(
      *   v6 and not worth a migration to correct.
      * @param lastAirDate When the show most recently aired, or null. Same conversion as
      *   [firstAirDate].
+     * @param communityRating The provider's aggregate score for the show, already normalised to
+     *   0-10, or null. **Not** the user's own rating -- see
+     *   [com.hub.media.core.database.entities.MediaItemEntity.communityRating], which keeps that
+     *   for ROADMAP Task 10. Per-episode scores go on [NewEpisode.communityRating] instead.
      * @param seasons One [NewSeason] per season being populated now, in whichever form the caller
      *   has: [SeasonQuickFill] generates numbered rows with no metadata (manual entry), while
      *   [SeasonEpisodes] carries the episodes themselves (add-by-search). The two may be mixed in one
@@ -229,11 +233,13 @@ public class TVShowRepository(
         overview: String? = null,
         firstAirDate: Instant? = null,
         lastAirDate: Instant? = null,
+        communityRating: Double? = null,
     ): Resource<String> {
         TVMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
         TVMetadataValidation.validatePurchasePrice(purchasePrice)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateTotalSeasons(totalSeasons)?.let { return Resource.Error(it) }
+        TVMetadataValidation.validateCommunityRating(communityRating)?.let { return Resource.Error(it) }
         for (season in seasons) {
             TVMetadataValidation.validateSeasonNumber(season.seasonNumber)?.let { return Resource.Error(it) }
             validateSeasonContents(season)?.let { return Resource.Error(it) }
@@ -262,6 +268,7 @@ public class TVShowRepository(
                         purchasePrice = purchasePrice,
                         createdAt = now,
                         coverImageHash = coverImageHash,
+                        communityRating = communityRating,
                     ),
                 details =
                     TVDetailsEntity(
