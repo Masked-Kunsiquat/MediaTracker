@@ -24,6 +24,51 @@ import kotlinx.coroutines.flow.map
 internal const val KEY_GOOGLE_BOOKS_API_KEY = "google_books_api_key"
 
 /**
+ * Key a user-supplied TMDB credential is persisted under. Same storage contract as
+ * [KEY_GOOGLE_BOOKS_API_KEY] in every respect -- schema v4 `app_settings`, no migration, value is a
+ * credential and must never be logged.
+ *
+ * ### One row for two credential shapes
+ * TMDB issues two things from the same settings page, and users paste whichever they happened to
+ * copy: a v3 **API key** (32 hex characters, sent as an `api_key` query parameter) and a v4 **read
+ * access token** (a JWT, sent as an `Authorization: Bearer` header). This row holds either. Deciding
+ * *which* one is stored -- and therefore how to send it -- is the client's job, not storage's, so
+ * that a value which stops being recognisable never becomes unreadable data: see
+ * `TmdbCredential` in `core/network`.
+ *
+ * Storing both shapes under one name is why the setting is named for the provider rather than for
+ * the credential type. `tmdb_api_key` would have been the obvious name and is the wrong one -- a
+ * user who saved a read access token under a row called "api key" is fine, but a *second* row added
+ * later for the other shape would be a second credential to scrub, and forgetting it is a leak.
+ */
+internal const val KEY_TMDB_CREDENTIAL = "tmdb_credential"
+
+/**
+ * Every `app_settings` row whose value is a credential, and therefore must be deleted from a staged
+ * `.sqlite` backup before the user can export it.
+ *
+ * ### Why this is a list and not two call sites
+ * [com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase] scrubs what this list
+ * holds. #75 recorded the hazard plainly -- the scrub is *not* automatic, so a second provider key
+ * needs it wired explicitly, and missing that is a plaintext credential leak rather than a bug.
+ * Wiring the second one as a second hardcoded constant would have left the same trap armed for the
+ * third.
+ *
+ * So the scrub iterates this list, and adding a credential means adding it here -- one edit, in the
+ * file where the constant is already being written, rather than a remembered edit in a use case two
+ * packages away. A new credential that is never added to this list still leaks; nothing can make
+ * that impossible. But it is now a single visible omission next to the constant it belongs to,
+ * instead of an invisible one somewhere else.
+ *
+ * Order is irrelevant -- the scrub deletes every entry.
+ */
+internal val CREDENTIAL_SETTING_KEYS: List<String> =
+    listOf(
+        KEY_GOOGLE_BOOKS_API_KEY,
+        KEY_TMDB_CREDENTIAL,
+    )
+
+/**
  * Reactive current Google Books API key, or `null` if the user has never supplied one, has since
  * cleared it, or supplied a blank/whitespace-only value (see [setGoogleBooksApiKey] for why the
  * latter can't be told apart from "unset").
@@ -75,9 +120,70 @@ public suspend fun SettingsRepository.clearGoogleBooksApiKey() {
 }
 
 /**
+ * Reactive current TMDB credential, or `null` if the user has never supplied one or has cleared it.
+ *
+ * Every rule on [observeGoogleBooksApiKey] applies unchanged: `null` is not an error state, and the
+ * emitted value must never be logged -- log `credential != null` if presence is worth tracing.
+ *
+ * Unlike the Google Books key, a `null` here is not merely a fallback to unauthenticated access:
+ * TMDB refuses anonymous requests outright, so callers get no metadata at all without one. That is
+ * a reason for the *UI* to explain the consequence, not a reason for this accessor to treat absence
+ * as exceptional -- the app is offline-first (AGENTS.md §1) and manual entry works with no
+ * credential at all.
+ */
+public fun SettingsRepository.observeTmdbCredential(): Flow<String?> =
+    observeString(KEY_TMDB_CREDENTIAL).map { it.toApiKeyOrNull() }
+
+/** One-shot fetch of the current TMDB credential; see [observeTmdbCredential] for the null/blank rules. */
+public suspend fun SettingsRepository.getTmdbCredential(): String? = getString(KEY_TMDB_CREDENTIAL).toApiKeyOrNull()
+
+/**
+ * Persists [value] as the TMDB credential, trimmed first -- see [setGoogleBooksApiKey] for why a
+ * blank value clears the row rather than storing `""`.
+ *
+ * Deliberately does not validate the shape. A v3 key and a v4 token look nothing alike, and a
+ * setter that rejected anything it did not recognise would turn "TMDB issued a new credential
+ * format" into "the app refuses a credential that works". Recognition happens at send time, where
+ * being wrong costs one failed request instead of making the value unstorable.
+ */
+public suspend fun SettingsRepository.setTmdbCredential(value: String) {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) {
+        clear(KEY_TMDB_CREDENTIAL)
+    } else {
+        setString(KEY_TMDB_CREDENTIAL, trimmed)
+    }
+}
+
+/** Removes the stored TMDB credential entirely, reverting the accessors above to null. */
+public suspend fun SettingsRepository.clearTmdbCredential() {
+    clear(KEY_TMDB_CREDENTIAL)
+}
+
+/**
+ * Whether *any* provider credential is currently stored.
+ *
+ * Backs the restore confirmation's "you will have to enter your keys again" warning. A restore
+ * replaces the whole database file, and backups have every credential row scrubbed out before they
+ * are written, so confirming one silently clears whatever the user had entered.
+ *
+ * Reads [CREDENTIAL_SETTING_KEYS] for the same reason the scrub does: the warning has to stay true
+ * as providers are added, and a warning that quietly stops mentioning a credential it should is
+ * worse than no warning -- the user finds out by discovering the app can no longer reach TMDB. This
+ * deliberately reports only *whether* something will be lost, not which: naming providers would
+ * re-introduce the per-provider list this list exists to remove, and the user's next step ("re-enter
+ * your keys in Settings") is the same either way.
+ *
+ * Presence only. No credential value is read, returned, or held.
+ */
+public suspend fun SettingsRepository.hasAnyStoredCredential(): Boolean =
+    CREDENTIAL_SETTING_KEYS.any { getString(it).toApiKeyOrNull() != null }
+
+/**
  * Collapses a raw stored value to `null` for both the never-set case ([this] itself is `null`) and a
- * blank/whitespace-only stored value -- the latter should be unreachable via [setGoogleBooksApiKey],
- * but a row written by any other path (a future migration, direct DB edit, etc.) must not be able to
- * produce a "present but empty" key that callers would otherwise have to special-case.
+ * blank/whitespace-only stored value -- the latter should be unreachable via [setGoogleBooksApiKey]
+ * or [setTmdbCredential], but a row written by any other path (a future migration, direct DB edit,
+ * etc.) must not be able to produce a "present but empty" key that callers would otherwise have to
+ * special-case.
  */
 private fun String?.toApiKeyOrNull(): String? = this?.trim()?.ifBlank { null }

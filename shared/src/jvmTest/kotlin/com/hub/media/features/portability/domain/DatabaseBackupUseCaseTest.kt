@@ -9,6 +9,7 @@ import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.settings.data.CREDENTIAL_SETTING_KEYS
 import com.hub.media.features.settings.data.KEY_GOOGLE_BOOKS_API_KEY
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
@@ -23,6 +24,7 @@ import kotlin.io.path.exists
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -347,6 +349,110 @@ class DatabaseBackupUseCaseTest {
                     "keep-me",
                     rows["unrelated_setting"],
                     "a non-credential app_settings row must still survive the scrub into the backup",
+                )
+            } finally {
+                stagedFile.delete()
+            }
+        }
+
+    /**
+     * Every credential the app declares is scrubbed, not just the one someone remembered (#75).
+     *
+     * Driven off [CREDENTIAL_SETTING_KEYS] rather than naming keys, so a provider added to that list
+     * is covered here the moment it is declared -- which is the property the list exists to buy.
+     * A hardcoded pair of assertions would have gone stale exactly when a third credential arrived,
+     * and gone stale *silently*, which for a credential scrub means a leak rather than a red test.
+     *
+     * What this cannot catch, stated so nobody mistakes it for total coverage: a credential setting
+     * added to `ProviderApiKeys.kt` but never added to [CREDENTIAL_SETTING_KEYS] is invisible to
+     * both the scrub and this test. Nothing here can see a constant the list does not name. That
+     * omission is the residual risk the list's KDoc calls out, narrowed to a single line of review.
+     */
+    @Test
+    fun execute_everyDeclaredCredentialIsScrubbedFromTheStagedBackup() =
+        runTest {
+            val liveDb = openLiveDatabase()
+            val settingsRepository = SettingsRepository(liveDb.appSettingsDao())
+            // Written through the raw setter, deliberately: this test is about the *list* being
+            // honoured, so it must not depend on a typed accessor existing for every entry.
+            for (key in CREDENTIAL_SETTING_KEYS) {
+                settingsRepository.setString(key, "secret-value-for-$key-do-not-leak")
+            }
+            settingsRepository.setString("unrelated_setting", "keep-me")
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            val stagedFile = File(result.data.stagedFilePath)
+            liveDb.close()
+
+            try {
+                val rows = mutableMapOf<String, String>()
+                BundledSQLiteDriver().open(stagedFile.absolutePath, SQLITE_OPEN_READONLY).use { connection ->
+                    connection.prepare("SELECT `key`, `value` FROM app_settings").use { statement ->
+                        while (statement.step()) {
+                            rows[statement.getText(0)] = statement.getText(1)
+                        }
+                    }
+                }
+
+                // Guards the guard: an empty list would make the loop below vacuous, and a list that
+                // silently lost an entry is the failure this whole mechanism exists to prevent.
+                assertTrue(
+                    CREDENTIAL_SETTING_KEYS.size >= 2,
+                    "expected at least the google books and tmdb credentials to be declared",
+                )
+                for (key in CREDENTIAL_SETTING_KEYS) {
+                    assertTrue(key !in rows, "backup must never contain the credential row `$key`")
+                }
+                // Positive control, same reason as the test above: without it, every assertion here
+                // would pass against an empty or mis-queried table.
+                assertEquals(
+                    "keep-me",
+                    rows["unrelated_setting"],
+                    "a non-credential app_settings row must still survive the scrub into the backup",
+                )
+            } finally {
+                stagedFile.delete()
+            }
+        }
+
+    /**
+     * The credential's *bytes* are gone from the file, not merely its row from the table.
+     *
+     * A `DELETE` removes a row from the b-tree; it does not by itself overwrite the bytes the row
+     * occupied. SQLite's `secure_delete` is off by default, so freed content can sit in the page
+     * until something happens to reuse it -- and a backup is a file the user is expected to export
+     * and possibly hand to someone else, where "the row is gone from the table" is not the property
+     * that matters. Querying `app_settings` cannot see this at all: the row is absent either way.
+     *
+     * So this reads the staged file as raw bytes and looks for a sentinel that could only have come
+     * from the credential. Falsified by removing the `secure_delete` pragma from
+     * [DefaultDatabaseBackupUseCase], which leaves the sentinel in the file and fails this test
+     * while every row-level assertion above still passes.
+     */
+    @Test
+    fun execute_credentialBytesAreNotRecoverableFromTheStagedFile() =
+        runTest {
+            // Long, unique, and not a substring of anything else the schema writes, so a hit is
+            // unambiguously this value rather than an incidental byte sequence.
+            val sentinel = "SENTINEL-CREDENTIAL-VALUE-c7f3a91e-DO-NOT-LEAK-INTO-A-BACKUP"
+            val liveDb = openLiveDatabase()
+            val settingsRepository = SettingsRepository(liveDb.appSettingsDao())
+            settingsRepository.setString(CREDENTIAL_SETTING_KEYS.first(), sentinel)
+
+            val useCase = DefaultDatabaseBackupUseCase(liveDb, dbFile.absolutePath)
+            val result = useCase.execute()
+            assertIs<Resource.Success<BackupResult>>(result)
+            val stagedFile = File(result.data.stagedFilePath)
+            liveDb.close()
+
+            try {
+                val bytes = stagedFile.readBytes().decodeToString(throwOnInvalidSequence = false)
+                assertFalse(
+                    sentinel in bytes,
+                    "the credential's bytes are still present in the staged backup file even though " +
+                        "its row was deleted -- a DELETE alone does not overwrite freed page content",
                 )
             } finally {
                 stagedFile.delete()

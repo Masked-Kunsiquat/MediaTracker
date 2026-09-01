@@ -2,11 +2,13 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -47,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -180,6 +183,10 @@ fun SettingsScreenRoute(
     val restoreReadFailureMessage = stringResource(R.string.restore_read_failure_message)
     val apiKeySavedMessage = stringResource(R.string.settings_google_books_key_saved_message)
     val apiKeyClearedMessage = stringResource(R.string.settings_google_books_key_cleared_message)
+    val tmdbSavedMessage = stringResource(R.string.settings_tmdb_key_saved_message)
+    val tmdbClearedMessage = stringResource(R.string.settings_tmdb_key_cleared_message)
+    val tmdbCheckingMessage = stringResource(R.string.settings_tmdb_key_test_checking)
+    val tmdbTestOkMessage = stringResource(R.string.settings_tmdb_key_test_ok)
 
     // Surfaced exactly once per Settings-screen visit (see AppContainer.pendingRestoreMarker's
     // KDoc): the outcome of a restore that completed just before this process was killed and
@@ -541,7 +548,7 @@ fun SettingsScreenRoute(
     (restoreUiState as? RestoreUiState.AwaitingConfirmation)?.let { state ->
         RestoreConfirmationDialog(
             info = state.info,
-            apiKeyWillBeCleared = state.apiKeyWillBeCleared,
+            credentialsWillBeCleared = state.credentialsWillBeCleared,
             onConfirm = {
                 // Deliberately NOT routed through restoreViewModel.viewModelScope: the very next
                 // step closes the AppContainer this ViewModel's own use case was wired from, and
@@ -609,6 +616,47 @@ fun SettingsScreenRoute(
                 val result = viewModel.clearGoogleBooksApiKey()
                 if (result is Resource.Success) {
                     snackbarHostState.showSnackbar(apiKeyClearedMessage)
+                }
+            }
+        },
+        onTmdbCredentialSave = { credential ->
+            coroutineScope.launch {
+                val result = viewModel.setTmdbCredential(credential)
+                if (result is Resource.Success) {
+                    snackbarHostState.showSnackbar(tmdbSavedMessage)
+                }
+            }
+        },
+        onTmdbCredentialClear = {
+            coroutineScope.launch {
+                val result = viewModel.clearTmdbCredential()
+                if (result is Resource.Success) {
+                    snackbarHostState.showSnackbar(tmdbClearedMessage)
+                }
+            }
+        },
+        onTmdbCredentialTest = {
+            coroutineScope.launch {
+                // showSnackbar suspends until the snackbar is dismissed, so calling it inline would
+                // hold the request behind the message meant to cover it -- the check would not start
+                // until "Checking" timed out. Instead it runs in its own coroutine, Indefinite so it
+                // cannot expire early, and is cancelled the moment the answer arrives; cancelling
+                // the caller is what dismisses a snackbar.
+                val checking =
+                    launch {
+                        snackbarHostState.showSnackbar(
+                            tmdbCheckingMessage,
+                            duration = SnackbarDuration.Indefinite,
+                        )
+                    }
+                val outcome = viewModel.verifyTmdbCredential()
+                checking.cancel()
+                when (val result = outcome) {
+                    is Resource.Success -> snackbarHostState.showSnackbar(tmdbTestOkMessage)
+                    // The client's own message is used verbatim: it already distinguishes "TMDB
+                    // rejected the credential" from "could not reach TMDB", which is the whole
+                    // point of pressing this, and restating it here would only blur that.
+                    is Resource.Error -> snackbarHostState.showSnackbar(result.message)
                 }
             }
         },
@@ -889,14 +937,17 @@ private fun ImportSummaryDialog(
  * destructive confirm button becomes enabled, with that button styled in the theme's `error` color
  * to read as visually distinct from every other action on this screen.
  *
- * @param apiKeyWillBeCleared Mirrors [com.hub.media.ui.RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared]
- *   -- when true, an extra sentence warns that the user's Google Books API key will need to be
- *   re-entered afterward, since backups never carry it (see that property's KDoc for why).
+ * @param credentialsWillBeCleared Mirrors
+ *   [com.hub.media.ui.RestoreUiState.AwaitingConfirmation.credentialsWillBeCleared] -- when true,
+ *   an extra sentence warns that the provider keys the user has entered will need to be entered
+ *   again afterward, since backups never carry them (see that property's KDoc for why). It does
+ *   not name which: the warning is driven off the credential list so it stays true as providers
+ *   are added, and the user's next step is the same either way.
  */
 @Composable
 private fun RestoreConfirmationDialog(
     info: StagedRestoreInfo,
-    apiKeyWillBeCleared: Boolean,
+    credentialsWillBeCleared: Boolean,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -913,9 +964,9 @@ private fun RestoreConfirmationDialog(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                if (apiKeyWillBeCleared) {
+                if (credentialsWillBeCleared) {
                     Text(
-                        text = stringResource(R.string.restore_confirm_message_api_key),
+                        text = stringResource(R.string.restore_confirm_message_credentials),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -966,6 +1017,14 @@ private fun RestoreConfirmationDialog(
  *   [GoogleBooksApiKeySetting]'s KDoc.
  * @param onGoogleBooksApiKeyClear Called when the API key's Clear button is tapped, wired to
  *   [SettingsViewModel.clearGoogleBooksApiKey].
+ * @param onTmdbCredentialSave Called with the raw contents of the TMDB field when Save is tapped,
+ *   wired to [SettingsViewModel.setTmdbCredential]. Accepts either credential shape TMDB issues --
+ *   see that method's KDoc for why nothing here inspects which.
+ * @param onTmdbCredentialClear Called when the TMDB credential's Clear button is tapped, wired to
+ *   [SettingsViewModel.clearTmdbCredential].
+ * @param onTmdbCredentialTest Called when the TMDB credential's Test button is tapped, wired to
+ *   [SettingsViewModel.verifyTmdbCredential]. Costs one request and reports the answer in the
+ *   snackbar -- see that method's KDoc for what a success does and does not prove.
  * @param exportInProgress Whether a CSV export is currently being generated (ROADMAP Task 8 Phase
  *   A) -- wired to `ExportUiState.Loading`, disables the export button and shows a progress
  *   indicator so a double-tap can't fire two concurrent exports.
@@ -1023,6 +1082,9 @@ fun SettingsScreen(
     onLogVerbosityChange: (LogLevel) -> Unit,
     onGoogleBooksApiKeySave: (String) -> Unit,
     onGoogleBooksApiKeyClear: () -> Unit,
+    onTmdbCredentialSave: (String) -> Unit,
+    onTmdbCredentialClear: () -> Unit,
+    onTmdbCredentialTest: () -> Unit,
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
     exportInProgress: Boolean,
@@ -1091,10 +1153,47 @@ fun SettingsScreen(
                     // looked up when they are added, not about moving data in and out of the app,
                     // and it is the only setting on this screen that stores a credential.
                     SettingsSection(title = stringResource(R.string.settings_section_book_lookups)) {
-                        GoogleBooksApiKeySetting(
-                            keySet = uiState.googleBooksApiKeySet,
+                        ProviderCredentialSetting(
+                            labelRes = R.string.settings_google_books_key_label,
+                            descriptionRes = R.string.settings_google_books_key_description,
+                            savedRes = R.string.settings_google_books_key_saved,
+                            notSavedRes = R.string.settings_google_books_key_not_saved,
+                            fieldLabelRes = R.string.settings_google_books_key_field_label,
+                            saveButtonRes = R.string.settings_google_books_key_save_button,
+                            replaceButtonRes = R.string.settings_google_books_key_replace_button,
+                            clearButtonRes = R.string.settings_google_books_key_clear_button,
+                            fieldTestTag = TestTags.Settings.API_KEY_FIELD,
+                            credentialSet = uiState.googleBooksApiKeySet,
                             onSave = onGoogleBooksApiKeySave,
                             onClear = onGoogleBooksApiKeyClear,
+                        )
+                    }
+                }
+                item {
+                    // Its own section rather than sharing "Book lookups", which is what the first
+                    // recording of this golden actually showed: a TMDB credential filed under a
+                    // heading that says books. The tag assertion could not see that -- the control
+                    // was present and correct, under the wrong words. This is the case #102 rule 3
+                    // exists for.
+                    SettingsSection(title = stringResource(R.string.settings_section_film_tv_lookups)) {
+                        ProviderCredentialSetting(
+                            labelRes = R.string.settings_tmdb_key_label,
+                            descriptionRes = R.string.settings_tmdb_key_description,
+                            savedRes = R.string.settings_tmdb_key_saved,
+                            notSavedRes = R.string.settings_tmdb_key_not_saved,
+                            fieldLabelRes = R.string.settings_tmdb_key_field_label,
+                            saveButtonRes = R.string.settings_tmdb_key_save_button,
+                            replaceButtonRes = R.string.settings_tmdb_key_replace_button,
+                            clearButtonRes = R.string.settings_tmdb_key_clear_button,
+                            fieldTestTag = TestTags.Settings.TMDB_KEY_FIELD,
+                            credentialSet = uiState.tmdbCredentialSet,
+                            onSave = onTmdbCredentialSave,
+                            onClear = onTmdbCredentialClear,
+                            testAction =
+                                CredentialTestAction(
+                                    labelRes = R.string.settings_tmdb_key_test_button,
+                                    onTest = onTmdbCredentialTest,
+                                ),
                         )
                     }
                 }
@@ -1202,58 +1301,100 @@ private fun SettingsSection(
 }
 
 /**
- * The Google Books API key row.
+ * A credential row's optional "test this" button: its label and what pressing it does.
  *
- * ### The stored key is never displayed
- * [keySet] is a boolean, and this row has no way to read the saved key even if it wanted to (see
- * [SettingsUiState.googleBooksApiKeySet]). A saved key is reported as saved; the text field always
- * starts empty and holds its own local state, so what it contains is only ever what the user has
- * just typed in this composition. Re-entering a key to change it is a deliberate cost: echoing a
- * credential back into an on-screen field, in an app whose Settings screen is a normal, non-
- * authenticated destination, buys nothing but a shoulder-surfing surface.
+ * One nullable parameter rather than two, because two independently-nullable ones can disagree: a
+ * caller passing the action and forgetting the label gets no button and no complaint. That is the
+ * failure shape this screen has already produced twice on this branch -- a control present but
+ * wrong, and silent about it -- so the type makes half-specifying it unrepresentable.
+ */
+private data class CredentialTestAction(
+    @StringRes val labelRes: Int,
+    val onTest: () -> Unit,
+)
+
+/**
+ * One provider credential row: label, explanation, saved/not-saved status, a masked field, and
+ * Save/Clear.
+ *
+ * ### Generalised, because there are two of these now
+ * This was `GoogleBooksApiKeySetting` until TMDB's credential arrived (#75). Copying ninety lines to
+ * get a second one would have been two rows that drift apart -- and credential handling is the worst
+ * possible place for a drift, since the half that stops masking its field is not obviously broken to
+ * look at. #81 already tracks duplicated layers of exactly this shape, so this takes its strings and
+ * test tag as parameters instead.
+ *
+ * ### The stored credential is never displayed
+ * [credentialSet] is a boolean, and this row has no way to read the saved value even if it wanted to
+ * (see [SettingsUiState.googleBooksApiKeySet]/[SettingsUiState.tmdbCredentialSet]). A saved
+ * credential is reported as saved; the text field always starts empty and holds its own local state,
+ * so what it contains is only ever what the user has just typed in this composition. Re-entering a
+ * credential to change it is a deliberate cost: echoing one back into an on-screen field, in an app
+ * whose Settings screen is a normal, non-authenticated destination, buys nothing but a
+ * shoulder-surfing surface.
  *
  * Masked by default with an explicit Show toggle, and [KeyboardType.Password] regardless of that
- * toggle -- which is what keeps the soft keyboard from learning and later suggesting the key, a
- * leak that would outlive the app entirely. Show exists because these keys are pasted far more often
- * than typed, and a paste you cannot verify is a support problem.
+ * toggle -- which is what keeps the soft keyboard from learning and later suggesting the value, a
+ * leak that would outlive the app entirely. Show exists because these are pasted far more often than
+ * typed, and a paste you cannot verify is a support problem.
  *
- * @param keySet Whether a key is currently stored, driving the status line and whether Clear is
- *   offered at all.
+ * @param labelRes Row heading, e.g. "TMDB API key".
+ * @param descriptionRes What the credential buys and what happens without it.
+ * @param savedRes Status line shown when [credentialSet].
+ * @param notSavedRes Status line shown when it is not.
+ * @param fieldLabelRes Label on the text field itself.
+ * @param saveButtonRes Save button text when no credential is stored yet.
+ * @param replaceButtonRes Save button text when one already is -- saving overwrites, and a button
+ *   still reading "Save" would hide that.
+ * @param clearButtonRes Clear button text.
+ * @param fieldTestTag Test tag for the field, so the two rows are separately addressable from
+ *   instrumented tests.
+ * @param credentialSet Whether a credential is currently stored, driving the status line and whether
+ *   Clear is offered at all.
  * @param onSave Called with the trimmed-by-the-repository field contents when Save is tapped.
- * @param onClear Called when Clear is tapped -- offered only when [keySet], since clearing nothing
- *   is not an action.
+ * @param onClear Called when Clear is tapped -- offered only when [credentialSet], since clearing
+ *   nothing is not an action.
+ * @param testAction Optional "check this actually works" affordance, shown only when non-null *and*
+ *   a credential is stored. Optional because only TMDB has an endpoint for it: Google Books has no
+ *   equivalent, and a button that could only ever report "we tried a book lookup" would be a
+ *   different, vaguer promise wearing the same label.
  */
 @Composable
-private fun GoogleBooksApiKeySetting(
-    keySet: Boolean,
+private fun ProviderCredentialSetting(
+    @StringRes labelRes: Int,
+    @StringRes descriptionRes: Int,
+    @StringRes savedRes: Int,
+    @StringRes notSavedRes: Int,
+    @StringRes fieldLabelRes: Int,
+    @StringRes saveButtonRes: Int,
+    @StringRes replaceButtonRes: Int,
+    @StringRes clearButtonRes: Int,
+    fieldTestTag: String,
+    credentialSet: Boolean,
     onSave: (String) -> Unit,
     onClear: () -> Unit,
+    testAction: CredentialTestAction? = null,
 ) {
     var entered by remember { mutableStateOf("") }
     var revealed by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = stringResource(R.string.settings_google_books_key_label),
+            text = stringResource(labelRes),
             style = MaterialTheme.typography.bodyLarge,
         )
         Text(
-            text = stringResource(R.string.settings_google_books_key_description),
+            text = stringResource(descriptionRes),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text =
-                if (keySet) {
-                    stringResource(R.string.settings_google_books_key_saved)
-                } else {
-                    stringResource(R.string.settings_google_books_key_not_saved)
-                },
+            text = if (credentialSet) stringResource(savedRes) else stringResource(notSavedRes),
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedTextField(
             value = entered,
             onValueChange = { entered = it },
-            label = { Text(stringResource(R.string.settings_google_books_key_field_label)) },
+            label = { Text(stringResource(fieldLabelRes)) },
             singleLine = true,
             visualTransformation =
                 if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
@@ -1272,34 +1413,32 @@ private fun GoogleBooksApiKeySetting(
                     )
                 }
             },
-            modifier = Modifier.fillMaxWidth().testTag(TestTags.Settings.API_KEY_FIELD),
+            modifier = Modifier.fillMaxWidth().testTag(fieldTestTag),
         )
-        Row(
+        // FlowRow, not Row: three buttons of provider-length labels overflow 1080px at default font
+        // scale -- verified on device, where the third simply never rendered and no test noticed,
+        // because the golden asserts the *field's* tag rather than the buttons. Two of them already
+        // came close enough that a larger font scale would have clipped Clear, so this fixes a
+        // latent bug as well as the new one.
+        FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Button(
                 onClick = {
                     onSave(entered)
                     // Dropped as soon as it has been handed over: nothing on this screen needs the
-                    // key again, and leaving it sitting in a composition-scoped field would keep a
-                    // credential on screen (and in the recomposition snapshot) for the rest of the
+                    // credential again, and leaving it sitting in a composition-scoped field would
+                    // keep it on screen (and in the recomposition snapshot) for the rest of the
                     // visit for no reason.
                     entered = ""
                     revealed = false
                 },
                 enabled = entered.isNotBlank(),
             ) {
-                Text(
-                    text =
-                        if (keySet) {
-                            stringResource(R.string.settings_google_books_key_replace_button)
-                        } else {
-                            stringResource(R.string.settings_google_books_key_save_button)
-                        },
-                )
+                Text(text = if (credentialSet) stringResource(replaceButtonRes) else stringResource(saveButtonRes))
             }
-            if (keySet) {
+            if (credentialSet) {
                 OutlinedButton(
                     onClick = {
                         onClear()
@@ -1307,7 +1446,15 @@ private fun GoogleBooksApiKeySetting(
                         revealed = false
                     },
                 ) {
-                    Text(stringResource(R.string.settings_google_books_key_clear_button))
+                    Text(stringResource(clearButtonRes))
+                }
+                // Only offered once something is stored: testing nothing is not an action, and the
+                // answer would be a foregone "no credential" rather than anything about the
+                // provider.
+                if (testAction != null) {
+                    TextButton(onClick = testAction.onTest) {
+                        Text(stringResource(testAction.labelRes))
+                    }
                 }
             }
         }
@@ -1818,6 +1965,9 @@ private fun SettingsScreenMondayPreview() {
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
+            onTmdbCredentialSave = {},
+            onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1853,6 +2003,9 @@ private fun SettingsScreenSundayPreview() {
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
+            onTmdbCredentialSave = {},
+            onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1888,6 +2041,9 @@ private fun SettingsScreenExportingPreview() {
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
+            onTmdbCredentialSave = {},
+            onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = true,
@@ -1923,6 +2079,9 @@ private fun SettingsScreenBackingUpPreview() {
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
+            onTmdbCredentialSave = {},
+            onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1958,6 +2117,9 @@ private fun SettingsScreenValidatingRestorePreview() {
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
+            onTmdbCredentialSave = {},
+            onTmdbCredentialClear = {},
+            onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
             exportInProgress = false,
@@ -1994,7 +2156,7 @@ private fun RestoreConfirmationDialogPreview() {
                     schemaVersionFound = 4,
                     isOlderSchemaVersion = false,
                 ),
-            apiKeyWillBeCleared = false,
+            credentialsWillBeCleared = false,
             onConfirm = {},
             onCancel = {},
         )
@@ -2013,7 +2175,7 @@ private fun RestoreConfirmationDialogOlderVersionPreview() {
                     schemaVersionFound = 2,
                     isOlderSchemaVersion = true,
                 ),
-            apiKeyWillBeCleared = true,
+            credentialsWillBeCleared = true,
             onConfirm = {},
             onCancel = {},
         )

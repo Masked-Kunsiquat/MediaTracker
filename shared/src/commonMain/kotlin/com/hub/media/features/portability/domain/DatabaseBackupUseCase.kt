@@ -10,7 +10,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.info
 import com.hub.media.core.util.newId
-import com.hub.media.features.settings.data.KEY_GOOGLE_BOOKS_API_KEY
+import com.hub.media.features.settings.data.CREDENTIAL_SETTING_KEYS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -107,16 +107,22 @@ public data class BackupResult(
  * confirms a decoy log file sitting beside the live database never ends up inside the backup
  * bytes -- so a future change that *did* fold log data into either path would fail that test.
  *
- * ### Credential scrubbing: why the API key row is deleted from the *copy*, after `VACUUM INTO`
- * A user-supplied Google Books API key ([com.hub.media.features.settings.data.getGoogleBooksApiKey])
- * lives in `app_settings` under [KEY_GOOGLE_BOOKS_API_KEY], in plaintext (this repo has no
- * at-rest encryption layer for that table). A backup is a whole-file snapshot the user is expected
- * to export to a SAF destination of their choosing and potentially hand to someone else -- so
- * unlike every other row in `app_settings`, this one specific row must never leave the device
- * inside a backup at all.
+ * ### Credential scrubbing: why credential rows are deleted from the *copy*, after `VACUUM INTO`
+ * User-supplied provider credentials -- the Google Books API key and the TMDB credential -- live in
+ * `app_settings` in plaintext (this repo has no at-rest encryption layer for that table). A backup
+ * is a whole-file snapshot the user is expected to export to a SAF destination of their choosing and
+ * potentially hand to someone else -- so unlike every other row in `app_settings`, these specific
+ * rows must never leave the device inside a backup at all.
+ *
+ * **Which rows those are is not decided here.** [scrubCredentials] iterates
+ * [com.hub.media.features.settings.data.CREDENTIAL_SETTING_KEYS], declared beside the constants it
+ * names, so a provider added there is scrubbed without this file being edited. #75 flagged the
+ * hazard directly: the scrub is not automatic, and a second credential wired into settings but not
+ * into the scrub is a plaintext leak rather than a missing feature. A list makes that omission a
+ * single visible one, next to the constant, instead of an invisible one two packages away.
  *
  * `VACUUM INTO` copies every table wholesale (see above) -- it has no per-row filter, and adding one
- * would mean hand-reimplementing SQLite's own page-level copy. So instead, [scrubGoogleBooksApiKey]
+ * would mean hand-reimplementing SQLite's own page-level copy. So instead, [scrubCredentials]
  * runs strictly *after* `VACUUM INTO` finishes, against the staging path -- a plain `DELETE FROM
  * app_settings WHERE key = ?` issued over a fresh [BundledSQLiteDriver] connection opened directly
  * on the staged file, the same mechanism [com.hub.media.core.database.validateStagedDatabaseIntegrity]
@@ -124,7 +130,7 @@ public data class BackupResult(
  * connection pool -- it opens the *copy* as a bare file, exactly the way [databaseFilePath] itself
  * is never opened directly by this class either.
  *
- * **FAIL CLOSED.** [scrubGoogleBooksApiKey] is called from inside [execute]'s existing `try` block,
+ * **FAIL CLOSED.** [scrubCredentials] is called from inside [execute]'s existing `try` block,
  * deliberately not wrapped in its own swallow-and-continue handler: if the scrub throws for any
  * reason (staged file locked, disk error, schema surprise), that exception falls straight through
  * to the same `catch (e: Exception)` below that already deletes the staging file and returns
@@ -159,7 +165,7 @@ public class DefaultDatabaseBackupUseCase(
             // Resource.Error instead of Resource.Success -- so a scrub failure can never result in
             // a "successful" backup that still carries the user's credential in plaintext. See this
             // class's "Credential scrubbing" KDoc section for the full rationale.
-            scrubGoogleBooksApiKey(stagingPath)
+            scrubCredentials(stagingPath)
             Resource.Success(BackupResult(stagedFilePath = stagingPath, suggestedFileName = suggestedBackupFileName()))
         } catch (e: CancellationException) {
             // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
@@ -193,23 +199,44 @@ public class DefaultDatabaseBackupUseCase(
      * restore candidate. Runs on [Dispatchers.IO]: opening a real SQLite connection and executing
      * statements against it is blocking I/O, never the caller's own dispatcher.
      */
-    private suspend fun scrubGoogleBooksApiKey(path: String) {
+    private suspend fun scrubCredentials(path: String) {
         withContext(Dispatchers.IO) {
             BundledSQLiteDriver().open(path).use { connection ->
-                val wasPresent =
-                    connection.prepare("SELECT COUNT(*) FROM app_settings WHERE `key` = ?").use { statement ->
-                        statement.bindText(1, KEY_GOOGLE_BOOKS_API_KEY)
-                        if (statement.step()) statement.getInt(0) > 0 else false
+                // Overwrite freed content rather than merely unlinking it. A DELETE removes a row
+                // from the b-tree; it does not promise to overwrite the bytes that row occupied, and
+                // SQLite's secure_delete defaults to off. For an ordinary row that is a performance
+                // choice; for a credential in a file the user is expected to export, "the row is
+                // gone from the table" is not the property that matters -- the bytes are.
+                //
+                // Measured rather than assumed: with the current schema the bytes do *not* survive a
+                // plain DELETE, because app_settings is small enough that removing a cell
+                // defragments the page and overwrites it. That is page layout being convenient, not
+                // a guarantee -- it depends on row sizes and how full the page is, neither of which
+                // this class controls or should have to reason about. The pragma makes it
+                // structural, and costs one statement on a file that is about to be handed away.
+                //
+                // Set before any DELETE, since it governs how the delete itself writes.
+                connection.prepare("PRAGMA secure_delete = ON").use { it.step() }
+
+                // One connection, every credential -- iterating the list rather than naming a key
+                // means a provider added to CREDENTIAL_SETTING_KEYS is scrubbed without this file
+                // being touched at all. That is the whole point of the list; see its KDoc.
+                for (key in CREDENTIAL_SETTING_KEYS) {
+                    val wasPresent =
+                        connection.prepare("SELECT COUNT(*) FROM app_settings WHERE `key` = ?").use { statement ->
+                            statement.bindText(1, key)
+                            if (statement.step()) statement.getInt(0) > 0 else false
+                        }
+                    connection.prepare("DELETE FROM app_settings WHERE `key` = ?").use { statement ->
+                        statement.bindText(1, key)
+                        statement.step()
                     }
-                connection.prepare("DELETE FROM app_settings WHERE `key` = ?").use { statement ->
-                    statement.bindText(1, KEY_GOOGLE_BOOKS_API_KEY)
-                    statement.step()
+                    // The setting's *name* is not sensitive and its presence is not either -- only
+                    // the value is, and that is never read here. ProviderApiKeys.kt's "never log the
+                    // emitted value" rule is what forbids widening this line, not the key name.
+                    val presence = if (wasPresent) "was present, removed" else "was absent"
+                    logger.info(TAG) { "backup credential scrub: $key row $presence from staged file" }
                 }
-                // Presence/absence only, never the key value itself -- ProviderApiKeys.kt's "never
-                // log the emitted value" rule applies here just as much as to every other consumer
-                // of this setting.
-                val presence = if (wasPresent) "was present, removed" else "was absent"
-                logger.info(TAG) { "backup credential scrub: google books api key row $presence from staged file" }
             }
         }
     }

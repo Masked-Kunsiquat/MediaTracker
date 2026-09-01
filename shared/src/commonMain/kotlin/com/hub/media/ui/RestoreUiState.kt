@@ -18,20 +18,22 @@ public sealed class RestoreUiState {
      * @property info What was found in the candidate file (its schema version, and whether that's
      *   older than this app's current version -- a legitimate case Room will migrate forward on
      *   next open).
-     * @property apiKeyWillBeCleared Whether the *current, live* Google Books API key is set. A
-     *   restore replaces the whole database file with the backup's contents, and backups have the
-     *   key row scrubbed out of them before they are ever written (see
+     * @property credentialsWillBeCleared Whether *any* provider credential is currently stored
+     *   (#75 -- it was the Google Books key alone until TMDB's was added, and is now read from
+     *   `CREDENTIAL_SETTING_KEYS` so a third provider is covered without touching this warning).
+     *   A restore replaces the whole database file with the backup's contents, and backups have
+     *   every credential row scrubbed out of them before they are ever written (see
      *   [com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase]'s KDoc), so
-     *   confirming this restore silently clears any key the user has entered. This is computed once,
+     *   confirming this restore silently clears whatever the user has entered. This is computed once,
      *   at staging time -- [RestoreViewModel.validateSelectedFile] reads it from the live database
      *   before anything destructive has happened. It cannot be computed later: once the confirmed
-     *   restore swaps the database file in, the live key is gone (either replaced by whatever the
-     *   backup had, which is never a key, or simply overwritten), so there is nothing left to check
-     *   by the time a post-restore screen could ask.
+     *   restore swaps the database file in, the live credentials are gone (either replaced by
+     *   whatever the backup had, which is never a credential, or simply overwritten), so there is
+     *   nothing left to check by the time a post-restore screen could ask.
      */
     public data class AwaitingConfirmation(
         val info: StagedRestoreInfo,
-        val apiKeyWillBeCleared: Boolean,
+        val credentialsWillBeCleared: Boolean,
     ) : RestoreUiState()
 
     /**

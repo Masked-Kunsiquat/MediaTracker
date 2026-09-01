@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  * [ExportViewModelTest]'s exact rationale and shape, so this class stays safe to run on the android
  * unit-test variant too.
  *
- * The focus here is [RestoreUiState.AwaitingConfirmation.apiKeyWillBeCleared]: whether staging a
+ * The focus here is [RestoreUiState.AwaitingConfirmation.credentialsWillBeCleared]: whether staging a
  * restore correctly reports the *current* Google Books API key's presence/absence, read while the
  * live settings are still intact (see that property's KDoc for why it can't be computed later).
  */
@@ -59,7 +59,7 @@ class RestoreViewModelTest {
             val state = viewModel.uiState.first { it is RestoreUiState.AwaitingConfirmation }
             val awaiting = assertIs<RestoreUiState.AwaitingConfirmation>(state)
             assertTrue(
-                awaiting.apiKeyWillBeCleared,
+                awaiting.credentialsWillBeCleared,
                 "a key is currently set, so restoring must warn it will be cleared",
             )
         }
@@ -78,7 +78,7 @@ class RestoreViewModelTest {
             val state = viewModel.uiState.first { it is RestoreUiState.AwaitingConfirmation }
             val awaiting = assertIs<RestoreUiState.AwaitingConfirmation>(state)
             assertFalse(
-                awaiting.apiKeyWillBeCleared,
+                awaiting.credentialsWillBeCleared,
                 "no key is currently set, so there is nothing to warn about losing",
             )
         }
@@ -92,7 +92,7 @@ class RestoreViewModelTest {
 
             viewModel.validateSelectedFile("/incoming/not-a-backup.sqlite")
 
-            // RestoreUiState.Error has no apiKeyWillBeCleared property at all -- the sealed class
+            // RestoreUiState.Error has no credentialsWillBeCleared property at all -- the sealed class
             // shape itself is what keeps the flag scoped to AwaitingConfirmation; this just confirms
             // a rejected file lands in that state rather than silently becoming AwaitingConfirmation.
             val state = viewModel.uiState.first { it is RestoreUiState.Error }

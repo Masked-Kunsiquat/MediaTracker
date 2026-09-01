@@ -1,9 +1,11 @@
 package com.github.maskedkunisquat.mediatracker.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -20,7 +22,9 @@ import com.github.maskedkunisquat.mediatracker.MainActivity
 import com.github.maskedkunisquat.mediatracker.MediaTrackerApplication
 import com.github.maskedkunisquat.mediatracker.R
 import com.hub.media.features.settings.data.clearGoogleBooksApiKey
+import com.hub.media.features.settings.data.clearTmdbCredential
 import com.hub.media.features.settings.data.setGoogleBooksApiKey
+import com.hub.media.features.settings.data.setTmdbCredential
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -92,6 +96,12 @@ class SettingsNavigationTest {
     private fun removeStoredApiKey() =
         runBlocking {
             application.appContainer.settingsRepository.clearGoogleBooksApiKey()
+            // The TMDB credential is cleared by the same hook and for a sharper version of the same
+            // reason: a leftover Google Books key means the next lookup uses a stale credential,
+            // while a leftover TMDB one means it too -- and unlike the books key, TMDB is the only
+            // way films and shows are looked up at all, so a wrong value left here is not a
+            // degraded path but the whole feature quietly failing on someone's real install.
+            application.appContainer.settingsRepository.clearTmdbCredential()
         }
 
     @Before
@@ -99,6 +109,25 @@ class SettingsNavigationTest {
 
     @After
     fun clearApiKeyAfter() = removeStoredApiKey()
+
+    /**
+     * Scrolls the settings list until a node with [text] exists, then returns.
+     *
+     * `performScrollTo()` is not enough and was not enough here: it requires the node to already be
+     * in the composition, and on a `LazyColumn` a section far enough down simply is not. Adding the
+     * "Film & TV lookups" section pushed Diagnostics past that line, and both navigation tests began
+     * failing with "Action performScrollTo() failed" -- verified as a regression by running them on
+     * a clean `main`, where they pass.
+     *
+     * This is the same fix, and the same reasoning, as [scrollToApiKeyRow]: scroll the *list* to a
+     * matching node, which composes it on the way. Any test that reaches a control below the fold
+     * needs this, and every new section makes the fold arrive sooner.
+     */
+    private fun scrollListTo(text: String) {
+        composeRule
+            .onNodeWithTag(TestTags.Settings.LIST)
+            .performScrollToNode(hasText(text))
+    }
 
     /**
      * Brings the Google Books API key section into view.
@@ -116,6 +145,13 @@ class SettingsNavigationTest {
         composeRule
             .onNodeWithTag(TestTags.Settings.LIST)
             .performScrollToNode(hasTestTag(TestTags.Settings.API_KEY_FIELD))
+    }
+
+    /** The TMDB row, in its own section below the books one. See [scrollToApiKeyRow] for why. */
+    private fun scrollToTmdbRow() {
+        composeRule
+            .onNodeWithTag(TestTags.Settings.LIST)
+            .performScrollToNode(hasTestTag(TestTags.Settings.TMDB_KEY_FIELD))
     }
 
     /**
@@ -159,7 +195,8 @@ class SettingsNavigationTest {
     fun viewLogButton_actuallyNavigatesToTheLogViewer() {
         openSettings()
 
-        composeRule.onNodeWithText("View log").performScrollTo().performClick()
+        scrollListTo("View log")
+        composeRule.onNodeWithText("View log").performClick()
         composeRule.waitForIdle()
 
         // The log viewer's own title, not the Settings row's label -- asserting on the row would
@@ -171,7 +208,8 @@ class SettingsNavigationTest {
     fun viewChangelogButton_actuallyNavigatesToTheChangelogViewer() {
         openSettings()
 
-        composeRule.onNodeWithText("View changelog").performScrollTo().performClick()
+        scrollListTo("View changelog")
+        composeRule.onNodeWithText("View changelog").performClick()
         composeRule.waitForIdle()
 
         // "What's new" is both the Settings row label and the destination's title, so this asserts
@@ -265,8 +303,103 @@ class SettingsNavigationTest {
         awaitStatus(string(R.string.settings_google_books_key_not_saved))
     }
 
+    /**
+     * Saving a TMDB credential is wired to a real callback.
+     *
+     * The exact parallel of [googleBooksApiKeySave_isWiredToARealCallback], and it exists for the
+     * same reason rather than for symmetry: the TMDB row was added by threading four new lambdas
+     * through `SettingsScreenRoute` and five previews, which is precisely the bulk-edit shape that
+     * produced the failure this file was created for. A `{}` stub in the route would leave every
+     * assertion about the screen passing.
+     */
+    @Test
+    fun tmdbCredentialSave_isWiredToARealCallback() {
+        openSettings()
+        scrollToTmdbRow()
+
+        composeRule
+            .onNodeWithText(string(R.string.settings_tmdb_key_not_saved), substring = true)
+            .assertIsDisplayed()
+
+        composeRule
+            .onNodeWithTag(TestTags.Settings.TMDB_KEY_FIELD)
+            .performTextInput(TEST_TMDB_CREDENTIAL)
+
+        composeRule
+            .onNodeWithText(string(R.string.settings_tmdb_key_save_button))
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+
+        awaitStatus(string(R.string.settings_tmdb_key_saved))
+    }
+
+    /**
+     * Clearing a stored TMDB credential is wired to a real callback.
+     *
+     * Arranged through the repository rather than by saving first, for the reasons
+     * [googleBooksApiKeyClear_isWiredToARealCallback] sets out -- the save's snackbar overlaps the
+     * row and does not retire under this harness.
+     */
+    @Test
+    fun tmdbCredentialClear_isWiredToARealCallback() {
+        runBlocking { application.appContainer.settingsRepository.setTmdbCredential(TEST_TMDB_CREDENTIAL) }
+
+        openSettings()
+        scrollToTmdbRow()
+
+        awaitStatus(string(R.string.settings_tmdb_key_saved))
+
+        composeRule
+            .onNodeWithText(string(R.string.settings_tmdb_key_clear_button))
+            .performScrollTo()
+            .performClick()
+
+        awaitStatus(string(R.string.settings_tmdb_key_not_saved))
+    }
+
+    /**
+     * The Test button is composed when a credential is stored, and absent when one is not.
+     *
+     * ### This is a regression guard for a bug that shipped past every other lane
+     * The button was originally added to a `Row` alongside Save and Clear. On a 1080px screen at
+     * default font scale the three labels overflow -- Clear already ended at x=915 -- so the third
+     * was clipped and **never rendered at all**. Every JVM test passed, and so did the golden,
+     * because the golden asserts the *field's* tag rather than the buttons. Only driving the real
+     * screen found it. A `FlowRow` fixed it, and this asserts the outcome so the next person to add
+     * a fourth control is told rather than left to discover it.
+     *
+     * Deliberately does **not** press it: doing so issues a real request to TMDB, which would make
+     * this test depend on the network and on whatever credential the device happens to hold. What
+     * the button *does* is covered by `TmdbClientTest`, without a device and without a network.
+     */
+    @Test
+    fun tmdbTestButton_appearsOnlyOnceACredentialIsStored() {
+        openSettings()
+        scrollToTmdbRow()
+
+        composeRule
+            .onAllNodesWithText(string(R.string.settings_tmdb_key_test_button))
+            .assertCountEquals(0)
+
+        runBlocking { application.appContainer.settingsRepository.setTmdbCredential(TEST_TMDB_CREDENTIAL) }
+        awaitStatus(string(R.string.settings_tmdb_key_saved))
+
+        composeRule
+            .onNodeWithText(string(R.string.settings_tmdb_key_test_button))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
     private companion object {
         const val TEST_KEY = "test-key-not-a-real-one"
+
+        /**
+         * Not JWT-shaped, so `TmdbCredential.of` classifies it as an api_key -- which is irrelevant
+         * to these tests and is the point: nothing here reaches the network, so the credential only
+         * has to be storable. See `TmdbCredentialTest` for why fixtures are unmistakably fake.
+         */
+        const val TEST_TMDB_CREDENTIAL = "test-tmdb-credential-not-a-real-one"
 
         /** 10s total, which is an order of magnitude more than the observed sub-second settle. */
         const val POLL_ATTEMPTS = 50
