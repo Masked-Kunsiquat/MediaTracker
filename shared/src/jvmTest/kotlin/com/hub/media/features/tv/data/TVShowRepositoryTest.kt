@@ -1,6 +1,7 @@
 package com.hub.media.features.tv.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -372,6 +373,91 @@ class TVShowRepositoryTest {
                 "the rejection must name the offending season rather than surface a raw UNIQUE-constraint message",
             )
 
+            assertNothingPersisted()
+        }
+
+    // ---- addShow: show-level provider details ---------------------------------------------------
+
+    @Test
+    fun addShow_withProviderDetails_storesThemOnTheDetailsRow() =
+        runTest {
+            val first = Instant.parse("2019-05-06T00:00:00Z")
+            val last = Instant.parse("2019-06-03T00:00:00Z")
+            val result =
+                repo.addShow(
+                    title = "Chernobyl",
+                    airingStatus = AiringStatus.ENDED,
+                    overview = "A dramatisation of the 1986 disaster.",
+                    firstAirDate = first,
+                    lastAirDate = last,
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val details = db.tvDetailsDao().getByMediaId(result.data)
+            assertEquals(AiringStatus.ENDED, details?.airingStatus)
+            assertEquals("A dramatisation of the 1986 disaster.", details?.overview)
+            assertEquals(
+                first.toEpochMilliseconds(),
+                details?.firstAirDate,
+                "the column stores epoch millis; callers hand over an Instant and never see that",
+            )
+            assertEquals(last.toEpochMilliseconds(), details?.lastAirDate)
+        }
+
+    @Test
+    fun addShow_withoutProviderDetails_leavesThemNull() =
+        runTest {
+            // The manual-entry default. A hand-entered show knows none of these, and null is what
+            // "unknown" means on every one of the four columns.
+            val result = repo.addShow(title = "Typed In By Hand")
+            assertIs<Resource.Success<String>>(result)
+
+            val details = db.tvDetailsDao().getByMediaId(result.data)
+            assertNull(details?.airingStatus)
+            assertNull(details?.overview)
+            assertNull(details?.firstAirDate)
+            assertNull(details?.lastAirDate)
+        }
+
+    @Test
+    fun addShow_blankOverview_storesNullRatherThanEmpty() =
+        runTest {
+            val result = repo.addShow(title = "Blank Synopsis", overview = "   ")
+            assertIs<Resource.Success<String>>(result)
+
+            assertNull(
+                db.tvDetailsDao().getByMediaId(result.data)?.overview,
+                "a provider answering with an empty synopsis does not know one, and \"\" would " +
+                    "defeat a backfill that fills only nulls",
+            )
+        }
+
+    @Test
+    fun addShow_withCommunityRating_storesItOnTheMediaItem() =
+        runTest {
+            // media_items rather than tv_details, because every media type has one -- see
+            // MediaItemEntity.communityRating. Per-episode scores live on the episode row instead.
+            val result = repo.addShow(title = "Chernobyl", communityRating = 8.6)
+            assertIs<Resource.Success<String>>(result)
+
+            assertEquals(8.6, db.mediaItemDao().getById(result.data)?.communityRating)
+        }
+
+    @Test
+    fun addShow_communityRatingOutOfScale_rejectedAndPersistsNothing() =
+        runTest {
+            // The column's contract is a 0-10 scale; a provider scoring out of 5 must be converted
+            // by its own mapping layer rather than stored raw.
+            val result = repo.addShow(title = "Show", communityRating = 10.5)
+            assertIs<Resource.Error>(result)
+            assertNothingPersisted()
+        }
+
+    @Test
+    fun addShow_communityRatingNaN_rejectedAndPersistsNothing() =
+        runTest {
+            val result = repo.addShow(title = "Show", communityRating = Double.NaN)
+            assertIs<Resource.Error>(result)
             assertNothingPersisted()
         }
 

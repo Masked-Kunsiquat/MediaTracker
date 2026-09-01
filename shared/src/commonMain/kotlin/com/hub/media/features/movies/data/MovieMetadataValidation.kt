@@ -31,6 +31,15 @@ public object MovieMetadataValidation {
     public fun validatePurchasePrice(purchasePrice: Double?): String? =
         MediaMetadataValidation.validatePurchasePrice(purchasePrice)
 
+    /**
+     * A known community rating must be finite and within `0.0..10.0`; `null` ("unknown") always
+     * passes. Media-agnostic -- see this object's KDoc, and
+     * [MediaMetadataValidation.validateCommunityRating] for why one shared column gets one shared
+     * rule.
+     */
+    public fun validateCommunityRating(communityRating: Double?): String? =
+        MediaMetadataValidation.validateCommunityRating(communityRating)
+
     /** A known runtime must be `> 0`; `null` ("unknown") always passes, and `0` is never valid. */
     public fun validateRuntimeMinutes(runtimeMinutes: Int?): String? =
         if (runtimeMinutes != null && runtimeMinutes <= 0) "Runtime must be a positive number" else null

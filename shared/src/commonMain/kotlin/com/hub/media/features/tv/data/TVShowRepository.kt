@@ -1,6 +1,7 @@
 package com.hub.media.features.tv.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.IdentifierProvider
@@ -184,6 +185,21 @@ public class TVShowRepository(
      * plus the show's TMDB id in [externalIdentifiers].
      *
      * @param totalSeasons Advisory season count, or null for "unknown" -- see [TVDetailsEntity.totalSeasons].
+     * @param airingStatus Whether the show itself is still running, or null for "unknown" (every
+     *   hand-entered show). **Not** the user's progress through it -- see [TVDetailsEntity.airingStatus]
+     *   on why the two are separate columns with deliberately different names.
+     * @param overview The show's synopsis from a provider, or null. Blank is stored as null, for the
+     *   reason [episodeRowsFor] gives about empty strings.
+     * @param firstAirDate When the show first aired, or null. Taken as an [Instant] and converted to
+     *   the epoch milliseconds [TVDetailsEntity] stores, so no caller has to know that this column
+     *   and [EpisodeEntity.airDate] disagree about representation -- a schema inconsistency frozen at
+     *   v6 and not worth a migration to correct.
+     * @param lastAirDate When the show most recently aired, or null. Same conversion as
+     *   [firstAirDate].
+     * @param communityRating The provider's aggregate score for the show, already normalised to
+     *   0-10, or null. **Not** the user's own rating -- see
+     *   [com.hub.media.core.database.entities.MediaItemEntity.communityRating], which keeps that
+     *   for ROADMAP Task 10. Per-episode scores go on [NewEpisode.communityRating] instead.
      * @param seasons One [NewSeason] per season being populated now, in whichever form the caller
      *   has: [SeasonQuickFill] generates numbered rows with no metadata (manual entry), while
      *   [SeasonEpisodes] carries the episodes themselves (add-by-search). The two may be mixed in one
@@ -213,11 +229,17 @@ public class TVShowRepository(
         coverImageHash: String? = null,
         seasons: List<NewSeason> = emptyList(),
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
+        airingStatus: AiringStatus? = null,
+        overview: String? = null,
+        firstAirDate: Instant? = null,
+        lastAirDate: Instant? = null,
+        communityRating: Double? = null,
     ): Resource<String> {
         TVMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
         TVMetadataValidation.validatePurchasePrice(purchasePrice)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateTotalSeasons(totalSeasons)?.let { return Resource.Error(it) }
+        TVMetadataValidation.validateCommunityRating(communityRating)?.let { return Resource.Error(it) }
         for (season in seasons) {
             TVMetadataValidation.validateSeasonNumber(season.seasonNumber)?.let { return Resource.Error(it) }
             validateSeasonContents(season)?.let { return Resource.Error(it) }
@@ -246,12 +268,17 @@ public class TVShowRepository(
                         purchasePrice = purchasePrice,
                         createdAt = now,
                         coverImageHash = coverImageHash,
+                        communityRating = communityRating,
                     ),
                 details =
                     TVDetailsEntity(
                         mediaId = mediaId,
                         totalSeasons = totalSeasons,
                         status = WatchStatus.WATCHLIST,
+                        airingStatus = airingStatus,
+                        overview = overview?.takeIf { it.isNotBlank() },
+                        firstAirDate = firstAirDate?.toEpochMilliseconds(),
+                        lastAirDate = lastAirDate?.toEpochMilliseconds(),
                     ),
                 episodes = episodes,
                 externalIdentifiers =

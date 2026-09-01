@@ -59,6 +59,33 @@ public object MediaMetadataValidation {
         }
 
     /**
+     * A known community rating must be finite and within `0.0..10.0`; `null` ("unknown") always
+     * passes.
+     *
+     * Media-agnostic for the reason
+     * [com.hub.media.core.database.entities.MediaItemEntity.communityRating] gives for living on
+     * `media_items` at all: *"every media type has one -- TMDB rates films and shows, Open Library
+     * and Google Books rate books."* A rule that applies to one column on one shared table has no
+     * business existing in three copies.
+     *
+     * The bound is that column's stated contract: everything stored has already been converted to a
+     * 0-10 scale, because providers disagree (TMDB out of 10, Goodreads out of 5) and "a bare number
+     * whose scale is unrecorded cannot be compared with anything." Conversion is each provider's
+     * mapping layer's job; this only refuses what arrives unconverted.
+     *
+     * Non-finite is rejected for the reason [validatePurchasePrice] spells out at length: `NaN`
+     * compares `false` against every bound, so a range check alone would admit it and poison any
+     * later average.
+     */
+    public fun validateCommunityRating(communityRating: Double?): String? =
+        when {
+            communityRating == null -> null
+            !communityRating.isFinite() -> "Community rating must be a finite number"
+            communityRating !in 0.0..10.0 -> "Community rating must be between 0 and 10"
+            else -> null
+        }
+
+    /**
      * A known [releaseYear] must fall within [minYear]..[maxYear]; `null` ("unknown") always passes.
      *
      * The bounds are parameters because they are the one part of this rule that is genuinely

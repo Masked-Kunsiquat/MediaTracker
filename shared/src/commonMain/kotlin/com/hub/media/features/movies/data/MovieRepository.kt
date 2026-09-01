@@ -74,6 +74,10 @@ public class MovieRepository(
      * film's TMDB id in [externalIdentifiers].
      *
      * @param runtimeMinutes Length in minutes, or null for "unknown". Never 0 as a stand-in.
+     * @param communityRating The provider's aggregate score for the film, already normalised to
+     *   0-10, or null. **Not** the user's own rating -- see
+     *   [com.hub.media.core.database.entities.MediaItemEntity.communityRating], which keeps that
+     *   for ROADMAP Task 10.
      * @param externalIdentifiers Optional (provider, externalId) mappings recording which catalog
      *   record this row came from — normally a single [IdentifierProvider.TMDB] pair carrying the
      *   film id as its decimal string. Defaults to empty, which is a hand-entered film: correct, and
@@ -95,11 +99,13 @@ public class MovieRepository(
         status: WatchStatus = WatchStatus.WATCHLIST,
         coverImageHash: String? = null,
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
+        communityRating: Double? = null,
     ): Resource<String> {
         MovieMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validatePurchasePrice(purchasePrice)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateRuntimeMinutes(runtimeMinutes)?.let { return Resource.Error(it) }
+        MovieMetadataValidation.validateCommunityRating(communityRating)?.let { return Resource.Error(it) }
 
         return try {
             val mediaId = newId()
@@ -114,6 +120,7 @@ public class MovieRepository(
                         purchasePrice = purchasePrice,
                         createdAt = now,
                         coverImageHash = coverImageHash,
+                        communityRating = communityRating,
                     ),
                 details =
                     MovieDetailsEntity(
