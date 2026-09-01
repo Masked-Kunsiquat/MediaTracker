@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.WatchStatus
@@ -26,17 +27,36 @@ interface MovieWriteDao {
     suspend fun insertMovieDetails(details: MovieDetailsEntity)
 
     /**
-     * Inserts a movie's [MediaItemEntity] and [MovieDetailsEntity] in one transaction. If either
-     * fails, neither row remains — a movie that exists in the library but has no details row (or
-     * the reverse) is not a state any caller should have to handle.
+     * Inserts one provider mapping for a movie, mirroring [TVWriteDao.insertExternalIdentifier] and
+     * [BookWriteDao.insertExternalIdentifier] — ABORT for the same reason: a duplicate
+     * `(mediaId, provider)` inside a single add is a caller bug, and rolling the whole insert back
+     * is the right answer to it.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertExternalIdentifier(identifier: ExternalIdentifierEntity)
+
+    /**
+     * Inserts a movie's [MediaItemEntity], [MovieDetailsEntity] and any [ExternalIdentifierEntity]
+     * mappings in one transaction. If any part fails, none of it remains — a movie that exists in
+     * the library but has no details row (or the reverse) is not a state any caller should have to
+     * handle.
+     *
+     * [externalIdentifiers] joins the transaction rather than being written afterwards, for the
+     * reason [TVWriteDao.insertShowAtomically] gives at length: the mapping is what tells a
+     * looked-up row apart from a hand-typed one, and a process death between two separate writes
+     * produces exactly the untraceable row it exists to prevent. A film's stakes are lower than a
+     * show's — nothing backfills episode titles onto it — but re-fetching its poster or runtime
+     * still needs to know which TMDB record it came from.
      */
     @Transaction
     suspend fun insertMovieAtomically(
         item: MediaItemEntity,
         details: MovieDetailsEntity,
+        externalIdentifiers: List<ExternalIdentifierEntity>,
     ) {
         insertMediaItem(item)
         insertMovieDetails(details)
+        externalIdentifiers.forEach { insertExternalIdentifier(it) }
     }
 
     /**

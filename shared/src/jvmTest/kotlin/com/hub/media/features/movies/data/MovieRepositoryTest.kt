@@ -2,6 +2,7 @@ package com.hub.media.features.movies.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
@@ -230,6 +231,109 @@ class MovieRepositoryTest {
             val allMediaItems = db.mediaItemDao().observeAll().first()
             assertTrue(allMediaItems.isEmpty())
             assertTrue(db.movieDetailsDao().getAll().isEmpty())
+        }
+
+    // ---- addMovie: external identifiers ------------------------------------------------------
+
+    @Test
+    fun addMovie_withTmdbIdentifier_recordsWhichProviderRecordTheRowCameFrom() =
+        runTest {
+            val result =
+                repo.addMovie(
+                    title = "The Matrix",
+                    releaseYear = 1999,
+                    runtimeMinutes = 136,
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "603"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val identifier = db.externalIdentifierDao().getByKey(result.data, IdentifierProvider.TMDB)
+            assertEquals(
+                "603",
+                identifier?.externalId,
+                "without this row nothing can tell an added-by-search film from a hand-typed one, " +
+                    "and re-fetching its poster or runtime has no TMDB record to ask about",
+            )
+        }
+
+    @Test
+    fun addMovie_withNoIdentifiers_writesNoneAndStaysAHandEnteredMovie() =
+        runTest {
+            // The default, and the pre-existing manual-entry behaviour: absence of a mapping is
+            // exactly what marks a film as one nobody looked up.
+            val result = repo.addMovie(title = "Typed In By Hand")
+            assertIs<Resource.Success<String>>(result)
+
+            assertTrue(
+                db
+                    .externalIdentifierDao()
+                    .observeForMedia(result.data)
+                    .first()
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun addMovie_withTwoProviders_writesBothMappings() =
+        runTest {
+            val result =
+                repo.addMovie(
+                    title = "Two Catalogues",
+                    externalIdentifiers =
+                        listOf(
+                            IdentifierProvider.TMDB to "603",
+                            IdentifierProvider.TVDB to "169",
+                        ),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val byProvider =
+                db
+                    .externalIdentifierDao()
+                    .observeForMedia(result.data)
+                    .first()
+                    .associate { it.provider to it.externalId }
+            assertEquals(
+                mapOf(IdentifierProvider.TMDB to "603", IdentifierProvider.TVDB to "169"),
+                byProvider,
+            )
+        }
+
+    @Test
+    fun addMovie_sameProviderListedTwice_rejectedAndPersistsNothing() =
+        runTest {
+            // The composite (mediaId, provider) primary key rejects this under ABORT, which is only
+            // useful if it takes the rest of the film down with it -- a film left in the library
+            // holding one of the two ids, or none, would be the partial write the transaction exists
+            // to prevent. Not pre-validated, because a repeated provider can only come from a caller
+            // building the list wrongly, never from something a user typed.
+            val result =
+                repo.addMovie(
+                    title = "Movie",
+                    externalIdentifiers =
+                        listOf(
+                            IdentifierProvider.TMDB to "603",
+                            IdentifierProvider.TMDB to "604",
+                        ),
+                )
+            assertIs<Resource.Error>(result)
+
+            assertTrue(
+                db
+                    .mediaItemDao()
+                    .observeAll()
+                    .first()
+                    .isEmpty(),
+            )
+            assertTrue(db.movieDetailsDao().getAll().isEmpty())
+            assertTrue(
+                db
+                    .externalIdentifierDao()
+                    .observeAll()
+                    .first()
+                    .isEmpty(),
+                "a rejected addMovie must leave no external_identifiers row",
+            )
         }
 
     // ---- addMovie: valid boundary values are ACCEPTED (positive controls for the rejects above) --
@@ -578,6 +682,7 @@ class MovieRepositoryTest {
                         createdAt = Clock.System.now(),
                     ),
                 details = MovieDetailsEntity(mediaId = mediaId, status = WatchStatus.WATCHLIST),
+                externalIdentifiers = emptyList(),
             )
 
             val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
