@@ -19,6 +19,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowSearchScreenRoute
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
 
@@ -135,12 +136,26 @@ fun AppNavigation(
         }
 
         composable(Route.AddTVShow.route) {
+            TVShowSearchScreenRoute(
+                appContainer = appContainer,
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToManualEntry = { navController.navigate(Route.AddTVShowManual.route) },
+                // Straight to the new show, replacing the *whole* add flow in the back stack so Back
+                // from the detail screen returns to the library rather than to a spent search.
+                onShowAdded = { showId ->
+                    navController.navigate(Route.TVShowDetail.createRoute(showId)) {
+                        popUpTo(Route.AddTVShow.route) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(Route.AddTVShowManual.route) {
             AddTVShowScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = { navController.navigateUp() },
-                // Straight to the new show, replacing the form in the back stack so Back from the
-                // detail screen returns to the library rather than to a spent form -- the same
-                // shape the add-movie route uses.
+                // popUpTo AddTVShow, not AddTVShowManual: the search screen is still underneath, and
+                // leaving it there would put a spent search between the new show and the library.
                 onShowAdded = { showId ->
                     navController.navigate(Route.TVShowDetail.createRoute(showId)) {
                         popUpTo(Route.AddTVShow.route) { inclusive = true }

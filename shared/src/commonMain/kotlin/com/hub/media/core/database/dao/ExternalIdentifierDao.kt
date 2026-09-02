@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaType
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -38,6 +39,30 @@ interface ExternalIdentifierDao {
      */
     @Query("SELECT mediaId FROM external_identifiers WHERE provider = :provider")
     suspend fun getMediaIdsForProvider(provider: IdentifierProvider): List<String>
+
+    /**
+     * The media item of [type] already mapped to [externalId] by [provider], or `null`.
+     *
+     * The reverse of [getByKey], for asking "do I already hold this catalogue record?" before
+     * creating a second row for it.
+     *
+     * **The [type] predicate is load-bearing, not defensive.** TMDB numbers films and shows in
+     * separate sequences, so the same integer is a valid id for one of each -- `/tv/1396` and
+     * `/movie/1396` are unrelated records. Without the join, adding a show would report itself
+     * already present because a film happened to share its number, and the user would be refused a
+     * show they do not have.
+     */
+    @Query(
+        "SELECT ei.mediaId FROM external_identifiers ei " +
+            "JOIN media_items mi ON mi.id = ei.mediaId " +
+            "WHERE ei.provider = :provider AND ei.externalId = :externalId AND mi.type = :type " +
+            "LIMIT 1",
+    )
+    suspend fun findMediaIdByExternalId(
+        provider: IdentifierProvider,
+        externalId: String,
+        type: MediaType,
+    ): String?
 
     @Query("SELECT * FROM external_identifiers WHERE mediaId = :mediaId")
     fun observeForMedia(mediaId: String): Flow<List<ExternalIdentifierEntity>>

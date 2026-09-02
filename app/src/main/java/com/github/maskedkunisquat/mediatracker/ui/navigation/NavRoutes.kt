@@ -32,8 +32,20 @@ sealed interface Route {
     }
 
     /** Manual TV show entry with season quick-fill (ROADMAP Task 13 Phase C). No arguments. */
+
+    /**
+     * Adding a show by TMDB search. This is where "Add TV show" now leads (#75): the app is
+     * offline-first and TMDB needs a user-supplied credential, so search is the path that can be
+     * unavailable while manual entry never is -- which is why manual entry is an action *on* this
+     * screen rather than a sibling menu item the user would have to go back for.
+     */
     data object AddTVShow : Route {
         override val route: String = "add_tv_show"
+    }
+
+    /** The hand-entry form, reached from [AddTVShow]'s "enter manually instead". */
+    data object AddTVShowManual : Route {
+        override val route: String = "add_tv_show_manual"
     }
 
     /**

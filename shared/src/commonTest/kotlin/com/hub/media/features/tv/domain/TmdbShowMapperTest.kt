@@ -360,6 +360,31 @@ class TmdbShowMapperTest {
     }
 
     @Test
+    fun aReleaseYearOutsideTheAcceptedWindowIsDroppedRatherThanFailingTheShow() {
+        // "0001-01-01" yields year 1, which validateReleaseYear rejects -- and one rejected field
+        // fails the entire addShow. A year nobody typed must not be able to cost the whole show.
+        val mapping = TmdbShowWithSeasons(show(firstAirDate = "0001-01-01"), emptyMap()).toShowMapping()
+
+        assertTrue(mapping != null, "a nonsense date must not lose the show")
+        assertNull(mapping.releaseYear)
+        assertEquals(
+            Instant.parse("0001-01-01T00:00:00Z"),
+            mapping.firstAirDate,
+            "the date column has no such bound, so the value it can hold is still kept",
+        )
+    }
+
+    @Test
+    fun aReleaseYearAtEitherBoundaryIsKept() {
+        // Positive controls, so the window cannot silently narrow onto real shows.
+        fun yearFor(date: String) =
+            TmdbShowWithSeasons(show(firstAirDate = date), emptyMap()).toShowMapping()!!.releaseYear
+
+        assertEquals(TVMetadataValidation.MIN_RELEASE_YEAR, yearFor("1928-07-02"))
+        assertEquals(TVMetadataValidation.MAX_RELEASE_YEAR, yearFor("2100-01-01"))
+    }
+
+    @Test
     fun datesAreAnchoredToUtcSoTwoDevicesAgree() {
         // The device's zone would make the same response produce different stored values on two
         // phones, and a CSV round-trip between them lossy.
