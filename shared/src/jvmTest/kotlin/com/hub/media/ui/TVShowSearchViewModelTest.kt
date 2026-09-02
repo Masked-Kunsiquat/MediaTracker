@@ -264,7 +264,15 @@ class TVShowSearchViewModelTest {
         }
 
     private companion object {
-        /** Shape only -- `TmdbCredential.of` classifies on the `eyJ` prefix; nothing here is real. */
+        /**
+         * Shape only. `TmdbCredential.of` classifies on the `eyJ` prefix alone, so this is enough to
+         * exercise the read-access-token path without resembling a credential.
+         *
+         * Spelled the way [com.hub.media.core.network.TmdbCredentialTest] spells its own, and for a
+         * reason worth keeping: a fixture built from real base64 segments decodes to a valid JWT
+         * header, which the secret-scan gate flags -- correctly, because a scanner that can tell a
+         * test's fake credential from a real one could tell a real one from a test's.
+         */
         const val TOKEN = "eyJ-fake-tmdb-read-access-token-for-tests"
 
         const val EMPTY_SEARCH = """{"page":1,"results":[],"total_pages":0,"total_results":0}"""

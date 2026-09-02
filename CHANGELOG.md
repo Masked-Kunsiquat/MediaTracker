@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A TV show can be added by searching for it.** Adding a show meant typing its title, its year, and then one row per season saying how many episodes it had — for a show you had not seen yet, from memory, and often wrong. Now "Add TV show" opens a search box: type a name, tap the show, and it arrives with its seasons, its episode numbers and its real episode titles already in place, none of them ticked.
+
+  Everything the catalogue knows comes with it — when the show first and last aired, its synopsis, how other people rated it, and whether it is **still running**, which the library has always been able to show and has never until now been told. A show you have finished that is still airing reads as in progress rather than finished, because more episodes are coming.
+
+  **Typing by hand did not go away and is one tap from the search box.** That is deliberate rather than tidy: TMDB needs a key you supply, so search is the half that can be unavailable, and the way out has to be visible at the moment it fails rather than back a screen. If no key is saved, the screen says so, names where to fix it, and still lets you enter the show yourself.
+
+  Searching happens when you ask for it, not while you type. Every keystroke would otherwise be a request, and the one you actually meant would be waiting behind the ones you did not.
+
+  A show found but not yet rated is recorded as **unrated**, not as scored zero. The catalogue reports both the same way, and the difference matters the moment anything averages them.
+
 ### Internal
 
 - **What TMDB says is now translated into what the app stores** (#75). The client could fetch a show and the add path could store one, with nothing in between to turn the first into the second. This is that piece — and it is where every judgement about what a catalogue's answer actually *means* now lives, in one file, rather than being scattered across whatever screen happened to need it.
