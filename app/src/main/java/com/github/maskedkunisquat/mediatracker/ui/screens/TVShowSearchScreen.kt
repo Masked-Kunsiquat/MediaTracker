@@ -52,9 +52,9 @@ import com.github.maskedkunisquat.mediatracker.ui.TVShowSearchViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.ui.AppContainer
-import com.hub.media.ui.ShowSearchResult
 import com.hub.media.ui.TVShowSearchUiState
 import com.hub.media.ui.TVShowSearchViewModel
+import com.hub.media.ui.TmdbSearchResult
 
 /**
  * Route wrapper for [TVShowSearchScreen] (ROADMAP Task 13 Phase D).
@@ -276,7 +276,7 @@ fun TVShowSearchScreen(
 
 @Composable
 private fun SearchResultRow(
-    result: ShowSearchResult,
+    result: TmdbSearchResult,
     isAdding: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,

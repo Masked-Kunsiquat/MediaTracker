@@ -66,6 +66,18 @@ public class MovieRepository(
         }
 
     /**
+     * The id of the film already recorded as coming from [externalId] at [provider], or `null`.
+     *
+     * Backs the add-by-search duplicate check, and is scoped to `MOVIE` rows by
+     * [com.hub.media.core.database.dao.ExternalIdentifierDao.findMediaIdByExternalId] -- see that
+     * query on why a show sharing the number must not answer here.
+     */
+    public suspend fun findMovieIdByExternalId(
+        provider: IdentifierProvider,
+        externalId: String,
+    ): String? = db.externalIdentifierDao().findMediaIdByExternalId(provider, externalId, MediaType.MOVIE)
+
+    /**
      * Adds a movie, its details, and any provider mappings in one transaction.
      *
      * Values arrive fully formed from whoever is calling — this validates and writes them, it does

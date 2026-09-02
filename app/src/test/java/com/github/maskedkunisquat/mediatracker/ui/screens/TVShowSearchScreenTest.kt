@@ -11,8 +11,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.hub.media.ui.ShowSearchResult
 import com.hub.media.ui.TVShowSearchUiState
+import com.hub.media.ui.TmdbSearchResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -200,7 +200,7 @@ class TVShowSearchScreenTest {
         setContent(
             TVShowSearchUiState(
                 hasSearched = true,
-                results = listOf(ShowSearchResult(tmdbId = 1, title = "Undated Show")),
+                results = listOf(TmdbSearchResult(tmdbId = 1, title = "Undated Show")),
             ),
         )
 
@@ -249,8 +249,8 @@ class TVShowSearchScreenTest {
     private companion object {
         val RESULTS =
             listOf(
-                ShowSearchResult(tmdbId = 87108, title = "Chernobyl", year = "2019"),
-                ShowSearchResult(tmdbId = 1396, title = "Breaking Bad", year = "2008"),
+                TmdbSearchResult(tmdbId = 87108, title = "Chernobyl", year = "2019"),
+                TmdbSearchResult(tmdbId = 1396, title = "Breaking Bad", year = "2008"),
             )
     }
 }
