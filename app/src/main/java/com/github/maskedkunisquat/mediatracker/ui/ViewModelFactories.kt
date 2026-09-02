@@ -17,6 +17,7 @@ import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.LogViewerViewModel
 import com.hub.media.ui.MovieDetailViewModel
+import com.hub.media.ui.MovieSearchViewModel
 import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
@@ -312,6 +313,22 @@ class AddTVShowViewModelFactory(
 ) : AppViewModelFactory<AddTVShowViewModel>(
         AddTVShowViewModel::class.java,
         { AddTVShowViewModel(tvShowRepository = appContainer.tvShowRepository) },
+    )
+
+/**
+ * Factory for [MovieSearchViewModel] (ROADMAP Task 13 Phase D) -- the film counterpart of
+ * [TVShowSearchViewModelFactory], and needing the same two dependencies for the same reasons.
+ */
+class MovieSearchViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<MovieSearchViewModel>(
+        MovieSearchViewModel::class.java,
+        {
+            MovieSearchViewModel(
+                tmdbClient = appContainer.tmdbClient,
+                movieRepository = appContainer.movieRepository,
+            )
+        },
     )
 
 /**

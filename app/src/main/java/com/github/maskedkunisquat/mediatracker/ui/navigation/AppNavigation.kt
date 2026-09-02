@@ -16,6 +16,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.MovieSearchScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreenRoute
@@ -83,11 +84,26 @@ fun AppNavigation(
         }
 
         composable(Route.AddMovie.route) {
+            MovieSearchScreenRoute(
+                appContainer = appContainer,
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToManualEntry = { navController.navigate(Route.AddMovieManual.route) },
+                // Replaces the whole add flow in the back stack, so Back from the detail screen
+                // returns to the library rather than to a spent search.
+                onMovieAdded = { movieId ->
+                    navController.navigate(Route.MovieDetail.createRoute(movieId)) {
+                        popUpTo(Route.AddMovie.route) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(Route.AddMovieManual.route) {
             AddMovieScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = { navController.navigateUp() },
-                // Straight to the new movie, replacing the form in the back stack so Back from the
-                // detail screen returns to the library rather than to a spent form.
+                // popUpTo AddMovie, not AddMovieManual: the search screen is still underneath, and
+                // leaving it there would put a spent search between the new film and the library.
                 onMovieAdded = { movieId ->
                     navController.navigate(Route.MovieDetail.createRoute(movieId)) {
                         popUpTo(Route.AddMovie.route) { inclusive = true }

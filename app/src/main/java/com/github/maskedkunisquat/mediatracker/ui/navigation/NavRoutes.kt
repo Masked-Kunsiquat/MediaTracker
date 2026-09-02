@@ -27,8 +27,18 @@ sealed interface Route {
     }
 
     /** Manual movie entry (ROADMAP Task 13 Phase B). No provider lookup, so no arguments. */
+
+    /**
+     * Adding a film by TMDB search, where "Add movie" now leads (#75) -- see [AddTVShow] on why the
+     * search screen is the destination and manual entry an action on it rather than a sibling.
+     */
     data object AddMovie : Route {
         override val route: String = "add_movie"
+    }
+
+    /** The hand-entry film form, reached from [AddMovie]'s "enter manually instead". */
+    data object AddMovieManual : Route {
+        override val route: String = "add_movie_manual"
     }
 
     /** Manual TV show entry with season quick-fill (ROADMAP Task 13 Phase C). No arguments. */
