@@ -624,12 +624,16 @@ private fun EpisodeRow(
 /**
  * Width of the episode-number column.
  *
- * Wide enough for four digits, because seasons that long are real -- a daily court or news show
- * catalogued as one continuous run passes 400 without being unusual, which is the case that prompted
- * numbering these rows at all. Narrower would make the titles of exactly those shows step rightwards
- * as the count crossed 100 and 1000.
+ * Sized for three digits rather than four. Four looked wrong: the number is end-aligned so the
+ * titles line up, which means a single digit sits at the *right* of its box -- and at 44dp that put
+ * a visible gap between the checkbox and the number while leaving the number crowding the title, so
+ * the digit read as belonging to the title rather than to its own row.
+ *
+ * Three digits covers every season this app has actually seen (Judy Justice's longest is 135). A
+ * four-digit season would push its titles right by one character's width, which is a smaller cost
+ * than making every ordinary row look misaligned to buy alignment for a season nobody has.
  */
-private val EPISODE_NUMBER_COLUMN_WIDTH = 44.dp
+private val EPISODE_NUMBER_COLUMN_WIDTH = 28.dp
 
 /**
  * A two-field dialog for setting a season's length -- shared by the "Add season" button (opened
