@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -49,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -110,6 +115,14 @@ fun TVShowDetailScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
+    // Which seasons are folded shut, by season number rather than by index -- a number survives a
+    // season being added or removed above it, where an index silently comes to mean a different
+    // season. Stored as the *collapsed* set rather than the expanded one so the default is "open":
+    // a show with one season is its episode list, and opening the screen to a single shut row would
+    // make the common case worse to serve the long one. Multi-season shows start folded, below.
+    var collapsedSeasons by rememberSaveable { mutableStateOf(emptySet<Int>()) }
+    var appliedInitialFold by rememberSaveable { mutableStateOf(false) }
+
     // null seasonNumber (with showAddSeasonDialog true) means "add a new season", both fields
     // blank. A non-null editSeasonNumber means "change this season's length" -- the season field
     // is then pre-filled and locked, per SeasonLengthDialog's KDoc.
@@ -159,6 +172,28 @@ fun TVShowDetailScreen(
     // than captured when the dialog opened, so pre-filled length and the cost shown below always
     // match the show's current state, not a stale snapshot from when the menu was tapped.
     val readySeasons = (uiState as? TVShowDetailUiState.Ready)?.seasons.orEmpty()
+
+    // Fold multi-season shows once, when the seasons first arrive -- not on every recomposition, or
+    // ticking an episode would slam shut the season being ticked. Guarded by a flag rather than
+    // keyed on the list, so adding a season later never re-folds what the user has opened.
+    LaunchedEffect(readySeasons.size) {
+        if (!appliedInitialFold && readySeasons.isNotEmpty()) {
+            // Marked applied on the *first* arrival whatever the count, not only when it folds.
+            // Were it set only when folding, a one-season show would leave the flag false and then
+            // trip this on the way past 1 when a season was added, shutting the season the user had
+            // just been working in.
+            if (readySeasons.size > 1) {
+                collapsedSeasons = readySeasons.map { it.seasonNumber }.toSet()
+            }
+            appliedInitialFold = true
+        } else if (readySeasons.size == 1) {
+            // Removing a season from a two-season show leaves the survivor holding a fold it only
+            // ever got for being one of several. The screen would then open on a single shut row,
+            // which is the state the "single-season shows start open" rule exists to avoid -- the
+            // rule has to hold for a show that *became* single, not only one that started that way.
+            collapsedSeasons = collapsedSeasons - readySeasons.first().seasonNumber
+        }
+    }
 
     if (showAddSeasonDialog || editSeasonNumber != null) {
         val editingSeason = editSeasonNumber
@@ -389,23 +424,35 @@ fun TVShowDetailScreen(
                         // single item would compose all of it at once, which is the cost this
                         // LazyColumn exists to avoid.
                         uiState.seasons.forEach { season ->
+                            val expanded = collapsedSeasons.contains(season.seasonNumber).not()
                             item(key = "season-${season.seasonNumber}") {
                                 SeasonHeader(
                                     season = season,
+                                    expanded = expanded,
+                                    onToggleExpanded = {
+                                        collapsedSeasons =
+                                            if (expanded) {
+                                                collapsedSeasons + season.seasonNumber
+                                            } else {
+                                                collapsedSeasons - season.seasonNumber
+                                            }
+                                    },
                                     onSeasonWatchedChange = onSeasonWatchedChange,
                                     onEditSeasonLength = { editSeasonNumber = season.seasonNumber },
                                     onRemoveSeason = { pendingRemoveSeasonNumber = season.seasonNumber },
                                 )
                             }
-                            items(
-                                items = season.episodes,
-                                key = { episode -> episode.id },
-                            ) { episode ->
-                                EpisodeRow(
-                                    episode = episode,
-                                    seasonNumber = season.seasonNumber,
-                                    onWatchedChange = onEpisodeWatchedChange,
-                                )
+                            if (expanded) {
+                                items(
+                                    items = season.episodes,
+                                    key = { episode -> episode.id },
+                                ) { episode ->
+                                    EpisodeRow(
+                                        episode = episode,
+                                        seasonNumber = season.seasonNumber,
+                                        onWatchedChange = onEpisodeWatchedChange,
+                                    )
+                                }
                             }
                         }
                     }
@@ -433,6 +480,8 @@ fun TVShowDetailScreen(
 @Composable
 private fun SeasonHeader(
     season: SeasonGroup,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     onSeasonWatchedChange: (Int, Boolean) -> Unit,
     onEditSeasonLength: () -> Unit,
     onRemoveSeason: () -> Unit,
@@ -440,9 +489,25 @@ private fun SeasonHeader(
     val total = season.episodes.size
     val allWatched = total > 0 && season.watchedCount == total
     var showMenu by remember { mutableStateOf(false) }
+    val toggleDescription =
+        stringResource(
+            if (expanded) {
+                R.string.tv_show_detail_season_collapse
+            } else {
+                R.string.tv_show_detail_season_expand
+            },
+            season.seasonNumber,
+        )
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        // The whole header toggles, not just the chevron: it is the largest target on the row and
+        // the one a thumb reaches for. The trailing controls keep their own click handling, so
+        // marking a season watched still does that rather than folding it.
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleExpanded)
+                .padding(top = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -465,6 +530,10 @@ private fun SeasonHeader(
             overflow = TextOverflow.Ellipsis,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = toggleDescription,
+            )
             TextButton(onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) }) {
                 Text(
                     if (allWatched) {
@@ -518,7 +587,6 @@ private fun EpisodeRow(
     seasonNumber: Int,
     onWatchedChange: (String, Boolean) -> Unit,
 ) {
-    val label = episode.title ?: stringResource(R.string.tv_show_detail_episode_number_label, episode.episodeNumber)
     val watched = episode.watchedAt != null
     val checkboxDescription =
         stringResource(R.string.tv_show_detail_episode_content_description, seasonNumber, episode.episodeNumber)
@@ -533,9 +601,59 @@ private fun EpisodeRow(
             onCheckedChange = { onWatchedChange(episode.id, it) },
             modifier = Modifier.semantics { contentDescription = checkboxDescription },
         )
-        Text(label)
+        // The number is always drawn, beside the title rather than instead of it.
+        //
+        // It used to appear only as a *fallback* for an episode with no title, which was invisible
+        // while nothing filled titles in: every quick-filled row read "Episode 1", "Episode 2". Once
+        // add-by-search started supplying real titles the numbers vanished, and a long season became
+        // an unnumbered wall of names -- a 458-episode show gives you nothing to scan for when you
+        // are looking for the one you just watched.
+        //
+        // Fixed width so the titles line up into a column instead of stepping right as the numbers
+        // gain digits; end-aligned so 9 and 458 share a right edge like any other number list.
+        Text(
+            text = stringResource(R.string.tv_show_detail_episode_number_prefix, episode.episodeNumber),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Start,
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = EPISODE_NUMBER_COLUMN_WIDTH),
+        )
+        // Nothing is drawn when there is no title. The old fallback read "Episode 1", which the
+        // number now says on its own -- and a placeholder word would be worse than the number alone
+        // rather than merely redundant: a quick-filled season has no titles at all, so it would
+        // repeat the same word down every row of the screen while carrying no information.
+        episode.title?.let { title ->
+            Text(
+                text = title,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
+
+/**
+ * Width of the episode-number column, whose contents are **start**-aligned.
+ *
+ * Fixed width so every title begins at the same x, start-aligned so the number sits against the
+ * checkbox it belongs to. Getting this backwards is what made the first two attempts look wrong:
+ * end-alignment tidies the numbers against each other, but it pushes a one-digit number to the far
+ * side of its box, so the digit drifts away from its checkbox and crowds the title instead -- and it
+ * reads as a prefix of the title rather than as the row's own number. Widening the box made that
+ * worse, not better, which is the clue that width was never the problem.
+ *
+ * The cost of start-alignment is that the digits no longer right-align with each other, so 9 and 10
+ * begin at the same x rather than ending at it. That is the ordinary way a numbered list looks, and
+ * it buys proximity to the control the number is labelling.
+ *
+ * A **minimum** width rather than a fixed one. Three digits covers every season this app has
+ * actually seen (Judy Justice's longest is 135), but a hard width would *clip* a four-digit number
+ * rather than accommodate it -- an earlier version of this comment claimed such a season would push
+ * its title right, which a fixed width does not do. With a minimum it does: 1..999 share a column
+ * and align, and a longer number widens its own row instead of losing a digit.
+ */
+private val EPISODE_NUMBER_COLUMN_WIDTH = 28.dp
 
 /**
  * A two-field dialog for setting a season's length -- shared by the "Add season" button (opened

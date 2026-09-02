@@ -33,6 +33,18 @@ import kotlin.time.Instant
  * unticked rows in the same image, which is where a checkbox-alignment or strikethrough mistake
  * becomes visible.
  *
+ * Titles are mixed for the same reason, and were added late: this fixture predates episodes having
+ * titles at all, so it rendered ten identical untitled rows and could not show a number sitting
+ * beside a title -- which is precisely the layout that then went wrong twice, once by repeating a
+ * placeholder word down every row and once by leaving the number stranded between the checkbox and
+ * the title it belongs to. One image showing a long title, a short one, a two-digit number and an
+ * episode with no title at all covers those without adding a second golden to a set that is
+ * deliberately small.
+ *
+ * A **second season is deliberately not added**, tempting as it is now that seasons fold: a
+ * multi-season show opens folded, so the golden would capture two shut headers and none of the
+ * episode rows this image exists for. The fold is behaviour, and belongs in the behaviour lane.
+ *
  * Paired with a text assertion rather than a tag (#102 rule 1): this screen carries none.
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
@@ -97,6 +109,7 @@ class TVShowDetailScreenGoldenTest {
 
     private fun episode(episodeNumber: Int) =
         EpisodeEntity(
+            title = EPISODE_TITLES[episodeNumber],
             id = "ep-show-1-1-$episodeNumber",
             mediaId = "show-1",
             seasonNumber = 1,
@@ -115,5 +128,25 @@ class TVShowDetailScreenGoldenTest {
 
         /** Mixed rather than all or nothing -- see this class's KDoc. */
         const val WATCHED_COUNT = 4
+
+        /**
+         * Titles by episode number, deliberately incomplete.
+         *
+         * Episodes 3 and 7 are absent so the golden carries the untitled case beside titled ones --
+         * a real state, not a contrived one: TMDB returns untitled episodes inside otherwise titled
+         * seasons, which Judy Justice's season 4 does. Episode 5's title is long enough to test what
+         * happens when it meets the number column rather than merely sitting near it.
+         */
+        val EPISODE_TITLES =
+            mapOf(
+                1 to "1:23:45",
+                2 to "Please Remain Calm",
+                4 to "The Happiness of All Mankind",
+                5 to "Vichnaya Pamyat, and a Title Long Enough to Wrap Onto a Second Line",
+                6 to "Open Wide, O Earth",
+                8 to "Short",
+                9 to "Vichnaya Pamyat",
+                10 to "A Two-Digit Row",
+            )
     }
 }
