@@ -603,7 +603,7 @@ private fun EpisodeRow(
             text = stringResource(R.string.tv_show_detail_episode_number_prefix, episode.episodeNumber),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
+            textAlign = TextAlign.Start,
             maxLines = 1,
             modifier = Modifier.width(EPISODE_NUMBER_COLUMN_WIDTH),
         )
@@ -622,16 +622,20 @@ private fun EpisodeRow(
 }
 
 /**
- * Width of the episode-number column.
+ * Width of the episode-number column, whose contents are **start**-aligned.
  *
- * Sized for three digits rather than four. Four looked wrong: the number is end-aligned so the
- * titles line up, which means a single digit sits at the *right* of its box -- and at 44dp that put
- * a visible gap between the checkbox and the number while leaving the number crowding the title, so
- * the digit read as belonging to the title rather than to its own row.
+ * Fixed width so every title begins at the same x, start-aligned so the number sits against the
+ * checkbox it belongs to. Getting this backwards is what made the first two attempts look wrong:
+ * end-alignment tidies the numbers against each other, but it pushes a one-digit number to the far
+ * side of its box, so the digit drifts away from its checkbox and crowds the title instead -- and it
+ * reads as a prefix of the title rather than as the row's own number. Widening the box made that
+ * worse, not better, which is the clue that width was never the problem.
  *
- * Three digits covers every season this app has actually seen (Judy Justice's longest is 135). A
- * four-digit season would push its titles right by one character's width, which is a smaller cost
- * than making every ordinary row look misaligned to buy alignment for a season nobody has.
+ * The cost of start-alignment is that the digits no longer right-align with each other, so 9 and 10
+ * begin at the same x rather than ending at it. That is the ordinary way a numbered list looks, and
+ * it buys proximity to the control the number is labelling.
+ *
+ * Three digits covers every season this app has actually seen (Judy Justice's longest is 135).
  */
 private val EPISODE_NUMBER_COLUMN_WIDTH = 28.dp
 
