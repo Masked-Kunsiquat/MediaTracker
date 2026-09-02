@@ -172,6 +172,18 @@ public class TVShowRepository(
             }
         }
 
+    /**
+     * The id of the show already recorded as coming from [externalId] at [provider], or `null`.
+     *
+     * Backs the add-by-search duplicate check. Scoped to `TV_SHOW` rows by
+     * [com.hub.media.core.database.dao.ExternalIdentifierDao.findMediaIdByExternalId] -- see that
+     * query on why a film sharing the number must not answer here.
+     */
+    public suspend fun findShowIdByExternalId(
+        provider: IdentifierProvider,
+        externalId: String,
+    ): String? = db.externalIdentifierDao().findMediaIdByExternalId(provider, externalId, MediaType.TV_SHOW)
+
     /** Observes one show's episodes, ordered by season then episode number. */
     public fun observeEpisodes(mediaId: String): Flow<List<EpisodeEntity>> = db.episodeDao().observeByMediaId(mediaId)
 

@@ -2,6 +2,7 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -130,7 +131,21 @@ public class TVShowSearchViewModel(
     }
 
     /**
-     * Fetches the chosen show in full and adds it to the library.
+     * Fetches the chosen show in full and adds it to the library, unless it is already there.
+     *
+     * ### Why a duplicate is refused rather than treated as a re-watch
+     * Wanting to watch a show again is [ROADMAP Task 10]'s problem, and it is one library row with
+     * many viewings -- the history accumulates on the row you already have. A second row is not that:
+     * it is two shows of the same name, each with its own episodes and its own watched state, linked
+     * by nothing. It would split the very history re-watch modelling exists to keep together, and
+     * every count that sums episodes would double.
+     *
+     * So the check is not a nicety ahead of #90; #90 is the reason it matters.
+     *
+     * The refusal is deliberately a message rather than a jump to the existing show. Opening it is
+     * probably the nicer answer and is worth building, but a silent navigation looks identical to a
+     * successful add -- the user cannot tell whether they created a duplicate -- and guessing at
+     * which is right is how a confusing flow ships. Saying plainly what happened forecloses nothing.
      *
      * [TVShowSearchUiState.addingTmdbId] carries *which* row is being added rather than a bare
      * boolean, so the screen can show progress on the row that was tapped instead of over the whole
@@ -141,6 +156,22 @@ public class TVShowSearchViewModel(
         _uiState.value = _uiState.value.copy(addingTmdbId = tmdbId, addError = null)
 
         viewModelScope.launch {
+            // Checked before the request, not after: a show already held is a question the local
+            // database can answer, and spending a round trip to learn it is one the user waits on.
+            val existing =
+                tvShowRepository.findShowIdByExternalId(IdentifierProvider.TMDB, tmdbId.toString())
+            if (existing != null) {
+                val title =
+                    _uiState.value.results
+                        .firstOrNull { it.tmdbId == tmdbId }
+                        ?.title
+                failAdd(
+                    title?.let { "$it is already in your library" }
+                        ?: "That show is already in your library",
+                )
+                return@launch
+            }
+
             when (val fetched = tmdbClient.showWithSeasons(tmdbId)) {
                 is Resource.Error -> failAdd(fetched.message)
                 is Resource.Success -> {

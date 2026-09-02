@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Searching happens when you ask for it, not while you type. Every keystroke would otherwise be a request, and the one you actually meant would be waiting behind the ones you did not.
 
+  A show you already have cannot be added twice. Tapping it again says so by name rather than quietly making a second copy — two rows of the same show would each carry their own episodes and their own ticked-off history, and nothing would connect them. That matters most for the thing it looks like it should allow: watching a show again is one show with a longer history, not two shows.
+
   A show found but not yet rated is recorded as **unrated**, not as scored zero. The catalogue reports both the same way, and the difference matters the moment anything averages them.
 
 ### Internal

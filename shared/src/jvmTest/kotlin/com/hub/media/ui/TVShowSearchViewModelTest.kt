@@ -5,6 +5,7 @@ import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
+import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.engine.mock.MockEngine
@@ -233,9 +234,17 @@ class TVShowSearchViewModelTest {
         }
 
     @Test
-    fun addShow_whileOneIsAlreadyInFlight_isRefused() =
+    fun addShow_tappedTwice_createsOneShow() =
         runTest {
-            // Two taps would otherwise produce two shows.
+            // Two guards cover two different races, and this asserts the outcome both exist for
+            // rather than which one fired. The in-flight check refuses a second tap while the first
+            // is still running; the already-in-library check refuses it once the first has finished.
+            //
+            // An earlier version of this test asserted only the first, and was flaky in CI for a
+            // reason worth keeping written down: under UnconfinedTestDispatcher the first add can
+            // complete synchronously, so addingTmdbId is already null when the second tap arrives and
+            // nothing stopped it. It passed locally and failed on a faster runner -- the test was
+            // racing, and the duplicate it let through was real.
             val vm = viewModel(showBody = CHERNOBYL)
             vm.addShow(87108)
             vm.addShow(87108)
@@ -248,7 +257,61 @@ class TVShowSearchViewModelTest {
                     .observeAll()
                     .first()
                     .size,
+                "a second tap must never produce a second show, whichever guard catches it",
             )
+        }
+
+    @Test
+    fun addShow_alreadyInTheLibrary_isRefusedByNameAndAddsNothing() =
+        runTest {
+            val vm = viewModel(searchBody = CHERNOBYL_SEARCH, showBody = CHERNOBYL)
+            vm.onQueryChange("chernobyl")
+            vm.search()
+            vm.uiState.first { it.hasSearched }
+            vm.addShow(87108)
+            vm.uiState.first { it.savedMediaId != null }
+
+            // A fresh ViewModel, as if the user searched again later.
+            val second = viewModel(searchBody = CHERNOBYL_SEARCH, showBody = CHERNOBYL)
+            second.onQueryChange("chernobyl")
+            second.search()
+            second.uiState.first { it.hasSearched }
+            second.addShow(87108)
+
+            val state = second.uiState.first { it.addError != null }
+            assertTrue(
+                state.addError!!.contains("Chernobyl") && state.addError!!.contains("already"),
+                "the refusal must name the show rather than fail vaguely: ${state.addError}",
+            )
+            assertNull(state.savedMediaId)
+            assertEquals(
+                1,
+                db
+                    .mediaItemDao()
+                    .observeAll()
+                    .first()
+                    .size,
+            )
+        }
+
+    @Test
+    fun addShow_whenAFilmSharesTheTmdbNumber_isNotBlockedByIt() =
+        runTest {
+            // TMDB numbers films and shows in separate sequences, so /tv/87108 and /movie/87108 are
+            // unrelated records. Without the media-type predicate on the lookup, owning the film
+            // would refuse the show -- and the user would be told they already have something they
+            // do not.
+            MovieRepository(db).addMovie(
+                title = "Some Unrelated Film",
+                externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+            )
+
+            val vm = viewModel(showBody = CHERNOBYL)
+            vm.addShow(87108)
+
+            val state = vm.uiState.first { it.savedMediaId != null || it.addError != null }
+            assertNull(state.addError, "a film sharing the number must not block the show")
+            assertEquals("Chernobyl", db.mediaItemDao().getById(state.savedMediaId!!)?.title)
         }
 
     @Test
