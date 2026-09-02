@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -49,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -518,7 +520,6 @@ private fun EpisodeRow(
     seasonNumber: Int,
     onWatchedChange: (String, Boolean) -> Unit,
 ) {
-    val label = episode.title ?: stringResource(R.string.tv_show_detail_episode_number_label, episode.episodeNumber)
     val watched = episode.watchedAt != null
     val checkboxDescription =
         stringResource(R.string.tv_show_detail_episode_content_description, seasonNumber, episode.episodeNumber)
@@ -533,9 +534,44 @@ private fun EpisodeRow(
             onCheckedChange = { onWatchedChange(episode.id, it) },
             modifier = Modifier.semantics { contentDescription = checkboxDescription },
         )
-        Text(label)
+        // The number is always drawn, beside the title rather than instead of it.
+        //
+        // It used to appear only as a *fallback* for an episode with no title, which was invisible
+        // while nothing filled titles in: every quick-filled row read "Episode 1", "Episode 2". Once
+        // add-by-search started supplying real titles the numbers vanished, and a long season became
+        // an unnumbered wall of names -- a 458-episode show gives you nothing to scan for when you
+        // are looking for the one you just watched.
+        //
+        // Fixed width so the titles line up into a column instead of stepping right as the numbers
+        // gain digits; end-aligned so 9 and 458 share a right edge like any other number list.
+        Text(
+            text = stringResource(R.string.tv_show_detail_episode_number_prefix, episode.episodeNumber),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.width(EPISODE_NUMBER_COLUMN_WIDTH),
+        )
+        Text(
+            // An episode with neither a title nor a number to fall back on would otherwise render a
+            // blank row; the number is now carried separately, so this says plainly that the title
+            // is the part that is missing.
+            text = episode.title ?: stringResource(R.string.tv_show_detail_episode_untitled),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
+
+/**
+ * Width of the episode-number column.
+ *
+ * Wide enough for four digits, because seasons that long are real -- a daily court or news show
+ * catalogued as one continuous run passes 400 without being unusual, which is the case that prompted
+ * numbering these rows at all. Narrower would make the titles of exactly those shows step rightwards
+ * as the count crossed 100 and 1000.
+ */
+private val EPISODE_NUMBER_COLUMN_WIDTH = 44.dp
 
 /**
  * A two-field dialog for setting a season's length -- shared by the "Add season" button (opened
