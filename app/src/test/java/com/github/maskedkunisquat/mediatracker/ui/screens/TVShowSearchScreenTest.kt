@@ -227,6 +227,25 @@ class TVShowSearchScreenTest {
         assertEquals(1, manual)
     }
 
+    @Test
+    fun manualEntry_isDisabledWhileAnAddIsInFlight() {
+        // Leaving mid-add does not cancel it -- the ViewModel outlives the screen -- so returning
+        // would re-run the effect that navigates on a saved id and drop the user onto the new show's
+        // detail screen from wherever they had got to.
+        setContent(TVShowSearchUiState(hasSearched = true, results = RESULTS, addingTmdbId = 87108))
+
+        composeRule.onNodeWithTag(TestTags.TVShowSearch.MANUAL_ENTRY).assertIsNotEnabled()
+    }
+
+    @Test
+    fun manualEntry_isEnabledAgainOnceAnAddHasFailed() {
+        // The escape hatch must come back the moment it is needed again -- an add that failed is
+        // exactly when someone reaches for it.
+        setContent(TVShowSearchUiState(hasSearched = true, results = RESULTS, addError = "Could not reach TMDB"))
+
+        composeRule.onNodeWithTag(TestTags.TVShowSearch.MANUAL_ENTRY).assertIsEnabled()
+    }
+
     private companion object {
         val RESULTS =
             listOf(

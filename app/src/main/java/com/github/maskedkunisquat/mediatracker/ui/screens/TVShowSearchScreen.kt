@@ -210,6 +210,15 @@ fun TVShowSearchScreen(
 
             TextButton(
                 onClick = onNavigateToManualEntry,
+                // Disabled for the same window the rows are, and for a sharper reason than symmetry.
+                // Leaving during an add does not cancel it: the ViewModel outlives this screen, so
+                // the add completes, and returning here re-runs the effect that navigates on a saved
+                // id -- dropping the user onto the new show's detail screen from wherever they had
+                // got to. Refusing the tap for the length of one request is a smaller cost than that,
+                // and the button stays *visible*, which is the property this screen actually needs it
+                // for: when an add fails it re-enables immediately, and a failed search never
+                // disables it at all.
+                enabled = uiState.addingTmdbId == null,
                 modifier = Modifier.testTag(TestTags.TVShowSearch.MANUAL_ENTRY),
             ) {
                 Text(stringResource(R.string.tv_show_search_manual_entry))
