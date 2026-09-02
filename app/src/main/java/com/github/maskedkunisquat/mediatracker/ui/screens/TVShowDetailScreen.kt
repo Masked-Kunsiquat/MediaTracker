@@ -176,15 +176,22 @@ fun TVShowDetailScreen(
     // Fold multi-season shows once, when the seasons first arrive -- not on every recomposition, or
     // ticking an episode would slam shut the season being ticked. Guarded by a flag rather than
     // keyed on the list, so adding a season later never re-folds what the user has opened.
-    LaunchedEffect(readySeasons.isNotEmpty()) {
+    LaunchedEffect(readySeasons.size) {
         if (!appliedInitialFold && readySeasons.isNotEmpty()) {
             // Marked applied on the *first* arrival whatever the count, not only when it folds.
-            // Keyed on the count instead, a one-season show that later gains a season would trip
-            // this on the way past 1 and shut the season the user had just been working in.
+            // Were it set only when folding, a one-season show would leave the flag false and then
+            // trip this on the way past 1 when a season was added, shutting the season the user had
+            // just been working in.
             if (readySeasons.size > 1) {
                 collapsedSeasons = readySeasons.map { it.seasonNumber }.toSet()
             }
             appliedInitialFold = true
+        } else if (readySeasons.size == 1) {
+            // Removing a season from a two-season show leaves the survivor holding a fold it only
+            // ever got for being one of several. The screen would then open on a single shut row,
+            // which is the state the "single-season shows start open" rule exists to avoid -- the
+            // rule has to hold for a show that *became* single, not only one that started that way.
+            collapsedSeasons = collapsedSeasons - readySeasons.first().seasonNumber
         }
     }
 
