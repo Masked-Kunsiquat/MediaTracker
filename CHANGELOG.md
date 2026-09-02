@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-02
+
+Television arrived properly. Adding a show used to mean typing its title, its year, and then one
+row per season saying how many episodes it had — from memory, for a show you had not watched yet,
+and often wrong. Now you search for it: type a name, tap the result, and the show lands with its
+seasons, its episode numbers and its real episode titles already in place, none of them ticked.
+Everything the catalogue knows comes with it, including whether the show is still running, which
+the library has always been able to show and had never until now been told.
+
+Typing a show in by hand did not go away, and is one tap from the search box. That is deliberate
+rather than tidy: looking a show up needs a key you supply, so search is the half that can be
+unavailable, and the way out has to be visible at the moment it fails rather than one screen back.
+
+Long shows became usable. Seasons fold, so a show with more than one opens as a handful of rows
+instead of hundreds — one show used in testing runs to 458 episodes across four seasons. Every
+episode row shows its number again, which had quietly stopped happening the moment titles started
+arriving, leaving a season as a wall of names with nothing to count against.
+
+Most of the work under this is not visible here. Four releases' worth of groundwork went in first
+so that the search could exist at all, and it is listed under Internal: somewhere to put a
+catalogue's answer, a record of which catalogue record a row came from, and one place where every
+judgement about what that catalogue actually meant is made.
+
 ### Added
 
 - **Episode numbers are back, and long shows fold up.** Every episode row shows its number again. The number had only ever appeared as a stand-in for a missing title, which nothing noticed while no episode had one — so the moment shows started arriving from a catalogue with real titles, the numbers quietly disappeared. A season then reads as a wall of names with nothing to count against, which is unusable at the length real shows reach: one show in testing runs to 458 episodes.
@@ -26,6 +49,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A show you already have cannot be added twice. Tapping it again says so by name rather than quietly making a second copy — two rows of the same show would each carry their own episodes and their own ticked-off history, and nothing would connect them. That matters most for the thing it looks like it should allow: watching a show again is one show with a longer history, not two shows.
 
   A show found but not yet rated is recorded as **unrated**, not as scored zero. The catalogue reports both the same way, and the difference matters the moment anything averages them.
+
+### Fixed
+
+- **A CSV backup gave you back your books and quietly kept the rest** (#106, closes the round-trip clause of #74). Exporting your library writes three files, and has done since films and TV arrived. Importing them read one. Every film, every show, and every episode you had ever ticked off came back from a backup as nothing at all — and nothing said so. The summary counted books and reading sessions, so the numbers it showed were all true; there was simply no line on which the loss could appear. Restore onto a new phone and a library of four hundred films was a library of books, reported as a clean success.
+
+  Episodes were the sharpest edge of it, because per-episode progress is the entire substance of TV tracking and it lived in a file nothing read. But episodes could not be fixed on their own: an episode belongs to a show, and shows were not being imported either, so there was nothing for one to belong to. All three are read back now.
+
+  The import summary gained a line for episodes, and it is shown even when every number on it is zero. That is the point of it. An import that dropped everything used to be indistinguishable from one that had nothing to carry, and a count that reads `0 episodes imported` is the difference between a loss you can see and one you cannot.
+
+  Two smaller decisions inside this, both about not destroying something the file cannot describe. A film or show is matched against your existing library the same way a book is, so re-importing a backup recognises what is already there instead of adding a second copy of everything. And when you choose to have the file win outright, a show keeps the details a future metadata fetch will have filled in — the file has never carried them, and "overwrite everything the file says" must not mean "delete everything it doesn't."
+
+  Re-importing a backup can also no longer mark an episode watched. Under the merge policy the device's own record of what you have seen wins, because watched-ness and the date are one and the same field here: there is no way to say "watched, but I don't know when", and no way for a file to say you have *un*watched something. Choosing to replace still replaces.
+
+  An episode is recognised by *which episode it is* — its show, season and number — and not only by its internal identifier. That matters when restoring a backup into a library where you had already added the show by hand: those episodes are the same episodes, but nothing about them was copied from the file, so the identifiers do not agree. Matching on identity alone would have treated all of them as new, and season 1 episode 1 cannot exist twice — the import would have failed outright rather than recognising a duplicate.
+
+- **The episodes file was missing four columns it claimed to carry** (#106). Its own documentation promised every column an episode has; four added later for the upcoming metadata fetch — runtime, synopsis, still image and community rating — were never picked up. Nothing is lost today, because nothing fills them yet. They are written now anyway, on the same reasoning that put the film columns in the file a release before anything could read them: a backup only preserves what it wrote down, and adding a column once it has data in it is too late for every backup taken in between.
+
+  Older exports still import. A file written before this change is recognised as the older shape and read as one.
 
 ### Internal
 
@@ -105,25 +146,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Every value a catalogue would supply was looked up rather than recalled: the identifiers, the season and episode counts, and one show's episode titles, air dates, lengths, synopses and scores. An earlier draft of this had several of those written from memory, and while some happened to be right, the episode lengths were wrong and one show was given three specials when it has one. A fixture carrying a *wrong* identifier is worse than one carrying none — a blank is a state the importer already handles, while a wrong one is confidently wrong and survives into whatever gets built on top of it. What cannot be verified stays empty, which is why one show is deliberately bare: it stands for how a show looks before any metadata is fetched, with the other standing for after.
 
-### Fixed
-
-- **A CSV backup gave you back your books and quietly kept the rest** (#106, closes the round-trip clause of #74). Exporting your library writes three files, and has done since films and TV arrived. Importing them read one. Every film, every show, and every episode you had ever ticked off came back from a backup as nothing at all — and nothing said so. The summary counted books and reading sessions, so the numbers it showed were all true; there was simply no line on which the loss could appear. Restore onto a new phone and a library of four hundred films was a library of books, reported as a clean success.
-
-  Episodes were the sharpest edge of it, because per-episode progress is the entire substance of TV tracking and it lived in a file nothing read. But episodes could not be fixed on their own: an episode belongs to a show, and shows were not being imported either, so there was nothing for one to belong to. All three are read back now.
-
-  The import summary gained a line for episodes, and it is shown even when every number on it is zero. That is the point of it. An import that dropped everything used to be indistinguishable from one that had nothing to carry, and a count that reads `0 episodes imported` is the difference between a loss you can see and one you cannot.
-
-  Two smaller decisions inside this, both about not destroying something the file cannot describe. A film or show is matched against your existing library the same way a book is, so re-importing a backup recognises what is already there instead of adding a second copy of everything. And when you choose to have the file win outright, a show keeps the details a future metadata fetch will have filled in — the file has never carried them, and "overwrite everything the file says" must not mean "delete everything it doesn't."
-
-  Re-importing a backup can also no longer mark an episode watched. Under the merge policy the device's own record of what you have seen wins, because watched-ness and the date are one and the same field here: there is no way to say "watched, but I don't know when", and no way for a file to say you have *un*watched something. Choosing to replace still replaces.
-
-  An episode is recognised by *which episode it is* — its show, season and number — and not only by its internal identifier. That matters when restoring a backup into a library where you had already added the show by hand: those episodes are the same episodes, but nothing about them was copied from the file, so the identifiers do not agree. Matching on identity alone would have treated all of them as new, and season 1 episode 1 cannot exist twice — the import would have failed outright rather than recognising a duplicate.
-
-- **The episodes file was missing four columns it claimed to carry** (#106). Its own documentation promised every column an episode has; four added later for the upcoming metadata fetch — runtime, synopsis, still image and community rating — were never picked up. Nothing is lost today, because nothing fills them yet. They are written now anyway, on the same reasoning that put the film columns in the file a release before anything could read them: a backup only preserves what it wrote down, and adding a column once it has data in it is too late for every backup taken in between.
-
-  Older exports still import. A file written before this change is recognised as the older shape and read as one.
-
-### Internal
 
 - **The book screen was one 3,255-line file; it is now six, and it looks exactly the same** (#81, #78). The screen behind every book in the library — its details, its reading history, its timer and the dialogs for logging a session — had grown into a single file of 3,255 lines holding 45 separate pieces of interface. Nothing was wrong with it, which is the problem: a file that size is one nobody can hold in their head, and the surest sign of it here was that this was the *only* form in the app that never picked up the shared number-reading helpers every other form adopted. It was too big for that migration to feel safe in.
 
