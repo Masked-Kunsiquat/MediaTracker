@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -176,9 +176,14 @@ fun TVShowDetailScreen(
     // Fold multi-season shows once, when the seasons first arrive -- not on every recomposition, or
     // ticking an episode would slam shut the season being ticked. Guarded by a flag rather than
     // keyed on the list, so adding a season later never re-folds what the user has opened.
-    LaunchedEffect(readySeasons.size) {
-        if (!appliedInitialFold && readySeasons.size > 1) {
-            collapsedSeasons = readySeasons.map { it.seasonNumber }.toSet()
+    LaunchedEffect(readySeasons.isNotEmpty()) {
+        if (!appliedInitialFold && readySeasons.isNotEmpty()) {
+            // Marked applied on the *first* arrival whatever the count, not only when it folds.
+            // Keyed on the count instead, a one-season show that later gains a season would trip
+            // this on the way past 1 and shut the season the user had just been working in.
+            if (readySeasons.size > 1) {
+                collapsedSeasons = readySeasons.map { it.seasonNumber }.toSet()
+            }
             appliedInitialFold = true
         }
     }
@@ -605,7 +610,7 @@ private fun EpisodeRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Start,
             maxLines = 1,
-            modifier = Modifier.width(EPISODE_NUMBER_COLUMN_WIDTH),
+            modifier = Modifier.widthIn(min = EPISODE_NUMBER_COLUMN_WIDTH),
         )
         // Nothing is drawn when there is no title. The old fallback read "Episode 1", which the
         // number now says on its own -- and a placeholder word would be worse than the number alone
@@ -635,7 +640,11 @@ private fun EpisodeRow(
  * begin at the same x rather than ending at it. That is the ordinary way a numbered list looks, and
  * it buys proximity to the control the number is labelling.
  *
- * Three digits covers every season this app has actually seen (Judy Justice's longest is 135).
+ * A **minimum** width rather than a fixed one. Three digits covers every season this app has
+ * actually seen (Judy Justice's longest is 135), but a hard width would *clip* a four-digit number
+ * rather than accommodate it -- an earlier version of this comment claimed such a season would push
+ * its title right, which a fixed width does not do. With a minimum it does: 1..999 share a column
+ * and align, and a longer number widens its own row instead of losing a digit.
  */
 private val EPISODE_NUMBER_COLUMN_WIDTH = 28.dp
 

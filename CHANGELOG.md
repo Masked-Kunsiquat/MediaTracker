@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Episode numbers are back, and long shows fold up.** Every episode row shows its number again. The number had only ever appeared as a stand-in for a missing title, which nothing noticed while no episode had one — so the moment shows started arriving from a catalogue with real titles, the numbers quietly disappeared. A season then reads as a wall of names with nothing to count against, which is unusable at the length real shows reach: one show in testing runs to 458 episodes.
+
+  Seasons now fold. Tapping a season's header opens and closes it, and a show with more than one season opens with them all closed — 458 episodes become four rows, and you open the one you are actually watching. A show with a single season opens as it always did, since folding the only season would just hide the screen.
+
+  An episode with no title now shows only its number rather than the word "Untitled" repeated down the whole season.
+
 - **A TV show can be added by searching for it.** Adding a show meant typing its title, its year, and then one row per season saying how many episodes it had — for a show you had not seen yet, from memory, and often wrong. Now "Add TV show" opens a search box: type a name, tap the show, and it arrives with its seasons, its episode numbers and its real episode titles already in place, none of them ticked.
 
   Everything the catalogue knows comes with it — when the show first and last aired, its synopsis, how other people rated it, and whether it is **still running**, which the library has always been able to show and has never until now been told. A show you have finished that is still airing reads as in progress rather than finished, because more episodes are coming.
