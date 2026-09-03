@@ -184,6 +184,19 @@ public class TVShowRepository(
         externalId: String,
     ): String? = db.externalIdentifierDao().findMediaIdByExternalId(provider, externalId, MediaType.TV_SHOW)
 
+    /**
+     * The external id this show is recorded as coming from at [provider], or `null`.
+     *
+     * The reverse of [findShowIdByExternalId]: that asks "do I already hold this catalogue record",
+     * this asks "which record did this row come from". The backfill needs the second — without it
+     * there is nothing to ask the provider about, which is the gap the first commit of this whole
+     * phase existed to close.
+     */
+    public suspend fun findExternalId(
+        mediaId: String,
+        provider: IdentifierProvider,
+    ): String? = db.externalIdentifierDao().getByKey(mediaId, provider)?.externalId
+
     /** Observes one show's episodes, ordered by season then episode number. */
     public fun observeEpisodes(mediaId: String): Flow<List<EpisodeEntity>> = db.episodeDao().observeByMediaId(mediaId)
 

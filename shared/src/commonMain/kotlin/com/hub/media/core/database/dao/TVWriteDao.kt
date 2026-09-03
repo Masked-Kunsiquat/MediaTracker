@@ -249,6 +249,50 @@ interface TVWriteDao {
      * @return `1` if [episodeId] resolved to an existing row, `0` otherwise -- including when the
      *   episode was already watched and `COALESCE` therefore wrote the value it already held.
      */
+
+    /**
+     * Fills an episode's provider metadata **onto columns that are still null**, matching the row by
+     * its natural key rather than by id.
+     *
+     * ### The rule is the statement, not the caller's care
+     * #75 requires that the backfill enrich and never overwrite: it runs against a library the user
+     * has already been ticking off, and a background pass that changed what they had recorded would
+     * be the worst failure this app could have. Two things enforce that here rather than in Kotlin:
+     *
+     * - Every column is wrapped in `COALESCE(column, :value)`, so a value already present wins and a
+     *   `null` argument changes nothing. A correction the user typed survives a later pass.
+     * - **`watchedAt` is not in the SET list at all.** Not guarded, not conditional -- absent. This
+     *   statement has no way to alter watch state, so no future edit to a caller can make it do so.
+     *
+     * ### Matched on (seasonNumber, episodeNumber), not on id
+     * A provider knows nothing about this app's row ids. #74 settled that an episode's identity in
+     * the world is its slot within its show, which is why `episodes` carries a unique index on
+     * exactly this triple -- the same key #113's CSV importer matches on, arrived at independently.
+     *
+     * @return rows affected: `1` when the episode exists, `0` when the provider described one this
+     *   library does not hold. Zero is ordinary rather than an error -- the backfill never creates --
+     *   and it is what lets a caller count what it actually filled.
+     */
+    @Query(
+        "UPDATE episodes SET " +
+            "title = COALESCE(title, :title), " +
+            "airDate = COALESCE(airDate, :airDate), " +
+            "runtimeMinutes = COALESCE(runtimeMinutes, :runtimeMinutes), " +
+            "overview = COALESCE(overview, :overview), " +
+            "communityRating = COALESCE(communityRating, :communityRating) " +
+            "WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber AND episodeNumber = :episodeNumber",
+    )
+    suspend fun fillEpisodeMetadata(
+        mediaId: String,
+        seasonNumber: Int,
+        episodeNumber: Int,
+        title: String?,
+        airDate: Instant?,
+        runtimeMinutes: Int?,
+        overview: String?,
+        communityRating: Double?,
+    ): Int
+
     @Query("UPDATE episodes SET watchedAt = COALESCE(watchedAt, :watchedAt) WHERE id = :episodeId")
     suspend fun markEpisodeWatched(
         episodeId: String,
