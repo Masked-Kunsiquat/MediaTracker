@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A show you filled in by hand can now get its real episode titles.** If you typed "Season 1: 10 episodes" before you had a TMDB key, those ten rows sat there numbered and blank. They can now be filled in from the catalogue — titles, air dates, lengths, synopses and scores — onto the rows that are already there.
+
+  The rows are the same rows. Nothing is deleted and re-created, so everything you have ticked off stays ticked, with the date you ticked it. That is not a promise the code makes carefully; it is a promise the database statement cannot break, because the watched date is not among the columns it is able to write at all.
+
+  Anything you have already filled in yourself wins. A title you corrected by hand survives every later pass — only genuinely empty fields get filled.
+
+  Where the catalogue lists more episodes than you have, it says so rather than adding them. Creating episodes would change how many you are counted as having watched, and a show you had finished would quietly become unfinished. Specials are left out of that comparison entirely, because the catalogue does not count them either and comparing them would report a disagreement on every show where you track any.
+
 - **A film can be added by searching for it too.** The same as shows: type a name, tap the result, and the film arrives with its year, its length and how other people rated it already filled in. Typing one in by hand is still there, one tap from the search box, and still the path that works when no key is saved.
 
   A film you already have cannot be added twice — tapping it again says so by name. Films and shows are numbered separately by the catalogue, so owning a show does not block a film that happens to share its number, and the other way round.
