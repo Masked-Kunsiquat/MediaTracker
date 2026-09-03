@@ -293,6 +293,38 @@ interface TVWriteDao {
         communityRating: Double?,
     ): Int
 
+    /**
+     * Applies [fills] in one transaction, returning how many rows they matched.
+     *
+     * A show is one request but many rows -- 458 of them for a daily series -- and one implicit
+     * transaction per `UPDATE` means one disk sync per episode, which on a phone is the difference
+     * between a pause and a stall. Batching is a performance fix rather than a correctness one:
+     * enrichment is idempotent, so a pass that died halfway simply fills the rest next time.
+     *
+     * @return the summed affected-row count, so a caller still learns how many episodes it matched.
+     */
+    @Transaction
+    suspend fun fillEpisodeMetadata(
+        mediaId: String,
+        fills: List<EpisodeMetadataFill>,
+    ): Int {
+        var matched = 0
+        for (fill in fills) {
+            matched +=
+                fillEpisodeMetadata(
+                    mediaId = mediaId,
+                    seasonNumber = fill.seasonNumber,
+                    episodeNumber = fill.episodeNumber,
+                    title = fill.title,
+                    airDate = fill.airDate,
+                    runtimeMinutes = fill.runtimeMinutes,
+                    overview = fill.overview,
+                    communityRating = fill.communityRating,
+                )
+        }
+        return matched
+    }
+
     @Query("UPDATE episodes SET watchedAt = COALESCE(watchedAt, :watchedAt) WHERE id = :episodeId")
     suspend fun markEpisodeWatched(
         episodeId: String,

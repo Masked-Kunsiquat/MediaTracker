@@ -248,6 +248,41 @@ class BackfillShowEpisodesUseCaseTest {
         }
 
     @Test
+    fun aNonNumericStoredIdIsRefusedWithoutSpendingARequest() =
+        runTest {
+            // Reachable rather than theoretical: the CSV importer validates the *provider* against
+            // the enum but accepts any non-blank string as the id, so "TMDB:not-a-number" imports
+            // cleanly. Coercing it would spend a request on /tv/-1 and report a 404 -- an answer
+            // describing neither the cause nor the remedy.
+            val show =
+                repo.addShow(
+                    title = "Imported With A Bad Id",
+                    seasons = listOf(SeasonQuickFill(1, 3)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "not-a-number"),
+                )
+            assertIs<Resource.Success<String>>(show)
+
+            var requests = 0
+            val engine =
+                MockEngine {
+                    requests++
+                    respond(CHERNOBYL, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                }
+            val backfill =
+                BackfillShowEpisodesUseCase(
+                    db = db,
+                    tmdbClient = TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
+                    tvShowRepository = repo,
+                )
+
+            val result = backfill.execute(show.data)
+
+            assertIs<Resource.Error>(result)
+            assertEquals(0, requests, "a malformed id must not cost a request")
+            assertTrue(result.message.contains("not a number"))
+        }
+
+    @Test
     fun aFailedRequestChangesNothing() =
         runTest {
             val mediaId = quickFilledShow()

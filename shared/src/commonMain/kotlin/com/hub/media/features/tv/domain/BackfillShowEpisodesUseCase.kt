@@ -1,6 +1,8 @@
 package com.hub.media.features.tv.domain
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.EpisodeMetadataFill
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.network.toInstantOrNull
 import com.hub.media.core.util.AppLogger
@@ -10,6 +12,7 @@ import com.hub.media.core.util.error
 import com.hub.media.core.util.info
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.network.TmdbClient
+import com.hub.media.features.tv.network.TmdbShowWithSeasons
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "BackfillShowEpisodes"
@@ -78,9 +81,11 @@ public data class EpisodeBackfillReport(
  * comparing them against local rows would report a phantom mismatch on every show where the user
  * tracks any. Every count here is scoped to `seasonNumber >= 1`.
  *
- * @param pacer Optional, and a bulk caller should supply one. A single show is one request and
- *   should not pay an interval; a pass over a library is a burst, which is the concern #42 fixed for
- *   the book backfill and that applies here for the same reason.
+ * ### Pacing belongs to the caller, not here
+ * This takes no rate limiter. One show is one request, and an interactive "refresh this show" should
+ * not pay an interval. A pass over a whole library *is* a burst, which is the concern #42 fixed for
+ * the book backfill and which applies here for the same reason — but that belongs to whatever runs
+ * the pass, by handing a paced [TmdbClient] in, rather than to a class that does one show.
  */
 public class BackfillShowEpisodesUseCase(
     private val db: AppDatabase,
@@ -103,24 +108,30 @@ public class BackfillShowEpisodesUseCase(
                         "This show was not added from TMDB, so there is nothing to look up.",
                     )
 
+            // A stored id that is not a number cannot address anything at TMDB. Refused here rather
+            // than coerced: the CSV importer validates the *provider* against the enum but accepts
+            // any non-blank string as the id, so "TMDB:abc" is importable -- and coercing it would
+            // spend a request on /tv/-1 and report a 404, which describes neither the cause nor the
+            // remedy.
+            val numericId =
+                tmdbId.toIntOrNull()
+                    ?: return Resource.Error("This show's stored TMDB id is not a number: \"$tmdbId\"")
+
             val fetched =
-                when (val result = tmdbClient.showWithSeasons(tmdbId.toIntOrNull() ?: -1)) {
+                when (val result = tmdbClient.showWithSeasons(numericId)) {
                     is Resource.Error -> return result
                     is Resource.Success -> result.data
                 }
 
             val local = db.episodeDao().getByMediaId(mediaId).filter { it.seasonNumber >= 1 }
-            var filled = 0
-
-            for (episode in local) {
-                val provided =
-                    fetched.seasons[episode.seasonNumber]
-                        ?.episodes
-                        ?.firstOrNull { it.episodeNumber == episode.episodeNumber }
-                        ?: continue
-                filled +=
-                    db.tvWriteDao().fillEpisodeMetadata(
-                        mediaId = mediaId,
+            val fills =
+                local.mapNotNull { episode ->
+                    val provided =
+                        fetched.seasons[episode.seasonNumber]
+                            ?.episodes
+                            ?.firstOrNull { it.episodeNumber == episode.episodeNumber }
+                            ?: return@mapNotNull null
+                    EpisodeMetadataFill(
                         seasonNumber = episode.seasonNumber,
                         episodeNumber = episode.episodeNumber,
                         title = provided.name?.takeIf { it.isNotBlank() },
@@ -129,7 +140,8 @@ public class BackfillShowEpisodesUseCase(
                         overview = provided.overview?.takeIf { it.isNotBlank() },
                         communityRating = provided.voteAverage?.takeIf { (provided.voteCount ?: 0) > 0 },
                     )
-            }
+                }
+            val filled = db.tvWriteDao().fillEpisodeMetadata(mediaId, fills)
 
             val report =
                 EpisodeBackfillReport(
@@ -163,8 +175,8 @@ public class BackfillShowEpisodesUseCase(
      * both this list and the local comparison, and is reported separately.
      */
     private fun mismatchesFor(
-        localBySeason: Map<Int, List<*>>,
-        fetched: com.hub.media.features.tv.network.TmdbShowWithSeasons,
+        localBySeason: Map<Int, List<EpisodeEntity>>,
+        fetched: TmdbShowWithSeasons,
     ): List<SeasonCountMismatch> =
         fetched.seasons
             .filterKeys { it >= 1 }
