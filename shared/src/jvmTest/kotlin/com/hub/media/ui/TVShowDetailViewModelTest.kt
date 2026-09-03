@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.cleanupTestTempDir
 import com.hub.media.core.storage.createTestTempDir
@@ -14,6 +15,11 @@ import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.network.TmdbClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -42,6 +48,7 @@ class TVShowDetailViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var tvShowRepository: TVShowRepository
     private lateinit var deleteMediaUseCase: BulkDeleteUseCase
+    private lateinit var backfillUseCase: BackfillShowEpisodesUseCase
     private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
 
@@ -52,6 +59,18 @@ class TVShowDetailViewModelTest {
         tvShowRepository = TVShowRepository(db)
         tempDir = runBlocking { createTestTempDir() }
         deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir))
+        // Never reached by these tests -- none of them refresh -- but the ViewModel needs one, and a
+        // client whose engine always fails makes an accidental call loud rather than silent.
+        backfillUseCase =
+            BackfillShowEpisodesUseCase(
+                db = db,
+                tmdbClient =
+                    TmdbClient(
+                        createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) }),
+                        { null },
+                    ),
+                tvShowRepository = tvShowRepository,
+            )
     }
 
     @AfterTest
@@ -78,7 +97,10 @@ class TVShowDetailViewModelTest {
     }
 
     private suspend fun readyViewModel(showId: String): TVShowDetailViewModel {
-        val viewModel = viewModels.track(TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase))
+        val viewModel =
+            viewModels.track(
+                TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+            )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
         return viewModel
     }
@@ -213,7 +235,10 @@ class TVShowDetailViewModelTest {
     @Test
     fun uiState_unknownId_isNotFound() =
         runTest {
-            val viewModel = viewModels.track(TVShowDetailViewModel(newId(), tvShowRepository, deleteMediaUseCase))
+            val viewModel =
+                viewModels.track(
+                    TVShowDetailViewModel(newId(), tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                )
 
             val state = viewModel.uiState.first { it !is TVShowDetailUiState.Loading }
 
@@ -226,7 +251,10 @@ class TVShowDetailViewModelTest {
             // TVShowRepository.observeShowDetail gates on MediaType.TV_SHOW, so a book id routed
             // here must read as "not found" rather than a mislabelled row.
             val bookId = insertBook()
-            val viewModel = viewModels.track(TVShowDetailViewModel(bookId, tvShowRepository, deleteMediaUseCase))
+            val viewModel =
+                viewModels.track(
+                    TVShowDetailViewModel(bookId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                )
 
             val state = viewModel.uiState.first { it !is TVShowDetailUiState.Loading }
 

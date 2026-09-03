@@ -62,6 +62,7 @@ class TVShowDetailScreenOcclusionTest {
             onSetSeasonLength = { _, _ -> },
             onRemoveSeason = {},
             onAbandonedChange = {},
+            onRefreshMetadata = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},

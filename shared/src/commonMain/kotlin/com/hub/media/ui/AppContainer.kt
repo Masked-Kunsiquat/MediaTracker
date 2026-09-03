@@ -36,6 +36,7 @@ import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.settings.data.getTmdbCredential
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
 
@@ -198,6 +199,21 @@ public class AppContainer(
         TmdbClient(
             client = httpClient,
             credentialProvider = tmdbCredentialProvider,
+        )
+
+    /**
+     * Fills provider metadata onto a show's existing episode rows (#75).
+     *
+     * Built with the *unpaced* [tmdbClient], which is right for the one place it is used from: a
+     * refresh a user has asked for on one show is a single request they are waiting on. A
+     * library-wide pass would hand in a paced client instead -- see #42 for why that distinction
+     * exists at all.
+     */
+    public val backfillShowEpisodesUseCase: BackfillShowEpisodesUseCase =
+        BackfillShowEpisodesUseCase(
+            db = database,
+            tmdbClient = tmdbClient,
+            tvShowRepository = tvShowRepository,
         )
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */

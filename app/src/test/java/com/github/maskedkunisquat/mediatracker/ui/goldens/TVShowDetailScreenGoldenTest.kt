@@ -86,6 +86,7 @@ class TVShowDetailScreenGoldenTest {
             onSetSeasonLength = { _, _ -> },
             onRemoveSeason = {},
             onAbandonedChange = {},
+            onRefreshMetadata = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},

@@ -3,11 +3,14 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.EpisodeBackfillReport
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +64,13 @@ public sealed class TVShowDetailUiState {
         val totalEpisodes: Int,
         val isAbandoned: Boolean,
         val errorMessage: String? = null,
+        /**
+         * Whether this show records which TMDB record it came from, and so has something to refresh
+         * against. `false` for a show typed in by hand -- the action is hidden rather than offered
+         * and then refused, because a control that always fails is worse than one that is absent.
+         */
+        val canRefreshMetadata: Boolean = false,
+        val isRefreshingMetadata: Boolean = false,
     ) : TVShowDetailUiState()
 }
 
@@ -80,15 +90,33 @@ public class TVShowDetailViewModel(
     private val showId: String,
     private val tvShowRepository: TVShowRepository,
     private val deleteMediaUseCase: BulkDeleteUseCase,
+    private val backfillUseCase: BackfillShowEpisodesUseCase,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
+    private val isRefreshing = MutableStateFlow(false)
+
+    /**
+     * The show's TMDB id, read once rather than observed.
+     *
+     * A provider mapping is written when the show is created and never edited afterwards, so there
+     * is nothing to watch for -- and an observer here would add a fourth database query to a screen
+     * that already runs three, for a value that cannot change while it is open.
+     */
+    private val tmdbId =
+        MutableStateFlow<String?>(null).also { flow ->
+            viewModelScope.launch {
+                flow.value = tvShowRepository.findExternalId(showId, IdentifierProvider.TMDB)
+            }
+        }
 
     public val uiState: StateFlow<TVShowDetailUiState> =
         combine(
             tvShowRepository.observeShowDetail(showId),
             tvShowRepository.observeEpisodes(showId),
             errorMessage,
-        ) { show, episodes, error ->
+            tmdbId,
+            isRefreshing,
+        ) { show, episodes, error, tmdb, refreshing ->
             if (show == null) {
                 TVShowDetailUiState.NotFound
             } else {
@@ -110,6 +138,8 @@ public class TVShowDetailViewModel(
                     totalEpisodes = episodes.size,
                     isAbandoned = show.details?.status == WatchStatus.ABANDONED,
                     errorMessage = error,
+                    canRefreshMetadata = tmdb != null,
+                    isRefreshingMetadata = refreshing,
                 )
             }
         }.stateIn(
@@ -205,7 +235,64 @@ public class TVShowDetailViewModel(
     }
 
     /** Acknowledges an error once shown, so it is not re-displayed on the next recomposition. */
+
+    /**
+     * Fills real episode metadata onto this show's existing rows from TMDB.
+     *
+     * Reports its outcome through the same channel as an error, deliberately: what a user needs to
+     * see afterwards is one sentence about what happened, and a screen with two message channels
+     * shows two snackbars when a pass both fills something and finds a disagreement.
+     *
+     * The pass itself cannot change any watched date, count or status -- see
+     * [com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase]. That is why this needs no
+     * confirmation before running: there is nothing to undo.
+     */
+    public fun refreshMetadata() {
+        if (isRefreshing.value) return
+        isRefreshing.value = true
+        viewModelScope.launch {
+            when (val result = backfillUseCase.execute(showId)) {
+                is Resource.Success -> errorMessage.value = result.data.describe()
+                is Resource.Error -> errorMessage.value = result.message
+            }
+            isRefreshing.value = false
+        }
+    }
+
     public fun consumeError() {
         errorMessage.value = null
     }
+}
+
+/**
+ * One sentence describing what a backfill pass did.
+ *
+ * Built here rather than in the composable because it is a *report*, not a label: which clauses
+ * appear depends on what happened, and assembling that in a `@Composable` would put branching logic
+ * where it cannot be tested without a device.
+ *
+ * Deliberately plain about the two things a user would otherwise have to infer. "Nothing to add"
+ * is said outright rather than shown as an absence, because a screen that changes in no visible way
+ * looks like a button that did not work. And a disagreement names both numbers — a count without
+ * the one it disagrees with is not actionable, and #123 exists precisely because acting on it is a
+ * decision this app does not make for you.
+ */
+internal fun EpisodeBackfillReport.describe(): String {
+    val parts = mutableListOf<String>()
+    parts +=
+        when (episodesFilled) {
+            0 -> "Nothing to add — every episode already has its details."
+            1 -> "Updated 1 episode."
+            else -> "Updated $episodesFilled episodes."
+        }
+    for (mismatch in mismatches) {
+        parts +=
+            "Season ${mismatch.seasonNumber}: you have ${mismatch.localEpisodes}, " +
+            "TMDB lists ${mismatch.providerEpisodes}."
+    }
+    if (seasonsNotFetched.isNotEmpty()) {
+        parts += "Season${if (seasonsNotFetched.size == 1) "" else "s"} " +
+            seasonsNotFetched.joinToString(", ") + " could not be checked in one request."
+    }
+    return parts.joinToString(" ")
 }

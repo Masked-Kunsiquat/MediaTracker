@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -89,6 +90,7 @@ fun TVShowDetailScreenRoute(
         onSetSeasonLength = viewModel::setSeasonLength,
         onRemoveSeason = viewModel::removeSeason,
         onAbandonedChange = viewModel::setAbandoned,
+        onRefreshMetadata = viewModel::refreshMetadata,
         onDelete = viewModel::deleteShow,
         onErrorShown = viewModel::consumeError,
         onNavigateBack = onNavigateBack,
@@ -109,6 +111,7 @@ fun TVShowDetailScreen(
     onSetSeasonLength: (Int, Int) -> Unit,
     onRemoveSeason: (Int) -> Unit,
     onAbandonedChange: (Boolean) -> Unit,
+    onRefreshMetadata: () -> Unit,
     onDelete: () -> Unit,
     onErrorShown: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -343,13 +346,27 @@ fun TVShowDetailScreen(
                     }
                 },
                 actions = {
-                    if (uiState is TVShowDetailUiState.Ready) {
-                        IconButton(onClick = { showDeleteConfirmation = true }) {
+                    // Only for a show that records where it came from. A hand-entered show has
+                    // nothing to refresh against, and a control that always fails is worse than one
+                    // that is absent.
+                    if (uiState is TVShowDetailUiState.Ready && uiState.canRefreshMetadata) {
+                        IconButton(
+                            onClick = onRefreshMetadata,
+                            enabled = !uiState.isRefreshingMetadata,
+                        ) {
                             Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(R.string.tv_show_detail_delete),
+                                Icons.Filled.Refresh,
+                                contentDescription =
+                                    stringResource(R.string.tv_show_detail_refresh_metadata),
                             )
                         }
+                    }
+                    // Outside that guard: every show can be deleted, including one typed in by hand.
+                    IconButton(onClick = { showDeleteConfirmation = true }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.tv_show_detail_delete),
+                        )
                     }
                 },
             )

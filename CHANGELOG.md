@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The refresh button that fills a hand-typed show in.** A show you added by hand now has a refresh action on its screen, which fetches its real episode titles, air dates, lengths, synopses and scores and fills them onto the rows already there. It tells you what it did in a sentence — how many episodes it updated, and where your count disagrees with the catalogue's, naming both numbers so you can decide what to do about it.
+
+  The button only appears for a show that records where it came from. A show typed in entirely by hand has nothing to refresh against, so rather than offering a button that always fails, there is no button.
+
 - **A show you filled in by hand can now get its real episode titles.** If you typed "Season 1: 10 episodes" before you had a TMDB key, those ten rows sat there numbered and blank. They can now be filled in from the catalogue — titles, air dates, lengths, synopses and scores — onto the rows that are already there.
 
   The rows are the same rows. Nothing is deleted and re-created, so everything you have ticked off stays ticked, with the date you ticked it. That is not a promise the code makes carefully; it is a promise the database statement cannot break, because the watched date is not among the columns it is able to write at all.
