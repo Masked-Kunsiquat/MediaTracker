@@ -2,6 +2,9 @@ package com.hub.media.features.tv.domain
 
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.network.tmdbRatingOf
+import com.hub.media.core.network.toInstantOrNull
+import com.hub.media.core.network.toYearOrNull
 import com.hub.media.features.tv.data.NewEpisode
 import com.hub.media.features.tv.data.NewSeason
 import com.hub.media.features.tv.data.SeasonEpisodes
@@ -112,7 +115,7 @@ public fun TmdbShowWithSeasons.toShowMapping(): TmdbShowMapping? {
         overview = show.overview,
         firstAirDate = show.firstAirDate.toInstantOrNull(),
         lastAirDate = show.lastAirDate.toInstantOrNull(),
-        communityRating = ratingOf(show.voteAverage, show.voteCount),
+        communityRating = tmdbRatingOf(show.voteAverage, show.voteCount),
         posterPath = show.posterPath,
     )
 }
@@ -142,27 +145,8 @@ private fun TmdbEpisodeDto.toNewEpisode(): NewEpisode =
         // would also be rejected by validateEpisodeRuntimeMinutes, failing the whole show.
         runtimeMinutes = runtime?.takeIf { it > 0 },
         overview = overview,
-        communityRating = ratingOf(voteAverage, voteCount),
+        communityRating = tmdbRatingOf(voteAverage, voteCount),
     )
-
-/**
- * A provider score, or `null` when nothing has actually been rated.
- *
- * TMDB answers an unrated title with `vote_average: 0.0`, not `null` -- the mean of an empty set.
- * Passing that through would record "everybody scored this zero" for every obscure episode, which is
- * worse than recording nothing: it is a number, so it survives into averages and comparisons looking
- * like data. [voteCount] is the only thing that distinguishes the two, which is why the DTOs model a
- * field nothing else reads.
- *
- * The range is *not* clamped here. A value outside 0-10 means TMDB changed its scale, and
- * [com.hub.media.features.media.domain.MediaMetadataValidation.validateCommunityRating] refusing the
- * write is the correct outcome -- silently clamping would store a wrong number rather than surface a
- * broken assumption.
- */
-private fun ratingOf(
-    voteAverage: Double?,
-    voteCount: Int?,
-): Double? = voteAverage?.takeIf { (voteCount ?: 0) > 0 }
 
 /**
  * Maps TMDB's `status` string onto [AiringStatus], falling back to `in_production` and then to
@@ -189,23 +173,3 @@ private fun airingStatusOf(
         "canceled", "cancelled" -> AiringStatus.CANCELLED
         else -> if (inProduction == true) AiringStatus.CONTINUING else null
     }
-
-/**
- * TMDB's `YYYY-MM-DD` as an [Instant] at midnight UTC, or `null`.
- *
- * A date with no time and no zone has to be given one to become an instant, and UTC midnight is the
- * convention already used elsewhere in this codebase for provider dates. The alternative -- the
- * device's zone -- would make the same TMDB response produce different stored values on two phones,
- * and make a CSV round-trip between them lossy.
- *
- * Anything unparseable yields `null` rather than throwing. TMDB sends `""` for unknown often enough
- * that it is ordinary, not exceptional, and one bad date must not cost the whole show.
- */
-internal fun String?.toInstantOrNull(): Instant? {
-    val raw = this?.trim().orEmpty()
-    if (raw.isEmpty()) return null
-    return runCatching { Instant.parse("${raw}T00:00:00Z") }.getOrNull()
-}
-
-/** The four-digit year of a TMDB `YYYY-MM-DD` date, or `null`. */
-internal fun String?.toYearOrNull(): Int? = this?.trim()?.take(4)?.toIntOrNull()

@@ -388,6 +388,13 @@
     <!-- Manual TV show entry with season quick-fill (Task 13 Phase C) -->
     <string name="add_tv_show_title">Add TV show</string>
     <string name="tv_show_search_title">Add TV show</string>
+    <string name="movie_search_title">Add movie</string>
+    <string name="movie_search_field_label">Search TMDB</string>
+    <string name="movie_search_action">Search</string>
+    <string name="movie_search_manual_entry">Enter manually instead</string>
+    <string name="movie_search_prompt">Search for a film to add it with its year, length and score already filled in.</string>
+    <string name="movie_search_no_results">No films matched that search.</string>
+    <string name="movie_search_unknown_year">Year unknown</string>
     <string name="tv_show_search_field_label">Search TMDB</string>
     <string name="tv_show_search_action">Search</string>
     <string name="tv_show_search_manual_entry">Enter manually instead</string>
@@ -395,7 +402,6 @@
     <string name="tv_show_search_no_results">No shows matched that search.</string>
     <string name="tv_show_search_adding">Adding…</string>
     <string name="tv_show_search_unknown_year">Year unknown</string>
-    <string name="tv_show_search_dismiss_error">Dismiss</string>
     <string name="add_tv_show_field_title">Title</string>
     <string name="add_tv_show_field_year">Release year</string>
     <string name="add_tv_show_field_total_seasons">Total seasons</string>

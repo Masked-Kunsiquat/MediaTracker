@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A film can be added by searching for it too.** The same as shows: type a name, tap the result, and the film arrives with its year, its length and how other people rated it already filled in. Typing one in by hand is still there, one tap from the search box, and still the path that works when no key is saved.
+
+  A film you already have cannot be added twice — tapping it again says so by name. Films and shows are numbered separately by the catalogue, so owning a show does not block a film that happens to share its number, and the other way round.
+
+  One thing a film does not get that a show does: its synopsis. There is nowhere to keep it — the shows table gained a column for one and the films table never did, and that is now fixed in place until a future database version. Rather than quietly drop it, this is written down.
+
 ## [0.17.0] - 2026-09-02
 
 Television arrived properly. Adding a show used to mean typing its title, its year, and then one

@@ -48,44 +48,44 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
-import com.github.maskedkunisquat.mediatracker.ui.TVShowSearchViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.MovieSearchViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.ui.AppContainer
-import com.hub.media.ui.TVShowSearchUiState
-import com.hub.media.ui.TVShowSearchViewModel
+import com.hub.media.ui.MovieSearchUiState
+import com.hub.media.ui.MovieSearchViewModel
 import com.hub.media.ui.TmdbSearchResult
 
 /**
- * Route wrapper for [TVShowSearchScreen] (ROADMAP Task 13 Phase D).
+ * Route wrapper for [MovieSearchScreen] (ROADMAP Task 13 Phase D).
  *
- * Mirrors [AddTVShowScreenRoute], including the `reset()` before navigating: the save is
+ * Mirrors [AddMovieScreenRoute], including the `reset()` before navigating: the save is
  * asynchronous, so the tapped row cannot know the new id at click time, and navigation is therefore
  * an effect of reaching a saved id rather than something the tap does directly.
  */
 @Composable
-fun TVShowSearchScreenRoute(
+fun MovieSearchScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
     onNavigateToManualEntry: () -> Unit,
-    onShowAdded: (String) -> Unit,
+    onMovieAdded: (String) -> Unit,
 ) {
-    val viewModel: TVShowSearchViewModel = viewModel(factory = TVShowSearchViewModelFactory(appContainer))
+    val viewModel: MovieSearchViewModel = viewModel(factory = MovieSearchViewModelFactory(appContainer))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState) {
         val savedMediaId = uiState.savedMediaId
         if (savedMediaId != null) {
             viewModel.reset()
-            onShowAdded(savedMediaId)
+            onMovieAdded(savedMediaId)
         }
     }
 
-    TVShowSearchScreen(
+    MovieSearchScreen(
         uiState = uiState,
         onQueryChange = viewModel::onQueryChange,
         onSearch = viewModel::search,
-        onResultClick = viewModel::addShow,
+        onResultClick = viewModel::addMovie,
         onDismissError = viewModel::dismissError,
         onNavigateBack = onNavigateBack,
         onNavigateToManualEntry = onNavigateToManualEntry,
@@ -93,22 +93,28 @@ fun TVShowSearchScreenRoute(
 }
 
 /**
- * Adds a TV show by looking it up on TMDB, with manual entry always one tap away.
+ * Adds a film by looking it up on TMDB, with manual entry always one tap away.
  *
  * ### Why manual entry is on this screen rather than a sibling menu item
  * The app is offline-first and TMDB needs a credential the user supplies, so search is the path that
- * can be *unavailable* while manual entry never is. Making search the destination of "Add TV show"
+ * can be *unavailable* while manual entry never is. Making search the destination of "Add movie"
  * and manual entry a permanent action on it means the fallback is visible at the moment it is
  * needed — including when the failure showing above it is "no credential is set". A sibling menu
  * entry would put the remedy on a screen the user has already left.
  *
  * Stateless: every value comes from [uiState] and every action is a callback, so the behaviour tests
  * drive it with fabricated state and no database. See AGENTS.md §7 on where a UI test lives.
+ *
+ * Structurally identical to [TVShowSearchScreen] and deliberately a separate file: this app keeps a
+ * screen per media type (`AddMovieScreen`/`AddTVShowScreen` predate these), and the two will diverge
+ * as soon as either shows anything type-specific -- a film has no seasons to summarise, a show has no
+ * runtime. Sharing them would mean a screen parameterised by strings and a row slot, which is more
+ * machinery than the duplication costs today.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TVShowSearchScreen(
-    uiState: TVShowSearchUiState,
+fun MovieSearchScreen(
+    uiState: MovieSearchUiState,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onResultClick: (Int) -> Unit,
@@ -123,10 +129,9 @@ fun TVShowSearchScreen(
     // on screen and the row can be tapped again -- so a message that fades is right for it.
     //
     // A failed *search* is not transient: it leaves the results area empty, and that emptiness has to
-    // explain itself. Showing it only in a snackbar meant the body fell through to "No shows matched
-    // that search", which is confidently wrong -- nothing matched because the request never
-    // succeeded. Caught on a device with no credential saved, where the snackbar named the real
-    // problem while the body underneath contradicted it.
+    // explain itself. Showing it only in a snackbar let the body fall through to "nothing matched",
+    // which is confidently wrong when the request never succeeded -- found on a device on #129,
+    // where the snackbar named the real problem while the body underneath contradicted it.
     LaunchedEffect(uiState.addError) {
         val addError = uiState.addError
         if (addError != null) {
@@ -151,7 +156,7 @@ fun TVShowSearchScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.tv_show_search_title)) },
+                title = { Text(stringResource(R.string.movie_search_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -180,9 +185,9 @@ fun TVShowSearchScreen(
                 OutlinedTextField(
                     value = uiState.query,
                     onValueChange = onQueryChange,
-                    label = { Text(stringResource(R.string.tv_show_search_field_label)) },
+                    label = { Text(stringResource(R.string.movie_search_field_label)) },
                     singleLine = true,
-                    // Search is an explicit action, never a keystroke -- see TVShowSearchViewModel's
+                    // Search is an explicit action, never a keystroke -- see MovieSearchViewModel's
                     // KDoc on why there is no debounce. The IME's own search key runs the same one.
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions =
@@ -192,7 +197,7 @@ fun TVShowSearchScreen(
                                 onSearch()
                             },
                         ),
-                    modifier = Modifier.weight(1f).testTag(TestTags.TVShowSearch.QUERY_FIELD),
+                    modifier = Modifier.weight(1f).testTag(TestTags.MovieSearch.QUERY_FIELD),
                 )
                 Button(
                     onClick = {
@@ -202,9 +207,9 @@ fun TVShowSearchScreen(
                     // Disabled on a blank query rather than allowed and then ignored: a button that
                     // does nothing when pressed reads as broken.
                     enabled = uiState.query.isNotBlank() && !uiState.isSearching,
-                    modifier = Modifier.testTag(TestTags.TVShowSearch.SEARCH_BUTTON),
+                    modifier = Modifier.testTag(TestTags.MovieSearch.SEARCH_BUTTON),
                 ) {
-                    Text(stringResource(R.string.tv_show_search_action))
+                    Text(stringResource(R.string.movie_search_action))
                 }
             }
 
@@ -213,15 +218,15 @@ fun TVShowSearchScreen(
                 // Disabled for the same window the rows are, and for a sharper reason than symmetry.
                 // Leaving during an add does not cancel it: the ViewModel outlives this screen, so
                 // the add completes, and returning here re-runs the effect that navigates on a saved
-                // id -- dropping the user onto the new show's detail screen from wherever they had
+                // id -- dropping the user onto the new film's detail screen from wherever they had
                 // got to. Refusing the tap for the length of one request is a smaller cost than that,
                 // and the button stays *visible*, which is the property this screen actually needs it
                 // for: when an add fails it re-enables immediately, and a failed search never
                 // disables it at all.
                 enabled = uiState.addingTmdbId == null,
-                modifier = Modifier.testTag(TestTags.TVShowSearch.MANUAL_ENTRY),
+                modifier = Modifier.testTag(TestTags.MovieSearch.MANUAL_ENTRY),
             ) {
-                Text(stringResource(R.string.tv_show_search_manual_entry))
+                Text(stringResource(R.string.movie_search_manual_entry))
             }
 
             HorizontalDivider()
@@ -245,24 +250,24 @@ fun TVShowSearchScreen(
                     )
                 !uiState.hasSearched ->
                     Text(
-                        text = stringResource(R.string.tv_show_search_prompt),
+                        text = stringResource(R.string.movie_search_prompt),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 uiState.results.isEmpty() ->
                     Text(
-                        text = stringResource(R.string.tv_show_search_no_results),
+                        text = stringResource(R.string.movie_search_no_results),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 else ->
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize().testTag(TestTags.TVShowSearch.RESULTS),
+                        modifier = Modifier.fillMaxSize().testTag(TestTags.MovieSearch.RESULTS),
                     ) {
                         items(uiState.results, key = { it.tmdbId }) { result ->
                             SearchResultRow(
                                 result = result,
                                 // Only the row being added shows progress, and every row stops
                                 // responding while one is in flight -- a second tap would otherwise
-                                // produce a second show.
+                                // produce a second film.
                                 isAdding = uiState.addingTmdbId == result.tmdbId,
                                 enabled = uiState.addingTmdbId == null,
                                 onClick = { onResultClick(result.tmdbId) },
@@ -284,7 +289,7 @@ private fun SearchResultRow(
     ListItem(
         headlineContent = { Text(result.title) },
         supportingContent = {
-            Text(result.year ?: stringResource(R.string.tv_show_search_unknown_year))
+            Text(result.year ?: stringResource(R.string.movie_search_unknown_year))
         },
         trailingContent = {
             if (isAdding) {

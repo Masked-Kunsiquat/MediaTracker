@@ -11,31 +11,12 @@ import com.hub.media.core.util.warn
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
-import com.hub.media.features.tv.network.dto.TmdbSearchResultDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 private const val TAG = "TVShowSearchViewModel"
-
-/**
- * One row in the search results, carrying only what the list draws and what selecting it needs.
- *
- * A UI type rather than [TmdbSearchResultDto] so the screen holds no dependency on a wire format:
- * the DTO's field names are TMDB's (`name` for shows, `title` for films), and a screen written
- * against them would have to be edited if a provider were ever added or swapped.
- *
- * @property year Already formatted for display, or `null` when TMDB gave no date. Derived here
- *   rather than in the composable so the "what does an empty date mean" question is answered once.
- */
-public data class ShowSearchResult(
-    val tmdbId: Int,
-    val title: String,
-    val year: String? = null,
-    val overview: String? = null,
-    val posterPath: String? = null,
-)
 
 /**
  * @property hasSearched Whether a search has completed at least once. The empty list means two
@@ -49,7 +30,7 @@ public data class TVShowSearchUiState(
     val query: String = "",
     val isSearching: Boolean = false,
     val hasSearched: Boolean = false,
-    val results: List<ShowSearchResult> = emptyList(),
+    val results: List<TmdbSearchResult> = emptyList(),
     val searchError: String? = null,
     val addingTmdbId: Int? = null,
     val addError: String? = null,
@@ -232,21 +213,4 @@ public class TVShowSearchViewModel(
     public fun reset() {
         _uiState.value = _uiState.value.copy(savedMediaId = null)
     }
-}
-
-/**
- * A search hit as the list draws it, or `null` when TMDB sent one with no usable name.
- *
- * Dropped rather than shown as an untitled row: it cannot be added -- `addShow` would reject a blank
- * title -- so offering it would be offering a tap that always fails.
- */
-private fun TmdbSearchResultDto.toSearchResult(): ShowSearchResult? {
-    val name = displayTitle?.takeIf { it.isNotBlank() } ?: return null
-    return ShowSearchResult(
-        tmdbId = id,
-        title = name,
-        year = displayDate?.takeIf { it.isNotBlank() }?.take(4),
-        overview = overview?.takeIf { it.isNotBlank() },
-        posterPath = posterPath,
-    )
 }
