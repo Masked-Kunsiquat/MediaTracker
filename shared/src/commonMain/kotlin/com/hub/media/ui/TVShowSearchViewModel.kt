@@ -11,7 +11,6 @@ import com.hub.media.core.util.warn
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
-import com.hub.media.features.tv.network.dto.TmdbSearchResultDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -214,21 +213,4 @@ public class TVShowSearchViewModel(
     public fun reset() {
         _uiState.value = _uiState.value.copy(savedMediaId = null)
     }
-}
-
-/**
- * A search hit as the list draws it, or `null` when TMDB sent one with no usable name.
- *
- * Dropped rather than shown as an untitled row: it cannot be added -- `addShow` would reject a blank
- * title -- so offering it would be offering a tap that always fails.
- */
-private fun TmdbSearchResultDto.toSearchResult(): TmdbSearchResult? {
-    val name = displayTitle?.takeIf { it.isNotBlank() } ?: return null
-    return TmdbSearchResult(
-        tmdbId = id,
-        title = name,
-        year = displayDate?.takeIf { it.isNotBlank() }?.take(4),
-        overview = overview?.takeIf { it.isNotBlank() },
-        posterPath = posterPath,
-    )
 }

@@ -1,5 +1,7 @@
 package com.hub.media.ui
 
+import com.hub.media.features.tv.network.dto.TmdbSearchResultDto
+
 /**
  * One row in the search results, carrying only what the list draws and what selecting it needs.
  *
@@ -23,3 +25,25 @@ public data class TmdbSearchResult(
     val overview: String? = null,
     val posterPath: String? = null,
 )
+
+/**
+ * A search hit as the list draws it, or `null` when TMDB sent one with no usable title.
+ *
+ * Dropped rather than shown untitled: `addShow`/`addMovie` both reject a blank title, so offering
+ * such a row would be offering a tap that always fails.
+ *
+ * Shared by both search ViewModels. [TmdbSearchResultDto.displayTitle] already resolves TMDB's
+ * `name`-for-shows / `title`-for-films split, so the function that builds a row out of it has no
+ * media type in it either -- and two identical copies of it was the duplication moving
+ * [TmdbSearchResult] into this file was meant to remove.
+ */
+internal fun TmdbSearchResultDto.toSearchResult(): TmdbSearchResult? {
+    val name = displayTitle?.takeIf { it.isNotBlank() } ?: return null
+    return TmdbSearchResult(
+        tmdbId = id,
+        title = name,
+        year = displayDate?.takeIf { it.isNotBlank() }?.take(4),
+        overview = overview?.takeIf { it.isNotBlank() },
+        posterPath = posterPath,
+    )
+}
