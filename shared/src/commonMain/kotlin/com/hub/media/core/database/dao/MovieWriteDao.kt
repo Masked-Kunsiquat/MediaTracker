@@ -110,21 +110,6 @@ interface MovieWriteDao {
     ): Int
 
     /**
-     * Targeted update of just the editable columns across both tables, in one transaction — the
-     * same shape as [BookWriteDao.updateBookMetadataAtomically], and for the same reason: writing a
-     * full-row copy back would silently revert a concurrent writer's change to some other column.
-     *
-     * Self-heals a missing details row rather than reporting a success that wrote half the values.
-     * A `media_items` row without its `movie_details` half is the data-integrity edge
-     * [com.hub.media.features.media.data.MediaWithDetails.Movie.details] documents as possible;
-     * before this, the `UPDATE` there matched nothing, runtime/status/watchedAt went nowhere, and
-     * the count this returns still said "updated". Inserting inside the same transaction is what
-     * makes the repair atomic with the half that did land.
-     *
-     * @return the number of `media_items` rows affected, so a caller can tell "no such movie" (0)
-     *   from a successful update.
-     */
-    /**
      * Fills a film's provider metadata **onto columns that are still null**, scoped to `MOVIE` rows.
      *
      * The film half of the rule [TVWriteDao.fillEpisodeMetadata] states for episodes, and enforced
@@ -158,7 +143,9 @@ interface MovieWriteDao {
      * That is the property #75 settled and this inherits: **a background pass can never alter what
      * your library says you have watched.**
      */
-    @Query("UPDATE movie_details SET runtimeMinutes = COALESCE(runtimeMinutes, :runtimeMinutes) WHERE mediaId = :mediaId")
+    @Query(
+        "UPDATE movie_details SET runtimeMinutes = COALESCE(runtimeMinutes, :runtimeMinutes) WHERE mediaId = :mediaId",
+    )
     suspend fun fillMovieDetailMetadata(
         mediaId: String,
         runtimeMinutes: Int?,
@@ -192,6 +179,21 @@ interface MovieWriteDao {
         return mediaRows
     }
 
+    /**
+     * Targeted update of just the editable columns across both tables, in one transaction — the
+     * same shape as [BookWriteDao.updateBookMetadataAtomically], and for the same reason: writing a
+     * full-row copy back would silently revert a concurrent writer's change to some other column.
+     *
+     * Self-heals a missing details row rather than reporting a success that wrote half the values.
+     * A `media_items` row without its `movie_details` half is the data-integrity edge
+     * [com.hub.media.features.media.data.MediaWithDetails.Movie.details] documents as possible;
+     * before this, the `UPDATE` there matched nothing, runtime/status/watchedAt went nowhere, and
+     * the count this returns still said "updated". Inserting inside the same transaction is what
+     * makes the repair atomic with the half that did land.
+     *
+     * @return the number of `media_items` rows affected, so a caller can tell "no such movie" (0)
+     *   from a successful update.
+     */
     @Transaction
     suspend fun updateMovieMetadataAtomically(
         mediaId: String,
