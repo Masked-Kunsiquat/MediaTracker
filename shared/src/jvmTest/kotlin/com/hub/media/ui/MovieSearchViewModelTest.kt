@@ -17,16 +17,22 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * [MovieSearchViewModel] against a real in-memory [AppDatabase] and a [MockEngine]-backed
@@ -167,6 +173,61 @@ class MovieSearchViewModelTest {
                 "603",
                 db.externalIdentifierDao().getByKey(mediaId, IdentifierProvider.TMDB)?.externalId,
             )
+        }
+
+    @Test
+    fun addMovie_reportsTheSaveBeforeWaitingOnTheArtwork() =
+        runTest {
+            // Found on a device: fetching the poster before publishing savedMediaId made a download
+            // a precondition of *reaching* the film. savedMediaId is what the route navigates on and
+            // addingTmdbId is what keeps every row unresponsive, so a slow one left the user on a
+            // dead list looking at a film that had already been added.
+            //
+            // The poster fetcher here never completes. If the ordering regresses, this test hangs
+            // rather than failing loudly -- which is itself the symptom being pinned.
+            val neverAnswers =
+                FetchPosterUseCase(
+                    coverDownloader =
+                        CoverImageDownloader(
+                            createHttpClient(MockEngine { awaitCancellation() }),
+                        ),
+                    imageStorage = LocalImageStorageManager("unused-in-these-tests"),
+                    mediaRepository = MediaRepository(db),
+                )
+            val engine =
+                MockEngine { request ->
+                    when {
+                        request.url.encodedPath.startsWith("/3/movie/") ->
+                            respond(MATRIX, HttpStatusCode.OK, jsonHeaders())
+                        else -> respondError(HttpStatusCode.NotFound)
+                    }
+                }
+            val vm =
+                viewModels.track(
+                    MovieSearchViewModel(
+                        TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
+                        repository,
+                        neverAnswers,
+                    ),
+                )
+
+            vm.addMovie(603)
+
+            // Waited for in *real* time rather than virtual. runTest's clock only advances while
+            // every coroutine is idle, and this test deliberately holds one suspended forever, so a
+            // virtual-time timeout does not measure what it looks like it measures. Unconfined does
+            // not help either: Room and Ktor suspend for real, so the state is not published by the
+            // time addMovie returns.
+            val state =
+                withContext(Dispatchers.Default) {
+                    withTimeout(5.seconds) { vm.uiState.first { it.savedMediaId != null } }
+                }
+            assertNotNull(
+                state.savedMediaId,
+                "the save must be published before the artwork is awaited, or a slow download " +
+                    "leaves the user on a dead list looking at a film already added",
+            )
+            assertNull(state.addingTmdbId, "the list must be responsive again before the artwork lands")
         }
 
     @Test

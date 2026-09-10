@@ -138,13 +138,20 @@ public class MovieSearchViewModel(
                     ) {
                         is Resource.Success -> {
                             logger.info(TAG) { "Added film from TMDB $tmdbId" }
-                            // After the write, never before it: a poster fetched first would make
-                            // artwork a precondition of having the film at all. Failure is ignored
-                            // on purpose -- the row is already complete without one, and the use case
-                            // logs what went wrong.
-                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
+                            // Release the screen *first*, then fetch the artwork.
+                            //
+                            // Fetching before this line made a poster a precondition of reaching the
+                            // film: savedMediaId is what the route navigates on and addingTmdbId is
+                            // what keeps every row unresponsive, so a slow or hanging download left
+                            // the user on a dead list looking at a film that had already been added.
+                            // Found on a device -- the row existed in the database while the screen
+                            // had not moved.
+                            //
+                            // The detail screen observes its row, so the poster appears there when it
+                            // lands. Failure stays ignored: the entry is complete without one.
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
+                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
                         }
                         is Resource.Error -> failAdd(saved.message)
                     }

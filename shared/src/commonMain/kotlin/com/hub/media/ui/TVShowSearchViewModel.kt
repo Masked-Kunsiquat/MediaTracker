@@ -188,13 +188,14 @@ public class TVShowSearchViewModel(
                             logger.info(TAG) {
                                 "Added show from TMDB $tmdbId: ${mapping.seasons.size} season(s)"
                             }
-                            // After the write, never before it: a poster fetched first would make
-                            // artwork a precondition of having the show at all. Failure is ignored
-                            // on purpose -- the row is already complete without one, and the use case
-                            // logs what went wrong.
-                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
+                            // Release the screen *first*, then fetch the artwork -- see
+                            // MovieSearchViewModel for the device-found failure this ordering fixes:
+                            // savedMediaId drives navigation and addingTmdbId keeps every row
+                            // unresponsive, so fetching before this line left the user on a dead list
+                            // looking at a show that had already been added.
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
+                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
                         }
                         is Resource.Error -> failAdd(saved.message)
                     }
