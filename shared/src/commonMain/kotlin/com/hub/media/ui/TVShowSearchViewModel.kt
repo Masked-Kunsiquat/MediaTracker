@@ -195,7 +195,7 @@ public class TVShowSearchViewModel(
                             // looking at a show that had already been added.
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
-                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
+                            fetchPosterUseCase.enqueue(saved.data, mapping.posterPath)
                         }
                         is Resource.Error -> failAdd(saved.message)
                     }

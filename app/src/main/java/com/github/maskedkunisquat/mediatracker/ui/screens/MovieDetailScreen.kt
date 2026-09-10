@@ -2,10 +2,14 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -40,6 +44,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MovieDetailViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.AppContainer
@@ -165,15 +170,21 @@ fun MovieDetailScreen(
         },
     ) { innerPadding ->
         Column(
-            // The one screen with no scrolling container at all, so #99's padding move does not
-            // apply: there is nothing here that could scroll under a bar, and moving the inset
-            // inside a Column that does not scroll would simply put the last row under the
-            // navigation bar with no way to reach it.
+            // This screen used to have no scrolling container, and its comment explained why #99's
+            // padding move did not apply: nothing here could overflow. **That stopped being true
+            // when this branch added a 220dp poster above the status controls.** A short viewport or
+            // a large font scale can now push "Abandoned" off the bottom, and without a scroll it
+            // would be unreachable -- the same class of failure as a control behind the navigation
+            // bar, which #95 already cost this project once.
+            //
+            // Scrolling brings #99's rule with it: insets as contentPadding rather than padding(),
+            // so the content passes under the bars while the last row still clears them.
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
+                    .consumeWindowInsets(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(scrollingContentPadding(innerPadding, PaddingValues(16.dp))),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (uiState) {

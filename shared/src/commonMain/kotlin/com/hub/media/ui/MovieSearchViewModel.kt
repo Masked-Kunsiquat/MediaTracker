@@ -151,7 +151,7 @@ public class MovieSearchViewModel(
                             // lands. Failure stays ignored: the entry is complete without one.
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
-                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
+                            fetchPosterUseCase.enqueue(saved.data, mapping.posterPath)
                         }
                         is Resource.Error -> failAdd(saved.message)
                     }

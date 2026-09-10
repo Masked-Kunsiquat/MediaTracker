@@ -6,6 +6,8 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.storage.cleanupTestTempDir
+import com.hub.media.core.storage.createTestTempDir
 import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.tv.data.TVShowRepository
@@ -17,10 +19,14 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -43,6 +49,7 @@ import kotlin.time.Duration.Companion.seconds
 class MovieSearchViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: MovieRepository
+    private lateinit var posterDir: String
     private val viewModels = ViewModelRegistry()
 
     @BeforeTest
@@ -50,12 +57,14 @@ class MovieSearchViewModelTest {
         viewModels.installMain()
         db = testAppDatabase()
         repository = MovieRepository(db)
+        posterDir = runBlocking { createTestTempDir() }
     }
 
     @AfterTest
     fun tearDown() {
         viewModels.clearAll()
         db.close()
+        runBlocking { cleanupTestTempDir(posterDir) }
     }
 
     /**
@@ -70,6 +79,7 @@ class MovieSearchViewModelTest {
                 ),
             imageStorage = LocalImageStorageManager("unused-in-these-tests"),
             mediaRepository = MediaRepository(db),
+            scope = CoroutineScope(Dispatchers.Default),
         )
 
     private fun jsonHeaders() = headersOf(HttpHeaders.ContentType, "application/json")
@@ -176,58 +186,66 @@ class MovieSearchViewModelTest {
         }
 
     @Test
-    fun addMovie_reportsTheSaveBeforeWaitingOnTheArtwork() =
+    fun addMovie_theArtworkFetchOutlivesTheScreenThatStartedIt() =
         runTest {
-            // Found on a device: fetching the poster before publishing savedMediaId made a download
-            // a precondition of *reaching* the film. savedMediaId is what the route navigates on and
-            // addingTmdbId is what keeps every row unresponsive, so a slow one left the user on a
-            // dead list looking at a film that had already been added.
-            //
-            // The poster fetcher here never completes. If the ordering regresses, this test hangs
-            // rather than failing loudly -- which is itself the symptom being pinned.
-            val neverAnswers =
-                FetchPosterUseCase(
-                    coverDownloader =
-                        CoverImageDownloader(
-                            createHttpClient(MockEngine { awaitCancellation() }),
-                        ),
-                    imageStorage = LocalImageStorageManager("unused-in-these-tests"),
-                    mediaRepository = MediaRepository(db),
-                )
-            val engine =
-                MockEngine { request ->
-                    when {
-                        request.url.encodedPath.startsWith("/3/movie/") ->
+            // The reason FetchPosterUseCase takes an app-owned scope. Adding a title navigates with
+            // popUpTo(inclusive = true), which removes the search destination and clears its
+            // ViewModel -- so a download started in viewModelScope is cancelled within moments, and
+            // whether a poster arrives becomes a race with the navigation animation. It won on a
+            // fast connection during testing, which is how this would have shipped unnoticed.
+            val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            try {
+                val poster =
+                    FetchPosterUseCase(
+                        coverDownloader =
+                            CoverImageDownloader(
+                                createHttpClient(MockEngine { respond(byteArrayOf(1, 2, 3)) }),
+                            ),
+                        imageStorage = LocalImageStorageManager(posterDir),
+                        mediaRepository = MediaRepository(db),
+                        scope = appScope,
+                    )
+                val engine =
+                    MockEngine { request ->
+                        if (request.url.encodedPath.startsWith("/3/movie/")) {
                             respond(MATRIX, HttpStatusCode.OK, jsonHeaders())
-                        else -> respondError(HttpStatusCode.NotFound)
+                        } else {
+                            respondError(HttpStatusCode.NotFound)
+                        }
                     }
-                }
-            val vm =
-                viewModels.track(
+                val vm =
                     MovieSearchViewModel(
                         TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
                         repository,
-                        neverAnswers,
-                    ),
-                )
+                        poster,
+                    )
 
-            vm.addMovie(603)
+                vm.addMovie(603)
+                val mediaId =
+                    withContext(Dispatchers.Default) {
+                        withTimeout(5.seconds) { vm.uiState.first { it.savedMediaId != null }.savedMediaId!! }
+                    }
+                // Clear the ViewModel exactly as navigating away does.
+                ViewModelRegistry().also { it.track(vm) }.clearAll()
 
-            // Waited for in *real* time rather than virtual. runTest's clock only advances while
-            // every coroutine is idle, and this test deliberately holds one suspended forever, so a
-            // virtual-time timeout does not measure what it looks like it measures. Unconfined does
-            // not help either: Room and Ktor suspend for real, so the state is not published by the
-            // time addMovie returns.
-            val state =
-                withContext(Dispatchers.Default) {
-                    withTimeout(5.seconds) { vm.uiState.first { it.savedMediaId != null } }
-                }
-            assertNotNull(
-                state.savedMediaId,
-                "the save must be published before the artwork is awaited, or a slow download " +
-                    "leaves the user on a dead list looking at a film already added",
-            )
-            assertNull(state.addingTmdbId, "the list must be responsive again before the artwork lands")
+                val cover =
+                    withContext(Dispatchers.Default) {
+                        withTimeout(5.seconds) {
+                            // delay() rather than a tight loop: without it a regression starves
+                            // the dispatcher and the suite *hangs* instead of failing, which is a
+                            // worse outcome than the bug being pinned. Learned by writing it wrong.
+                            var hash: String? = null
+                            while (hash == null) {
+                                delay(25)
+                                hash = db.mediaItemDao().getById(mediaId)?.coverImageHash
+                            }
+                            hash
+                        }
+                    }
+                assertNotNull(cover, "the poster must land even though the screen is gone")
+            } finally {
+                appScope.cancel()
+            }
         }
 
     @Test

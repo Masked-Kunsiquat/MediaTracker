@@ -41,6 +41,9 @@ import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Manual composition root for the shared layer (AGENTS.md §5 "No Unnecessary Dependencies" —
@@ -95,6 +98,19 @@ public class AppContainer(
 ) {
     /** Shared [HttpClient] for all outbound requests. */
     public val httpClient: HttpClient = createHttpClient()
+
+    /**
+     * Scope for work that must outlive the screen that started it.
+     *
+     * Deliberately narrow in intent: this is not a general "do things in the background" scope. It
+     * exists because a poster download is started by a screen that navigates away from itself
+     * immediately — `popUpTo(inclusive = true)` removes the search destination, clearing its
+     * ViewModel and cancelling `viewModelScope` mid-download.
+     *
+     * [SupervisorJob] so one failed fetch cannot cancel the next. Never cancelled: it is tied to the
+     * process, and this container is built once per process.
+     */
+    private val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Universal media repository (ROADMAP foundation for Task 13). */
     public val mediaRepository: MediaRepository = MediaRepository(database)
@@ -231,6 +247,7 @@ public class AppContainer(
             coverDownloader = CoverImageDownloader(httpClient),
             imageStorage = imageStorage,
             mediaRepository = mediaRepository,
+            scope = appScope,
         )
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */

@@ -8,6 +8,8 @@ import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.CoverImageDownloader
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "FetchPoster"
@@ -42,8 +44,33 @@ public class FetchPosterUseCase(
     private val coverDownloader: CoverImageDownloader,
     private val imageStorage: LocalImageStorageManager,
     private val mediaRepository: MediaRepository,
+    private val scope: CoroutineScope,
     private val logger: Logger = AppLogger,
 ) {
+    /**
+     * Starts a fetch that outlives whoever asked for it, and returns immediately.
+     *
+     * ### Why this cannot run in a ViewModel's scope
+     * Adding a title navigates with `popUpTo(inclusive = true)`, which **removes the search
+     * destination from the back stack**. That clears its ViewModel and cancels `viewModelScope` —
+     * so a download started there is killed within moments of being started, and whether a poster
+     * arrives becomes a race between the CDN and the navigation animation. It won on a fast
+     * connection during testing, which is exactly how this would have shipped unnoticed.
+     *
+     * [scope] is owned by [com.hub.media.ui.AppContainer] and lives as long as the process, so the
+     * download, the file write and the row update all complete regardless of where the user goes
+     * next.
+     *
+     * Fire-and-forget by design: the result is a poster or no poster, and [execute] logs the
+     * difference. Nothing awaits this, because there is nothing a caller would do differently.
+     */
+    public fun enqueue(
+        mediaId: String,
+        posterPath: String?,
+    ) {
+        scope.launch { execute(mediaId, posterPath) }
+    }
+
     /**
      * Fetches [posterPath] and records the resulting hash against [mediaId].
      *

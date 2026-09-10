@@ -18,6 +18,8 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -67,6 +69,7 @@ class TVShowSearchViewModelTest {
                 ),
             imageStorage = LocalImageStorageManager("unused-in-these-tests"),
             mediaRepository = MediaRepository(db),
+            scope = CoroutineScope(Dispatchers.Default),
         )
 
     private fun jsonHeaders() = headersOf(HttpHeaders.ContentType, "application/json")

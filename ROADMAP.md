@@ -46,8 +46,12 @@ single list below and reordering is a one-line edit there.
 5. **Task 13 — Movies & TV.** *Mostly done*: Phase A (schema v6), Phase B (movies, manual entry)
    and Phase C (shows, episode-level via quick-fill) all shipped in `v0.15.0`, which is also the
    release that froze schema v6. **Phase D's scope is now built** — the TMDB client and credential,
-   add-by-search for films and shows, the enrichment backfill onto rows that already exist, and
-   posters ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). Its schema questions
+   add-by-search for films and shows, the enrichment backfill of episode metadata onto rows that
+   already exist, and posters **for titles added through search**
+   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). Refresh fills a show's
+   episode metadata and does *not* fetch a missing poster; nothing backfills artwork for titles
+   added earlier, which is
+   [#140](https://github.com/Masked-Kunsiquat/MediaTracker/issues/140). Its schema questions
    were settled before the freeze and cost nothing afterwards: episodes needed no provider id of
    their own, and every column the backfill fills was added in #86 while v6 was still editable.
    What Phase D deliberately did *not* decide is tracked separately rather than left implicit —

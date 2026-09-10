@@ -14,6 +14,8 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -61,6 +63,7 @@ class FetchPosterUseCaseTest {
             coverDownloader = CoverImageDownloader(createHttpClient(engine)),
             imageStorage = storage,
             mediaRepository = MediaRepository(db),
+            scope = CoroutineScope(Dispatchers.Default),
         )
     }
 
@@ -110,6 +113,7 @@ class FetchPosterUseCaseTest {
                     coverDownloader = CoverImageDownloader(createHttpClient(engine)),
                     imageStorage = storage,
                     mediaRepository = MediaRepository(db),
+                    scope = CoroutineScope(Dispatchers.Default),
                 )
             val mediaId = aFilm()
 
