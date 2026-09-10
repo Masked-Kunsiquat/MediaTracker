@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **An About screen, naming where your films, shows and books get their information from.** Settings has a new About section; it opens a page with the app version and a card for each of the three catalogues the app talks to, saying what each one supplies and linking to it.
+
+  It is there because two of the three require it. The Movie Database asks that anything using their data say so, in those words, in a section of exactly this kind — so their notice appears on it verbatim, under their own logo. Google Books asks for credit too. Open Library asks for nothing at all, and is credited anyway; the card says as much, so it is clear which of the three is a courtesy.
+
 ## [0.18.0] - 2026-09-10
 
 Films caught up with television, and neither of them arrives blank any more.

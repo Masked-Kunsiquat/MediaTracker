@@ -136,6 +136,7 @@ fun SettingsScreenRoute(
     onNavigateBack: () -> Unit,
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
+    onNavigateToAbout: () -> Unit,
 ) {
     val viewModel: SettingsViewModel =
         viewModel(
@@ -662,6 +663,7 @@ fun SettingsScreenRoute(
         },
         onNavigateToLogViewer = onNavigateToLogViewer,
         onNavigateToChangelog = onNavigateToChangelog,
+        onNavigateToAbout = onNavigateToAbout,
         exportInProgress = exportUiState is ExportUiState.Loading,
         onExportClick = exportViewModel::exportData,
         importInProgress = importUiState is ImportUiState.Loading,
@@ -807,6 +809,32 @@ private fun ChangelogSetting(onViewChangelogClick: () -> Unit) {
         )
         Button(onClick = onViewChangelogClick) {
             Text(stringResource(R.string.settings_changelog_button))
+        }
+    }
+}
+
+/**
+ * The About row (#137). Opens the credits screen where the provider attributions live.
+ *
+ * The description names what is on the other side rather than saying "about this app", because the
+ * one thing a user might come looking for here -- which catalogue their film data came from -- is
+ * otherwise invisible from the row.
+ */
+@Composable
+private fun AboutSetting(onViewAboutClick: () -> Unit) {
+    Column {
+        Text(
+            text = stringResource(R.string.settings_about_label),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_about_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Button(onClick = onViewAboutClick) {
+            Text(stringResource(R.string.settings_about_button))
         }
     }
 }
@@ -1087,6 +1115,7 @@ fun SettingsScreen(
     onTmdbCredentialTest: () -> Unit,
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
+    onNavigateToAbout: () -> Unit,
     exportInProgress: Boolean,
     onExportClick: () -> Unit,
     importInProgress: Boolean,
@@ -1261,6 +1290,21 @@ fun SettingsScreen(
                             restoreInProgress = restoreInProgress,
                             onRestoreClick = onRestoreClick,
                         )
+                    }
+                }
+                item {
+                    // Its own section, and last, rather than a third row in Diagnostics beside the
+                    // log viewer and the changelog (#137).
+                    //
+                    // [ChangelogSetting]'s KDoc argues that a one-row section is "more chrome than
+                    // content", and that reasoning is sound for what it covered: two read-only
+                    // reference screens that belong together. It does not extend here. TMDB's terms
+                    // require their attribution to live in an "About or Credits type section", so
+                    // the section heading is part of what satisfies the term -- filing it under
+                    // Diagnostics would put a licence notice behind a word that means "something
+                    // has gone wrong", which is both wrong and harder to find.
+                    SettingsSection(title = stringResource(R.string.settings_section_about)) {
+                        AboutSetting(onViewAboutClick = onNavigateToAbout)
                     }
                 }
                 // Future settings sections are added here as additional `item { SettingsSection(...) }`
@@ -1970,6 +2014,7 @@ private fun SettingsScreenMondayPreview() {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -2008,6 +2053,7 @@ private fun SettingsScreenSundayPreview() {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -2046,6 +2092,7 @@ private fun SettingsScreenExportingPreview() {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = true,
             onExportClick = {},
             importInProgress = false,
@@ -2084,6 +2131,7 @@ private fun SettingsScreenBackingUpPreview() {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
@@ -2122,6 +2170,7 @@ private fun SettingsScreenValidatingRestorePreview() {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,

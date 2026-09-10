@@ -64,6 +64,7 @@ class SettingsScreenGoldenTest {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,

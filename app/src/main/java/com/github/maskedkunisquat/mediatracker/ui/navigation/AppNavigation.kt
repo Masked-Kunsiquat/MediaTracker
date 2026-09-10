@@ -6,6 +6,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.github.maskedkunisquat.mediatracker.BuildConfig
+import com.github.maskedkunisquat.mediatracker.ui.screens.AboutScreen
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddTVShowScreenRoute
@@ -279,6 +281,21 @@ fun AppNavigation(
                 },
                 onNavigateToChangelog = {
                     navController.navigate(Route.Changelog.route)
+                },
+                onNavigateToAbout = {
+                    navController.navigate(Route.About.route)
+                },
+            )
+        }
+
+        // No `AboutScreenRoute` wrapper: the screen has no ViewModel and one parameter, so a
+        // wrapper would exist only to read BuildConfig one call earlier. Passing the version from
+        // here is also what keeps the screen itself testable at a pinned version -- see its KDoc.
+        composable(Route.About.route) {
+            AboutScreen(
+                versionName = BuildConfig.VERSION_NAME,
+                onNavigateBack = {
+                    navController.navigateUp()
                 },
             )
         }

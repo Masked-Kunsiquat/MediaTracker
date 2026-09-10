@@ -63,6 +63,7 @@ class SettingsScreenOcclusionTest {
             onTmdbCredentialTest = {},
             onNavigateToLogViewer = {},
             onNavigateToChangelog = {},
+            onNavigateToAbout = {},
             exportInProgress = false,
             onExportClick = {},
             importInProgress = false,
