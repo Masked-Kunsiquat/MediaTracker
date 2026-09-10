@@ -19,6 +19,18 @@ ktlint {
 }
 
 android {
+    lint {
+        // `UnusedResources` is a warning by default, and a warning fails nothing. Three dead strings
+        // accumulated behind that during Task 13 Phase D alone -- every one found by reading rather
+        // than by a gate, which is exactly the shape of thing a gate should be finding.
+        //
+        // Promoted rather than added: lint was already reporting all three. The only change is that
+        // the build now stops. A resource genuinely wanted before it is used can say so with
+        // `tools:ignore="UnusedResources"` on its declaration -- a visible decision rather than
+        // silence.
+        error += "UnusedResources"
+    }
+
     namespace = "com.github.maskedkunisquat.mediatracker"
     compileSdk {
         version =
