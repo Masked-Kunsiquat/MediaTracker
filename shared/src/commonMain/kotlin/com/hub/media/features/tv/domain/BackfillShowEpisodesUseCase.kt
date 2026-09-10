@@ -32,9 +32,9 @@ public data class SeasonCountMismatch(
 /**
  * What one backfill pass over a show actually did.
  *
- * @property episodesFilled Rows the update touched. Counts episodes *matched*, not columns changed:
- *   a row already holding every value is still a match, and reporting it as such is honest about
- *   what the pass covered.
+ * @property episodesFilled Episodes that actually gained something. A row already holding every
+ *   value is not counted, because the sentence built from this number says "Updated" — and reporting
+ *   matched rows instead told a user "Updated 5 episodes" for a show where nothing had changed.
  * @property mismatches Seasons where the counts disagree, scoped to `seasonNumber >= 1`.
  * @property seasonsNotFetched Regular seasons the provider declares that this pass did not receive,
  *   because one request carries at most [com.hub.media.features.tv.network.MAX_APPENDED_SEASONS] of
@@ -131,15 +131,22 @@ public class BackfillShowEpisodesUseCase(
                             ?.episodes
                             ?.firstOrNull { it.episodeNumber == episode.episodeNumber }
                             ?: return@mapNotNull null
-                    EpisodeMetadataFill(
-                        seasonNumber = episode.seasonNumber,
-                        episodeNumber = episode.episodeNumber,
-                        title = provided.name?.takeIf { it.isNotBlank() },
-                        airDate = provided.airDate.toInstantOrNull(),
-                        runtimeMinutes = provided.runtime?.takeIf { it > 0 },
-                        overview = provided.overview?.takeIf { it.isNotBlank() },
-                        communityRating = provided.voteAverage?.takeIf { (provided.voteCount ?: 0) > 0 },
-                    )
+                    val fill =
+                        EpisodeMetadataFill(
+                            seasonNumber = episode.seasonNumber,
+                            episodeNumber = episode.episodeNumber,
+                            title = provided.name?.takeIf { it.isNotBlank() },
+                            airDate = provided.airDate.toInstantOrNull(),
+                            runtimeMinutes = provided.runtime?.takeIf { it > 0 },
+                            overview = provided.overview?.takeIf { it.isNotBlank() },
+                            communityRating = provided.voteAverage?.takeIf { (provided.voteCount ?: 0) > 0 },
+                        )
+                    // Only rows that would actually gain something. Two reasons, and the second is
+                    // the one that matters: it saves a pointless UPDATE, and it makes the reported
+                    // count mean what the sentence built from it says. Reporting rows *matched*
+                    // told a user "Updated 5 episodes" for a show where nothing changed -- found by
+                    // tapping the button on a show that was already complete.
+                    fill.takeIf { it.wouldChange(episode) }
                 }
             val filled = db.tvWriteDao().fillEpisodeMetadata(mediaId, fills)
 
@@ -190,3 +197,18 @@ public class BackfillShowEpisodesUseCase(
                 }
             }.sortedBy { it.seasonNumber }
 }
+
+/**
+ * Whether applying this fill to [current] would set any column that is still empty.
+ *
+ * Mirrors the `COALESCE` in
+ * [com.hub.media.core.database.dao.TVWriteDao.fillEpisodeMetadata] exactly: a column already holding
+ * a value is untouched there and must not be counted here, or the number reported back would
+ * describe work the statement did not do.
+ */
+private fun EpisodeMetadataFill.wouldChange(current: EpisodeEntity): Boolean =
+    (current.title == null && title != null) ||
+        (current.airDate == null && airDate != null) ||
+        (current.runtimeMinutes == null && runtimeMinutes != null) ||
+        (current.overview == null && overview != null) ||
+        (current.communityRating == null && communityRating != null)

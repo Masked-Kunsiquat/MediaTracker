@@ -306,6 +306,12 @@ class BackfillShowEpisodesUseCaseTest {
             val second = useCase().execute(mediaId)
 
             assertIs<Resource.Success<EpisodeBackfillReport>>(second)
+            assertEquals(
+                0,
+                second.data.episodesFilled,
+                "a second pass changes nothing, and must not claim to have updated anything -- " +
+                    "reporting matched rows here told a user \"Updated 5 episodes\" on a device",
+            )
             assertTrue(second.data.mismatches.isEmpty())
             assertNull(db.episodeDao().getByMediaId(mediaId).firstOrNull { it.title == null })
         }
