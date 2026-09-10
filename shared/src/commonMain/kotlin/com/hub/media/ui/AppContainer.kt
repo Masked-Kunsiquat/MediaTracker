@@ -4,6 +4,8 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.network.tmdbImagePacer
+import com.hub.media.core.network.tmdbPacer
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.LogFileStore
 import com.hub.media.features.books.data.BookRepository
@@ -21,6 +23,7 @@ import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.media.domain.BulkTmdbBackfillUseCase
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.media.domain.RealSearchMediaUseCase
 import com.hub.media.features.media.domain.SearchMediaUseCase
@@ -206,17 +209,33 @@ public class AppContainer(
     /**
      * TMDB client for films and shows (#75), consumed by the Settings screen's credential check.
      *
-     * **Unpaced, deliberately.** Every current caller is interactive and issues a single request, so
-     * paying an interval would be latency for nothing -- the same trade [openLibraryIdentifiedPacer]
-     * documents. When a bulk backfill arrives it must construct its *own* client with a
-     * [com.hub.media.core.network.tmdbPacer], not add one here: a pacer shared between a crawl and a
-     * user-facing path lands the crawl's sleeps on a request someone is waiting on, which is the
-     * mistake #42 exists to prevent.
+     * **Unpaced, deliberately.** Every caller of *this* instance is interactive and issues a single
+     * request, so paying an interval would be latency for nothing -- the same trade
+     * [openLibraryIdentifiedPacer] documents. The bulk backfill that has since arrived (#140) does
+     * exactly what this KDoc told it to: it builds its own [pacedTmdbClient] below rather than adding
+     * a pacer here, because a pacer shared between a crawl and a user-facing path lands the crawl's
+     * sleeps on a request someone is waiting on, which is the mistake #42 exists to prevent.
      */
     public val tmdbClient: TmdbClient =
         TmdbClient(
             client = httpClient,
             credentialProvider = tmdbCredentialProvider,
+        )
+
+    /**
+     * The TMDB client the library-wide backfill crawls with (#140) -- the same shared [httpClient]
+     * and the same credential, but holding [com.hub.media.core.network.TMDB_REQUESTS_PER_SECOND].
+     *
+     * Private, and that is the point rather than an oversight: a pacer is only correct while it
+     * belongs to exactly one crawl. Exposing this would invite a second caller to reuse it, at which
+     * point neither of them is actually paced to the rate this claims. [tmdbClient] is the one every
+     * interactive path should reach for.
+     */
+    private val pacedTmdbClient: TmdbClient =
+        TmdbClient(
+            client = httpClient,
+            credentialProvider = tmdbCredentialProvider,
+            pacer = tmdbPacer(),
         )
 
     /**
@@ -330,6 +349,36 @@ public class AppContainer(
             settingsRepository = settingsRepository,
             coverRateLimiter = coverRateLimiter,
             googleBooksApiKeyProvider = googleBooksApiKeyProvider,
+        )
+
+    /**
+     * Library-wide artwork and metadata backfill for films and shows (#140), the films-and-TV sibling
+     * of [bulkBackfillUseCase] -- see [com.hub.media.features.media.domain.BulkTmdbBackfillUseCase]'s
+     * KDoc for why #140 decided the two stay two actions rather than becoming one.
+     *
+     * Every network dependency it takes is the *paced* one, and each is exclusive to it:
+     * [pacedTmdbClient] for metadata, its own [tmdbImagePacer] for posters, and its own
+     * [BackfillShowEpisodesUseCase] built over the paced client rather than the interactive
+     * [backfillShowEpisodesUseCase] one field above. That last one is easy to get wrong by reusing
+     * the field that already exists and looks identical -- it is not, and the difference is the whole
+     * of #42.
+     *
+     * [fetchPosterUseCase] *is* reused, and safely: pacing for it lives in the pass rather than
+     * inside it, precisely so the interactive add-by-search path keeps paying no interval.
+     */
+    public val bulkTmdbBackfillUseCase: BulkTmdbBackfillUseCase =
+        BulkTmdbBackfillUseCase(
+            db = database,
+            tmdbClient = pacedTmdbClient,
+            showEpisodes =
+                BackfillShowEpisodesUseCase(
+                    db = database,
+                    tmdbClient = pacedTmdbClient,
+                    tvShowRepository = tvShowRepository,
+                ),
+            fetchPoster = fetchPosterUseCase,
+            posterPacer = tmdbImagePacer(),
+            settingsRepository = settingsRepository,
         )
 
     /**

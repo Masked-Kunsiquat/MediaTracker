@@ -20,6 +20,7 @@ import com.hub.media.features.books.network.OPEN_LIBRARY_COVER_QUOTA_WINDOW
 import com.hub.media.features.books.network.OpenLibraryClient
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibraryIsbnCoverProbe
+import com.hub.media.features.media.domain.BackfillRun
 import com.hub.media.features.settings.data.BulkBackfillState
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.clearBulkBackfillState
@@ -175,7 +176,21 @@ public class BulkBackfillUseCase(
     private val bookRepository: BookRepository,
     private val settingsRepository: SettingsRepository,
     private val logger: Logger = AppLogger,
-) {
+) : BackfillRun<BulkBackfillProgress> {
+    /**
+     * [BackfillRun]'s spelling of [peekProgress]. An adapter rather than a rename: [peekProgress] is
+     * the name every existing caller and test uses, and churning a shipped signature to satisfy a
+     * newly-introduced interface is the tail wagging the dog.
+     */
+    override suspend fun peek(): BulkBackfillProgress? = peekProgress()
+
+    /**
+     * [BackfillRun]'s spelling of [execute]. Adapts the optional callback to a required one — the
+     * interface has no use for the `null` case, since its only caller always wants progress.
+     */
+    override suspend fun run(onProgress: suspend (BulkBackfillProgress) -> Unit): BulkBackfillProgress =
+        execute(onProgress)
+
     /**
      * Runs (or resumes) one backfill pass. Processes [BulkBackfillState.pendingMediaIds] in order,
      * checkpointing to [settingsRepository] after every book, until either every candidate is
