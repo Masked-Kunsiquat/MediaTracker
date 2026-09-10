@@ -124,6 +124,74 @@ interface MovieWriteDao {
      * @return the number of `media_items` rows affected, so a caller can tell "no such movie" (0)
      *   from a successful update.
      */
+    /**
+     * Fills a film's provider metadata **onto columns that are still null**, scoped to `MOVIE` rows.
+     *
+     * The film half of the rule [TVWriteDao.fillEpisodeMetadata] states for episodes, and enforced
+     * the same way: every column is wrapped in `COALESCE(column, :value)`, so a value already
+     * present wins and a `null` argument changes nothing. A year the user corrected by hand survives
+     * a later pass, and no future edit to a caller can make this statement overwrite one.
+     *
+     * `title` is deliberately absent from the SET list even though TMDB supplies one. It is `NOT
+     * NULL`, so `COALESCE` could never fire on it — including it would be a line that reads like a
+     * fill and can only ever be a no-op, which is worse than not having it.
+     *
+     * @return rows affected: `1` when the film exists, `0` when [mediaId] is not a `MOVIE` row.
+     */
+    @Query(
+        "UPDATE media_items SET " +
+            "releaseYear = COALESCE(releaseYear, :releaseYear), " +
+            "communityRating = COALESCE(communityRating, :communityRating) " +
+            "WHERE id = :mediaId AND type = 'MOVIE'",
+    )
+    suspend fun fillMediaItemMetadata(
+        mediaId: String,
+        releaseYear: Int?,
+        communityRating: Double?,
+    ): Int
+
+    /**
+     * The `movie_details` half of [fillMovieMetadata]. No `type` predicate, and none is needed:
+     * `movie_details` holds movie rows only — the same reasoning [updateWatchStatusFields] gives.
+     *
+     * Neither `status` nor `watchedAt` is in the SET list, and both are absent rather than guarded.
+     * That is the property #75 settled and this inherits: **a background pass can never alter what
+     * your library says you have watched.**
+     */
+    @Query("UPDATE movie_details SET runtimeMinutes = COALESCE(runtimeMinutes, :runtimeMinutes) WHERE mediaId = :mediaId")
+    suspend fun fillMovieDetailMetadata(
+        mediaId: String,
+        runtimeMinutes: Int?,
+    ): Int
+
+    /**
+     * Applies both halves of one film's fill in a single transaction.
+     *
+     * ### A missing `movie_details` row is left missing
+     * [updateMovieMetadataAtomically] self-heals that case by inserting one; this deliberately does
+     * not. Enrichment fills `null` columns and never creates rows (#75, and #140 inherits the
+     * guarantee rather than reopening it) — and a details row cannot be created without inventing a
+     * [WatchStatus] for it, which is exactly the kind of value a background pass must not invent. The
+     * film simply stays a candidate; the user's own next edit repairs it through the path that is
+     * allowed to.
+     *
+     * @return the number of `media_items` rows affected, so a caller can tell "no such film" (0)
+     *   from a fill that landed.
+     */
+    @Transaction
+    suspend fun fillMovieMetadata(
+        mediaId: String,
+        releaseYear: Int?,
+        communityRating: Double?,
+        runtimeMinutes: Int?,
+    ): Int {
+        val mediaRows = fillMediaItemMetadata(mediaId, releaseYear, communityRating)
+        if (mediaRows > 0) {
+            fillMovieDetailMetadata(mediaId, runtimeMinutes)
+        }
+        return mediaRows
+    }
+
     @Transaction
     suspend fun updateMovieMetadataAtomically(
         mediaId: String,
