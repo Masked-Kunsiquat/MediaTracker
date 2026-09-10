@@ -63,6 +63,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -88,6 +89,7 @@ import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TmdbBackfillViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -95,6 +97,7 @@ import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BulkBackfillProgress
+import com.hub.media.features.media.domain.TmdbBackfillProgress
 import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.CsvExportBundle
 import com.hub.media.features.portability.domain.DuplicatePolicy
@@ -158,9 +161,19 @@ fun SettingsScreenRoute(
         viewModel(
             factory = RestoreViewModelFactory(appContainer),
         )
-    val backfillViewModel: BackfillViewModel =
+    // Both backfill ViewModels are the same erased class -- BackfillViewModel became generic in #140
+    // so one implementation drives both passes -- and ViewModelProvider keys by class name. Without
+    // distinct keys the second call here is handed the first one back, and the Settings screen shows
+    // the book pass's progress under both headings. The keys are load-bearing, not decoration.
+    val backfillViewModel: BackfillViewModel<BulkBackfillProgress> =
         viewModel(
+            key = "backfill-books",
             factory = BackfillViewModelFactory(appContainer),
+        )
+    val tmdbBackfillViewModel: BackfillViewModel<TmdbBackfillProgress> =
+        viewModel(
+            key = "backfill-tmdb",
+            factory = TmdbBackfillViewModelFactory(appContainer),
         )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val exportUiState by exportViewModel.uiState.collectAsStateWithLifecycle()
@@ -168,6 +181,7 @@ fun SettingsScreenRoute(
     val backupUiState by backupViewModel.uiState.collectAsStateWithLifecycle()
     val restoreUiState by restoreViewModel.uiState.collectAsStateWithLifecycle()
     val backfillUiState by backfillViewModel.uiState.collectAsStateWithLifecycle()
+    val tmdbBackfillUiState by tmdbBackfillViewModel.uiState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -680,6 +694,9 @@ fun SettingsScreenRoute(
         backfillUiState = backfillUiState,
         onStartBackfillClick = backfillViewModel::start,
         onCancelBackfillClick = backfillViewModel::cancel,
+        tmdbBackfillUiState = tmdbBackfillUiState,
+        onStartTmdbBackfillClick = tmdbBackfillViewModel::start,
+        onCancelTmdbBackfillClick = tmdbBackfillViewModel::cancel,
         snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
     )
@@ -1100,6 +1117,12 @@ private fun RestoreConfirmationDialog(
  *   [BackfillViewModel.start].
  * @param onCancelBackfillClick Called when the backfill cancel button is tapped, wired to
  *   [BackfillViewModel.cancel].
+ * @param tmdbBackfillUiState Current state of the films-and-shows artwork/metadata pass (#140). A
+ *   second state rather than a merged one because the two passes are two actions, decided against
+ *   #126's domain-sectioned Settings screen — see [BackfillRowContent] on why they cannot share a
+ *   progress type either.
+ * @param onStartTmdbBackfillClick Called when that pass's start/resume button is tapped.
+ * @param onCancelTmdbBackfillClick Called when that pass's cancel button is tapped.
  * @param onNavigateBack Called when the back icon is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1129,9 +1152,12 @@ fun SettingsScreen(
     onBackupClick: () -> Unit,
     restoreInProgress: Boolean,
     onRestoreClick: () -> Unit,
-    backfillUiState: BackfillUiState,
+    backfillUiState: BackfillUiState<BulkBackfillProgress>,
     onStartBackfillClick: () -> Unit,
     onCancelBackfillClick: () -> Unit,
+    tmdbBackfillUiState: BackfillUiState<TmdbBackfillProgress>,
+    onStartTmdbBackfillClick: () -> Unit,
+    onCancelTmdbBackfillClick: () -> Unit,
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
 ) {
@@ -1268,9 +1294,27 @@ fun SettingsScreen(
                     // than folded into the import/export card.
                     SettingsSection(title = stringResource(R.string.settings_section_backfill)) {
                         BackfillSetting(
+                            description = stringResource(R.string.settings_backfill_description),
                             uiState = backfillUiState,
+                            describe = { bookBackfillRowContent(it) },
                             onStartClick = onStartBackfillClick,
                             onCancelClick = onCancelBackfillClick,
+                        )
+                    }
+                }
+                item {
+                    // Its own section rather than a second row inside the books one, because #126
+                    // decided Settings is sectioned by domain -- Books / Films & TV / Data /
+                    // Diagnostics. This is the Films & TV half of the same repair concern, and #140
+                    // chose two actions over one merged pass on exactly that basis: a control
+                    // spanning both domains would have had to live in neither.
+                    SettingsSection(title = stringResource(R.string.settings_section_tmdb_backfill)) {
+                        BackfillSetting(
+                            description = stringResource(R.string.settings_tmdb_backfill_description),
+                            uiState = tmdbBackfillUiState,
+                            describe = { tmdbBackfillRowContent(it) },
+                            onStartClick = onStartTmdbBackfillClick,
+                            onCancelClick = onCancelTmdbBackfillClick,
                         )
                     }
                 }
@@ -1826,14 +1870,16 @@ private fun RestoreDataSetting(
  * previous session, or the distinction between "finished cleanly" and "paused by the rate limit."
  */
 @Composable
-private fun BackfillSetting(
-    uiState: BackfillUiState,
+private fun <P : Any> BackfillSetting(
+    description: String,
+    uiState: BackfillUiState<P>,
+    describe: @Composable (P) -> BackfillRowContent,
     onStartClick: () -> Unit,
     onCancelClick: () -> Unit,
 ) {
     Column {
         Text(
-            text = stringResource(R.string.settings_backfill_description),
+            text = description,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -1845,17 +1891,18 @@ private fun BackfillSetting(
                 }
             }
             is BackfillUiState.Running -> {
-                BackfillRunningContent(progress = uiState.progress)
+                BackfillRunningContent(content = uiState.progress?.let { describe(it) })
                 OutlinedButton(onClick = onCancelClick, modifier = Modifier.padding(top = 8.dp)) {
                     Text(stringResource(R.string.settings_backfill_cancel_button))
                 }
             }
             is BackfillUiState.Stopped -> {
-                BackfillStoppedContent(progress = uiState.progress)
+                val content = describe(uiState.progress)
+                BackfillStoppedContent(content = content)
                 Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
                     Text(
                         stringResource(
-                            if (uiState.progress.remaining > 0) {
+                            if (content.remaining > 0) {
                                 R.string.settings_backfill_resume_button
                             } else {
                                 R.string.settings_backfill_start_button
@@ -1865,11 +1912,12 @@ private fun BackfillSetting(
                 }
             }
             is BackfillUiState.Failed -> {
-                BackfillFailedContent(progress = uiState.progress)
+                val content = uiState.progress?.let { describe(it) }
+                BackfillFailedContent(content = content)
                 Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
                     Text(
                         stringResource(
-                            if ((uiState.progress?.remaining ?: 0) > 0) {
+                            if ((content?.remaining ?: 0) > 0) {
                                 R.string.settings_backfill_resume_button
                             } else {
                                 R.string.settings_backfill_start_button
@@ -1882,12 +1930,113 @@ private fun BackfillSetting(
     }
 }
 
-/** [BackfillUiState.Running]'s body: a progress bar once the first book has been checkpointed. */
+/**
+ * One backfill pass's progress, reduced to the handful of things this row actually draws.
+ *
+ * ### Why the row does not read a progress type directly
+ * There are two passes (#140) and their snapshots deliberately do not carry the same facts: the book
+ * pass can be paused by an exhausted Open Library quota and counts books with no ISBN, while the TMDB
+ * pass cannot be paused at all — a rate is waited out — and counts titles never added from TMDB.
+ * Neither type can honestly be given the other's fields.
+ *
+ * What is genuinely common is what a *row* shows: a fraction, an optional status sentence, and some
+ * detail lines. Each pass converts itself into this once, and the four state bodies below are written
+ * once against it — the UI-side application of the same "two actions, one set of machinery" rule
+ * [com.hub.media.ui.BackfillViewModel] follows.
+ *
+ * @property statusMessage The sentence above the fraction — paused, blocked, or complete — or `null`
+ *   when there is nothing to say.
+ * @property statusIsError Whether [statusMessage] describes something the user has to act on. A
+ *   finished run and a run stopped by a rejected credential are both "stopped", and must not look it.
+ * @property detailLines The trailing dimmed lines, in order. Empty when nothing is worth adding.
+ */
+private data class BackfillRowContent(
+    val processed: Int,
+    val totalCandidates: Int,
+    val remaining: Int,
+    val statusMessage: String?,
+    val statusIsError: Boolean,
+    val detailLines: List<String>,
+)
+
+/** The book pass's progress ([BulkBackfillProgress]) as a [BackfillRowContent]. */
 @Composable
-private fun BackfillRunningContent(progress: BulkBackfillProgress?) {
-    if (progress != null && progress.totalCandidates > 0) {
+private fun bookBackfillRowContent(progress: BulkBackfillProgress): BackfillRowContent {
+    val paused =
+        progress.retryAfter?.let { retryAfter ->
+            // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
+            // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
+            val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
+            pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
+        } ?: stringResource(R.string.settings_backfill_paused_message)
+    val complete = stringResource(R.string.settings_backfill_complete_message)
+    val summary =
+        stringResource(
+            R.string.settings_backfill_summary_format,
+            progress.updated,
+            progress.noProviderData,
+        )
+    val noIsbn = stringResource(R.string.settings_backfill_no_isbn_format, progress.noIsbnSkipped)
+
+    return BackfillRowContent(
+        processed = progress.processed,
+        totalCandidates = progress.totalCandidates,
+        remaining = progress.remaining,
+        statusMessage =
+            when {
+                progress.isPaused -> paused
+                progress.isComplete -> complete
+                else -> null
+            },
+        statusIsError = progress.isPaused,
+        detailLines =
+            buildList {
+                if (progress.processed > 0) add(summary)
+                if (progress.noIsbnSkipped > 0) add(noIsbn)
+            },
+    )
+}
+
+/** The films-and-shows pass's progress ([TmdbBackfillProgress]) as a [BackfillRowContent]. */
+@Composable
+private fun tmdbBackfillRowContent(progress: TmdbBackfillProgress): BackfillRowContent {
+    val complete = stringResource(R.string.settings_backfill_complete_message)
+    val summary =
+        stringResource(
+            R.string.settings_tmdb_backfill_summary_format,
+            progress.updated,
+            progress.nothingToFill,
+        )
+    val noId = stringResource(R.string.settings_tmdb_backfill_no_id_format, progress.noTmdbIdSkipped)
+
+    return BackfillRowContent(
+        processed = progress.processed,
+        totalCandidates = progress.totalCandidates,
+        remaining = progress.remaining,
+        // TMDB's own sentence, not one of ours. Both of the messages it produces here already name
+        // the remedy ("Add one in Settings", "Check the key or token saved in Settings"), and giving
+        // the same advice a second author is how the two drift apart.
+        statusMessage =
+            when {
+                progress.isBlocked -> progress.blockedMessage
+                progress.isComplete -> complete
+                else -> null
+            },
+        statusIsError = progress.isBlocked,
+        detailLines =
+            buildList {
+                if (progress.processed > 0) add(summary)
+                if (progress.noTmdbIdSkipped > 0) add(noId)
+            },
+    )
+}
+
+/** [BackfillUiState.Running]'s body: a progress bar once the first item has been checkpointed. */
+@Composable
+private fun BackfillRunningContent(content: BackfillRowContent?) {
+    if (content != null && content.totalCandidates > 0) {
         LinearProgressIndicator(
-            progress = { progress.processed.toFloat() / progress.totalCandidates },
+            progress = { content.processed.toFloat() / content.totalCandidates },
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -1897,8 +2046,8 @@ private fun BackfillRunningContent(progress: BulkBackfillProgress?) {
             text =
                 stringResource(
                     R.string.settings_backfill_progress_format,
-                    progress.processed,
-                    progress.totalCandidates,
+                    content.processed,
+                    content.totalCandidates,
                 ),
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -1911,61 +2060,37 @@ private fun BackfillRunningContent(progress: BulkBackfillProgress?) {
 }
 
 /**
- * [BackfillUiState.Stopped]'s body: whether this is a paused-by-quota run, a finished run, or
- * resumable leftover state from a previous session, plus the running totals so far.
+ * [BackfillUiState.Stopped]'s body: whichever status sentence applies (paused by a quota, blocked on
+ * a credential, or finished), plus the running totals so far.
  */
 @Composable
-private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
-    when {
-        progress.isPaused -> {
-            val retryAfter = progress.retryAfter
-            val message =
-                if (retryAfter != null) {
-                    // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
-                    // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
-                    val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
-                    pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
+private fun BackfillStoppedContent(content: BackfillRowContent) {
+    content.statusMessage?.let { message ->
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color =
+                if (content.statusIsError) {
+                    MaterialTheme.colorScheme.error
                 } else {
-                    stringResource(R.string.settings_backfill_paused_message)
-                }
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        progress.isComplete ->
-            Text(
-                text = stringResource(R.string.settings_backfill_complete_message),
-                style = MaterialTheme.typography.bodySmall,
-            )
+                    Color.Unspecified
+                },
+        )
     }
-    if (progress.totalCandidates > 0) {
+    if (content.totalCandidates > 0) {
         Text(
             text =
                 stringResource(
                     R.string.settings_backfill_progress_format,
-                    progress.processed,
-                    progress.totalCandidates,
+                    content.processed,
+                    content.totalCandidates,
                 ),
             style = MaterialTheme.typography.bodyMedium,
         )
     }
-    if (progress.processed > 0) {
+    content.detailLines.forEach { line ->
         Text(
-            text =
-                stringResource(
-                    R.string.settings_backfill_summary_format,
-                    progress.updated,
-                    progress.noProviderData,
-                ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    if (progress.noIsbnSkipped > 0) {
-        Text(
-            text = stringResource(R.string.settings_backfill_no_isbn_format, progress.noIsbnSkipped),
+            text = line,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1975,23 +2100,23 @@ private fun BackfillStoppedContent(progress: BulkBackfillProgress) {
 /**
  * [BackfillUiState.Failed]'s body: an explicit failure signal, distinct from
  * [BackfillStoppedContent]'s "paused"/"complete" messaging, so the user isn't left thinking a
- * genuine mid-run failure was just a clean stop. [progress] is `null` when nothing was
+ * genuine mid-run failure was just a clean stop. [content] is `null` when nothing was
  * checkpointed before the failure, in which case there is no partial-progress line to show.
  */
 @Composable
-private fun BackfillFailedContent(progress: BulkBackfillProgress?) {
+private fun BackfillFailedContent(content: BackfillRowContent?) {
     Text(
         text = stringResource(R.string.settings_backfill_failed_message),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
     )
-    if (progress != null && progress.totalCandidates > 0) {
+    if (content != null && content.totalCandidates > 0) {
         Text(
             text =
                 stringResource(
                     R.string.settings_backfill_progress_format,
-                    progress.processed,
-                    progress.totalCandidates,
+                    content.processed,
+                    content.totalCandidates,
                 ),
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -2031,6 +2156,9 @@ private fun SettingsScreenMondayPreview() {
             backfillUiState = BackfillUiState.Idle,
             onStartBackfillClick = {},
             onCancelBackfillClick = {},
+            tmdbBackfillUiState = BackfillUiState.Idle,
+            onStartTmdbBackfillClick = {},
+            onCancelTmdbBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2070,6 +2198,9 @@ private fun SettingsScreenSundayPreview() {
             backfillUiState = BackfillUiState.Idle,
             onStartBackfillClick = {},
             onCancelBackfillClick = {},
+            tmdbBackfillUiState = BackfillUiState.Idle,
+            onStartTmdbBackfillClick = {},
+            onCancelTmdbBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2109,6 +2240,9 @@ private fun SettingsScreenExportingPreview() {
             backfillUiState = BackfillUiState.Idle,
             onStartBackfillClick = {},
             onCancelBackfillClick = {},
+            tmdbBackfillUiState = BackfillUiState.Idle,
+            onStartTmdbBackfillClick = {},
+            onCancelTmdbBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2148,6 +2282,9 @@ private fun SettingsScreenBackingUpPreview() {
             backfillUiState = BackfillUiState.Idle,
             onStartBackfillClick = {},
             onCancelBackfillClick = {},
+            tmdbBackfillUiState = BackfillUiState.Idle,
+            onStartTmdbBackfillClick = {},
+            onCancelTmdbBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2187,6 +2324,9 @@ private fun SettingsScreenValidatingRestorePreview() {
             backfillUiState = BackfillUiState.Idle,
             onStartBackfillClick = {},
             onCancelBackfillClick = {},
+            tmdbBackfillUiState = BackfillUiState.Idle,
+            onStartTmdbBackfillClick = {},
+            onCancelTmdbBackfillClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )

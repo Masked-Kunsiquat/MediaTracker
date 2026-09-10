@@ -17,6 +17,7 @@ import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.domain.BulkBackfillProgress
 import com.hub.media.features.books.domain.BulkBackfillUseCase
 import com.hub.media.features.books.network.BookMetadata
 import com.hub.media.features.books.network.BookMetadataProvider
@@ -243,7 +244,7 @@ class BackfillViewModelTest {
             viewModel.start()
             waitUntilOrTimeOut { viewModel.uiState.value !is BackfillUiState.Running }
 
-            assertIs<BackfillUiState.Failed>(viewModel.uiState.value)
+            assertIs<BackfillUiState.Failed<BulkBackfillProgress>>(viewModel.uiState.value)
             val errorEntries = recorder.entries.filter { it.level == LogLevel.ERROR }
             assertTrue(errorEntries.isNotEmpty(), "a mid-backfill DB failure must be logged at ERROR")
             assertTrue(errorEntries.all { it.tag == "BackfillViewModel" })
@@ -309,7 +310,7 @@ class BackfillViewModelTest {
             // gated forever below), so this assignment -- and the Running state it produces -- happens
             // deterministically before init's peekProgress() coroutine has had any chance to resume.
             viewModel.start()
-            assertIs<BackfillUiState.Running>(viewModel.uiState.value)
+            assertIs<BackfillUiState.Running<BulkBackfillProgress>>(viewModel.uiState.value)
 
             // Deterministic completion signal for init's peekProgress() Room read, instead of a fixed
             // ~200ms real-time delay (PR review round 2 finding 4: a fixed delay can assert *before*
@@ -328,7 +329,7 @@ class BackfillViewModelTest {
             // Without finding 3's fix this assertion fails: init's peekProgress() (once its Room read
             // resolves) unconditionally overwrites uiState with Stopped(preSeededProgress), clobbering
             // the run that start() already put in flight.
-            assertIs<BackfillUiState.Running>(
+            assertIs<BackfillUiState.Running<BulkBackfillProgress>>(
                 viewModel.uiState.value,
                 "a late init snapshot must never clobber a run already in flight",
             )
@@ -398,7 +399,7 @@ class BackfillViewModelTest {
             // the bug. This test instead guards the "prefer last progress" half of the contract: the
             // Stopped state must carry the real snapshot, not just any non-Running state.
             val finalState = viewModel.uiState.value
-            assertIs<BackfillUiState.Stopped>(finalState)
+            assertIs<BackfillUiState.Stopped<BulkBackfillProgress>>(finalState)
             assertEquals(1, finalState.progress.processed)
             assertEquals(runningProgress, finalState.progress)
         }
