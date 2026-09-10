@@ -81,8 +81,14 @@ import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
  *
  * The app is offline-first (AGENTS.md section 4), and an attribution that fails to render when the
  * network is down is not an attribution. A bundled vector also cannot be resampled or recoloured in
- * transit, which is the other half of what their branding rules ask for. See `tmdb_logo.xml`, whose
- * own comment carries the do-not-modify rule next to the path data it applies to.
+ * transit, which is the other half of what their branding rules ask for. Android cannot render an
+ * SVG at all -- there is no platform support for the format -- so a VectorDrawable is the only way
+ * to keep it a vector rather than a raster.
+ *
+ * That conversion is not free, and `tmdb_logo.xml`'s own comment carries the trap it hides: their
+ * path uses relative subpath starts that Android's `PathParser` resolves against the wrong point,
+ * which mangled four glyphs on a device while rendering perfectly in the golden. Read that comment
+ * before touching the asset.
  *
  * ## Version comes in as a parameter
  *
