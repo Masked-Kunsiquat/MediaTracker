@@ -1,0 +1,511 @@
+package com.hub.media.features.media.domain
+
+import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.network.RequestPacer
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.Resource
+import com.hub.media.core.util.info
+import com.hub.media.features.movies.domain.toMovieMapping
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.TmdbBackfillState
+import com.hub.media.features.settings.data.clearTmdbBackfillState
+import com.hub.media.features.settings.data.getTmdbBackfillState
+import com.hub.media.features.settings.data.saveTmdbBackfillState
+import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.FetchPosterUseCase
+import com.hub.media.features.tv.domain.toShowMapping
+import com.hub.media.features.tv.network.TmdbClient
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.coroutineContext
+
+/** Log tag for this use case's lifecycle tracing (ROADMAP Task 15 Phase C). */
+private const val TAG = "BulkTmdbBackfill"
+
+/**
+ * Progress/result snapshot for one [BulkTmdbBackfillUseCase.execute] run (#140).
+ *
+ * The film-and-show counterpart of
+ * [com.hub.media.features.books.domain.BulkBackfillProgress], reporting the same way — honestly and
+ * partially, never all-or-nothing. [processed] + [remaining] always equals [totalCandidates].
+ *
+ * ### What it does not carry, and why
+ * There is no `isPaused`/`retryAfter` pair here. Those describe a **quota**: Open Library's cover
+ * probe can be genuinely exhausted, and the only truthful thing to tell a user is "come back in a few
+ * minutes". TMDB imposes a **rate**, which [RequestPacer] answers by waiting rather than by giving
+ * up, so this pass has no state in which it is stopped-but-not-finished for a reason that time alone
+ * fixes. Carrying the fields anyway would mean two of them permanently false and null, which reads to
+ * the next person as a case nobody got round to implementing.
+ *
+ * What can stop it is [blockedMessage], and that is a different thing entirely: not "wait", but "go
+ * and fix something in Settings".
+ *
+ * @property totalCandidates Films and shows that needed something and had a TMDB id, fixed at the
+ *   moment this run was first seeded.
+ * @property processed `totalCandidates - remaining`.
+ * @property updated Cumulative count of titles something was actually written onto.
+ * @property nothingToFill Cumulative count of titles fully resolved with nothing to write.
+ * @property noTmdbIdSkipped Titles that can never be filled from a provider because they were never
+ *   added from one — fixed at seed time, never retried.
+ * @property remaining Titles still needing a future run.
+ * @property blockedMessage TMDB's own reason for refusing the credential, or `null` if the run was
+ *   not blocked. Deliberately the provider's user-facing sentence rather than a code: both of the
+ *   sentences [TmdbClient] produces here already say what the user must do, and re-deriving them into
+ *   an enum only to spell them out again downstream would give the same words two owners.
+ */
+public data class TmdbBackfillProgress(
+    public val totalCandidates: Int,
+    public val processed: Int,
+    public val updated: Int,
+    public val nothingToFill: Int,
+    public val noTmdbIdSkipped: Int,
+    public val remaining: Int,
+    public val blockedMessage: String? = null,
+) {
+    /** `true` once nothing is left to fill — [remaining] is 0. */
+    public val isComplete: Boolean get() = remaining == 0
+
+    /** `true` when the run stopped because TMDB would not accept the stored credential. */
+    public val isBlocked: Boolean get() = blockedMessage != null
+}
+
+/**
+ * Fills missing artwork and metadata across every film and show in the library (#140) — the TMDB
+ * counterpart of [com.hub.media.features.books.domain.BulkBackfillUseCase].
+ *
+ * ### Why this is a second action rather than books' pass grown to cover three types
+ * Settled on #140 against #126, which decided that Settings is **one sectioned screen** grouped
+ * `Books / Films & TV / Data / Diagnostics`. A book repair belongs to the first section and this one
+ * belongs to the second; a single merged "fill in everything" control belongs to neither, and would
+ * have to be filed under Data next to export and backup — away from both domains it serves. That is
+ * the same "duplicate it or assign it arbitrarily" problem #126 used to rule out per-domain settings
+ * *screens*, arrived at from the other end.
+ *
+ * The two passes also stop for genuinely different reasons — see [TmdbBackfillProgress]'s note on the
+ * absent `isPaused`.
+ *
+ * What is **not** duplicated is the machinery, because #126's other standing constraint (do not fork
+ * `StatsRepository` per domain) is about exactly that: [com.hub.media.ui.BackfillViewModel] runs both
+ * passes from one implementation, [RequestPacer] paces both, and the per-show filling below is
+ * [BackfillShowEpisodesUseCase]'s, called rather than copied.
+ *
+ * ### One request per title, filling everything that request can answer
+ * A film costs one `/movie/{id}`; a show costs one `/tv/{id}` with its seasons appended. Each response
+ * already carries the poster path, the title-level metadata *and* (for a show) every episode — so a
+ * title is asked about once and everything blank about it is filled from that one answer. This is why
+ * [BackfillShowEpisodesUseCase.applyFetched] exists: routing through its [BackfillShowEpisodesUseCase.execute]
+ * would spend a second request for a payload already in hand.
+ *
+ * ### It enriches; it never creates, deletes or re-dates
+ * Inherited wholesale from #75 and not reopened. Every write goes through a `COALESCE` statement that
+ * cannot touch a column already holding a value and does not mention watch state at all — see
+ * [com.hub.media.core.database.dao.TVWriteDao.fillEpisodeMetadata], whose guarantee is the statement
+ * rather than this class's care. A show's episode *count* is likewise never changed: a season the
+ * provider says is longer is reported by [BackfillShowEpisodesUseCase], not filled in.
+ *
+ * ### Two pacers, because there are two hosts
+ * Metadata goes to `api.themoviedb.org` through a [TmdbClient] built with
+ * [com.hub.media.core.network.tmdbPacer]; posters go to `image.tmdb.org` through [posterPacer]. #140
+ * required the split before either existed: a single interval covering both would be wrong in
+ * whichever direction the shared number was set. Pacing lives here rather than inside
+ * [BackfillShowEpisodesUseCase] or [FetchPosterUseCase] precisely because both of those are also
+ * reached interactively, where paying an interval would be latency for nothing — the rule
+ * [BackfillShowEpisodesUseCase]'s own KDoc states.
+ *
+ * ### The credential is checked once, up front
+ * A run that cannot authenticate would otherwise spend one failing request per title and finish
+ * reporting several hundred deferrals, which describes neither the cause nor the remedy. One
+ * [TmdbClient.verifyCredential] before the loop converts that into an immediate, accurate sentence.
+ * It is checked on a resume too, not only on a fresh seed: the credential can have been cleared
+ * between the two, and a restore is one of the ways that happens (backups have credentials scrubbed
+ * out of them). A credential revoked *mid*-run is not guarded against — every title after it defers
+ * and is retried next time, costing requests but losing nothing.
+ *
+ * ### Resumability
+ * [execute] checkpoints [TmdbBackfillState] after **every title**, so quota-free though this pass is,
+ * a cancellation or process death still resumes from the next unprocessed title rather than
+ * restarting. That matters more here than for books, not less: a show is one request but hundreds of
+ * episode rows.
+ *
+ * @param db Source of the library scan, every per-title re-read, and every fill.
+ * @param tmdbClient **Must be the paced client**, exclusive to this pass. Sharing the interactive one
+ *   would leave this crawl unpaced; sharing this one with an interactive path would land its sleeps on
+ *   a request someone is waiting for.
+ * @param showEpisodes The per-show episode filler, built over the same paced [tmdbClient].
+ * @param fetchPoster Downloads and content-addresses one title's poster.
+ * @param posterPacer Holds poster downloads to [com.hub.media.core.network.TMDB_IMAGE_REQUESTS_PER_SECOND].
+ * @param settingsRepository Backing store for [TmdbBackfillState].
+ */
+public class BulkTmdbBackfillUseCase(
+    private val db: AppDatabase,
+    private val tmdbClient: TmdbClient,
+    private val showEpisodes: BackfillShowEpisodesUseCase,
+    private val fetchPoster: FetchPosterUseCase,
+    private val posterPacer: RequestPacer,
+    private val settingsRepository: SettingsRepository,
+    private val logger: Logger = AppLogger,
+) : BackfillRun<TmdbBackfillProgress> {
+    /** [BackfillRun]'s spelling of [peekProgress]; see the book pass's adapter on why both exist. */
+    override suspend fun peek(): TmdbBackfillProgress? = peekProgress()
+
+    /** [BackfillRun]'s spelling of [execute]. */
+    override suspend fun run(onProgress: suspend (TmdbBackfillProgress) -> Unit): TmdbBackfillProgress =
+        execute(onProgress)
+
+    /**
+     * Runs (or resumes) one pass. Processes [TmdbBackfillState.pendingMediaIds] in order,
+     * checkpointing after every title, until everything is resolved or the caller's coroutine is
+     * cancelled.
+     *
+     * @param onProgress Invoked with the current [TmdbBackfillProgress] after every title this run
+     *   touches — the hook a live progress bar reads. Each call reflects state exactly as just
+     *   persisted.
+     */
+    public suspend fun execute(onProgress: (suspend (TmdbBackfillProgress) -> Unit)? = null): TmdbBackfillProgress {
+        var state = settingsRepository.getTmdbBackfillState() ?: seedState()
+
+        if (state.pendingMediaIds.isEmpty()) {
+            // Logged for the reason the book pass logs the same case: without an entry, a user who
+            // presses the button and sees nothing cannot tell "nothing to do" from "the button is
+            // broken".
+            logger.info(TAG) { "TMDB backfill run: nothing pending, no titles to update" }
+            settingsRepository.clearTmdbBackfillState()
+            return state.toProgress()
+        }
+
+        // Deliberately after the empty check: a library with nothing to fill should not spend a
+        // request discovering that its credential is fine.
+        val credentialCheck = tmdbClient.verifyCredential()
+        if (credentialCheck is Resource.Error) {
+            logger.info(TAG) { "TMDB backfill run blocked before starting: credential not accepted" }
+            return state.toProgress(blockedMessage = credentialCheck.message)
+        }
+
+        val toProcess = state.pendingMediaIds
+        logger.info(TAG) { "TMDB backfill run starting: ${toProcess.size} title(s) pending" }
+        val stillPending = mutableListOf<String>()
+        var updated = state.updated
+        var nothingToFill = state.nothingToFill
+
+        try {
+            for (index in toProcess.indices) {
+                // Cooperative cancellation between titles, never mid-title: state is checkpointed
+                // after every *completed* title, so whatever was last saved is the correct resume
+                // point either way.
+                coroutineContext.ensureActive()
+                val mediaId = toProcess[index]
+
+                when (val outcome = processOne(mediaId)) {
+                    StepOutcome.Removed -> Unit
+                    is StepOutcome.Done -> if (outcome.wroteAnything) updated++ else nothingToFill++
+                    StepOutcome.DeferredTransient -> stillPending += mediaId
+                }
+
+                state =
+                    state.copy(
+                        pendingMediaIds = stillPending + toProcess.subList(index + 1, toProcess.size),
+                        updated = updated,
+                        nothingToFill = nothingToFill,
+                    )
+                settingsRepository.saveTmdbBackfillState(state)
+                onProgress?.invoke(state.toProgress())
+            }
+        } catch (e: CancellationException) {
+            // Cancelling is normal -- Settings offers it -- but without this the run logs "starting,
+            // 40 pending" and then nothing, which reads as a hang. Read from `state` (the last
+            // persisted checkpoint) rather than the loop-local values, for the reason the book pass
+            // spells out: `stillPending` alone is not the resume set.
+            logger.info(TAG) {
+                "TMDB backfill run cancelled: ${state.updated} updated, " +
+                    "${state.pendingMediaIds.size} left for the next run"
+            }
+            throw e
+        }
+
+        if (state.pendingMediaIds.isEmpty()) {
+            settingsRepository.clearTmdbBackfillState()
+        }
+        logger.info(TAG) {
+            "TMDB backfill run finished: $updated updated, $nothingToFill with nothing to fill, " +
+                "${state.pendingMediaIds.size} still pending"
+        }
+        return state.toProgress()
+    }
+
+    /**
+     * One-shot peek at whether a run is resumable, for UI offering "Resume (40 remaining)" without
+     * starting one. Never touches the network, so [TmdbBackfillProgress.blockedMessage] is always
+     * `null` here — being blocked is a property of a *run*, not of the stored state.
+     */
+    public suspend fun peekProgress(): TmdbBackfillProgress? = settingsRepository.getTmdbBackfillState()?.toProgress()
+
+    /**
+     * Scans every film and show for gaps, persists the freshly-seeded state, and returns it. Only
+     * called when nothing is resumable — a resumed run reuses the already-seeded queue so that
+     * [TmdbBackfillState.totalCandidates] stays fixed and "312 of 480" keeps meaning something.
+     *
+     * Titles with no TMDB mapping are split into [TmdbBackfillState.noTmdbIdSkipped] and never
+     * queued: there is nothing to ask about a film someone typed in by hand, and retrying it forever
+     * would not make one appear in the catalogue.
+     */
+    private suspend fun seedState(): TmdbBackfillState {
+        val haveTmdbId = db.externalIdentifierDao().getMediaIdsForProvider(IdentifierProvider.TMDB).toSet()
+        val incompleteEpisodes = db.episodeDao().mediaIdsWithIncompleteEpisodes().toSet()
+
+        val movieDetails = db.movieDetailsDao().getAll().associateBy { it.mediaId }
+        val films =
+            db
+                .mediaItemDao()
+                .getAllByType(MediaType.MOVIE)
+                .filter { filmNeedsFilling(it, movieDetails[it.id]) }
+
+        val showDetails = db.tvDetailsDao().getAll().associateBy { it.mediaId }
+        val shows =
+            db
+                .mediaItemDao()
+                .getAllByType(MediaType.TV_SHOW)
+                .filter { showNeedsFilling(it, showDetails[it.id], it.id in incompleteEpisodes) }
+
+        // Films before shows, each title-ordered, because that is the order getAllByType returns and
+        // a stable queue is the only ordering property a resume actually needs.
+        val (withTmdbId, withoutTmdbId) = (films + shows).partition { it.id in haveTmdbId }
+
+        val state =
+            TmdbBackfillState(
+                pendingMediaIds = withTmdbId.map { it.id },
+                totalCandidates = withTmdbId.size,
+                noTmdbIdSkipped = withoutTmdbId.size,
+                updated = 0,
+                nothingToFill = 0,
+            )
+        settingsRepository.saveTmdbBackfillState(state)
+        return state
+    }
+
+    /**
+     * Resolves whatever [mediaId] is still missing, from its **current** database state — re-read
+     * here rather than trusted from the seed scan, because a title can have been fixed by hand or
+     * deleted since the queue was written.
+     */
+    private suspend fun processOne(mediaId: String): StepOutcome {
+        val item = db.mediaItemDao().getById(mediaId) ?: return StepOutcome.Removed
+        val storedId =
+            db
+                .externalIdentifierDao()
+                .getByKey(mediaId, IdentifierProvider.TMDB)
+                ?.externalId
+                ?: return StepOutcome.Removed // guarded at seed time; the mapping was deleted since
+        // A stored id that is not a number cannot address anything at TMDB. Dropped rather than
+        // coerced, for the reason BackfillShowEpisodesUseCase refuses it: the CSV importer accepts
+        // any non-blank string as an external id, and coercing would spend a request on /tv/-1 and
+        // report a 404 that describes neither the cause nor the remedy.
+        val tmdbId = storedId.toIntOrNull() ?: return StepOutcome.Removed
+
+        return when (item.type) {
+            MediaType.MOVIE -> processFilm(item, tmdbId)
+            MediaType.TV_SHOW -> processShow(item, tmdbId)
+            // A book carrying a TMDB mapping is not a thing this app creates; nothing here could
+            // fill it if it existed.
+            else -> StepOutcome.Removed
+        }
+    }
+
+    private suspend fun processFilm(
+        item: MediaItemEntity,
+        tmdbId: Int,
+    ): StepOutcome {
+        val details = db.movieDetailsDao().getByMediaId(item.id)
+        val needsPoster = item.coverImageHash == null
+        val needsYear = item.releaseYear == null
+        val needsRating = item.communityRating == null
+        // Gated on the details row existing, not merely on the column being null. A film whose
+        // movie_details half is missing (the integrity edge MediaWithDetails.Movie documents) has no
+        // row for a runtime to land in, and fillMovieMetadata deliberately does not create one --
+        // counting it as filled would report a write that could not have happened.
+        val needsRuntime = details != null && details.runtimeMinutes == null
+        if (!needsPoster && !needsYear && !needsRating && !needsRuntime) return StepOutcome.Removed
+
+        val mapping =
+            when (val result = tmdbClient.movieDetails(tmdbId)) {
+                is Resource.Error -> return StepOutcome.DeferredTransient
+                is Resource.Success -> result.data.toMovieMapping() ?: return StepOutcome.Done(wroteAnything = false)
+            }
+
+        var wrote = false
+        val year = if (needsYear) mapping.releaseYear else null
+        val rating = if (needsRating) mapping.communityRating else null
+        val runtime = if (needsRuntime) mapping.runtimeMinutes else null
+        if (year != null || rating != null || runtime != null) {
+            val rows =
+                db.movieWriteDao().fillMovieMetadata(
+                    mediaId = item.id,
+                    releaseYear = year,
+                    communityRating = rating,
+                    runtimeMinutes = runtime,
+                )
+            wrote = rows > 0
+        }
+
+        return finishWithPoster(item.id, mapping.posterPath, needsPoster, wrote)
+    }
+
+    private suspend fun processShow(
+        item: MediaItemEntity,
+        tmdbId: Int,
+    ): StepOutcome {
+        val details = db.tvDetailsDao().getByMediaId(item.id)
+        val needsPoster = item.coverImageHash == null
+        val needsYear = item.releaseYear == null
+        val needsRating = item.communityRating == null
+        val detailGaps = details != null && details.hasGap()
+        // Re-derived from the current rows rather than reused from the seed scan's set, for the same
+        // reason every other gap here is: an episode could have been filled by the per-show refresh
+        // (#136) between the two. The condition is the same five columns
+        // EpisodeDao.mediaIdsWithIncompleteEpisodes tests, and has to stay that way -- a re-check
+        // narrower than the seed would silently drop shows the scan had queued for a real gap.
+        val needsEpisodes = db.episodeDao().getByMediaId(item.id).any { it.seasonNumber >= 1 && it.hasGap() }
+        if (!needsPoster && !needsYear && !needsRating && !detailGaps && !needsEpisodes) return StepOutcome.Removed
+
+        val fetched =
+            when (val result = tmdbClient.showWithSeasons(tmdbId)) {
+                is Resource.Error -> return StepOutcome.DeferredTransient
+                is Resource.Success -> result.data
+            }
+        // Only the scalar fields of this mapping are used. Its `seasons` list is creation data for
+        // addShow, and creating episode rows is precisely what enrichment must not do (#75, #123).
+        val mapping = fetched.toShowMapping() ?: return StepOutcome.Done(wroteAnything = false)
+
+        var wrote = false
+        val year = if (needsYear) mapping.releaseYear else null
+        val rating = if (needsRating) mapping.communityRating else null
+        if (year != null || rating != null || detailGaps) {
+            val rows =
+                db.tvWriteDao().fillShowMetadata(
+                    mediaId = item.id,
+                    releaseYear = year,
+                    communityRating = rating,
+                    totalSeasons = if (details?.totalSeasons == null) mapping.totalSeasons else null,
+                    airingStatus = if (details?.airingStatus == null) mapping.airingStatus else null,
+                    overview = if (details?.overview == null) mapping.overview?.takeIf { it.isNotBlank() } else null,
+                    firstAirDate =
+                        if (details?.firstAirDate == null) mapping.firstAirDate?.toEpochMilliseconds() else null,
+                    lastAirDate =
+                        if (details?.lastAirDate == null) mapping.lastAirDate?.toEpochMilliseconds() else null,
+                )
+            wrote = rows > 0
+        }
+
+        if (needsEpisodes && showEpisodes.applyFetched(item.id, fetched).episodesFilled > 0) {
+            wrote = true
+        }
+
+        return finishWithPoster(item.id, mapping.posterPath, needsPoster, wrote)
+    }
+
+    /**
+     * Downloads [posterPath] if one is wanted and available, then classifies the whole title.
+     *
+     * A failed download defers the *title*, so the next run retries it. Everything already written
+     * above stays written: enrichment is idempotent, and the re-read at the top of the next attempt
+     * simply finds fewer gaps.
+     */
+    private suspend fun finishWithPoster(
+        mediaId: String,
+        posterPath: String?,
+        needsPoster: Boolean,
+        wroteMetadata: Boolean,
+    ): StepOutcome {
+        if (!needsPoster || posterPath.isNullOrBlank()) return StepOutcome.Done(wroteMetadata)
+
+        // The image CDN's own budget, not the API's -- see this class's KDoc on the two pacers.
+        posterPacer.acquire()
+        // A Resource.Error here is a genuine download or storage failure: "there was no poster to
+        // fetch", the other thing FetchPosterUseCase reports as an error, is excluded by the blank
+        // check above.
+        return when (fetchPoster.execute(mediaId, posterPath)) {
+            is Resource.Success -> StepOutcome.Done(wroteAnything = true)
+            is Resource.Error -> StepOutcome.DeferredTransient
+        }
+    }
+
+    /** Outcome of resolving a single pending title, driving [execute]'s bookkeeping for it. */
+    private sealed class StepOutcome {
+        /** Deleted since being queued, already complete, or holding an id nothing can be asked about. */
+        data object Removed : StepOutcome()
+
+        /** Fully resolved this run — removed from the pending list. */
+        data class Done(
+            val wroteAnything: Boolean,
+        ) : StepOutcome()
+
+        /** A transient failure (lookup, download, or image save) — retried on a future run. */
+        data object DeferredTransient : StepOutcome()
+    }
+}
+
+/** Whether a film has any column this pass could fill. Mirrors [BulkTmdbBackfillUseCase]'s re-check. */
+private fun filmNeedsFilling(
+    item: MediaItemEntity,
+    details: MovieDetailsEntity?,
+): Boolean =
+    item.coverImageHash == null ||
+        item.releaseYear == null ||
+        item.communityRating == null ||
+        (details != null && details.runtimeMinutes == null)
+
+/** Whether a show has any column, or any episode row, this pass could fill. */
+private fun showNeedsFilling(
+    item: MediaItemEntity,
+    details: TVDetailsEntity?,
+    hasIncompleteEpisodes: Boolean,
+): Boolean =
+    item.coverImageHash == null ||
+        item.releaseYear == null ||
+        item.communityRating == null ||
+        (details != null && details.hasGap()) ||
+        hasIncompleteEpisodes
+
+/**
+ * Whether any of the episode columns TMDB can answer is still empty.
+ *
+ * The Kotlin form of [com.hub.media.core.database.dao.EpisodeDao.mediaIdsWithIncompleteEpisodes]'s
+ * predicate, and the two are a pair: that query decides which shows are worth queueing and this
+ * decides whether a queued show is still worth a request. They must test the same columns.
+ */
+private fun EpisodeEntity.hasGap(): Boolean =
+    title == null ||
+        airDate == null ||
+        runtimeMinutes == null ||
+        overview == null ||
+        communityRating == null
+
+/**
+ * Whether any of the show-level columns TMDB can answer is still empty.
+ *
+ * `status` is not among them and must never be: it is the abandonment flag, which is a decision only
+ * the user makes.
+ */
+private fun TVDetailsEntity.hasGap(): Boolean =
+    totalSeasons == null ||
+        airingStatus == null ||
+        overview == null ||
+        firstAirDate == null ||
+        lastAirDate == null
+
+private fun TmdbBackfillState.toProgress(blockedMessage: String? = null): TmdbBackfillProgress =
+    TmdbBackfillProgress(
+        totalCandidates = totalCandidates,
+        processed = totalCandidates - pendingMediaIds.size,
+        updated = updated,
+        nothingToFill = nothingToFill,
+        noTmdbIdSkipped = noTmdbIdSkipped,
+        remaining = pendingMediaIds.size,
+        blockedMessage = blockedMessage,
+    )
