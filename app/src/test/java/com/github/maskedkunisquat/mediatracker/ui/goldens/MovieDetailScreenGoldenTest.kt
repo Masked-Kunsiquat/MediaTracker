@@ -45,6 +45,7 @@ class MovieDetailScreenGoldenTest {
     @Composable
     private fun Fixture() {
         MovieDetailScreen(
+            coverStorageDir = NO_COVERS,
             uiState =
                 MovieDetailUiState.Ready(
                     movie =
@@ -74,5 +75,13 @@ class MovieDetailScreenGoldenTest {
             onNavigateBack = {},
             onNavigateToEditMovie = {},
         )
+    }
+
+    private companion object {
+        /**
+         * A directory holding no images. Every fixture row has a null cover hash, so
+         * [CoverImage] draws its placeholder and never reads from disk.
+         */
+        const val NO_COVERS = "no-covers-in-this-fixture"
     }
 }

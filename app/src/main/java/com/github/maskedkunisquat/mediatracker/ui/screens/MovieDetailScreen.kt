@@ -3,6 +3,8 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,12 +32,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MovieDetailViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.MovieDetailUiState
@@ -47,6 +52,7 @@ import com.hub.media.ui.MovieDetailViewModel
 @Composable
 fun MovieDetailScreenRoute(
     appContainer: AppContainer,
+    coverStorageDir: String,
     movieId: String,
     onNavigateBack: () -> Unit,
     onNavigateToEditMovie: () -> Unit,
@@ -57,6 +63,7 @@ fun MovieDetailScreenRoute(
 
     MovieDetailScreen(
         uiState = uiState,
+        coverStorageDir = coverStorageDir,
         onStatusChange = viewModel::updateStatus,
         onDelete = viewModel::deleteMovie,
         onErrorShown = viewModel::consumeError,
@@ -73,6 +80,7 @@ fun MovieDetailScreenRoute(
 @Composable
 fun MovieDetailScreen(
     uiState: MovieDetailUiState,
+    coverStorageDir: String,
     onStatusChange: (WatchStatus) -> Unit,
     onDelete: () -> Unit,
     onErrorShown: () -> Unit,
@@ -179,6 +187,20 @@ fun MovieDetailScreen(
 
                 is MovieDetailUiState.Ready -> {
                     val movie = uiState.movie
+                    // Only when there is one. CoverImage draws a placeholder for a null hash, which
+                    // is right in the library where every row needs the same shape -- but at this
+                    // size it is a large empty panel, and a film entered by hand will never have
+                    // artwork, so it would be permanent. Caught by looking at the re-recorded
+                    // golden rather than by a test.
+                    movie.item.coverImageHash?.let { hash ->
+                        CoverImage(
+                            coverDir = coverStorageDir,
+                            coverImageHash = hash,
+                            mediaType = MediaType.MOVIE,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().height(DETAIL_POSTER_HEIGHT),
+                        )
+                    }
                     movie.item.releaseYear?.let { year ->
                         Text(
                             text = stringResource(R.string.library_year_label, year),
@@ -210,3 +232,10 @@ fun MovieDetailScreen(
         }
     }
 }
+
+/**
+ * Poster height on a detail screen. Mirrors [TVShowDetailScreen]'s constant of the same name --
+ * duplicated rather than shared because a film and a show sizing their header identically is a
+ * coincidence worth keeping changeable, not a rule worth enforcing from one place.
+ */
+private val DETAIL_POSTER_HEIGHT = 220.dp
