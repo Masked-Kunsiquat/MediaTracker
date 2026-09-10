@@ -202,6 +202,13 @@ so every helper whose callers end up in a sibling file must widen to `internal`.
   - Screen-level tests drive a **stateless** composable with fake callbacks — they prove a screen honours the contract it is handed.
   - `SettingsNavigationTest` starts at the real `MainActivity` and taps through, because only that can prove a **route** hands the screen a real callback rather than a stub. That is the failure that actually shipped.
   - Put behaviour that does not need a device in a ViewModel and unit-test it there instead. `ChangelogViewModel` takes its content as a lambda rather than reading `context.assets` specifically so its logic stays in `commonTest`.
+* **If a device is attached and the change touches `app/src/`, run the instrumented suite. Not optional, and not a judgement call.** The bullet above says not to treat this lane's absence from the CI gate as permission to skip it; this is what that means in practice, because the soft version did not hold.
+
+  **The rule.** Before opening or updating a PR, run `adb devices`. If a device is listed and the branch touches anything under `app/src/`, run `./gradlew :app:connectedDebugAndroidTest`. Then put the **outcome** in the PR — the tally, and any failure checked against a commit where the lane last built (§7's "check main before blaming your diff"). If it was not run, the PR must say **why in words**. A bare unticked box is not a report: it reads as "no device was available", which is a claim, and it has been a false one.
+
+  **Run it even when the branch adds no instrumented tests.** This is the failure that produced this rule. `connectedDebugAndroidTest` is the *only* thing that compiles `app/src/androidTest/`, so it is the only thing that notices when a screen gains a parameter and its instrumented test does not. Between #136 and #144 that source set did not compile at all, across a released version, because every PR in between reasoned "I added no instrumented tests, so there is nothing here to run." A lane that cannot compile reports nothing while looking exactly like a lane with nothing to say.
+
+  **It uninstalls the app, so back up first** — see the bullet below on assuming device data, and take a `.sqlite` copy if the device holds anything worth keeping. That is a reason to spend two minutes on a backup, **never** a reason to skip the run. Offer the backup; do not quietly convert it into a decision not to test.
 * **Compose screens are also covered by a gated Robolectric lane**, in `app/src/test/`, which runs on the host JVM and therefore *is* part of the verification command above:
 
   ```bash
