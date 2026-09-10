@@ -156,6 +156,13 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
  * - **Stats, the log viewer.** Neither has a single interactive node inside its scroller -- only
  *   top-bar buttons -- and this rule measures interactive nodes. What #99 risks on those two is a
  *   last card clipped by the bar, which is visual, and belongs to #96 Phase B.
+ * - **About (#137).** Same shape as the forms above, and it was written, run and deleted rather
+ *   than reasoned about. Its content is fixed -- three provider cards -- so unlike the changelog it
+ *   cannot be inflated into a fixture that reaches the bar without testing a screen the app does
+ *   not have. Measured: the deepest clickable node, Open Library's link, ends at **y=1956px**
+ *   against a bar line at **y=2529px**. Falsified by deleting the screen's `scrollingContentPadding`
+ *   outright, which it passed comfortably. The screen still re-adds the inset, and correctly; there
+ *   is simply no assertion here that could tell if it stopped.
  * - **Book detail, both tabs.** The Details tab for the reason above: its bottom rows are plain
  *   metadata. The Reading history tab *looks* like it qualifies -- session rows carry edit and
  *   delete buttons at the foot of a scroll -- and it does not, for a reason worth recording because

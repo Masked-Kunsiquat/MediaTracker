@@ -176,4 +176,18 @@ sealed interface Route {
     data object Changelog : Route {
         override val route: String = "changelog"
     }
+
+    /**
+     * About and credits, reached from Settings (#137).
+     *
+     * Its own destination rather than a section inside [Settings], for two reasons that point the
+     * same way. TMDB's terms require the attribution to sit in an *"About or Credits type section"*,
+     * and a screen the user opens by name is the least ambiguous reading of that. And
+     * `SettingsScreen.kt` was 2,183 lines when this was written -- #81's decomposition target --
+     * so adding a provider-credits block to it would have made the file this project already wants
+     * to break up meaningfully worse.
+     */
+    data object About : Route {
+        override val route: String = "about"
+    }
 }

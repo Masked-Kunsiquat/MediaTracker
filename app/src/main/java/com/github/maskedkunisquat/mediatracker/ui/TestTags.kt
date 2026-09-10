@@ -85,4 +85,9 @@ object TestTags {
         const val API_KEY_FIELD = "settings:apiKey"
         const val TMDB_KEY_FIELD = "settings:tmdbKey"
     }
+
+    object About {
+        /** The credits list. Tagged under the scrolling-container rule above, not as a control. */
+        const val LIST = "about:list"
+    }
 }
