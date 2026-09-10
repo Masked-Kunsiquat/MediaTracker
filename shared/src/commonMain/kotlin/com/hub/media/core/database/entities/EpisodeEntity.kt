@@ -80,9 +80,18 @@ public data class EpisodeEntity(
      *
      * A hash of a locally-stored file rather than a provider URL, matching
      * [MediaItemEntity.coverImageHash] and AGENTS.md §4: this app is offline-first, and a remote
-     * path would make every episode row render blank the moment the device loses signal. Whether
-     * to download stills at all, and how aggressively to evict them, is a Phase D decision — a
-     * show can hold hundreds of episodes — but the column shape does not depend on that answer.
+     * path would make every episode row render blank the moment the device loses signal.
+     *
+     * **Phase D decided not to fill it, and nothing does.** This KDoc used to defer that question
+     * ("whether to download stills at all, and how aggressively to evict them, is a Phase D
+     * decision — a show can hold hundreds of episodes"); the answer is no. A single long-running
+     * show reaches into the hundreds of episodes, so filling this would cost hundreds of requests
+     * and a great deal of disk for images the episode checklist never renders at a size worth
+     * having. Posters are fetched (one per title, and shown); stills are not.
+     *
+     * The column stays because the cost of keeping it is nothing and the cost of adding it back
+     * after the v6 freeze is a migration. If an episode view ever displays a still, this is where
+     * it goes.
      */
     val stillImageHash: String? = null,
     /**

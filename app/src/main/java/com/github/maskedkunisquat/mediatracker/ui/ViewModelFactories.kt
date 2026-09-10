@@ -327,6 +327,7 @@ class MovieSearchViewModelFactory(
             MovieSearchViewModel(
                 tmdbClient = appContainer.tmdbClient,
                 movieRepository = appContainer.movieRepository,
+                fetchPosterUseCase = appContainer.fetchPosterUseCase,
             )
         },
     )
@@ -345,6 +346,7 @@ class TVShowSearchViewModelFactory(
             TVShowSearchViewModel(
                 tmdbClient = appContainer.tmdbClient,
                 tvShowRepository = appContainer.tvShowRepository,
+                fetchPosterUseCase = appContainer.fetchPosterUseCase,
             )
         },
     )

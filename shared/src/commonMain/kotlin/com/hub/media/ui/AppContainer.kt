@@ -17,6 +17,7 @@ import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.books.network.BookSearchProvider
+import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.media.domain.BulkDeleteUseCase
@@ -37,6 +38,7 @@ import com.hub.media.features.settings.data.getTmdbCredential
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
 
@@ -214,6 +216,21 @@ public class AppContainer(
             db = database,
             tmdbClient = tmdbClient,
             tvShowRepository = tvShowRepository,
+        )
+
+    /**
+     * Downloads a title's TMDB poster into local storage (#75).
+     *
+     * Reuses [CoverImageDownloader] rather than introducing a TMDB-specific one: it takes a bare URL
+     * and knows nothing about Open Library, which is what makes it reusable here at all. The one
+     * thing it does not get is the cover rate limiter -- that budget is Open Library's own, and TMDB
+     * artwork is served from a different CDN with no such ceiling.
+     */
+    public val fetchPosterUseCase: FetchPosterUseCase =
+        FetchPosterUseCase(
+            coverDownloader = CoverImageDownloader(httpClient),
+            imageStorage = imageStorage,
+            mediaRepository = mediaRepository,
         )
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */

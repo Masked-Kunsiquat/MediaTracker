@@ -10,6 +10,7 @@ import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.movies.domain.toMovieMapping
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +57,7 @@ public data class MovieSearchUiState(
 public class MovieSearchViewModel(
     private val tmdbClient: TmdbClient,
     private val movieRepository: MovieRepository,
+    private val fetchPosterUseCase: FetchPosterUseCase,
     private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MovieSearchUiState())
@@ -136,6 +138,11 @@ public class MovieSearchViewModel(
                     ) {
                         is Resource.Success -> {
                             logger.info(TAG) { "Added film from TMDB $tmdbId" }
+                            // After the write, never before it: a poster fetched first would make
+                            // artwork a precondition of having the film at all. Failure is ignored
+                            // on purpose -- the row is already complete without one, and the use case
+                            // logs what went wrong.
+                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
                         }

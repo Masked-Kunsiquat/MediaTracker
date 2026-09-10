@@ -9,6 +9,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +72,7 @@ public data class TVShowSearchUiState(
 public class TVShowSearchViewModel(
     private val tmdbClient: TmdbClient,
     private val tvShowRepository: TVShowRepository,
+    private val fetchPosterUseCase: FetchPosterUseCase,
     private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TVShowSearchUiState())
@@ -186,6 +188,11 @@ public class TVShowSearchViewModel(
                             logger.info(TAG) {
                                 "Added show from TMDB $tmdbId: ${mapping.seasons.size} season(s)"
                             }
+                            // After the write, never before it: a poster fetched first would make
+                            // artwork a precondition of having the show at all. Failure is ignored
+                            // on purpose -- the row is already complete without one, and the use case
+                            // logs what went wrong.
+                            fetchPosterUseCase.execute(saved.data, mapping.posterPath)
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
                         }
