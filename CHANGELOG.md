@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The refresh button that fills a hand-typed show in.** A show you added by hand now has a refresh action on its screen, which fetches its real episode titles, air dates, lengths, synopses and scores and fills them onto the rows already there. It tells you what it did in a sentence — how many episodes it updated, and where your count disagrees with the catalogue's, naming both numbers so you can decide what to do about it.
+- **A show whose episodes you filled in yourself can now fetch their real details.** If a show knows which catalogue entry it came from but its episodes are still blank numbers — because you typed the season lengths in, or because it arrived that way in a backup — its screen now has a refresh action. It fetches the real episode titles, air dates, lengths, synopses and scores and fills them onto the rows already there. It tells you what it did in a sentence — how many episodes it updated, and where your count disagrees with the catalogue's, naming both numbers so you can decide what to do about it.
 
   The button only appears for a show that records where it came from. A show typed in entirely by hand has nothing to refresh against, so rather than offering a button that always fails, there is no button.
 

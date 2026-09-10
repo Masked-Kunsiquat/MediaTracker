@@ -65,9 +65,14 @@ public sealed class TVShowDetailUiState {
         val isAbandoned: Boolean,
         val errorMessage: String? = null,
         /**
-         * Whether this show records which TMDB record it came from, and so has something to refresh
-         * against. `false` for a show typed in by hand -- the action is hidden rather than offered
-         * and then refused, because a control that always fails is worse than one that is absent.
+         * Whether this show records a TMDB id that can actually address something, and so has
+         * something to refresh against.
+         *
+         * `false` for a show typed in by hand, and also for one carrying an id that is not a number
+         * -- the CSV importer validates the *provider* against the enum but accepts any non-blank
+         * string as the id, so `TMDB:abc` is importable. The use case refuses such an id before
+         * spending a request, which is right, but a button that is always refused is the very thing
+         * hiding this control is meant to avoid.
          */
         val canRefreshMetadata: Boolean = false,
         val isRefreshingMetadata: Boolean = false,
@@ -138,7 +143,7 @@ public class TVShowDetailViewModel(
                     totalEpisodes = episodes.size,
                     isAbandoned = show.details?.status == WatchStatus.ABANDONED,
                     errorMessage = error,
-                    canRefreshMetadata = tmdb != null,
+                    canRefreshMetadata = tmdb?.toIntOrNull() != null,
                     isRefreshingMetadata = refreshing,
                 )
             }

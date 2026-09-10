@@ -2,6 +2,7 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
@@ -30,9 +31,11 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * [TVShowDetailViewModel] tests against a real in-memory [AppDatabase], mirroring
@@ -84,8 +87,14 @@ class TVShowDetailViewModelTest {
     private suspend fun insertShow(
         title: String = "Show",
         seasons: List<SeasonQuickFill> = emptyList(),
+        externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
     ): String {
-        val result = tvShowRepository.addShow(title = title, seasons = seasons)
+        val result =
+            tvShowRepository.addShow(
+                title = title,
+                seasons = seasons,
+                externalIdentifiers = externalIdentifiers,
+            )
         assertIs<Resource.Success<String>>(result)
         return result.data
     }
@@ -272,5 +281,58 @@ class TVShowDetailViewModelTest {
             val state = viewModel.uiState.first { it is TVShowDetailUiState.NotFound }
             assertIs<TVShowDetailUiState.NotFound>(state)
             assertNull(db.mediaItemDao().getById(showId), "the row itself must be gone")
+        }
+
+    // ---- canRefreshMetadata ---------------------------------------------------------------------
+
+    @Test
+    fun canRefreshMetadata_isFalseForAShowTypedInByHand() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, 3)))
+            val viewModel =
+                viewModels.track(
+                    TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                )
+
+            val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready }
+            assertFalse((state as TVShowDetailUiState.Ready).canRefreshMetadata)
+        }
+
+    @Test
+    fun canRefreshMetadata_isTrueForAShowWithANumericTmdbId() =
+        runTest {
+            val showId =
+                insertShow(
+                    seasons = listOf(SeasonQuickFill(1, 3)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            val viewModel =
+                viewModels.track(
+                    TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                )
+
+            val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.canRefreshMetadata }
+            assertTrue((state as TVShowDetailUiState.Ready).canRefreshMetadata)
+        }
+
+    @Test
+    fun canRefreshMetadata_isFalseWhenTheStoredIdIsNotANumber() =
+        runTest {
+            // Reachable rather than theoretical: the CSV importer validates the *provider* against
+            // the enum but accepts any non-blank string as the id, so "TMDB:abc" imports cleanly.
+            // The use case refuses such an id before spending a request, which is right -- but a
+            // button that is always refused is exactly what hiding this control exists to avoid.
+            val showId =
+                insertShow(
+                    seasons = listOf(SeasonQuickFill(1, 3)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "not-a-number"),
+                )
+            val viewModel =
+                viewModels.track(
+                    TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                )
+
+            val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready }
+            assertFalse((state as TVShowDetailUiState.Ready).canRefreshMetadata)
         }
 }
