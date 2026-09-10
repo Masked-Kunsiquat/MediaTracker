@@ -110,6 +110,8 @@ class TVShowDetailScreenTest {
                 val content =
                     @Composable {
                         TVShowDetailScreen(
+                            // See MovieDetailScreenTest: no artwork is asserted here either.
+                            coverStorageDir = NO_COVERS,
                             uiState = uiState,
                             onEpisodeWatchedChange = { _, _ -> },
                             onSeasonWatchedChange = { _, _ -> },
@@ -119,6 +121,7 @@ class TVShowDetailScreenTest {
                             onDelete = {},
                             onErrorShown = {},
                             onNavigateBack = {},
+                            onRefreshMetadata = {},
                         )
                     }
                 if (narrowWidth) {
@@ -225,5 +228,10 @@ class TVShowDetailScreenTest {
         assertEquals(1, calls)
         assertEquals(1, capturedSeason)
         assertEquals(8, capturedCount)
+    }
+
+    private companion object {
+        /** See [MovieDetailScreenTest]: this class asserts episodes and controls, never artwork. */
+        const val NO_COVERS = "no-covers-in-this-fixture"
     }
 }

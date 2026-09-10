@@ -73,6 +73,10 @@ class MovieDetailScreenTest {
         composeRule.setContent {
             MediaTrackerTheme {
                 MovieDetailScreen(
+                    // Deliberately a path with nothing behind it. These tests assert text and
+                    // controls, never artwork, and a real directory would make them depend on
+                    // device storage for a picture none of them looks at.
+                    coverStorageDir = NO_COVERS,
                     uiState = uiState,
                     onStatusChange = onStatusChange,
                     onDelete = onDelete,
@@ -174,5 +178,16 @@ class MovieDetailScreenTest {
         val notFoundText = context.getString(R.string.movie_detail_not_found)
         composeRule.onNodeWithText(notFoundText).assertIsDisplayed()
         assertEquals(1, backCount)
+    }
+
+    private companion object {
+        /**
+         * A cover directory that does not exist, matching `MovieDetailScreenGoldenTest`'s fixture.
+         *
+         * Every test in this class asserts text, controls or navigation; none asserts artwork. A
+         * real directory would tie them to device storage for a picture nobody looks at, and
+         * `CoverImage` already renders its placeholder when a hash resolves to nothing.
+         */
+        const val NO_COVERS = "no-covers-in-this-fixture"
     }
 }
