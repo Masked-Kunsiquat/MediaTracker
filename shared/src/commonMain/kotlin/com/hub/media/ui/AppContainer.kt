@@ -17,6 +17,7 @@ import com.hub.media.features.books.domain.createDefaultAddBookByIsbnUseCase
 import com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase
 import com.hub.media.features.books.domain.createDefaultRefetchCoverUseCase
 import com.hub.media.features.books.network.BookSearchProvider
+import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.books.network.OpenLibraryCoverRateLimiter
 import com.hub.media.features.books.network.OpenLibrarySearchClient
 import com.hub.media.features.media.domain.BulkDeleteUseCase
@@ -37,8 +38,12 @@ import com.hub.media.features.settings.data.getTmdbCredential
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Manual composition root for the shared layer (AGENTS.md §5 "No Unnecessary Dependencies" —
@@ -93,6 +98,19 @@ public class AppContainer(
 ) {
     /** Shared [HttpClient] for all outbound requests. */
     public val httpClient: HttpClient = createHttpClient()
+
+    /**
+     * Scope for work that must outlive the screen that started it.
+     *
+     * Deliberately narrow in intent: this is not a general "do things in the background" scope. It
+     * exists because a poster download is started by a screen that navigates away from itself
+     * immediately — `popUpTo(inclusive = true)` removes the search destination, clearing its
+     * ViewModel and cancelling `viewModelScope` mid-download.
+     *
+     * [SupervisorJob] so one failed fetch cannot cancel the next. Never cancelled: it is tied to the
+     * process, and this container is built once per process.
+     */
+    private val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Universal media repository (ROADMAP foundation for Task 13). */
     public val mediaRepository: MediaRepository = MediaRepository(database)
@@ -214,6 +232,22 @@ public class AppContainer(
             db = database,
             tmdbClient = tmdbClient,
             tvShowRepository = tvShowRepository,
+        )
+
+    /**
+     * Downloads a title's TMDB poster into local storage (#75).
+     *
+     * Reuses [CoverImageDownloader] rather than introducing a TMDB-specific one: it takes a bare URL
+     * and knows nothing about Open Library, which is what makes it reusable here at all. The one
+     * thing it does not get is the cover rate limiter -- that budget is Open Library's own, and TMDB
+     * artwork is served from a different CDN with no such ceiling.
+     */
+    public val fetchPosterUseCase: FetchPosterUseCase =
+        FetchPosterUseCase(
+            coverDownloader = CoverImageDownloader(httpClient),
+            imageStorage = imageStorage,
+            mediaRepository = mediaRepository,
+            scope = appScope,
         )
 
     /** End-to-end ISBN ingestion, consumed by [AddBookViewModel]. */

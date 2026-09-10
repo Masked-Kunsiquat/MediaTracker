@@ -9,6 +9,7 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +72,7 @@ public data class TVShowSearchUiState(
 public class TVShowSearchViewModel(
     private val tmdbClient: TmdbClient,
     private val tvShowRepository: TVShowRepository,
+    private val fetchPosterUseCase: FetchPosterUseCase,
     private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TVShowSearchUiState())
@@ -186,8 +188,14 @@ public class TVShowSearchViewModel(
                             logger.info(TAG) {
                                 "Added show from TMDB $tmdbId: ${mapping.seasons.size} season(s)"
                             }
+                            // Release the screen *first*, then fetch the artwork -- see
+                            // MovieSearchViewModel for the device-found failure this ordering fixes:
+                            // savedMediaId drives navigation and addingTmdbId keeps every row
+                            // unresponsive, so fetching before this line left the user on a dead list
+                            // looking at a show that had already been added.
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
+                            fetchPosterUseCase.enqueue(saved.data, mapping.posterPath)
                         }
                         is Resource.Error -> failAdd(saved.message)
                     }

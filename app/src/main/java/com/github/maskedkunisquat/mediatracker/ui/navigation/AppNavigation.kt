@@ -125,6 +125,7 @@ fun AppNavigation(
                 }
             MovieDetailScreenRoute(
                 appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
                 movieId = movieId,
                 onNavigateBack = { navController.navigateUp() },
                 onNavigateToEditMovie = {
@@ -193,6 +194,7 @@ fun AppNavigation(
                 }
             TVShowDetailScreenRoute(
                 appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
                 showId = showId,
                 onNavigateBack = { navController.navigateUp() },
             )

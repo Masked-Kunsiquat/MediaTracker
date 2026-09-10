@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Films and shows added by search arrive with their poster.** The artwork is downloaded and kept on the device rather than linked to, so it is still there when you have no signal — the same way book covers already work.
+
+  If the download fails, or the catalogue has no artwork for that title, nothing else is affected: the title is already in your library by then, and an entry without a picture is a complete one. You are not told about it, because it is not a problem you caused or can act on.
+
+  **Episode stills are deliberately not downloaded.** A single long-running show can hold hundreds of episodes, and fetching an image for every one would cost hundreds of requests and a great deal of storage for pictures that a checklist never shows at any size worth having. The column that would hold them stays empty on purpose.
+
 - **A show whose episodes you filled in yourself can now fetch their real details.** If a show knows which catalogue entry it came from but its episodes are still blank numbers — because you typed the season lengths in, or because it arrived that way in a backup — its screen now has a refresh action. It fetches the real episode titles, air dates, lengths, synopses and scores and fills them onto the rows already there. It tells you what it did in a sentence — how many episodes it updated, and where your count disagrees with the catalogue's, naming both numbers so you can decide what to do about it.
 
   The button only appears for a show that records where it came from. A show typed in entirely by hand has nothing to refresh against, so rather than offering a button that always fails, there is no button.

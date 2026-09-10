@@ -1,11 +1,17 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.core.storage.cleanupTestTempDir
+import com.hub.media.core.storage.createTestTempDir
+import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -13,16 +19,26 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * [MovieSearchViewModel] against a real in-memory [AppDatabase] and a [MockEngine]-backed
@@ -33,6 +49,7 @@ import kotlin.test.assertTrue
 class MovieSearchViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: MovieRepository
+    private lateinit var posterDir: String
     private val viewModels = ViewModelRegistry()
 
     @BeforeTest
@@ -40,13 +57,30 @@ class MovieSearchViewModelTest {
         viewModels.installMain()
         db = testAppDatabase()
         repository = MovieRepository(db)
+        posterDir = runBlocking { createTestTempDir() }
     }
 
     @AfterTest
     fun tearDown() {
         viewModels.clearAll()
         db.close()
+        runBlocking { cleanupTestTempDir(posterDir) }
     }
+
+    /**
+     * A poster fetcher whose download always fails, so an accidental fetch is loud rather than a
+     * silent network call in a unit test. None of these tests assert on artwork.
+     */
+    private fun noPosters() =
+        FetchPosterUseCase(
+            coverDownloader =
+                CoverImageDownloader(
+                    createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) }),
+                ),
+            imageStorage = LocalImageStorageManager("unused-in-these-tests"),
+            mediaRepository = MediaRepository(db),
+            scope = CoroutineScope(Dispatchers.Default),
+        )
 
     private fun jsonHeaders() = headersOf(HttpHeaders.ContentType, "application/json")
 
@@ -73,6 +107,7 @@ class MovieSearchViewModelTest {
             MovieSearchViewModel(
                 tmdbClient = TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
                 movieRepository = repository,
+                fetchPosterUseCase = noPosters(),
             ),
         )
     }
@@ -113,6 +148,7 @@ class MovieSearchViewModelTest {
                     MovieSearchViewModel(
                         TmdbClient(createHttpClient(engine), credentialProvider = { null }),
                         repository,
+                        noPosters(),
                     ),
                 )
             vm.onQueryChange("matrix")
@@ -147,6 +183,69 @@ class MovieSearchViewModelTest {
                 "603",
                 db.externalIdentifierDao().getByKey(mediaId, IdentifierProvider.TMDB)?.externalId,
             )
+        }
+
+    @Test
+    fun addMovie_theArtworkFetchOutlivesTheScreenThatStartedIt() =
+        runTest {
+            // The reason FetchPosterUseCase takes an app-owned scope. Adding a title navigates with
+            // popUpTo(inclusive = true), which removes the search destination and clears its
+            // ViewModel -- so a download started in viewModelScope is cancelled within moments, and
+            // whether a poster arrives becomes a race with the navigation animation. It won on a
+            // fast connection during testing, which is how this would have shipped unnoticed.
+            val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            try {
+                val poster =
+                    FetchPosterUseCase(
+                        coverDownloader =
+                            CoverImageDownloader(
+                                createHttpClient(MockEngine { respond(byteArrayOf(1, 2, 3)) }),
+                            ),
+                        imageStorage = LocalImageStorageManager(posterDir),
+                        mediaRepository = MediaRepository(db),
+                        scope = appScope,
+                    )
+                val engine =
+                    MockEngine { request ->
+                        if (request.url.encodedPath.startsWith("/3/movie/")) {
+                            respond(MATRIX, HttpStatusCode.OK, jsonHeaders())
+                        } else {
+                            respondError(HttpStatusCode.NotFound)
+                        }
+                    }
+                val vm =
+                    MovieSearchViewModel(
+                        TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
+                        repository,
+                        poster,
+                    )
+
+                vm.addMovie(603)
+                val mediaId =
+                    withContext(Dispatchers.Default) {
+                        withTimeout(5.seconds) { vm.uiState.first { it.savedMediaId != null }.savedMediaId!! }
+                    }
+                // Clear the ViewModel exactly as navigating away does.
+                ViewModelRegistry().also { it.track(vm) }.clearAll()
+
+                val cover =
+                    withContext(Dispatchers.Default) {
+                        withTimeout(5.seconds) {
+                            // delay() rather than a tight loop: without it a regression starves
+                            // the dispatcher and the suite *hangs* instead of failing, which is a
+                            // worse outcome than the bug being pinned. Learned by writing it wrong.
+                            var hash: String? = null
+                            while (hash == null) {
+                                delay(25)
+                                hash = db.mediaItemDao().getById(mediaId)?.coverImageHash
+                            }
+                            hash
+                        }
+                    }
+                assertNotNull(cover, "the poster must land even though the screen is gone")
+            } finally {
+                appScope.cancel()
+            }
         }
 
     @Test

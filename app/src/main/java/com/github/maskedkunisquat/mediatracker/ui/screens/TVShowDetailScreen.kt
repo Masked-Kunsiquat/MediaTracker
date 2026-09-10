@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -49,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -61,8 +63,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TVShowDetailViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
@@ -76,6 +80,7 @@ import com.hub.media.ui.parseRequiredInt
 @Composable
 fun TVShowDetailScreenRoute(
     appContainer: AppContainer,
+    coverStorageDir: String,
     showId: String,
     onNavigateBack: () -> Unit,
 ) {
@@ -85,6 +90,7 @@ fun TVShowDetailScreenRoute(
 
     TVShowDetailScreen(
         uiState = uiState,
+        coverStorageDir = coverStorageDir,
         onEpisodeWatchedChange = viewModel::setEpisodeWatched,
         onSeasonWatchedChange = viewModel::setSeasonWatched,
         onSetSeasonLength = viewModel::setSeasonLength,
@@ -106,6 +112,7 @@ fun TVShowDetailScreenRoute(
 @Composable
 fun TVShowDetailScreen(
     uiState: TVShowDetailUiState,
+    coverStorageDir: String,
     onEpisodeWatchedChange: (String, Boolean) -> Unit,
     onSeasonWatchedChange: (Int, Boolean) -> Unit,
     onSetSeasonLength: (Int, Int) -> Unit,
@@ -394,6 +401,21 @@ fun TVShowDetailScreen(
                     item { Text(stringResource(R.string.tv_show_detail_not_found)) }
 
                 is TVShowDetailUiState.Ready -> {
+                    // Only emitted when there is a poster -- see MovieDetailScreen on why a
+                    // placeholder is wrong at this size. Its own item rather than part of the header
+                    // block below: a LazyColumn composes only what is visible, so a poster scrolled
+                    // off screen costs nothing on a show with hundreds of episode rows.
+                    uiState.show.item.coverImageHash?.let { hash ->
+                        item {
+                            CoverImage(
+                                coverDir = coverStorageDir,
+                                coverImageHash = hash,
+                                mediaType = MediaType.TV_SHOW,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxWidth().height(DETAIL_POSTER_HEIGHT),
+                            )
+                        }
+                    }
                     item {
                         uiState.show.item.releaseYear?.let { year ->
                             Text(
@@ -760,3 +782,13 @@ private fun SeasonLengthDialog(
         },
     )
 }
+
+/**
+ * Poster height on a detail screen.
+ *
+ * Fixed height with the image scaled to fit rather than a fixed aspect ratio: TMDB posters are
+ * nominally 2:3 but the API does not promise it, and a hardcoded ratio would crop or letterbox
+ * whatever does not comply. A height with `ContentScale.Fit` renders any shape correctly and keeps
+ * every detail screen's header the same size regardless of what the provider sent.
+ */
+private val DETAIL_POSTER_HEIGHT = 220.dp

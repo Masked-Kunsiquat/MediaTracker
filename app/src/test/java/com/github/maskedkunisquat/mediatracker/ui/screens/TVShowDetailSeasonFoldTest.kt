@@ -126,6 +126,7 @@ class TVShowDetailSeasonFoldTest {
     private fun Fixture(state: MutableState<TVShowDetailUiState>) {
         val current by remember { state }
         TVShowDetailScreen(
+            coverStorageDir = NO_COVERS,
             uiState = current,
             onEpisodeWatchedChange = { _, _ -> },
             onSeasonWatchedChange = { _, _ -> },
@@ -181,4 +182,12 @@ class TVShowDetailSeasonFoldTest {
         seasonNumber = seasonNumber,
         episodeNumber = episodeNumber,
     )
+
+    private companion object {
+        /**
+         * A directory holding no images. Every fixture row has a null cover hash, so
+         * [CoverImage] draws its placeholder and never reads from disk.
+         */
+        const val NO_COVERS = "no-covers-in-this-fixture"
+    }
 }

@@ -1,12 +1,16 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
+import com.hub.media.core.storage.LocalImageStorageManager
+import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -14,6 +18,8 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -51,6 +57,21 @@ class TVShowSearchViewModelTest {
         db.close()
     }
 
+    /**
+     * A poster fetcher whose download always fails, so an accidental fetch is loud rather than a
+     * silent network call in a unit test. None of these tests assert on artwork.
+     */
+    private fun noPosters() =
+        FetchPosterUseCase(
+            coverDownloader =
+                CoverImageDownloader(
+                    createHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) }),
+                ),
+            imageStorage = LocalImageStorageManager("unused-in-these-tests"),
+            mediaRepository = MediaRepository(db),
+            scope = CoroutineScope(Dispatchers.Default),
+        )
+
     private fun jsonHeaders() = headersOf(HttpHeaders.ContentType, "application/json")
 
     /** Answers `/search/tv` and `/tv/{id}` from the two bodies given, and 404s anything else. */
@@ -77,6 +98,7 @@ class TVShowSearchViewModelTest {
             TVShowSearchViewModel(
                 tmdbClient = TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
                 tvShowRepository = repository,
+                fetchPosterUseCase = noPosters(),
             ),
         )
     }
@@ -134,6 +156,7 @@ class TVShowSearchViewModelTest {
                     TVShowSearchViewModel(
                         TmdbClient(createHttpClient(engine), credentialProvider = { TOKEN }),
                         repository,
+                        noPosters(),
                     ),
                 )
             vm.onQueryChange("chernobyl")
@@ -156,6 +179,7 @@ class TVShowSearchViewModelTest {
                     TVShowSearchViewModel(
                         TmdbClient(createHttpClient(engine), credentialProvider = { null }),
                         repository,
+                        noPosters(),
                     ),
                 )
             vm.onQueryChange("chernobyl")

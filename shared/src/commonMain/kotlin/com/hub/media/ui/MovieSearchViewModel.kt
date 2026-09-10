@@ -10,6 +10,7 @@ import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.movies.domain.toMovieMapping
+import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +57,7 @@ public data class MovieSearchUiState(
 public class MovieSearchViewModel(
     private val tmdbClient: TmdbClient,
     private val movieRepository: MovieRepository,
+    private val fetchPosterUseCase: FetchPosterUseCase,
     private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MovieSearchUiState())
@@ -136,8 +138,20 @@ public class MovieSearchViewModel(
                     ) {
                         is Resource.Success -> {
                             logger.info(TAG) { "Added film from TMDB $tmdbId" }
+                            // Release the screen *first*, then fetch the artwork.
+                            //
+                            // Fetching before this line made a poster a precondition of reaching the
+                            // film: savedMediaId is what the route navigates on and addingTmdbId is
+                            // what keeps every row unresponsive, so a slow or hanging download left
+                            // the user on a dead list looking at a film that had already been added.
+                            // Found on a device -- the row existed in the database while the screen
+                            // had not moved.
+                            //
+                            // The detail screen observes its row, so the poster appears there when it
+                            // lands. Failure stays ignored: the entry is complete without one.
                             _uiState.value =
                                 _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
+                            fetchPosterUseCase.enqueue(saved.data, mapping.posterPath)
                         }
                         is Resource.Error -> failAdd(saved.message)
                     }

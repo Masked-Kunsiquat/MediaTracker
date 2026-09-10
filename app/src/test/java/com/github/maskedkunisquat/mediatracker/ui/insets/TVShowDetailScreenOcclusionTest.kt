@@ -49,6 +49,7 @@ class TVShowDetailScreenOcclusionTest {
     private fun Fixture() {
         val episodes = (1..EPISODE_COUNT).map { episode(seasonNumber = 1, episodeNumber = it) }
         TVShowDetailScreen(
+            coverStorageDir = NO_COVERS,
             uiState =
                 TVShowDetailUiState.Ready(
                     show = show(),
@@ -96,6 +97,12 @@ class TVShowDetailScreenOcclusionTest {
     )
 
     private companion object {
+        /**
+         * A directory holding no images. Every fixture row has a null cover hash, so
+         * [CoverImage] draws its placeholder and never reads from disk.
+         */
+        const val NO_COVERS = "no-covers-in-this-fixture"
+
         /**
          * Enough episode rows to run past the bottom of the test display, so the list has a row at
          * the navigation bar to be wrong about. A short season would put the last checkbox nowhere

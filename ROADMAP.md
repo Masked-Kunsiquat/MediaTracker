@@ -45,10 +45,21 @@ single list below and reordering is a one-line edit there.
 4. Task 12 — Genre tracking
 5. **Task 13 — Movies & TV.** *Mostly done*: Phase A (schema v6), Phase B (movies, manual entry)
    and Phase C (shows, episode-level via quick-fill) all shipped in `v0.15.0`, which is also the
-   release that froze schema v6. Only Phase D remains — the TMDB client and metadata backfill
-   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). Its schema questions are
-   already settled: episodes need no provider id of their own, and the columns the backfill will
-   fill were added before the freeze. See that task's Phase D notes.
+   release that froze schema v6. **Phase D's scope is now built** — the TMDB client and credential,
+   add-by-search for films and shows, the enrichment backfill of episode metadata onto rows that
+   already exist, and posters **for titles added through search**
+   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). Refresh fills a show's
+   episode metadata and does *not* fetch a missing poster; nothing backfills artwork for titles
+   added earlier, which is
+   [#140](https://github.com/Masked-Kunsiquat/MediaTracker/issues/140). Its schema questions
+   were settled before the freeze and cost nothing afterwards: episodes needed no provider id of
+   their own, and every column the backfill fills was added in #86 while v6 was still editable.
+   What Phase D deliberately did *not* decide is tracked separately rather than left implicit —
+   whether the backfill should create specials ([#122](https://github.com/Masked-Kunsiquat/MediaTracker/issues/122)),
+   what a user may do about a count mismatch ([#123](https://github.com/Masked-Kunsiquat/MediaTracker/issues/123)),
+   and where a synopsis belongs now that only shows can hold one
+   ([#133](https://github.com/Masked-Kunsiquat/MediaTracker/issues/133)). Episode stills are not
+   downloaded, by decision — see `EpisodeEntity.stillImageHash`.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
@@ -73,7 +84,7 @@ the same edit. Note the `(done)` suffixes are part of the anchor for exactly tha
 | [Task 10 — Re-read modeling](#task-10--re-read-modeling) | planned |
 | [Task 11 — Analytics & stats revamp](#task-11--analytics--stats-revamp) | planned |
 | [Task 12 — Genre tracking](#task-12--genre-tracking) | planned |
-| [Task 13 — Movies & TV](#task-13--movies--tv) | **in progress** — A/B/C shipped in `v0.15.0`, Phase D remains |
+| [Task 13 — Movies & TV](#task-13--movies--tv) | **in progress** — A/B/C shipped in `v0.15.0`; Phase D's client, search, backfill and posters are done |
 | [Task 14 — Bulk operations & cover backfill](#task-14--bulk-operations--cover-backfill) | done |
 | [Task 15 — Logging](#task-15--logging) | done |
 | [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned |
