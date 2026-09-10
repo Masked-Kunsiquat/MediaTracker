@@ -132,6 +132,7 @@ class TVShowDetailSeasonFoldTest {
             onSetSeasonLength = { _, _ -> },
             onRemoveSeason = {},
             onAbandonedChange = {},
+            onRefreshMetadata = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},

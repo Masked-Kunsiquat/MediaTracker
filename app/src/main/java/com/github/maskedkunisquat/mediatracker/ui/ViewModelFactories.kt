@@ -366,6 +366,7 @@ class TVShowDetailViewModelFactory(
                 showId = showId,
                 tvShowRepository = appContainer.tvShowRepository,
                 deleteMediaUseCase = appContainer.deleteMediaUseCase,
+                backfillUseCase = appContainer.backfillShowEpisodesUseCase,
             )
         },
     )

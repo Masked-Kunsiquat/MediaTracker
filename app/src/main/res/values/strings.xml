@@ -53,7 +53,6 @@
     <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
     <string name="pages_read_derived_placeholder">—</string>
     <string name="status_prefix">Status: %1$s</string>
-    <string name="change_status_content_description">Change reading status</string>
     <string name="tab_details">Details</string>
     <string name="tab_reading_history">Reading history</string>
     <string name="isbn_copy_content_description">Copy ISBN</string>
@@ -297,7 +296,6 @@
     <string name="restore_confirm_checkbox_label">I understand this will permanently delete my current library and replace it with the backup file</string>
     <string name="restore_confirm_button">Restore &amp; restart app</string>
     <string name="restore_cancel_button">Cancel</string>
-    <string name="restore_in_progress_message">Restoring… the app will restart automatically</string>
     <string name="restore_previous_success_message">Restore completed successfully</string>
     <string name="restore_previous_failure_message">The last restore attempt failed: %1$s</string>
 
@@ -400,7 +398,6 @@
     <string name="tv_show_search_manual_entry">Enter manually instead</string>
     <string name="tv_show_search_prompt">Search for a show to add it with its seasons and episode titles already filled in.</string>
     <string name="tv_show_search_no_results">No shows matched that search.</string>
-    <string name="tv_show_search_adding">Adding…</string>
     <string name="tv_show_search_unknown_year">Year unknown</string>
     <string name="add_tv_show_field_title">Title</string>
     <string name="add_tv_show_field_year">Release year</string>
@@ -437,6 +434,7 @@
          tv_show_detail_episode_number_label, which is the whole label for an episode with no title. -->
     <string name="tv_show_detail_episode_number_prefix">%1$d</string>
     <string name="tv_show_detail_episode_content_description">Season %1$d, episode %2$d</string>
+    <string name="tv_show_detail_refresh_metadata">Refresh episode details from TMDB</string>
     <string name="tv_show_detail_delete">Delete show</string>
     <string name="tv_show_detail_delete_confirm">Delete this show? This cannot be undone.</string>
 
