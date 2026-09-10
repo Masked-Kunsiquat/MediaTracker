@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-10
+
+Films caught up with television, and neither of them arrives blank any more.
+
+A film can now be added by searching for it, exactly the way a show already could: type a name, tap
+the result, and it lands with its year, its length and how other people rated it already filled in.
+Typing one in by hand is still there and still one tap away, because looking a title up needs a key
+you supply and the way out has to be visible at the moment that fails.
+
+Whichever way a title arrives through search, its poster comes with it. The picture is downloaded
+and kept on the device rather than linked to, so a library still has its artwork with no signal —
+the same way book covers have always worked. Titles added before this release keep the covers they
+have; nothing goes back and fills in the ones that are missing yet.
+
+Shows already in a library were not left behind either. A show whose episodes were typed in from
+memory — "Season 1: 10 episodes", and then ten numbered blanks — can now fetch what those episodes
+actually are and fill it onto the rows that already exist. The rows are the same rows: everything
+ticked off stays ticked, with the date it was ticked, and anything corrected by hand wins over the
+catalogue. Where the catalogue counts more episodes than are there, it says so rather than quietly
+adding them and turning a finished show unfinished.
+
+That is the whole of what the Movies & TV work set out to build. What it deliberately did not
+settle — whether specials should be created, what to do about a count that disagrees, and where a
+film's synopsis belongs — is written down as its own questions rather than left implicit.
+
 ### Added
 
 - **Films and shows added by search arrive with their poster.** The artwork is downloaded and kept on the device rather than linked to, so it is still there when you have no signal — the same way book covers already work.
