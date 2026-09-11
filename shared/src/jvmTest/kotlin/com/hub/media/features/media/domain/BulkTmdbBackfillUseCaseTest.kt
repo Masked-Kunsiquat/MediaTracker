@@ -15,7 +15,10 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.ShowSeasonMismatch
+import com.hub.media.features.settings.data.getTmdbBackfillMismatches
 import com.hub.media.features.settings.data.getTmdbBackfillState
+import com.hub.media.features.settings.data.saveTmdbBackfillMismatches
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
@@ -361,6 +364,84 @@ class BulkTmdbBackfillUseCaseTest {
                     .first { it.seasonNumber == 2 }
                     .title,
                 "season 2 is genuinely still blank",
+            )
+        }
+
+    // ---- episode-count disagreements (#123) ------------------------------------------------------
+
+    @Test
+    fun recordsASeasonWhereTmdbListsMoreEpisodesThanTheLibraryHolds() =
+        runTest {
+            // Two local episodes against Chernobyl's five: the shape #123 is about, and previously
+            // the pass computed this and threw it away.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val useCase = useCase()
+
+            val progress = useCase.execute()
+
+            assertEquals(1, progress.mismatchedShows)
+            val mismatch = useCase.mismatches().single()
+            assertEquals(result.data, mismatch.mediaId)
+            assertEquals(1, mismatch.seasonNumber)
+            assertEquals(2, mismatch.localEpisodes)
+            assertEquals(5, mismatch.providerEpisodes)
+            assertTrue(mismatch.isUnderCount)
+            assertEquals(3, mismatch.missingEpisodes)
+            // Still only reported -- the rows are untouched, which is the guarantee #123 builds on.
+            assertEquals(2, db.episodeDao().getByMediaId(result.data).size)
+        }
+
+    @Test
+    fun recordsNothingWhenTheCountsAgree() =
+        runTest {
+            quickFilledShow() // five local against Chernobyl's five
+
+            val progress = useCase().execute()
+
+            assertEquals(0, progress.mismatchedShows)
+            assertTrue(useCase().mismatches().isEmpty())
+        }
+
+    @Test
+    fun mismatchesSurviveTheRunThatFoundThem() =
+        runTest {
+            // clearTmdbBackfillState() fires the moment a pass completes. The findings must not go
+            // with it: a finished run is exactly when someone goes looking at them.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val progress = useCase().execute()
+
+            assertTrue(progress.isComplete)
+            assertNull(settings.getTmdbBackfillState(), "the resume queue is gone")
+            assertEquals(1, settings.getTmdbBackfillMismatches().size, "the findings are not")
+        }
+
+    @Test
+    fun afreshRunForgetsThePreviousRunsMismatches() =
+        runTest {
+            // Stale entries would otherwise pile up against shows that have since been reconciled.
+            settings.saveTmdbBackfillMismatches(
+                listOf(ShowSeasonMismatch("gone-show", seasonNumber = 1, localEpisodes = 1, providerEpisodes = 9)),
+            )
+            bareFilm() // gives the fresh run something to seed, with no shows involved
+
+            useCase().execute()
+
+            assertTrue(
+                settings.getTmdbBackfillMismatches().none { it.mediaId == "gone-show" },
+                "a new scan re-derives what it still finds",
             )
         }
 
