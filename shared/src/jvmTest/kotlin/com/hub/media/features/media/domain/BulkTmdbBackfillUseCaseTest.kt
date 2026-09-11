@@ -466,6 +466,86 @@ class BulkTmdbBackfillUseCaseTest {
             )
         }
 
+    @Test
+    fun aShowVisitedTwiceRecordsItsSeasonOnceRatherThanTwice() =
+        runTest {
+            // A show deferred after its episodes were filled -- the poster download fails here --
+            // is re-processed on the next run, and its disagreement is reported again. Appending
+            // onto the list loaded from storage duplicated the row on every attempt.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val engine =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.host == "image.tmdb.org" -> respondError(HttpStatusCode.InternalServerError)
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        else -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    }
+                }
+
+            val first = useCaseWith(engine).execute()
+            assertEquals(1, first.remaining, "the poster failure defers the show")
+            val second = useCaseWith(engine).execute()
+
+            assertEquals(1, settings.getTmdbBackfillMismatches().size, "one season, one row")
+            assertEquals(1, second.mismatchedShows)
+        }
+
+    @Test
+    fun anInterruptedRunsMismatchCountSurvivesReopeningSettings() =
+        runTest {
+            // peekProgress() is what a freshly-opened Settings screen reads to offer "Resume". It
+            // defaulted the count to 0, so the stored list and the progress object disagreed.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val engine =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.host == "image.tmdb.org" -> respondError(HttpStatusCode.InternalServerError)
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        else -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    }
+                }
+            useCaseWith(engine).execute() // poster fails, so the run leaves resume state behind
+
+            val peeked = useCaseWith(engine).peekProgress()
+
+            assertNotNull(peeked, "an unfinished run is resumable")
+            assertEquals(1, peeked.mismatchedShows)
+        }
+
+    @Test
+    fun afterACompletedRunTheFindingsAreReadableEvenThoughThereIsNothingToResume() =
+        runTest {
+            // The contract a UI has to be written against: peekProgress() is about *resuming*, so it
+            // is null once a run finishes -- which is the normal case in which someone goes looking
+            // at the findings. They are read from mismatches(), not from progress.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val useCase = useCase()
+            assertTrue(useCase.execute().isComplete)
+
+            assertNull(useCase.peekProgress(), "nothing left to resume")
+            assertEquals(1, useCase.mismatches().size, "the findings are still there")
+        }
+
     // ---- candidate selection ---------------------------------------------------------------------
 
     @Test

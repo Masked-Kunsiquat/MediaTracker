@@ -81,6 +81,13 @@ public suspend fun SettingsRepository.getTmdbBackfillMismatches(): List<ShowSeas
         val local = parts[2].toIntOrNull() ?: return@mapNotNull null
         val provider = parts[3].toIntOrNull() ?: return@mapNotNull null
         if (parts[0].isBlank()) return@mapNotNull null
+        // The bounds this type documents, enforced on the way back in rather than merely asserted.
+        // Parsing restores values from a store an older build (or a truncated write) could have put
+        // anything in, so "seasonNumber is always >= 1" is only true if something checks — and a
+        // season 0 surviving here would put a special in front of a user on a screen whose whole
+        // premise is that specials are never fetched and therefore never compared (#88). Negative
+        // counts are impossible from any writer and would make `missingEpisodes` meaningless.
+        if (seasonNumber < 1 || local < 0 || provider < 0) return@mapNotNull null
         ShowSeasonMismatch(
             mediaId = parts[0],
             seasonNumber = seasonNumber,

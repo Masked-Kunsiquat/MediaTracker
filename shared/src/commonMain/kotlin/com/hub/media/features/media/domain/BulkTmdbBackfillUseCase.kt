@@ -198,7 +198,7 @@ public class BulkTmdbBackfillUseCase(
             // broken".
             logger.info(TAG) { "TMDB backfill run: nothing pending, no titles to update" }
             settingsRepository.clearTmdbBackfillState()
-            return state.toProgress()
+            return state.toProgress(mismatchedShows = mismatches().countShows())
         }
 
         // Deliberately after the empty check: a library with nothing to fill should not spend a
@@ -206,7 +206,10 @@ public class BulkTmdbBackfillUseCase(
         val credentialCheck = tmdbClient.verifyCredential()
         if (credentialCheck is Resource.Error) {
             logger.info(TAG) { "TMDB backfill run blocked before starting: credential not accepted" }
-            return state.toProgress(blockedMessage = credentialCheck.message)
+            return state.toProgress(
+                blockedMessage = credentialCheck.message,
+                mismatchedShows = mismatches().countShows(),
+            )
         }
 
         // A fresh run forgets the previous one's findings, because it is about to re-derive whatever
@@ -223,10 +226,11 @@ public class BulkTmdbBackfillUseCase(
         var updated = state.updated
         var nothingToFill = state.nothingToFill
         val foundMismatches = settingsRepository.getTmdbBackfillMismatches().toMutableList()
-        // Only written when it actually grows. The resume queue changes every title and must be
+        // Only written when it actually changes. The resume queue changes every title and must be
         // saved every title; this list does not, and most libraries produce none at all -- so
         // persisting unconditionally meant a DELETE per title, for every title, to store nothing.
-        var persistedMismatches = foundMismatches.size
+        // Compared by content rather than size, because `record` can replace an entry in place.
+        var persistedMismatches = foundMismatches.toList()
 
         try {
             for (index in toProcess.indices) {
@@ -248,13 +252,22 @@ public class BulkTmdbBackfillUseCase(
                         updated = updated,
                         nothingToFill = nothingToFill,
                     )
-                settingsRepository.saveTmdbBackfillState(state)
-                // Checkpointed on the same beat as the resume queue, for the same reason: a run
-                // killed after visiting 300 shows should not lose what it learned about them.
-                if (foundMismatches.size != persistedMismatches) {
+                // Mismatches are written **before** the resume queue, and the order is the point.
+                // Saving the queue first removes this title from it, so a process death in the gap
+                // between the two writes would lose the finding for good: nothing would revisit the
+                // show to re-derive it. This way the gap can only ever cause the *opposite* — a
+                // title still queued whose finding is already stored — which the next run resolves
+                // by re-processing it, and `record` above keeps that from duplicating the row.
+                //
+                // A transaction spanning both would be stronger, and was not taken: SettingsRepository
+                // exposes one key at a time, and saveTmdbBackfillState is itself five separate writes,
+                // so making only these two atomic would buy a guarantee the surrounding code does not
+                // have. Ordering costs nothing and removes the damaging direction.
+                if (foundMismatches != persistedMismatches) {
                     settingsRepository.saveTmdbBackfillMismatches(foundMismatches)
-                    persistedMismatches = foundMismatches.size
+                    persistedMismatches = foundMismatches.toList()
                 }
+                settingsRepository.saveTmdbBackfillState(state)
                 onProgress?.invoke(state.toProgress(mismatchedShows = foundMismatches.countShows()))
             }
         } catch (e: CancellationException) {
@@ -295,7 +308,8 @@ public class BulkTmdbBackfillUseCase(
      * starting one. Never touches the network, so [TmdbBackfillProgress.blockedMessage] is always
      * `null` here — being blocked is a property of a *run*, not of the stored state.
      */
-    public suspend fun peekProgress(): TmdbBackfillProgress? = settingsRepository.getTmdbBackfillState()?.toProgress()
+    public suspend fun peekProgress(): TmdbBackfillProgress? =
+        settingsRepository.getTmdbBackfillState()?.toProgress(mismatchedShows = mismatches().countShows())
 
     /**
      * Scans every film and show for gaps, persists the freshly-seeded state, and returns it. Only
@@ -497,12 +511,14 @@ public class BulkTmdbBackfillUseCase(
             // episodes for -- which is a statement about seasons the user does not track, closer to
             // #122's specials question than to a count disagreement, and reporting it here would
             // dilute a list whose whole value is that every row is actionable.
-            report.mismatches.mapTo(foundMismatches) {
-                ShowSeasonMismatch(
-                    mediaId = item.id,
-                    seasonNumber = it.seasonNumber,
-                    localEpisodes = it.localEpisodes,
-                    providerEpisodes = it.providerEpisodes,
+            report.mismatches.forEach {
+                foundMismatches.record(
+                    ShowSeasonMismatch(
+                        mediaId = item.id,
+                        seasonNumber = it.seasonNumber,
+                        localEpisodes = it.localEpisodes,
+                        providerEpisodes = it.providerEpisodes,
+                    ),
                 )
             }
         }
@@ -669,9 +685,33 @@ private fun TVDetailsEntity.hasGap(): Boolean =
 /** Distinct shows represented, not seasons — one show can disagree about several of its seasons. */
 private fun List<ShowSeasonMismatch>.countShows(): Int = distinctBy { it.mediaId }.size
 
+/**
+ * Records [mismatch], replacing any existing entry for the same `(mediaId, seasonNumber)`.
+ *
+ * Keyed rather than appended, because a season can legitimately be visited more than once across a
+ * resume chain: a show whose poster download fails is deferred *after* its episodes were filled and
+ * its disagreement noted, so the next run re-processes it and reports the same season again. Plain
+ * appending onto the list loaded from storage duplicated that row on every attempt, and a show that
+ * kept failing accumulated one copy per run.
+ *
+ * Replacing rather than skipping keeps the newer reading, which is the right one if the user changed
+ * the season's length between attempts.
+ */
+private fun MutableList<ShowSeasonMismatch>.record(mismatch: ShowSeasonMismatch) {
+    val existing = indexOfFirst { it.mediaId == mismatch.mediaId && it.seasonNumber == mismatch.seasonNumber }
+    if (existing >= 0) this[existing] = mismatch else this += mismatch
+}
+
+/**
+ * [mismatchedShows] has no default on purpose. It defaulted to 0, and every call site that forgot it
+ * — the empty-state return, the credential-blocked return, and [BulkTmdbBackfillUseCase.peekProgress]
+ * — reported "no shows disagree" while the stored list said otherwise. Two sources of truth for one
+ * number, disagreeing in exactly the states a user is most likely to be looking at: after a run has
+ * finished, or on reopening Settings. Required, so forgetting it does not compile.
+ */
 private fun TmdbBackfillState.toProgress(
+    mismatchedShows: Int,
     blockedMessage: String? = null,
-    mismatchedShows: Int = 0,
 ): TmdbBackfillProgress =
     TmdbBackfillProgress(
         totalCandidates = totalCandidates,
