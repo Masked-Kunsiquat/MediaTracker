@@ -15,7 +15,10 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.books.network.CoverImageDownloader
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.ShowSeasonMismatch
+import com.hub.media.features.settings.data.getTmdbBackfillMismatches
 import com.hub.media.features.settings.data.getTmdbBackfillState
+import com.hub.media.features.settings.data.saveTmdbBackfillMismatches
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
@@ -362,6 +365,227 @@ class BulkTmdbBackfillUseCaseTest {
                     .title,
                 "season 2 is genuinely still blank",
             )
+        }
+
+    // ---- episode-count disagreements (#123) ------------------------------------------------------
+
+    @Test
+    fun recordsASeasonWhereTmdbListsMoreEpisodesThanTheLibraryHolds() =
+        runTest {
+            // Two local episodes against Chernobyl's five: the shape #123 is about, and previously
+            // the pass computed this and threw it away.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val useCase = useCase()
+
+            val progress = useCase.execute()
+
+            assertEquals(1, progress.mismatchedShows)
+            val mismatch = useCase.mismatches().single()
+            assertEquals(result.data, mismatch.mediaId)
+            assertEquals(1, mismatch.seasonNumber)
+            assertEquals(2, mismatch.localEpisodes)
+            assertEquals(5, mismatch.providerEpisodes)
+            assertTrue(mismatch.isUnderCount)
+            assertEquals(3, mismatch.missingEpisodes)
+            // Still only reported -- the rows are untouched, which is the guarantee #123 builds on.
+            assertEquals(2, db.episodeDao().getByMediaId(result.data).size)
+        }
+
+    @Test
+    fun recordsNothingWhenTheCountsAgree() =
+        runTest {
+            quickFilledShow() // five local against Chernobyl's five
+
+            val progress = useCase().execute()
+
+            assertEquals(0, progress.mismatchedShows)
+            assertTrue(useCase().mismatches().isEmpty())
+        }
+
+    @Test
+    fun mismatchesSurviveTheRunThatFoundThem() =
+        runTest {
+            // clearTmdbBackfillState() fires the moment a pass completes. The findings must not go
+            // with it: a finished run is exactly when someone goes looking at them.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val progress = useCase().execute()
+
+            assertTrue(progress.isComplete)
+            assertNull(settings.getTmdbBackfillState(), "the resume queue is gone")
+            assertEquals(1, settings.getTmdbBackfillMismatches().size, "the findings are not")
+        }
+
+    @Test
+    fun afreshRunForgetsThePreviousRunsMismatches() =
+        runTest {
+            // Stale entries would otherwise pile up against shows that have since been reconciled.
+            settings.saveTmdbBackfillMismatches(
+                listOf(ShowSeasonMismatch("gone-show", seasonNumber = 1, localEpisodes = 1, providerEpisodes = 9)),
+            )
+            bareFilm() // gives the fresh run something to seed, with no shows involved
+
+            useCase().execute()
+
+            assertTrue(
+                settings.getTmdbBackfillMismatches().none { it.mediaId == "gone-show" },
+                "a new scan re-derives what it still finds",
+            )
+        }
+
+    @Test
+    fun pressingStartOnACompleteLibraryDoesNotDestroyTheLastRunsMismatches() =
+        runTest {
+            // The findings survive the run that produced them, so the obvious next thing a user does
+            // is press the button again. With nothing left to fill, no show is visited and nothing
+            // can be re-derived -- so clearing at seed time wiped the review list and replaced it
+            // with nothing, purely for having tapped Start.
+            settings.saveTmdbBackfillMismatches(
+                listOf(ShowSeasonMismatch("a-show", seasonNumber = 1, localEpisodes = 2, providerEpisodes = 5)),
+            )
+
+            val progress = useCase().execute() // empty library: nothing to seed, nothing pending
+
+            assertEquals(0, progress.totalCandidates)
+            assertEquals(
+                1,
+                settings.getTmdbBackfillMismatches().size,
+                "a run that visited nothing must not forget what the last one found",
+            )
+        }
+
+    @Test
+    fun aShowVisitedTwiceRecordsItsSeasonOnceRatherThanTwice() =
+        runTest {
+            // A show deferred after its episodes were filled -- the poster download fails here --
+            // is re-processed on the next run, and its disagreement is reported again. Appending
+            // onto the list loaded from storage duplicated the row on every attempt.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val engine =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.host == "image.tmdb.org" -> respondError(HttpStatusCode.InternalServerError)
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        else -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    }
+                }
+
+            val first = useCaseWith(engine).execute()
+            assertEquals(1, first.remaining, "the poster failure defers the show")
+            val second = useCaseWith(engine).execute()
+
+            assertEquals(1, settings.getTmdbBackfillMismatches().size, "one season, one row")
+            assertEquals(1, second.mismatchedShows)
+        }
+
+    @Test
+    fun aSeasonReconciledBetweenLegsOfARunStopsBeingReported() =
+        runTest {
+            // The stale-row case, and it is only reachable mid-resume: a fresh run clears the stored
+            // list outright, so the entry that can outlive its problem is one recorded by an earlier
+            // *leg* of a run still in progress. A show deferred by a failed poster download is
+            // re-processed by the next leg, and by then the user may have fixed the season. An
+            // add-or-replace scheme cannot see an absence, so the row would survive and go on
+            // claiming a disagreement that is gone.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val failingPoster =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.host == "image.tmdb.org" -> respondError(HttpStatusCode.InternalServerError)
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        else -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    }
+                }
+
+            val first = useCaseWith(failingPoster).execute()
+            assertEquals(1, first.remaining, "the poster failure keeps the show queued")
+            assertEquals(1, settings.getTmdbBackfillMismatches().size, "2 against 5 is a disagreement")
+
+            // The user reconciles it before the run is resumed.
+            assertIs<Resource.Success<*>>(shows.setSeasonLength(result.data, seasonNumber = 1, episodeCount = 5))
+
+            val second = useCaseWith(failingPoster).execute()
+
+            assertTrue(
+                settings.getTmdbBackfillMismatches().isEmpty(),
+                "a show now reported as agreeing must lose its recorded row",
+            )
+            assertEquals(0, second.mismatchedShows)
+        }
+
+    @Test
+    fun anInterruptedRunsMismatchCountSurvivesReopeningSettings() =
+        runTest {
+            // peekProgress() is what a freshly-opened Settings screen reads to offer "Resume". It
+            // defaulted the count to 0, so the stored list and the progress object disagreed.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val engine =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.host == "image.tmdb.org" -> respondError(HttpStatusCode.InternalServerError)
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        else -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    }
+                }
+            useCaseWith(engine).execute() // poster fails, so the run leaves resume state behind
+
+            val peeked = useCaseWith(engine).peekProgress()
+
+            assertNotNull(peeked, "an unfinished run is resumable")
+            assertEquals(1, peeked.mismatchedShows)
+        }
+
+    @Test
+    fun afterACompletedRunTheFindingsAreReadableEvenThoughThereIsNothingToResume() =
+        runTest {
+            // The contract a UI has to be written against: peekProgress() is about *resuming*, so it
+            // is null once a run finishes -- which is the normal case in which someone goes looking
+            // at the findings. They are read from mismatches(), not from progress.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val useCase = useCase()
+            assertTrue(useCase.execute().isComplete)
+
+            assertNull(useCase.peekProgress(), "nothing left to resume")
+            assertEquals(1, useCase.mismatches().size, "the findings are still there")
         }
 
     // ---- candidate selection ---------------------------------------------------------------------
