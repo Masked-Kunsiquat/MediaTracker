@@ -48,10 +48,13 @@ single list below and reordering is a one-line edit there.
    release that froze schema v6. **Phase D's scope is now built** — the TMDB client and credential,
    add-by-search for films and shows, the enrichment backfill of episode metadata onto rows that
    already exist, and posters **for titles added through search**
-   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). Refresh fills a show's
-   episode metadata and does *not* fetch a missing poster; nothing backfills artwork for titles
-   added earlier, which is
-   [#140](https://github.com/Masked-Kunsiquat/MediaTracker/issues/140). Its schema questions
+   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). The per-show refresh fills a
+   show's episode metadata and does *not* fetch a missing poster; the library-wide pass that does
+   fill artwork, runtimes, years, ratings and show synopses for titles added earlier shipped as
+   [#140](https://github.com/Masked-Kunsiquat/MediaTracker/issues/140), as a **second** Settings
+   action beside the book one rather than a merged pass — decided against
+   [#126](https://github.com/Masked-Kunsiquat/MediaTracker/issues/126)'s domain-sectioned Settings
+   screen, which has a home for each and none for a control spanning both. Its schema questions
    were settled before the freeze and cost nothing afterwards: episodes needed no provider id of
    their own, and every column the backfill fills was added in #86 while v6 was still editable.
    What Phase D deliberately did *not* decide is tracked separately rather than left implicit —
