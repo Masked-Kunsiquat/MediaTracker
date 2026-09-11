@@ -279,6 +279,22 @@
     <string name="settings_tmdb_backfill_summary_format">%1$d updated, %2$d had nothing to fill in</string>
     <string name="settings_tmdb_backfill_no_id_format">%1$d title(s) skipped — added by hand rather than from TMDB, so there is no catalogue entry to look up. Use the refresh action on the title itself after searching for it.</string>
 
+    <!-- Episode-count reconciliation (#123) -->
+    <plurals name="settings_tmdb_backfill_mismatch_format">
+        <item quantity="one">%1$d show disagrees with TMDB about how many episodes a season has.</item>
+        <item quantity="other">%1$d shows disagree with TMDB about how many episodes a season has.</item>
+    </plurals>
+    <string name="settings_tmdb_backfill_review_button">Review differences</string>
+    <string name="mismatch_review_title">Episode differences</string>
+    <string name="mismatch_review_description">Seasons where TMDB lists a different number of episodes than you have recorded. Adding creates the missing episodes as unwatched; nothing you have already ticked off is touched.</string>
+    <string name="mismatch_review_empty">Nothing disagrees. Run the films and shows backfill in Settings to check again.</string>
+    <string name="mismatch_review_season_format">Season %1$d</string>
+    <string name="mismatch_review_counts_format">You have %1$d · TMDB lists %2$d</string>
+    <string name="mismatch_review_add_missing_format">Add %1$d missing</string>
+    <string name="mismatch_review_add_all_format">Add all %1$d</string>
+    <string name="mismatch_review_over_count">You have more than TMDB lists. Nothing is added or removed here — change the season length on the show itself if you meant to.</string>
+    <string name="mismatch_review_back">Back</string>
+
     <!-- SettingsScreen: .sqlite backup (ROADMAP Task 8 Phase C) -->
     <string name="settings_section_backup_restore">Backup &amp; restore</string>
     <string name="settings_backup_label">Back up database</string>

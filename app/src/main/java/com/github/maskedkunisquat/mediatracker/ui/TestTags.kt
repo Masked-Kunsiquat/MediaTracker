@@ -90,4 +90,9 @@ object TestTags {
         /** The credits list. Tagged under the scrolling-container rule above, not as a control. */
         const val LIST = "about:list"
     }
+
+    object MismatchReview {
+        /** The findings list. Tagged under the scrolling-container rule above, not as a control. */
+        const val LIST = "mismatchReview:list"
+    }
 }

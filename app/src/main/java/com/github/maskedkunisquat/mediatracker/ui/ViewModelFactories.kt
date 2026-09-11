@@ -16,6 +16,7 @@ import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.LogViewerViewModel
+import com.hub.media.ui.MismatchReviewViewModel
 import com.hub.media.ui.MovieDetailViewModel
 import com.hub.media.ui.MovieSearchViewModel
 import com.hub.media.ui.RestoreViewModel
@@ -252,6 +253,22 @@ class TmdbBackfillViewModelFactory(
 ) : AppViewModelFactory<BackfillViewModel<*>>(
         BackfillViewModel::class.java,
         { BackfillViewModel(appContainer.bulkTmdbBackfillUseCase) },
+    )
+
+/**
+ * Factory for creating [MismatchReviewViewModel] with its
+ * [com.hub.media.features.media.domain.ReconcileMismatchesUseCase] dependency from the
+ * [AppContainer] (#123).
+ *
+ * Unlike the two [BackfillViewModelFactory] siblings above, this one needs no `viewModel(key = ...)`
+ * at its call site: [MismatchReviewViewModel] is its own class rather than a second instance of a
+ * generic one, so `ViewModelProvider` can tell it apart on its own.
+ */
+class MismatchReviewViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<MismatchReviewViewModel>(
+        MismatchReviewViewModel::class.java,
+        { MismatchReviewViewModel(appContainer.reconcileMismatchesUseCase) },
     )
 
 /**

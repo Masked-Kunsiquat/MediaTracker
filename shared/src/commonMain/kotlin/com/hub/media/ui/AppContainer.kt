@@ -26,6 +26,7 @@ import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.BulkTmdbBackfillUseCase
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.media.domain.RealSearchMediaUseCase
+import com.hub.media.features.media.domain.ReconcileMismatchesUseCase
 import com.hub.media.features.media.domain.SearchMediaUseCase
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.data.ImportWriteRepository
@@ -378,6 +379,21 @@ public class AppContainer(
                 ),
             fetchPoster = fetchPosterUseCase,
             posterPacer = tmdbImagePacer(),
+            settingsRepository = settingsRepository,
+        )
+
+    /**
+     * Reads back the episode-count disagreements a backfill recorded, and acts on the safe half
+     * of them (#123). Consumed by `MismatchReviewViewModel` from the reconciliation screen.
+     *
+     * Takes [tvShowRepository] for its grow-only write and [settingsRepository] for the stored
+     * findings -- the same store [bulkTmdbBackfillUseCase] writes them to, which is what makes the
+     * two halves of #123 meet without either knowing about the other.
+     */
+    public val reconcileMismatchesUseCase: ReconcileMismatchesUseCase =
+        ReconcileMismatchesUseCase(
+            db = database,
+            tvShowRepository = tvShowRepository,
             settingsRepository = settingsRepository,
         )
 

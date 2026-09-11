@@ -103,7 +103,11 @@ class ReconcileMismatchesUseCaseTest {
             assertEquals(3, result.data)
             assertEquals(
                 listOf(1, 2, 3, 4, 5),
-                db.episodeDao().getByMediaId(mediaId).map { it.episodeNumber }.sorted(),
+                db
+                    .episodeDao()
+                    .getByMediaId(mediaId)
+                    .map { it.episodeNumber }
+                    .sorted(),
             )
             assertTrue(settings.getTmdbBackfillMismatches().isEmpty(), "the finding is answered")
         }
