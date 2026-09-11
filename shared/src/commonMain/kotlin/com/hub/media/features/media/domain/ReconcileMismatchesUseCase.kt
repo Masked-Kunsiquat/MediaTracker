@@ -8,9 +8,12 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.info
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.ShowSeasonMismatch
 import com.hub.media.features.settings.data.getTmdbBackfillMismatches
+import com.hub.media.features.settings.data.observeTmdbBackfillMismatches
 import com.hub.media.features.settings.data.saveTmdbBackfillMismatches
 import com.hub.media.features.tv.data.TVShowRepository
+import kotlinx.coroutines.flow.Flow
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "ReconcileMismatches"
@@ -76,6 +79,16 @@ public class ReconcileMismatchesUseCase(
     private val settingsRepository: SettingsRepository,
     private val logger: Logger = AppLogger,
 ) {
+    /**
+     * Emits whenever the stored findings change, so a caller can re-[review] rather than hold a
+     * snapshot.
+     *
+     * Carries the raw stored shape rather than [MismatchReviewRow]s: building those needs a database
+     * read for titles and artwork, and doing that inside the stream would make every write to the
+     * key fan out into queries whether or not anyone is looking. The value here is the *signal*.
+     */
+    public fun observeFindings(): Flow<List<ShowSeasonMismatch>> = settingsRepository.observeTmdbBackfillMismatches()
+
     /**
      * Every recorded disagreement, newest scan first, with its show's current title.
      *

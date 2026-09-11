@@ -192,12 +192,9 @@ fun SettingsScreenRoute(
     val mismatchViewModel: MismatchReviewViewModel =
         viewModel(factory = remember(appContainer) { MismatchReviewViewModelFactory(appContainer) })
     val mismatchUiState by mismatchViewModel.uiState.collectAsStateWithLifecycle()
-    // Re-read when a run stops, so finishing a backfill updates the count without leaving the
-    // screen. Keyed on the state object rather than a boolean: Stopped and Failed both end a run,
-    // and both can have found something on the way.
-    LaunchedEffect(tmdbBackfillUiState) {
-        if (tmdbBackfillUiState !is BackfillUiState.Running) mismatchViewModel.refresh()
-    }
+    // No effect re-reading this: the ViewModel follows the stored findings, so a backfill finding
+    // something and a season being reconciled on the review screen both reach this count on their
+    // own. An effect keyed on the run's state would have covered only the first of those.
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()

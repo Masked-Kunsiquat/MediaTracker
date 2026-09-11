@@ -10,6 +10,7 @@ import com.hub.media.features.settings.data.getTmdbBackfillMismatches
 import com.hub.media.features.settings.data.saveTmdbBackfillMismatches
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -86,6 +87,24 @@ class ReconcileMismatchesUseCaseTest {
 
             assertTrue(useCase.review().isEmpty(), "a row naming nothing is worse than no row")
             assertTrue(settings.getTmdbBackfillMismatches().isEmpty(), "and it is not left on disk")
+        }
+
+    @Test
+    fun theFindingsCanBeObservedSoTwoScreensCannotDisagree() =
+        runTest {
+            // Settings shows "N shows disagree" and the review screen shows the rows; each holds its
+            // own ViewModel, and neither is recomposed by the other's writes. Reading once meant
+            // reconciling a season left the Settings sentence claiming a disagreement that was gone.
+            val mediaId = showWith(2)
+            record(mediaId, local = 2, provider = 5)
+            assertEquals(1, useCase.observeFindings().first().size)
+
+            useCase.addMissingEpisodes(useCase.review().single())
+
+            assertTrue(
+                useCase.observeFindings().first().isEmpty(),
+                "acting on a finding has to reach anything watching the store",
+            )
         }
 
     // ---- acting, and what acting must never do -------------------------------------------------

@@ -157,7 +157,7 @@ fun MismatchReviewScreen(
                 MismatchCard(
                     row = row,
                     coverStorageDir = coverStorageDir,
-                    isBusy = uiState.busyKey == row.mediaId to row.seasonNumber,
+                    isBusy = (row.mediaId to row.seasonNumber) in uiState.busyKeys,
                     onAddMissing = { onAddMissing(row) },
                 )
             }
