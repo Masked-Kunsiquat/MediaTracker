@@ -22,6 +22,8 @@ import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
+import com.hub.media.features.tv.network.TmdbShowWithSeasons
+import com.hub.media.features.tv.network.dto.TmdbSeasonDetailsDto
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.coroutineContext
@@ -102,6 +104,11 @@ public data class TmdbBackfillProgress(
  * title is asked about once and everything blank about it is filled from that one answer. This is why
  * [BackfillShowEpisodesUseCase.applyFetched] exists: routing through its [BackfillShowEpisodesUseCase.execute]
  * would spend a second request for a payload already in hand.
+ *
+ * The one exception is a show longer than
+ * [com.hub.media.features.tv.network.MAX_APPENDED_SEASONS], whose remaining seasons cannot ride in
+ * that response at all. Those cost one request each, and only for seasons this library actually
+ * holds fillable episodes for — see [withHeldSeasons].
  *
  * ### It enriches; it never creates, deletes or re-dates
  * Inherited wholesale from #75 and not reopened. Every write goes through a `COALESCE` statement that
@@ -385,28 +392,101 @@ public class BulkTmdbBackfillUseCase(
         var wrote = false
         val year = if (needsYear) mapping.releaseYear else null
         val rating = if (needsRating) mapping.communityRating else null
-        if (year != null || rating != null || detailGaps) {
-            val rows =
+        // Each gated on the details row existing, not merely on the column being null -- the same
+        // reasoning processFilm gives for runtimeMinutes: a show whose tv_details half is missing has
+        // no row for these to land in, and fillShowMetadata deliberately does not create one.
+        val totalSeasons = if (details != null && details.totalSeasons == null) mapping.totalSeasons else null
+        val airingStatus = if (details != null && details.airingStatus == null) mapping.airingStatus else null
+        val overview =
+            if (details != null && details.overview == null) mapping.overview?.takeIf { it.isNotBlank() } else null
+        val firstAirDate =
+            if (details != null && details.firstAirDate == null) mapping.firstAirDate?.toEpochMilliseconds() else null
+        val lastAirDate =
+            if (details != null && details.lastAirDate == null) mapping.lastAirDate?.toEpochMilliseconds() else null
+
+        // Entered on the *values*, not on detailGaps. A show can have blank columns that TMDB also
+        // has nothing for -- an unrated show has no communityRating at either end -- and entering on
+        // the gap alone then reading the affected-row count would report every such show as
+        // "updated", because the count is 1 whenever the media_items row exists rather than whenever
+        // a column changed. That is the mistake BackfillShowEpisodesUseCase already paid for once
+        // with "Updated 5 episodes" on a show where nothing changed; the fix is the same one.
+        val fillsSomething =
+            listOfNotNull(year, rating, totalSeasons, airingStatus, overview, firstAirDate, lastAirDate)
+                .isNotEmpty()
+        if (fillsSomething) {
+            wrote =
                 db.tvWriteDao().fillShowMetadata(
                     mediaId = item.id,
                     releaseYear = year,
                     communityRating = rating,
-                    totalSeasons = if (details?.totalSeasons == null) mapping.totalSeasons else null,
-                    airingStatus = if (details?.airingStatus == null) mapping.airingStatus else null,
-                    overview = if (details?.overview == null) mapping.overview?.takeIf { it.isNotBlank() } else null,
-                    firstAirDate =
-                        if (details?.firstAirDate == null) mapping.firstAirDate?.toEpochMilliseconds() else null,
-                    lastAirDate =
-                        if (details?.lastAirDate == null) mapping.lastAirDate?.toEpochMilliseconds() else null,
-                )
-            wrote = rows > 0
+                    totalSeasons = totalSeasons,
+                    airingStatus = airingStatus,
+                    overview = overview,
+                    firstAirDate = firstAirDate,
+                    lastAirDate = lastAirDate,
+                ) > 0
         }
 
-        if (needsEpisodes && showEpisodes.applyFetched(item.id, fetched).episodesFilled > 0) {
-            wrote = true
+        if (needsEpisodes) {
+            val complete =
+                withHeldSeasons(tmdbId, item.id, fetched) ?: return StepOutcome.DeferredTransient
+            if (showEpisodes.applyFetched(item.id, complete).episodesFilled > 0) wrote = true
         }
 
         return finishWithPoster(item.id, mapping.posterPath, needsPoster, wrote)
+    }
+
+    /**
+     * [fetched] topped up with any season it did not carry that this library actually holds fillable
+     * episodes for, or `null` if one of those follow-up requests failed.
+     *
+     * ### Why a library-wide pass chases these and the per-show refresh does not
+     * `append_to_response` carries at most
+     * [com.hub.media.features.tv.network.MAX_APPENDED_SEASONS] seasons, so a longer show comes back
+     * with the rest absent — reported by [TmdbShowWithSeasons.missingSeasonNumbers] rather than
+     * silently dropped. [BackfillShowEpisodesUseCase] deliberately leaves fetching them to its
+     * caller, and for the interactive refresh that is right: one extra round trip per season is
+     * latency someone is waiting on.
+     *
+     * For this pass it is not right. Nobody is waiting, and leaving them would mean a 22-season show
+     * reporting itself complete every single run while its last two seasons stay blank forever — the
+     * silent partial result this codebase treats as its recurring failure mode, not a saving.
+     *
+     * ### Only seasons this library holds episodes for
+     * A season the user does not track is not fetched. The point is to fill rows that exist, and a
+     * 30-season catalogue where someone tracks season 1 would otherwise spend ten requests learning
+     * about episodes it must not create anyway (#75, #123).
+     *
+     * ### A failed season defers the whole title
+     * Returning `null` here sends the title back to the pending queue rather than letting it be
+     * reported [StepOutcome.Done] with episodes still unfilled. Whatever already landed stays
+     * landed; enrichment is idempotent, so the retry simply finds fewer gaps.
+     */
+    private suspend fun withHeldSeasons(
+        tmdbId: Int,
+        mediaId: String,
+        fetched: TmdbShowWithSeasons,
+    ): TmdbShowWithSeasons? {
+        val missing = fetched.missingSeasonNumbers
+        if (missing.isEmpty()) return fetched
+
+        val held =
+            db
+                .episodeDao()
+                .getByMediaId(mediaId)
+                .filter { it.seasonNumber >= 1 && it.hasGap() }
+                .mapTo(mutableSetOf()) { it.seasonNumber }
+        val wanted = missing.filter { it in held }
+        if (wanted.isEmpty()) return fetched
+
+        val extra = mutableMapOf<Int, TmdbSeasonDetailsDto>()
+        for (seasonNumber in wanted) {
+            when (val result = tmdbClient.seasonDetails(tmdbId, seasonNumber)) {
+                is Resource.Error -> return null
+                is Resource.Success -> extra[seasonNumber] = result.data
+            }
+        }
+        return fetched.copy(seasons = fetched.seasons + extra)
     }
 
     /**

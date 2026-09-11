@@ -84,7 +84,10 @@ class BulkTmdbBackfillUseCaseTest {
      * @param credentialOk `false` makes `/authentication` answer 401, which is how a user with no
      *   usable key reaches this code.
      */
-    private fun useCase(credentialOk: Boolean = true): BulkTmdbBackfillUseCase {
+    private fun useCase(
+        credentialOk: Boolean = true,
+        showBody: String = CHERNOBYL,
+    ): BulkTmdbBackfillUseCase {
         val engine =
             MockEngine { request ->
                 val url = request.url
@@ -102,10 +105,16 @@ class BulkTmdbBackfillUseCaseTest {
                             respondError(HttpStatusCode.Unauthorized)
                         }
                     url.encodedPath.startsWith("/3/movie/") -> respond(MATRIX, HttpStatusCode.OK, JSON)
-                    url.encodedPath.startsWith("/3/tv/") -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    url.encodedPath.endsWith("/season/2") -> respond(LATE_SEASON, HttpStatusCode.OK, JSON)
+                    url.encodedPath.startsWith("/3/tv/") -> respond(showBody, HttpStatusCode.OK, JSON)
                     else -> respondError(HttpStatusCode.NotFound)
                 }
             }
+        return useCaseWith(engine)
+    }
+
+    /** The wiring, given an engine — so a test needing its own responder does not restate all of it. */
+    private fun useCaseWith(engine: MockEngine): BulkTmdbBackfillUseCase {
         val httpClient = createHttpClient(engine)
         val tmdbClient = TmdbClient(httpClient, credentialProvider = { TOKEN })
         return BulkTmdbBackfillUseCase(
@@ -137,6 +146,22 @@ class BulkTmdbBackfillUseCaseTest {
             movies.addMovie(
                 title = title,
                 externalIdentifiers = listOf(IdentifierProvider.TMDB to "603"),
+            )
+        assertIs<Resource.Success<String>>(result)
+        return result.data
+    }
+
+    /** A quick-filled show holding one blank episode in each of two seasons, mapped to TMDB 87108. */
+    private suspend fun twoSeasonShow(): String {
+        val result =
+            shows.addShow(
+                title = "A Long Show",
+                seasons =
+                    listOf(
+                        SeasonQuickFill(seasonNumber = 1, episodeCount = 1),
+                        SeasonQuickFill(seasonNumber = 2, episodeCount = 1),
+                    ),
+                externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
             )
         assertIs<Resource.Success<String>>(result)
         return result.data
@@ -270,6 +295,75 @@ class BulkTmdbBackfillUseCaseTest {
             assertEquals(2, db.episodeDao().getByMediaId(result.data).size)
         }
 
+    @Test
+    fun countsAShowTmdbHasNothingForAsNothingToFillRatherThanUpdated() =
+        runTest {
+            // Blank columns at both ends. Entering the write on "this column is null" and then
+            // reading the affected-row count would call this updated -- the count is 1 whenever the
+            // row exists, not whenever a column changed.
+            val mediaId = quickFilledShow()
+
+            val progress = useCase(showBody = BARE_SHOW).execute()
+
+            assertEquals(0, progress.updated, "nothing was written, so nothing was updated")
+            assertEquals(1, progress.nothingToFill)
+            assertNull(db.tvDetailsDao().getByMediaId(mediaId)?.overview, "and the column is still blank")
+        }
+
+    // ---- seasons beyond the append ceiling -------------------------------------------------------
+
+    @Test
+    fun fetchesASeasonTheShowResponseCouldNotCarry() =
+        runTest {
+            // LONG_SHOW declares seasons 1 and 2 but appends only season 1 -- the shape a show past
+            // MAX_APPENDED_SEASONS comes back in. Season 2's episodes are held locally, so leaving
+            // them would mean reporting this show complete every run while they stayed blank.
+            val mediaId = twoSeasonShow()
+
+            val progress = useCase(showBody = LONG_SHOW).execute()
+
+            assertEquals(1, progress.updated)
+            val episodes = db.episodeDao().getByMediaId(mediaId).associateBy { it.seasonNumber to it.episodeNumber }
+            assertEquals("Opening", episodes.getValue(1 to 1).title, "the appended season still fills")
+            assertEquals("Late Arrival", episodes.getValue(2 to 1).title, "and so does the one that was not")
+            assertTrue(
+                requestedPaths.contains("/3/tv/87108/season/2"),
+                "the missing season costs its own request: $requestedPaths",
+            )
+            assertTrue(
+                requestedPaths.none { it.endsWith("/season/1") },
+                "the season that did arrive must not be re-fetched: $requestedPaths",
+            )
+        }
+
+    @Test
+    fun defersTheTitleWhenAMissingSeasonCannotBeFetched() =
+        runTest {
+            val mediaId = twoSeasonShow()
+            val engine =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        request.url.encodedPath.endsWith(
+                            "/season/2",
+                        ) -> respondError(HttpStatusCode.InternalServerError)
+                        else -> respond(LONG_SHOW, HttpStatusCode.OK, JSON)
+                    }
+                }
+            val progress = useCaseWith(engine).execute()
+
+            assertEquals(1, progress.remaining, "a show with episodes still unfilled must not be reported done")
+            assertNull(
+                db
+                    .episodeDao()
+                    .getByMediaId(mediaId)
+                    .first { it.seasonNumber == 2 }
+                    .title,
+                "season 2 is genuinely still blank",
+            )
+        }
+
     // ---- candidate selection ---------------------------------------------------------------------
 
     @Test
@@ -401,6 +495,37 @@ class BulkTmdbBackfillUseCaseTest {
             {"id":603,"title":"The Matrix","release_date":"1999-03-30","runtime":136,
              "poster_path":"/matrix.jpg","vote_average":8.2,"vote_count":24000,
              "overview":"A hacker learns the truth."}
+        """
+
+        /**
+         * A show declaring two seasons but appending only the first — what a show past
+         * `MAX_APPENDED_SEASONS` comes back as, without needing a 21-season fixture to provoke it.
+         */
+        const val LONG_SHOW = """
+            {"id":87108,"name":"A Long Show","number_of_seasons":2,"number_of_episodes":2,
+             "status":"Ended","in_production":false,"poster_path":"/long.jpg",
+             "first_air_date":"2019-05-06","last_air_date":"2020-06-03",
+             "overview":"A show with more seasons than one response carries.",
+             "vote_average":8.0,"vote_count":100,
+             "seasons":[{"season_number":1,"episode_count":1,"name":"Season 1"},
+                        {"season_number":2,"episode_count":1,"name":"Season 2"}],
+             "season/1":{"season_number":1,"name":"Season 1","episodes":[
+               {"episode_number":1,"season_number":1,"name":"Opening","air_date":"2019-05-06",
+                "runtime":61,"vote_average":8.6,"vote_count":300,"overview":"It begins."}
+             ]}}
+        """
+
+        /** The follow-up `/season/2` payload the pass has to go back for. */
+        const val LATE_SEASON = """
+            {"season_number":2,"name":"Season 2","episodes":[
+              {"episode_number":1,"season_number":2,"name":"Late Arrival","air_date":"2020-06-03",
+               "runtime":55,"vote_average":8.1,"vote_count":120,"overview":"It continues."}
+            ]}
+        """
+
+        /** A show TMDB has nothing extra for: every field this pass could fill comes back null. */
+        const val BARE_SHOW = """
+            {"id":87108,"name":"Chernobyl","seasons":[],"season/1":null}
         """
 
         /** Chernobyl's real shape, with the show-level fields #140 added filling for. */

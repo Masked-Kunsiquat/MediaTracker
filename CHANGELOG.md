@@ -16,9 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   It fills empty spaces and nothing else. Anything you corrected by hand wins over the catalogue,
   every date you have marked something watched on is left exactly where it was, and where the
-  catalogue counts more episodes than you have, it says so rather than adding them. It stops after
-  every title, so cancelling it or losing the app mid-run picks up from the same place rather than
-  starting over.
+  catalogue counts more episodes than you have, it says so rather than adding them. It saves its
+  place after each title and keeps going, so cancelling it or losing the app part-way through picks
+  up from the next unfinished title rather than starting the whole library again.
 
   Titles typed in by hand are counted and reported rather than retried: there is no catalogue entry
   to look up for a film that came from nowhere. Search for it and use the refresh on the title
