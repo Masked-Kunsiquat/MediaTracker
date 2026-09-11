@@ -93,10 +93,16 @@ interface EpisodeDao {
      * quick-filled (#74) — and on a real library it buried the two actionable rows under six noise
      * ones. `GROUP BY` with the implicit `COUNT(*) >= 1` that a group implies keeps them out.
      *
-     * Note this is deliberately not `seasonNumber >= 1`-scoped: a show whose only rows are specials
-     * still counts as set up, and the comparison itself excludes season 0 (#88).
+     * ### Scoped to `seasonNumber >= 1`, and it has to be
+     * The comparison excludes season 0 (#88), so a show whose only rows are specials has nothing
+     * comparable in it. Left unscoped, such a show is queued as a candidate and then dropped by the
+     * re-check without a request — inflating the candidate count with a title that can never be
+     * reported as updated *or* as having nothing to fill.
+     *
+     * This is the pair rule [mediaIdsWithIncompleteEpisodes] already states for its own predicate:
+     * a re-check narrower than the seed is a bug, whichever direction the difference runs.
      */
-    @Query("SELECT mediaId FROM episodes GROUP BY mediaId")
+    @Query("SELECT mediaId FROM episodes WHERE seasonNumber >= 1 GROUP BY mediaId")
     suspend fun mediaIdsWithAnyEpisodes(): List<String>
 
     /**

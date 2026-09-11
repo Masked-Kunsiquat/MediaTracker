@@ -482,6 +482,35 @@ class BulkTmdbBackfillUseCaseTest {
         }
 
     @Test
+    fun aShowHoldingOnlySpecialsIsNotQueuedAsACandidate() =
+        runTest {
+            // Season 0 is never fetched and never compared (#88), so a show whose only rows are
+            // specials has nothing comparable in it. Counting it as set up queued a candidate that
+            // the re-check then dropped without a request -- a title in totalCandidates that could
+            // never be reported as updated or as having nothing to fill.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    releaseYear = 2019,
+                    totalSeasons = 1,
+                    coverImageHash = "already-stored",
+                    communityRating = 8.7,
+                    airingStatus = AiringStatus.ENDED,
+                    overview = "Already written.",
+                    firstAirDate = Instant.parse("2019-05-06T00:00:00Z"),
+                    lastAirDate = Instant.parse("2019-06-03T00:00:00Z"),
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 0, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val progress = useCase().execute()
+
+            assertEquals(0, progress.totalCandidates, "nothing about this show is comparable")
+            assertTrue(requestedPaths.isEmpty(), "and nothing was asked of TMDB: $requestedPaths")
+        }
+
+    @Test
     fun recordsNothingWhenTheCountsAgree() =
         runTest {
             quickFilledShow() // five local against Chernobyl's five
