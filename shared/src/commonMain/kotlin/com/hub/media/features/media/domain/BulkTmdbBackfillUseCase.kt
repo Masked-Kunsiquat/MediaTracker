@@ -511,16 +511,17 @@ public class BulkTmdbBackfillUseCase(
             // episodes for -- which is a statement about seasons the user does not track, closer to
             // #122's specials question than to a count disagreement, and reporting it here would
             // dilute a list whose whole value is that every row is actionable.
-            report.mismatches.forEach {
-                foundMismatches.record(
+            foundMismatches.replaceShow(
+                item.id,
+                report.mismatches.map {
                     ShowSeasonMismatch(
                         mediaId = item.id,
                         seasonNumber = it.seasonNumber,
                         localEpisodes = it.localEpisodes,
                         providerEpisodes = it.providerEpisodes,
-                    ),
-                )
-            }
+                    )
+                },
+            )
         }
 
         return finishWithPoster(item.id, mapping.posterPath, needsPoster, wrote)
@@ -686,20 +687,32 @@ private fun TVDetailsEntity.hasGap(): Boolean =
 private fun List<ShowSeasonMismatch>.countShows(): Int = distinctBy { it.mediaId }.size
 
 /**
- * Records [mismatch], replacing any existing entry for the same `(mediaId, seasonNumber)`.
+ * Makes [fresh] the complete set of disagreements recorded for [mediaId], dropping whatever was
+ * there before.
  *
- * Keyed rather than appended, because a season can legitimately be visited more than once across a
- * resume chain: a show whose poster download fails is deferred *after* its episodes were filled and
- * its disagreement noted, so the next run re-processes it and reports the same season again. Plain
- * appending onto the list loaded from storage duplicated that row on every attempt, and a show that
- * kept failing accumulated one copy per run.
+ * **Replacing the show's whole set, rather than merging into it, is what keeps the list true.** Two
+ * things go wrong with per-season adding:
  *
- * Replacing rather than skipping keeps the newer reading, which is the right one if the user changed
- * the season's length between attempts.
+ * - **Duplicates.** A season can legitimately be visited more than once across a resume chain — a
+ *   show whose poster download fails is deferred *after* its episodes were filled and its
+ *   disagreement noted, so the next run reports the same season again. Appending onto the list
+ *   loaded from storage gave that show one copy per attempt.
+ * - **Stale rows, which is worse.** A season the user has since reconciled simply stops appearing in
+ *   the report, and an add-or-replace scheme has no way to notice an absence — so the entry would
+ *   outlive the problem and go on claiming a disagreement that no longer exists. Replacement treats
+ *   "reported nothing for this show" as the meaningful answer it is.
+ *
+ * Note the bound on that guarantee: it holds for shows this pass actually *visits*. A show with no
+ * remaining gaps is not a candidate, so it is never re-examined and its recorded rows persist until
+ * a later run clears them. Removing an entry the moment its season is reconciled belongs to whatever
+ * does the reconciling (#123's screen), not here.
  */
-private fun MutableList<ShowSeasonMismatch>.record(mismatch: ShowSeasonMismatch) {
-    val existing = indexOfFirst { it.mediaId == mismatch.mediaId && it.seasonNumber == mismatch.seasonNumber }
-    if (existing >= 0) this[existing] = mismatch else this += mismatch
+private fun MutableList<ShowSeasonMismatch>.replaceShow(
+    mediaId: String,
+    fresh: List<ShowSeasonMismatch>,
+) {
+    removeAll { it.mediaId == mediaId }
+    addAll(fresh)
 }
 
 /**

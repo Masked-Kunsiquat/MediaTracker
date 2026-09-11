@@ -498,6 +498,48 @@ class BulkTmdbBackfillUseCaseTest {
         }
 
     @Test
+    fun aSeasonReconciledBetweenLegsOfARunStopsBeingReported() =
+        runTest {
+            // The stale-row case, and it is only reachable mid-resume: a fresh run clears the stored
+            // list outright, so the entry that can outlive its problem is one recorded by an earlier
+            // *leg* of a run still in progress. A show deferred by a failed poster download is
+            // re-processed by the next leg, and by then the user may have fixed the season. An
+            // add-or-replace scheme cannot see an absence, so the row would survive and go on
+            // claiming a disagreement that is gone.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 1, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            val failingPoster =
+                MockEngine { request ->
+                    requestedPaths += request.url.encodedPath
+                    when {
+                        request.url.host == "image.tmdb.org" -> respondError(HttpStatusCode.InternalServerError)
+                        request.url.encodedPath.endsWith("/authentication") -> respond("{}", HttpStatusCode.OK, JSON)
+                        else -> respond(CHERNOBYL, HttpStatusCode.OK, JSON)
+                    }
+                }
+
+            val first = useCaseWith(failingPoster).execute()
+            assertEquals(1, first.remaining, "the poster failure keeps the show queued")
+            assertEquals(1, settings.getTmdbBackfillMismatches().size, "2 against 5 is a disagreement")
+
+            // The user reconciles it before the run is resumed.
+            assertIs<Resource.Success<*>>(shows.setSeasonLength(result.data, seasonNumber = 1, episodeCount = 5))
+
+            val second = useCaseWith(failingPoster).execute()
+
+            assertTrue(
+                settings.getTmdbBackfillMismatches().isEmpty(),
+                "a show now reported as agreeing must lose its recorded row",
+            )
+            assertEquals(0, second.mismatchedShows)
+        }
+
+    @Test
     fun anInterruptedRunsMismatchCountSurvivesReopeningSettings() =
         runTest {
             // peekProgress() is what a freshly-opened Settings screen reads to offer "Resume". It
