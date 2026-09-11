@@ -445,6 +445,27 @@ class BulkTmdbBackfillUseCaseTest {
             )
         }
 
+    @Test
+    fun pressingStartOnACompleteLibraryDoesNotDestroyTheLastRunsMismatches() =
+        runTest {
+            // The findings survive the run that produced them, so the obvious next thing a user does
+            // is press the button again. With nothing left to fill, no show is visited and nothing
+            // can be re-derived -- so clearing at seed time wiped the review list and replaced it
+            // with nothing, purely for having tapped Start.
+            settings.saveTmdbBackfillMismatches(
+                listOf(ShowSeasonMismatch("a-show", seasonNumber = 1, localEpisodes = 2, providerEpisodes = 5)),
+            )
+
+            val progress = useCase().execute() // empty library: nothing to seed, nothing pending
+
+            assertEquals(0, progress.totalCandidates)
+            assertEquals(
+                1,
+                settings.getTmdbBackfillMismatches().size,
+                "a run that visited nothing must not forget what the last one found",
+            )
+        }
+
     // ---- candidate selection ---------------------------------------------------------------------
 
     @Test

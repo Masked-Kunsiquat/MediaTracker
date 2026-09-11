@@ -189,7 +189,8 @@ public class BulkTmdbBackfillUseCase(
      *   persisted.
      */
     public suspend fun execute(onProgress: (suspend (TmdbBackfillProgress) -> Unit)? = null): TmdbBackfillProgress {
-        var state = settingsRepository.getTmdbBackfillState() ?: seedState()
+        val resumable = settingsRepository.getTmdbBackfillState()
+        var state = resumable ?: seedState()
 
         if (state.pendingMediaIds.isEmpty()) {
             // Logged for the reason the book pass logs the same case: without an entry, a user who
@@ -208,15 +209,24 @@ public class BulkTmdbBackfillUseCase(
             return state.toProgress(blockedMessage = credentialCheck.message)
         }
 
+        // A fresh run forgets the previous one's findings, because it is about to re-derive whatever
+        // still holds. Deliberately *here* rather than in seedState: both early returns above leave
+        // without visiting a single show, so clearing at seed time meant that pressing the button on
+        // an already-complete library destroyed the list and re-derived nothing -- the review list
+        // disappearing because someone tapped Start. A resumed run keeps the earlier leg's findings
+        // and appends to them.
+        if (resumable == null) settingsRepository.clearTmdbBackfillMismatches()
+
         val toProcess = state.pendingMediaIds
         logger.info(TAG) { "TMDB backfill run starting: ${toProcess.size} title(s) pending" }
         val stillPending = mutableListOf<String>()
         var updated = state.updated
         var nothingToFill = state.nothingToFill
-        // Seeded from what is already stored rather than from empty, so a resumed run adds to the
-        // previous leg's findings instead of replacing them with only what this leg happened to see.
-        // A fresh run cleared these in seedState.
         val foundMismatches = settingsRepository.getTmdbBackfillMismatches().toMutableList()
+        // Only written when it actually grows. The resume queue changes every title and must be
+        // saved every title; this list does not, and most libraries produce none at all -- so
+        // persisting unconditionally meant a DELETE per title, for every title, to store nothing.
+        var persistedMismatches = foundMismatches.size
 
         try {
             for (index in toProcess.indices) {
@@ -241,7 +251,10 @@ public class BulkTmdbBackfillUseCase(
                 settingsRepository.saveTmdbBackfillState(state)
                 // Checkpointed on the same beat as the resume queue, for the same reason: a run
                 // killed after visiting 300 shows should not lose what it learned about them.
-                settingsRepository.saveTmdbBackfillMismatches(foundMismatches)
+                if (foundMismatches.size != persistedMismatches) {
+                    settingsRepository.saveTmdbBackfillMismatches(foundMismatches)
+                    persistedMismatches = foundMismatches.size
+                }
                 onProgress?.invoke(state.toProgress(mismatchedShows = foundMismatches.countShows()))
             }
         } catch (e: CancellationException) {
@@ -294,12 +307,6 @@ public class BulkTmdbBackfillUseCase(
      * would not make one appear in the catalogue.
      */
     private suspend fun seedState(): TmdbBackfillState {
-        // A fresh scan re-derives every disagreement it still finds, so the previous run's list is
-        // stale the moment this one starts -- and keeping it would accumulate entries against shows
-        // that have since been reconciled or deleted. Cleared here rather than when a run *finishes*,
-        // which is the moment the findings become worth reading.
-        settingsRepository.clearTmdbBackfillMismatches()
-
         val haveTmdbId = db.externalIdentifierDao().getMediaIdsForProvider(IdentifierProvider.TMDB).toSet()
         val incompleteEpisodes = db.episodeDao().mediaIdsWithIncompleteEpisodes().toSet()
 
