@@ -108,12 +108,19 @@ public sealed interface TmdbCredential {
  * TMDB's practical request ceiling, used to size [tmdbPacer].
  *
  * **This is not the same kind of number as [OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND].** Open
- * Library publishes an enforced rate. TMDB removed its hard limit (the old 40-requests-per-10-seconds
- * rule) and now describes roughly 50 requests per second as the point at which it will start
- * refusing -- a ceiling rather than a contract. [RequestPacer]'s KDoc says to derive an interval from
- * a documented rate rather than picking a number, so this records which of the two it is.
+ * Library publishes an enforced rate. TMDB disabled its hard limit on 2019-12-16 and now says only
+ * that upper limits exist "somewhere in the 40 requests per second range", adding that the figure
+ * "could change at any time" -- a ceiling rather than a contract. [RequestPacer]'s KDoc says to
+ * derive an interval from a documented rate rather than picking a number, so this records which of
+ * the two it is.
+ *
+ * **Beware the coincidence in the two 40s.** The limit TMDB *retired* was 40 requests per **10
+ * seconds** (4/second); the soft ceiling it describes *now* is 40 per **second** — ten times higher,
+ * same leading digit. This constant read 50 until #140, a figure that circulates widely in community
+ * answers but is not what <https://developer.themoviedb.org/docs/rate-limiting> says; it was
+ * corrected after checking the page rather than the folklore. Reviewed 2026-09-11.
  */
-public const val TMDB_CEILING_REQUESTS_PER_SECOND: Int = 50
+public const val TMDB_CEILING_REQUESTS_PER_SECOND: Int = 40
 
 /**
  * The rate the bulk TMDB paths are actually held to, deliberately well under

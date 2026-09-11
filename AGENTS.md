@@ -79,9 +79,12 @@ So: **update this file in the same commit as the change that invalidates it.** C
   and logged by every host the app contacts. Their guidelines also say to *cache responses whenever
   possible* and not to *make hundreds of single-book requests*, which is why rate limiting and
   caching live in the client layer rather than being left to callers.
-* **TMDB is three budgets, not one, and a pacer belongs to exactly one crawl.** TMDB removed its
-  hard limit and now describes roughly 50 requests/second as the point of refusal — a *ceiling*,
-  not a contract, which is why `TMDB_REQUESTS_PER_SECOND` sits at 20 and says so. Its image CDN
+* **TMDB is three budgets, not one, and a pacer belongs to exactly one crawl.** TMDB disabled its
+  hard limit in 2019 and now says only that upper limits sit *"somewhere in the 40 requests per
+  second range"* and *"could change at any time"* — a *ceiling*, not a contract, which is why
+  `TMDB_REQUESTS_PER_SECOND` sits at 20 and says so. Do not read the retired limit's 40 as this one:
+  that was 40 per **10 seconds**, ten times lower, and the shared digit has already caused one wrong
+  edit. Its image CDN
   (`image.tmdb.org`) publishes no rate at all, so `TMDB_IMAGE_REQUESTS_PER_SECOND` is a chosen
   number rather than a derived one and records that it is chosen. **Never pace metadata and posters
   off one interval**: a poster is a few hundred kilobytes against an API response's few kilobytes,

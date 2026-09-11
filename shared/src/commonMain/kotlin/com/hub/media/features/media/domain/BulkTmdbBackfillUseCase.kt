@@ -51,7 +51,11 @@ private const val TAG = "BulkTmdbBackfill"
  *
  * @property totalCandidates Films and shows that needed something and had a TMDB id, fixed at the
  *   moment this run was first seeded.
- * @property processed `totalCandidates - remaining`.
+ * @property processed `totalCandidates - remaining`. **Not** always `updated + nothingToFill`: a
+ *   title deleted since it was queued, or holding a TMDB id that is not a number, leaves the queue
+ *   without being either. Those are rare and are not counted anywhere — the same shape
+ *   [com.hub.media.features.books.domain.BulkBackfillProgress] documents, spelled out here because
+ *   the arithmetic looking like it should balance is exactly what makes the gap confusing.
  * @property updated Cumulative count of titles something was actually written onto.
  * @property nothingToFill Cumulative count of titles fully resolved with nothing to write.
  * @property noTmdbIdSkipped Titles that can never be filled from a provider because they were never
@@ -377,7 +381,10 @@ public class BulkTmdbBackfillUseCase(
         // (#136) between the two. The condition is the same five columns
         // EpisodeDao.mediaIdsWithIncompleteEpisodes tests, and has to stay that way -- a re-check
         // narrower than the seed would silently drop shows the scan had queued for a real gap.
-        val needsEpisodes = db.episodeDao().getByMediaId(item.id).any { it.seasonNumber >= 1 && it.hasGap() }
+        // Read once and reused by withHeldSeasons below. A daily series is 458 rows, and this used to
+        // load all of them twice on the way to one boolean and one set of season numbers.
+        val localEpisodes = db.episodeDao().getByMediaId(item.id).filter { it.seasonNumber >= 1 }
+        val needsEpisodes = localEpisodes.any { it.hasGap() }
         if (!needsPoster && !needsYear && !needsRating && !detailGaps && !needsEpisodes) return StepOutcome.Removed
 
         val fetched =
@@ -429,7 +436,7 @@ public class BulkTmdbBackfillUseCase(
 
         if (needsEpisodes) {
             val complete =
-                withHeldSeasons(tmdbId, item.id, fetched) ?: return StepOutcome.DeferredTransient
+                withHeldSeasons(tmdbId, localEpisodes, fetched) ?: return StepOutcome.DeferredTransient
             if (showEpisodes.applyFetched(item.id, complete).episodesFilled > 0) wrote = true
         }
 
@@ -457,6 +464,10 @@ public class BulkTmdbBackfillUseCase(
      * 30-season catalogue where someone tracks season 1 would otherwise spend ten requests learning
      * about episodes it must not create anyway (#75, #123).
      *
+     * @param localEpisodes This show's `seasonNumber >= 1` rows, already read by the caller — passed
+     *   rather than re-read, because the caller needed them a moment ago for the same decision and a
+     *   daily series is several hundred rows.
+     *
      * ### A failed season defers the whole title
      * Returning `null` here sends the title back to the pending queue rather than letting it be
      * reported [StepOutcome.Done] with episodes still unfilled. Whatever already landed stays
@@ -464,18 +475,13 @@ public class BulkTmdbBackfillUseCase(
      */
     private suspend fun withHeldSeasons(
         tmdbId: Int,
-        mediaId: String,
+        localEpisodes: List<EpisodeEntity>,
         fetched: TmdbShowWithSeasons,
     ): TmdbShowWithSeasons? {
         val missing = fetched.missingSeasonNumbers
         if (missing.isEmpty()) return fetched
 
-        val held =
-            db
-                .episodeDao()
-                .getByMediaId(mediaId)
-                .filter { it.seasonNumber >= 1 && it.hasGap() }
-                .mapTo(mutableSetOf()) { it.seasonNumber }
+        val held = localEpisodes.filter { it.hasGap() }.mapTo(mutableSetOf()) { it.seasonNumber }
         val wanted = missing.filter { it in held }
         if (wanted.isEmpty()) return fetched
 
@@ -495,6 +501,20 @@ public class BulkTmdbBackfillUseCase(
      * A failed download defers the *title*, so the next run retries it. Everything already written
      * above stays written: enrichment is idempotent, and the re-read at the top of the next attempt
      * simply finds fewer gaps.
+     *
+     * ### This is the one write here the SQL does not protect
+     * Every other column this pass touches goes through a `COALESCE` statement that *cannot*
+     * overwrite, which the class KDoc rightly calls a stronger guarantee than a careful caller. The
+     * poster does not: [com.hub.media.core.database.MediaRepository.updateCoverImageHash] is an
+     * unconditional `UPDATE`, and the only thing stopping this from replacing existing artwork is
+     * [needsPoster] being computed from `coverImageHash == null` a few lines up.
+     *
+     * That asymmetry is deliberate rather than missed. The same statement backs the per-book
+     * "re-fetch cover" action, whose entire purpose is to replace a cover the user already has — a
+     * `COALESCE` there would make the button silently do nothing. So the overwrite-ability is a
+     * requirement of the shared write, and this caller takes on the check instead. Worth knowing when
+     * editing either end: the guarantee here really is this class's care, and is the one place in the
+     * pass where that sentence is true.
      */
     private suspend fun finishWithPoster(
         mediaId: String,
