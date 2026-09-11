@@ -19,6 +19,8 @@ import com.hub.media.features.settings.data.ShowSeasonMismatch
 import com.hub.media.features.settings.data.getTmdbBackfillMismatches
 import com.hub.media.features.settings.data.getTmdbBackfillState
 import com.hub.media.features.settings.data.saveTmdbBackfillMismatches
+import com.hub.media.features.tv.data.NewEpisode
+import com.hub.media.features.tv.data.SeasonEpisodes
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
@@ -395,6 +397,117 @@ class BulkTmdbBackfillUseCaseTest {
             assertEquals(3, mismatch.missingEpisodes)
             // Still only reported -- the rows are untouched, which is the guarantee #123 builds on.
             assertEquals(2, db.episodeDao().getByMediaId(result.data).size)
+        }
+
+    /**
+     * A show with **nothing left to fill**: artwork, year, rating, every `tv_details` column and
+     * every episode column already set. Its only disagreement with TMDB is the count — two episodes
+     * against Chernobyl's five.
+     */
+    private suspend fun gaplessShowWithTwoEpisodes(): String {
+        val result =
+            shows.addShow(
+                title = "Chernobyl",
+                releaseYear = 2019,
+                totalSeasons = 1,
+                coverImageHash = "already-stored",
+                communityRating = 8.7,
+                airingStatus = AiringStatus.ENDED,
+                overview = "Already written.",
+                firstAirDate = Instant.parse("2019-05-06T00:00:00Z"),
+                lastAirDate = Instant.parse("2019-06-03T00:00:00Z"),
+                seasons =
+                    listOf(
+                        SeasonEpisodes(
+                            seasonNumber = 1,
+                            episodes =
+                                (1..2).map {
+                                    NewEpisode(
+                                        episodeNumber = it,
+                                        title = "Already titled $it",
+                                        airDate = Instant.parse("2019-05-06T00:00:00Z"),
+                                        runtimeMinutes = 60,
+                                        overview = "Already written.",
+                                        communityRating = 8.0,
+                                    )
+                                },
+                        ),
+                    ),
+                externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+            )
+        assertIs<Resource.Success<String>>(result)
+        return result.data
+    }
+
+    @Test
+    fun findsACountDisagreementOnAShowWithNothingLeftToFill() =
+        runTest {
+            // The detection gap #123 was left with: comparison used to be gated behind "this show
+            // needs episode metadata", so a show that was otherwise complete was never asked about
+            // and its disagreement was invisible. Counting does not converge the way filling does.
+            val mediaId = gaplessShowWithTwoEpisodes()
+
+            val progress = useCase().execute()
+
+            assertEquals(1, progress.totalCandidates, "a gapless show is still worth comparing")
+            assertEquals(1, progress.mismatchedShows)
+            val mismatch = useCase().mismatches().single()
+            assertEquals(mediaId, mismatch.mediaId)
+            assertEquals(2, mismatch.localEpisodes)
+            assertEquals(5, mismatch.providerEpisodes)
+            // Nothing was written: the point is that it had nothing to fill.
+            assertEquals(0, progress.updated)
+            assertEquals(1, progress.nothingToFill)
+        }
+
+    @Test
+    fun aShowWithNoEpisodesAtAllIsNotComparedAtAll() =
+        runTest {
+            // Every season would read "you have 0, TMDB has N" -- a show waiting to be quick-filled
+            // (#74), not a disagreement to reconcile, and on a real library it buried the actionable
+            // rows under noise. It stays a candidate for its own blank columns; it just is not
+            // compared, and contributes no mismatch rows.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+            assertTrue(db.episodeDao().getByMediaId(result.data).isEmpty())
+
+            val progress = useCase().execute()
+
+            assertEquals(0, progress.mismatchedShows, "no seasons reported for an empty show")
+            assertTrue(useCase().mismatches().isEmpty())
+        }
+
+    @Test
+    fun aShowHoldingOnlySpecialsIsNotQueuedAsACandidate() =
+        runTest {
+            // Season 0 is never fetched and never compared (#88), so a show whose only rows are
+            // specials has nothing comparable in it. Counting it as set up queued a candidate that
+            // the re-check then dropped without a request -- a title in totalCandidates that could
+            // never be reported as updated or as having nothing to fill.
+            val result =
+                shows.addShow(
+                    title = "Chernobyl",
+                    releaseYear = 2019,
+                    totalSeasons = 1,
+                    coverImageHash = "already-stored",
+                    communityRating = 8.7,
+                    airingStatus = AiringStatus.ENDED,
+                    overview = "Already written.",
+                    firstAirDate = Instant.parse("2019-05-06T00:00:00Z"),
+                    lastAirDate = Instant.parse("2019-06-03T00:00:00Z"),
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 0, episodeCount = 2)),
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "87108"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val progress = useCase().execute()
+
+            assertEquals(0, progress.totalCandidates, "nothing about this show is comparable")
+            assertTrue(requestedPaths.isEmpty(), "and nothing was asked of TMDB: $requestedPaths")
         }
 
     @Test
