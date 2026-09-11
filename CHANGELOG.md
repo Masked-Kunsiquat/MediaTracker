@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-11
+
+Two releases ago, a film or show that arrived by search came in complete. Everything already on the
+shelf stayed as it was — bare, and with no way to do anything about it.
+
+This release closes that gap. A single action in Settings walks the films and shows already in a
+library and fills in what is blank: the artwork, the length, the year, the rating, a show's synopsis
+and air dates, and the real titles of episodes that were typed in from memory as numbered blanks.
+The important part is what it leaves alone. It only ever writes into empty spaces, so a year
+corrected by hand stays corrected, every watched date stays exactly where it was, and a show that
+reads as finished still reads as finished when the pass is over. Where the catalogue disagrees about
+how many episodes a season has, it says so rather than quietly adding them.
+
+Books have had an action like this for a while, and this is a second one rather than a bigger
+version of the first. The two ask different questions of different catalogues and fail in different
+ways, and a single button covering both would have belonged to neither half of a Settings screen
+that is organised by what kind of thing you are looking at.
+
+The app also now says where its information comes from. A new About page credits the three
+catalogues behind the data — The Movie Database, Google Books and Open Library — describing what
+each one supplies. Two of the three ask to be credited; the third does not, and the page says which
+is which.
+
 ### Added
 
 - **Films and shows already in your library can now fill in what they are missing.** Settings has a
