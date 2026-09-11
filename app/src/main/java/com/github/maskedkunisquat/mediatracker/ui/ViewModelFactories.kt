@@ -219,16 +219,39 @@ class RestoreViewModelFactory(
     )
 
 /**
- * Factory for creating [BackfillViewModel] with its
+ * Factory for creating the **book** [BackfillViewModel] with its
  * [com.hub.media.features.books.domain.BulkBackfillUseCase] dependency from the [AppContainer]
  * (ROADMAP Task 14 Phase A). Reused across navigations to the Settings screen the same way
  * [ExportViewModelFactory] is.
+ *
+ * ### Both backfill factories build the same erased class
+ * [BackfillViewModel] became generic in #140 so one implementation could drive both passes, which
+ * means this and [TmdbBackfillViewModelFactory] produce instances that are indistinguishable to
+ * `ViewModelProvider` — it keys by class name, and the type argument is erased. Retrieved with the
+ * default key, the second `viewModel()` call in a composition would be handed the *first* one back.
+ *
+ * So both call sites in `SettingsScreen` pass an explicit `key`. That is a requirement, not a
+ * stylistic choice, and it is the one thing making the shared ViewModel safe to instantiate twice.
  */
 class BackfillViewModelFactory(
     appContainer: AppContainer,
-) : AppViewModelFactory<BackfillViewModel>(
+) : AppViewModelFactory<BackfillViewModel<*>>(
         BackfillViewModel::class.java,
         { BackfillViewModel(appContainer.bulkBackfillUseCase) },
+    )
+
+/**
+ * Factory for creating the **films and shows** [BackfillViewModel] with its
+ * [com.hub.media.features.media.domain.BulkTmdbBackfillUseCase] dependency from the [AppContainer]
+ * (#140).
+ *
+ * See [BackfillViewModelFactory] on why its call site must pass an explicit `viewModel(key = ...)`.
+ */
+class TmdbBackfillViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<BackfillViewModel<*>>(
+        BackfillViewModel::class.java,
+        { BackfillViewModel(appContainer.bulkTmdbBackfillUseCase) },
     )
 
 /**

@@ -273,6 +273,12 @@
     <string name="settings_backfill_summary_format">%1$d updated, %2$d had nothing to fill in</string>
     <string name="settings_backfill_no_isbn_format">%1$d book(s) skipped — no ISBN on record, so they can\'t be looked up automatically. Enter a cover manually instead (coming soon).</string>
 
+    <!-- SettingsScreen: library-wide TMDB artwork/metadata backfill (#140) -->
+    <string name="settings_section_tmdb_backfill">Artwork &amp; details for films and shows</string>
+    <string name="settings_tmdb_backfill_description">Look up missing posters, lengths, years, ratings and episode details for films and shows that were added from TMDB — useful after a CSV import, or for titles added before posters existed. Anything already filled in, and everything you have marked as watched, is left exactly as it is.</string>
+    <string name="settings_tmdb_backfill_summary_format">%1$d updated, %2$d had nothing to fill in</string>
+    <string name="settings_tmdb_backfill_no_id_format">%1$d title(s) skipped — added by hand rather than from TMDB, so there is no catalogue entry to look up. Use the refresh action on the title itself after searching for it.</string>
+
     <!-- SettingsScreen: .sqlite backup (ROADMAP Task 8 Phase C) -->
     <string name="settings_section_backup_restore">Backup &amp; restore</string>
     <string name="settings_backup_label">Back up database</string>

@@ -80,6 +80,9 @@ class SettingsScreenOcclusionTest {
             backfillUiState = BackfillUiState.Idle,
             onStartBackfillClick = {},
             onCancelBackfillClick = {},
+            tmdbBackfillUiState = BackfillUiState.Idle,
+            onStartTmdbBackfillClick = {},
+            onCancelTmdbBackfillClick = {},
             snackbarHostState = SnackbarHostState(),
             onNavigateBack = {},
         )

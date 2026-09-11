@@ -123,39 +123,7 @@ public class BackfillShowEpisodesUseCase(
                     is Resource.Success -> result.data
                 }
 
-            val local = db.episodeDao().getByMediaId(mediaId).filter { it.seasonNumber >= 1 }
-            val fills =
-                local.mapNotNull { episode ->
-                    val provided =
-                        fetched.seasons[episode.seasonNumber]
-                            ?.episodes
-                            ?.firstOrNull { it.episodeNumber == episode.episodeNumber }
-                            ?: return@mapNotNull null
-                    val fill =
-                        EpisodeMetadataFill(
-                            seasonNumber = episode.seasonNumber,
-                            episodeNumber = episode.episodeNumber,
-                            title = provided.name?.takeIf { it.isNotBlank() },
-                            airDate = provided.airDate.toInstantOrNull(),
-                            runtimeMinutes = provided.runtime?.takeIf { it > 0 },
-                            overview = provided.overview?.takeIf { it.isNotBlank() },
-                            communityRating = provided.voteAverage?.takeIf { (provided.voteCount ?: 0) > 0 },
-                        )
-                    // Only rows that would actually gain something. Two reasons, and the second is
-                    // the one that matters: it saves a pointless UPDATE, and it makes the reported
-                    // count mean what the sentence built from it says. Reporting rows *matched*
-                    // told a user "Updated 5 episodes" for a show where nothing changed -- found by
-                    // tapping the button on a show that was already complete.
-                    fill.takeIf { it.wouldChange(episode) }
-                }
-            val filled = db.tvWriteDao().fillEpisodeMetadata(mediaId, fills)
-
-            val report =
-                EpisodeBackfillReport(
-                    episodesFilled = filled,
-                    mismatches = mismatchesFor(local.groupBy { it.seasonNumber }, fetched),
-                    seasonsNotFetched = fetched.missingSeasonNumbers,
-                )
+            val report = applyFetched(mediaId, fetched)
             logger.info(TAG) {
                 "Backfilled show from TMDB $tmdbId: ${report.episodesFilled} episode(s), " +
                     "${report.mismatches.size} season(s) disagreeing"
@@ -167,6 +135,61 @@ public class BackfillShowEpisodesUseCase(
             logger.error(TAG, e) { "Failed to backfill episodes for show id=$mediaId" }
             Resource.Error("Failed to backfill episodes: ${e.message ?: "Unknown error"}", cause = e)
         }
+    }
+
+    /**
+     * Fills [mediaId]'s episodes from an **already-fetched** show payload, and reports what changed.
+     *
+     * ### Why this is separate from [execute]
+     * [execute] is the one-show path: it resolves the TMDB id, spends the request, and hands the
+     * answer here. A library-wide pass (#140) needs the same filling but not the same request — the
+     * response it already holds carries the show record *and* its seasons, so it fills the show's own
+     * blank synopsis and air dates from the same bytes. Routing it through [execute] would spend a
+     * second request for a payload it is holding; re-implementing the loop below on its side would
+     * fork it, which is the failure mode #141 describes.
+     *
+     * ### This throws where [execute] returns
+     * Deliberately not wrapped in [Resource]. [execute]'s `catch` exists to turn a failure into
+     * something one screen can show a user; a bulk caller has its own per-item outcome handling and
+     * its own checkpoint to protect, and a `Resource.Error` it would only unwrap and re-classify is a
+     * layer that buys nothing. A database failure here propagates to that caller.
+     */
+    public suspend fun applyFetched(
+        mediaId: String,
+        fetched: TmdbShowWithSeasons,
+    ): EpisodeBackfillReport {
+        val local = db.episodeDao().getByMediaId(mediaId).filter { it.seasonNumber >= 1 }
+        val fills =
+            local.mapNotNull { episode ->
+                val provided =
+                    fetched.seasons[episode.seasonNumber]
+                        ?.episodes
+                        ?.firstOrNull { it.episodeNumber == episode.episodeNumber }
+                        ?: return@mapNotNull null
+                val fill =
+                    EpisodeMetadataFill(
+                        seasonNumber = episode.seasonNumber,
+                        episodeNumber = episode.episodeNumber,
+                        title = provided.name?.takeIf { it.isNotBlank() },
+                        airDate = provided.airDate.toInstantOrNull(),
+                        runtimeMinutes = provided.runtime?.takeIf { it > 0 },
+                        overview = provided.overview?.takeIf { it.isNotBlank() },
+                        communityRating = provided.voteAverage?.takeIf { (provided.voteCount ?: 0) > 0 },
+                    )
+                // Only rows that would actually gain something. Two reasons, and the second is
+                // the one that matters: it saves a pointless UPDATE, and it makes the reported
+                // count mean what the sentence built from it says. Reporting rows *matched*
+                // told a user "Updated 5 episodes" for a show where nothing changed -- found by
+                // tapping the button on a show that was already complete.
+                fill.takeIf { it.wouldChange(episode) }
+            }
+        val filled = db.tvWriteDao().fillEpisodeMetadata(mediaId, fills)
+
+        return EpisodeBackfillReport(
+            episodesFilled = filled,
+            mismatches = mismatchesFor(local.groupBy { it.seasonNumber }, fetched),
+            seasonsNotFetched = fetched.missingSeasonNumbers,
+        )
     }
 
     /**

@@ -79,6 +79,26 @@ So: **update this file in the same commit as the change that invalidates it.** C
   and logged by every host the app contacts. Their guidelines also say to *cache responses whenever
   possible* and not to *make hundreds of single-book requests*, which is why rate limiting and
   caching live in the client layer rather than being left to callers.
+* **TMDB is three budgets, not one, and a pacer belongs to exactly one crawl.** TMDB disabled its
+  hard limit in 2019 and now says only that upper limits sit *"somewhere in the 40 requests per
+  second range"* and *"could change at any time"* — a *ceiling*, not a contract, which is why
+  `TMDB_REQUESTS_PER_SECOND` sits at 20 and says so. Do not read the retired limit's 40 as this one:
+  that was 40 per **10 seconds**, ten times lower, and the shared digit has already caused one wrong
+  edit. Its image CDN
+  (`image.tmdb.org`) publishes no rate at all, so `TMDB_IMAGE_REQUESTS_PER_SECOND` is a chosen
+  number rather than a derived one and records that it is chosen. **Never pace metadata and posters
+  off one interval**: a poster is a few hundred kilobytes against an API response's few kilobytes,
+  so any shared number is wrong in one direction or the other.
+
+  The exclusivity rule matters as much as the numbers. A `RequestPacer` is only honest while it
+  belongs to one crawl: shared with an interactive path, the crawl's sleeps land on a request
+  someone is waiting for (#42), and shared between two crawls neither is actually held to the rate
+  it claims. `AppContainer` therefore keeps its paced `TmdbClient` **private** and exposes the
+  unpaced one — the single-request user-facing paths are meant to stay unpaced.
+
+  Contrast the shape with Open Library's cover probe, which is a *quota* (`OpenLibraryCoverRateLimiter`)
+  and must be one shared instance across every caller, because a quota is per-device. Rate and quota
+  want opposite wiring, and mixing them up is the mistake to avoid.
 * **Cover/Poster Storage Protocol:**
     1. Download image bytes via Ktor.
     2. Compute SHA-256 hash of the raw `ByteArray`.

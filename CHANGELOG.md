@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Films and shows already in your library can now fill in what they are missing.** Settings has a
+  new action beside the one books have had: it walks every film and show that was added from TMDB
+  and looks up whatever is still blank — the poster, the length, the year, the rating, a show's
+  synopsis and air dates, and the real titles of episodes typed in from memory.
+
+  It fills empty spaces and nothing else. Anything you corrected by hand wins over the catalogue,
+  every date you have marked something watched on is left exactly where it was, and where the
+  catalogue counts more episodes than you have, it says so rather than adding them. It saves its
+  place after each title and keeps going, so cancelling it or losing the app part-way through picks
+  up from the next unfinished title rather than starting the whole library again.
+
+  Titles typed in by hand are counted and reported rather than retried: there is no catalogue entry
+  to look up for a film that came from nowhere. Search for it and use the refresh on the title
+  itself instead.
+
 - **An About screen, naming where your films, shows and books get their information from.** Settings has a new About section; it opens a page with the app version and a card for each of the three catalogues the app talks to, saying what each one supplies and linking to it.
 
   It is there because two of the three require it. The Movie Database asks that anything using their data say so, in those words, in a section of exactly this kind — so their notice appears on it verbatim, under their own logo. Google Books asks for credit too. Open Library asks for nothing at all, and is credited anyway; the card says as much, so it is clear which of the three is a courtesy.

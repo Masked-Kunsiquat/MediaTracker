@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -249,6 +250,95 @@ interface TVWriteDao {
      * @return `1` if [episodeId] resolved to an existing row, `0` otherwise -- including when the
      *   episode was already watched and `COALESCE` therefore wrote the value it already held.
      */
+
+    /**
+     * Fills a show's own provider metadata **onto columns that are still null**, scoped to `TV_SHOW`
+     * rows — the show-level counterpart of [fillEpisodeMetadata], obeying the identical rule for the
+     * identical reason: every column is wrapped in `COALESCE(column, :value)`, so a value already
+     * present wins and a `null` argument changes nothing.
+     *
+     * Costs no request of its own. The pass that fills a show's episodes already holds the show
+     * record, because [com.hub.media.features.tv.network.TmdbClient.showWithSeasons] returns both in
+     * one response — so a show that was going to be asked about anyway answers its own blank synopsis
+     * and air dates for free.
+     *
+     * `title` is absent from the SET list for the reason [MovieWriteDao.fillMediaItemMetadata] gives.
+     *
+     * @return rows affected: `1` when the show exists, `0` when [mediaId] is not a `TV_SHOW` row.
+     */
+    @Query(
+        "UPDATE media_items SET " +
+            "releaseYear = COALESCE(releaseYear, :releaseYear), " +
+            "communityRating = COALESCE(communityRating, :communityRating) " +
+            "WHERE id = :mediaId AND type = 'TV_SHOW'",
+    )
+    suspend fun fillMediaItemMetadata(
+        mediaId: String,
+        releaseYear: Int?,
+        communityRating: Double?,
+    ): Int
+
+    /**
+     * The `tv_details` half of [fillShowMetadata].
+     *
+     * Neither `status` nor anything watch-related is in the SET list, and they are absent rather than
+     * guarded — see [fillEpisodeMetadata] on why absence is the stronger guarantee.
+     *
+     * `totalSeasons` is filled like any other blank column, and that is safe *because* it is
+     * advisory: [com.hub.media.core.database.entities.TVDetailsEntity] documents the episode rows as
+     * the truth about what exists. Writing it changes no count and no completion state.
+     *
+     * @param firstAirDate Epoch milliseconds, not an [Instant] — this column and
+     *   [EpisodeEntity.airDate] disagree about representation, a schema inconsistency frozen at v6.
+     *   The conversion happens at the mapping edge, exactly where
+     *   [com.hub.media.features.tv.data.TVShowRepository.addShow] does it.
+     */
+    @Query(
+        "UPDATE tv_details SET " +
+            "totalSeasons = COALESCE(totalSeasons, :totalSeasons), " +
+            "airingStatus = COALESCE(airingStatus, :airingStatus), " +
+            "overview = COALESCE(overview, :overview), " +
+            "firstAirDate = COALESCE(firstAirDate, :firstAirDate), " +
+            "lastAirDate = COALESCE(lastAirDate, :lastAirDate) " +
+            "WHERE mediaId = :mediaId",
+    )
+    suspend fun fillTVDetailMetadata(
+        mediaId: String,
+        totalSeasons: Int?,
+        airingStatus: AiringStatus?,
+        overview: String?,
+        firstAirDate: Long?,
+        lastAirDate: Long?,
+    ): Int
+
+    /**
+     * Applies both halves of one show's own metadata fill in a single transaction.
+     *
+     * A missing `tv_details` row is left missing rather than self-healed, unlike
+     * [updateShowMetadataAtomically] — see [MovieWriteDao.fillMovieMetadata] for the reasoning, which
+     * is the same on both sides: a details row cannot be created without inventing a [WatchStatus],
+     * and inventing watch state is the one thing enrichment must never do.
+     *
+     * @return the number of `media_items` rows affected, so a caller can tell "no such show" (0)
+     *   from a fill that landed.
+     */
+    @Transaction
+    suspend fun fillShowMetadata(
+        mediaId: String,
+        releaseYear: Int?,
+        communityRating: Double?,
+        totalSeasons: Int?,
+        airingStatus: AiringStatus?,
+        overview: String?,
+        firstAirDate: Long?,
+        lastAirDate: Long?,
+    ): Int {
+        val mediaRows = fillMediaItemMetadata(mediaId, releaseYear, communityRating)
+        if (mediaRows > 0) {
+            fillTVDetailMetadata(mediaId, totalSeasons, airingStatus, overview, firstAirDate, lastAirDate)
+        }
+        return mediaRows
+    }
 
     /**
      * Fills an episode's provider metadata **onto columns that are still null**, matching the row by

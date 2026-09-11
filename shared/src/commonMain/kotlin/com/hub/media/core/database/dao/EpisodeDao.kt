@@ -49,6 +49,36 @@ interface EpisodeDao {
     fun observeAll(): Flow<List<EpisodeEntity>>
 
     /**
+     * Every show holding at least one episode row with a still-empty metadata column, in one query.
+     *
+     * Seeds #140's library-wide TMDB pass: without it, deciding which shows are worth a request means
+     * reading every episode of every show into memory to look at them, which is the shape
+     * [observeProgress] already avoids for the same reason — the cost should scale with the number of
+     * *shows*, not with the number of episodes across the library.
+     *
+     * ### `seasonNumber >= 1`, matching what the pass can actually fill
+     * Specials are never fetched ([com.hub.media.features.tv.network.TmdbClient.showWithSeasons] does
+     * not request season 0), so a hand-entered special with a blank title would otherwise make its
+     * show a candidate on every single run for something no request could ever resolve. #88's
+     * reasoning about phantom mismatches, applied to candidate selection.
+     *
+     * ### A show here is not a promise there is something to fill
+     * `communityRating` can be legitimately null forever — TMDB has no score for an episode nobody has
+     * voted on — so such a show answers this query on every fresh run and spends one request learning
+     * there is still nothing. That is the same trade
+     * [com.hub.media.features.books.domain.BulkBackfillUseCase] documents for a cover that exists
+     * nowhere, and it is priced the same way: telling "confirmed unavailable" apart from "not fetched
+     * yet" needs a persisted negative cache, and the cost being avoided is one request per unfillable
+     * show per user-initiated run.
+     */
+    @Query(
+        "SELECT DISTINCT mediaId FROM episodes WHERE seasonNumber >= 1 AND (" +
+            "title IS NULL OR airDate IS NULL OR runtimeMinutes IS NULL OR " +
+            "overview IS NULL OR communityRating IS NULL)",
+    )
+    suspend fun mediaIdsWithIncompleteEpisodes(): List<String>
+
+    /**
      * Per-show watched/total episode counts, one row per show that has at least one episode.
      * Backs the library list's progress display ("4 / 10 episodes") without loading every episode
      * row into memory -- a `GROUP BY` aggregate scales with the number of *shows*, not the number
