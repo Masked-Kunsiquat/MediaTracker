@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- `BulkTmdbBackfillUseCase` now keeps the season-count disagreements it finds instead of discarding
+  them (#123). They are persisted beside the resume state in `app_settings`, counted on
+  `TmdbBackfillProgress.mismatchedShows`, and read back through `BulkTmdbBackfillUseCase.mismatches()`
+  — not through `peekProgress()`, which returns `null` once a run completes.
+
+  Deliberately invisible: nothing surfaces any of it yet. The reconciliation screen is the second
+  half of #123. Filed here under `Internal` because there is no sentence to write for a user until
+  that lands.
+
 ## [0.19.0] - 2026-09-11
 
 Two releases ago, a film or show that arrived by search came in complete. Everything already on the
