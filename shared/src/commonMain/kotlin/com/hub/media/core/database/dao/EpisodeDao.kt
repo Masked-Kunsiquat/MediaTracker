@@ -79,6 +79,27 @@ interface EpisodeDao {
     suspend fun mediaIdsWithIncompleteEpisodes(): List<String>
 
     /**
+     * Every show holding at least one episode row, regardless of whether anything about it is blank.
+     *
+     * Backs #123's count checking, which is a **different question** from #140's filling and does not
+     * converge the way filling does. A show whose episode metadata is complete can still disagree
+     * with TMDB about how many episodes a season has — Fleabag did, at 0 against 6 — and a show that
+     * is still airing gains episodes after any number of successful runs. So "needs filling" is the
+     * wrong gate for "worth comparing", and this query is the right one.
+     *
+     * ### Shows with no episodes at all are excluded, and that is the point of the `COUNT`
+     * A show nobody has set up yet holds zero rows, and comparing it would report *every* season as
+     * "you have 0, TMDB has N". That is not a disagreement to reconcile, it is a show waiting to be
+     * quick-filled (#74) — and on a real library it buried the two actionable rows under six noise
+     * ones. `GROUP BY` with the implicit `COUNT(*) >= 1` that a group implies keeps them out.
+     *
+     * Note this is deliberately not `seasonNumber >= 1`-scoped: a show whose only rows are specials
+     * still counts as set up, and the comparison itself excludes season 0 (#88).
+     */
+    @Query("SELECT mediaId FROM episodes GROUP BY mediaId")
+    suspend fun mediaIdsWithAnyEpisodes(): List<String>
+
+    /**
      * Per-show watched/total episode counts, one row per show that has at least one episode.
      * Backs the library list's progress display ("4 / 10 episodes") without loading every episode
      * row into memory -- a `GROUP BY` aggregate scales with the number of *shows*, not the number

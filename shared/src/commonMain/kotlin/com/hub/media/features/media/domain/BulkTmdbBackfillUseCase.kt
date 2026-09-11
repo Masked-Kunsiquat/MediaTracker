@@ -323,6 +323,7 @@ public class BulkTmdbBackfillUseCase(
     private suspend fun seedState(): TmdbBackfillState {
         val haveTmdbId = db.externalIdentifierDao().getMediaIdsForProvider(IdentifierProvider.TMDB).toSet()
         val incompleteEpisodes = db.episodeDao().mediaIdsWithIncompleteEpisodes().toSet()
+        val anyEpisodes = db.episodeDao().mediaIdsWithAnyEpisodes().toSet()
 
         val movieDetails = db.movieDetailsDao().getAll().associateBy { it.mediaId }
         val films =
@@ -336,7 +337,14 @@ public class BulkTmdbBackfillUseCase(
             db
                 .mediaItemDao()
                 .getAllByType(MediaType.TV_SHOW)
-                .filter { showNeedsFilling(it, showDetails[it.id], it.id in incompleteEpisodes) }
+                .filter {
+                    showNeedsFilling(
+                        item = it,
+                        details = showDetails[it.id],
+                        hasIncompleteEpisodes = it.id in incompleteEpisodes,
+                        hasAnyEpisodes = it.id in anyEpisodes,
+                    )
+                }
 
         // Films before shows, each title-ordered, because that is the order getAllByType returns and
         // a stable queue is the only ordering property a resume actually needs.
@@ -448,7 +456,15 @@ public class BulkTmdbBackfillUseCase(
         // load all of them twice on the way to one boolean and one set of season numbers.
         val localEpisodes = db.episodeDao().getByMediaId(item.id).filter { it.seasonNumber >= 1 }
         val needsEpisodes = localEpisodes.any { it.hasGap() }
-        if (!needsPoster && !needsYear && !needsRating && !detailGaps && !needsEpisodes) return StepOutcome.Removed
+        // #123: a show that is set up is compared even with nothing left to fill. Counting is a
+        // different question from filling and does not converge -- an ended show can still disagree
+        // (Fleabag did, 0 against 6) and an airing one gains episodes after any number of clean runs.
+        // A show with no episode rows is excluded: every season would read "you have 0, TMDB has N",
+        // which is a show waiting to be quick-filled (#74) rather than a disagreement to reconcile.
+        val worthComparing = localEpisodes.isNotEmpty()
+        if (!needsPoster && !needsYear && !needsRating && !detailGaps && !needsEpisodes && !worthComparing) {
+            return StepOutcome.Removed
+        }
 
         val fetched =
             when (val result = tmdbClient.showWithSeasons(tmdbId)) {
@@ -497,7 +513,11 @@ public class BulkTmdbBackfillUseCase(
                 ) > 0
         }
 
-        if (needsEpisodes) {
+        if (needsEpisodes || worthComparing) {
+            // applyFetched both fills and compares, and it is safe to call when there is nothing to
+            // fill: every write it makes is a COALESCE that cannot touch a column already holding a
+            // value, so a show with complete episodes comes back reporting 0 filled and whatever it
+            // disagrees about. That is what lets one call answer both questions.
             val complete =
                 withHeldSeasons(tmdbId, localEpisodes, fetched) ?: return StepOutcome.DeferredTransient
             val report = showEpisodes.applyFetched(item.id, complete)
@@ -649,12 +669,16 @@ private fun showNeedsFilling(
     item: MediaItemEntity,
     details: TVDetailsEntity?,
     hasIncompleteEpisodes: Boolean,
+    hasAnyEpisodes: Boolean,
 ): Boolean =
     item.coverImageHash == null ||
         item.releaseYear == null ||
         item.communityRating == null ||
         (details != null && details.hasGap()) ||
-        hasIncompleteEpisodes
+        hasIncompleteEpisodes ||
+        // #123: a show that is set up is always worth asking about, even with nothing left to fill.
+        // Counting is not filling and does not converge -- see EpisodeDao.mediaIdsWithAnyEpisodes.
+        hasAnyEpisodes
 
 /**
  * Whether any of the episode columns TMDB can answer is still empty.

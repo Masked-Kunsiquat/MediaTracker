@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   half of #123. Filed here under `Internal` because there is no sentence to write for a user until
   that lands.
 
+- Those disagreements are now detected on shows with **nothing left to fill** (#123). The check was
+  gated behind "this show needs episode metadata", but counting is not filling and does not
+  converge: an ended show can still disagree — Fleabag did, at 0 against 6 — and an airing one gains
+  episodes after any number of clean runs. A show with a TMDB id and at least one episode row is
+  therefore compared on every pass, at one request each, so the films-and-shows pass no longer
+  reports "nothing to do" for shows.
+
+  Shows with no episode rows at all are excluded: every season would read "you have 0, TMDB has N",
+  which is a show waiting to be quick-filled rather than a disagreement to reconcile, and on a real
+  library it buried the actionable rows under noise.
+
 ## [0.19.0] - 2026-09-11
 
 Two releases ago, a film or show that arrived by search came in complete. Everything already on the
