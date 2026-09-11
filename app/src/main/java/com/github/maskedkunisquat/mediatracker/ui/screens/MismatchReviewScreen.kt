@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -36,7 +37,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MismatchReviewViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.media.domain.MismatchReviewRow
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.MismatchReviewUiState
@@ -51,6 +54,7 @@ import com.hub.media.ui.MismatchReviewViewModel
 @Composable
 fun MismatchReviewScreenRoute(
     appContainer: AppContainer,
+    coverStorageDir: String,
     onNavigateBack: () -> Unit,
 ) {
     val viewModel: MismatchReviewViewModel =
@@ -59,6 +63,7 @@ fun MismatchReviewScreenRoute(
 
     MismatchReviewScreen(
         uiState = uiState,
+        coverStorageDir = coverStorageDir,
         onAddMissing = viewModel::addMissingEpisodes,
         onNavigateBack = onNavigateBack,
     )
@@ -92,6 +97,7 @@ fun MismatchReviewScreenRoute(
 @Composable
 fun MismatchReviewScreen(
     uiState: MismatchReviewUiState,
+    coverStorageDir: String,
     onAddMissing: (MismatchReviewRow) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
@@ -150,6 +156,7 @@ fun MismatchReviewScreen(
             items(uiState.rows, key = { "${it.mediaId}:${it.seasonNumber}" }) { row ->
                 MismatchCard(
                     row = row,
+                    coverStorageDir = coverStorageDir,
                     isBusy = uiState.busyKey == row.mediaId to row.seasonNumber,
                     onAddMissing = { onAddMissing(row) },
                 )
@@ -158,66 +165,113 @@ fun MismatchReviewScreen(
     }
 }
 
+/**
+ * Poster size for a row here.
+ *
+ * A thumbnail rather than the 220dp the detail screens use: this is a list of decisions, and the
+ * artwork is here to make a row recognisable at a glance, not to be looked at. 2:3 is the aspect
+ * TMDB serves posters at, so a `Crop` at these dimensions is a straight scale rather than a trim.
+ */
+private val ROW_POSTER_WIDTH = 56.dp
+private val ROW_POSTER_HEIGHT = 84.dp
+
 /** One season's disagreement: what it is, and the one thing that can be done about it. */
 @Composable
 private fun MismatchCard(
     row: MismatchReviewRow,
+    coverStorageDir: String,
     isBusy: Boolean,
     onAddMissing: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
+        Row(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = row.showTitle, style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = stringResource(R.string.mismatch_review_season_format, row.seasonNumber),
-                style = MaterialTheme.typography.bodyMedium,
+            MismatchCardBody(
+                row = row,
+                isBusy = isBusy,
+                onAddMissing = onAddMissing,
+                // The text takes the weight, so a long show title or a wide button shrinks the text
+                // rather than pushing the poster past the card's edge. #141 records the season header
+                // that lost its overflow icon exactly that way.
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text =
-                    stringResource(
-                        R.string.mismatch_review_counts_format,
-                        row.localEpisodes,
-                        row.providerEpisodes,
-                    ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            if (row.isUnderCount) {
-                Row(
-                    modifier = Modifier.padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(onClick = onAddMissing, enabled = !isBusy) {
-                        Text(
-                            stringResource(
-                                // An empty season is a different sentence from a partial one -- see
-                                // this file's KDoc on why they must not read the same.
-                                if (row.isEmptySeason) {
-                                    R.string.mismatch_review_add_all_format
-                                } else {
-                                    R.string.mismatch_review_add_missing_format
-                                },
-                                row.missingEpisodes,
-                            ),
-                        )
-                    }
-                    if (isBusy) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    }
-                }
-            } else {
-                Text(
-                    text = stringResource(R.string.mismatch_review_over_count),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
+            // Drawn only when there is one. CoverImage's placeholder is sized for a thumbnail and
+            // would be a grey block of nothing here -- and a hand-entered show never gets artwork,
+            // so it would be permanent. Same rule the detail screens follow.
+            row.coverImageHash?.let { hash ->
+                CoverImage(
+                    coverDir = coverStorageDir,
+                    coverImageHash = hash,
+                    mediaType = MediaType.TV_SHOW,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = ROW_POSTER_WIDTH, height = ROW_POSTER_HEIGHT),
                 )
             }
+        }
+    }
+}
+
+/** The text and action half of a row, extracted so the card stays a legible two-column layout. */
+@Composable
+private fun MismatchCardBody(
+    row: MismatchReviewRow,
+    isBusy: Boolean,
+    onAddMissing: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text = row.showTitle, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = stringResource(R.string.mismatch_review_season_format, row.seasonNumber),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text =
+                stringResource(
+                    R.string.mismatch_review_counts_format,
+                    row.localEpisodes,
+                    row.providerEpisodes,
+                ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (row.isUnderCount) {
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(onClick = onAddMissing, enabled = !isBusy) {
+                    Text(
+                        stringResource(
+                            // An empty season is a different sentence from a partial one -- see
+                            // this file's KDoc on why they must not read the same.
+                            if (row.isEmptySeason) {
+                                R.string.mismatch_review_add_all_format
+                            } else {
+                                R.string.mismatch_review_add_missing_format
+                            },
+                            row.missingEpisodes,
+                        ),
+                    )
+                }
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                }
+            }
+        } else {
+            Text(
+                text = stringResource(R.string.mismatch_review_over_count),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }

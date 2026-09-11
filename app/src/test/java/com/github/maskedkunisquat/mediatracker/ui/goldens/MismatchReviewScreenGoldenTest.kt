@@ -76,6 +76,11 @@ class MismatchReviewScreenGoldenTest {
                         ),
                     isLoading = false,
                 ),
+            // No hash on any fixture row, so no poster is drawn. Deliberate: a golden that loaded
+            // real image bytes would be asserting the decoder as much as the layout, and the
+            // no-artwork case is the one that has to stay readable — a hand-entered show never gets
+            // a poster, so this is the permanent shape for some rows rather than an edge.
+            coverStorageDir = "",
             onAddMissing = {},
             onNavigateBack = {},
         )

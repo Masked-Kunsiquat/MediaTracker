@@ -20,6 +20,9 @@ private const val TAG = "ReconcileMismatches"
  *
  * @property showTitle The show's current title, read now rather than stored with the finding — a
  *   title the user has since corrected should display corrected.
+ * @property coverImageHash The show's artwork, read now for the same reason [showTitle] is: a poster
+ *   the backfill fetched *after* recording this finding should still appear. `null` for a show that
+ *   has none, which the row renders as nothing rather than as a placeholder.
  * @property missingEpisodes How many rows "add the missing episodes" would create. `0` when the
  *   library holds more than TMDB lists, which is reported and never acted on.
  */
@@ -29,6 +32,7 @@ public data class MismatchReviewRow(
     public val seasonNumber: Int,
     public val localEpisodes: Int,
     public val providerEpisodes: Int,
+    public val coverImageHash: String? = null,
 ) {
     public val missingEpisodes: Int get() = (providerEpisodes - localEpisodes).coerceAtLeast(0)
 
@@ -84,25 +88,23 @@ public class ReconcileMismatchesUseCase(
         val stored = settingsRepository.getTmdbBackfillMismatches()
         if (stored.isEmpty()) return emptyList()
 
-        val titles =
-            db
-                .mediaItemDao()
-                .getAllByType(MediaType.TV_SHOW)
-                .associate { it.id to it.title }
+        val shows = db.mediaItemDao().getAllByType(MediaType.TV_SHOW).associateBy { it.id }
 
-        val (live, orphaned) = stored.partition { it.mediaId in titles }
+        val (live, orphaned) = stored.partition { it.mediaId in shows }
         if (orphaned.isNotEmpty()) {
             logger.info(TAG) { "Dropping ${orphaned.size} finding(s) whose show no longer exists" }
             settingsRepository.saveTmdbBackfillMismatches(live)
         }
 
         return live.map {
+            val show = shows.getValue(it.mediaId)
             MismatchReviewRow(
                 mediaId = it.mediaId,
-                showTitle = titles.getValue(it.mediaId),
+                showTitle = show.title,
                 seasonNumber = it.seasonNumber,
                 localEpisodes = it.localEpisodes,
                 providerEpisodes = it.providerEpisodes,
+                coverImageHash = show.coverImageHash,
             )
         }
     }

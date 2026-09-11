@@ -307,6 +307,7 @@ fun AppNavigation(
         composable(Route.MismatchReview.route) {
             MismatchReviewScreenRoute(
                 appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
                 onNavigateBack = {
                     navController.navigateUp()
                 },
