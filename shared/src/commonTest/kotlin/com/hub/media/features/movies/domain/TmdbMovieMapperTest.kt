@@ -25,10 +25,11 @@ class TmdbMovieMapperTest {
         voteAverage: Double? = 8.2,
         voteCount: Int? = 24000,
         posterPath: String? = "/poster.jpg",
+        overview: String? = "A hacker learns the truth.",
     ) = TmdbMovieDetailsDto(
         id = id,
         title = title,
-        overview = "A hacker learns the truth.",
+        overview = overview,
         releaseDate = releaseDate,
         runtime = runtime,
         posterPath = posterPath,
@@ -47,6 +48,7 @@ class TmdbMovieMapperTest {
         assertEquals(136, mapping.runtimeMinutes)
         assertEquals(8.2, mapping.communityRating)
         assertEquals("/poster.jpg", mapping.posterPath)
+        assertEquals("A hacker learns the truth.", mapping.synopsis)
         assertEquals(
             listOf(IdentifierProvider.TMDB to "603"),
             mapping.externalIdentifiers,
@@ -102,6 +104,13 @@ class TmdbMovieMapperTest {
             MovieMetadataValidation.MAX_RELEASE_YEAR,
             movie(releaseDate = "2100-01-01").toMovieMapping()!!.releaseYear,
         )
+    }
+
+    @Test
+    fun aBlankOverviewBecomesNoSynopsisRatherThanAnEmptyOne() {
+        // "" is TMDB having nothing to say, not a synopsis -- the same rule addShow applies.
+        assertNull(movie(overview = "   ").toMovieMapping()!!.synopsis)
+        assertNull(movie(overview = null).toMovieMapping()!!.synopsis)
     }
 
     @Test

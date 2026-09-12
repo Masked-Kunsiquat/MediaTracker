@@ -126,13 +126,15 @@ interface MovieWriteDao {
     @Query(
         "UPDATE media_items SET " +
             "releaseYear = COALESCE(releaseYear, :releaseYear), " +
-            "communityRating = COALESCE(communityRating, :communityRating) " +
+            "communityRating = COALESCE(communityRating, :communityRating), " +
+            "synopsis = COALESCE(synopsis, :synopsis) " +
             "WHERE id = :mediaId AND type = 'MOVIE'",
     )
     suspend fun fillMediaItemMetadata(
         mediaId: String,
         releaseYear: Int?,
         communityRating: Double?,
+        synopsis: String?,
     ): Int
 
     /**
@@ -170,9 +172,10 @@ interface MovieWriteDao {
         mediaId: String,
         releaseYear: Int?,
         communityRating: Double?,
+        synopsis: String?,
         runtimeMinutes: Int?,
     ): Int {
-        val mediaRows = fillMediaItemMetadata(mediaId, releaseYear, communityRating)
+        val mediaRows = fillMediaItemMetadata(mediaId, releaseYear, communityRating, synopsis)
         if (mediaRows > 0) {
             fillMovieDetailMetadata(mediaId, runtimeMinutes)
         }

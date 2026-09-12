@@ -90,6 +90,9 @@ public class MovieRepository(
      *   0-10, or null. **Not** the user's own rating -- see
      *   [com.hub.media.core.database.entities.MediaItemEntity.communityRating], which keeps that
      *   for ROADMAP Task 10.
+     * @param synopsis The film's synopsis from a provider, or null. Blank is stored as null, the
+     *   same judgement [com.hub.media.features.tv.data.TVShowRepository.addShow] makes: a provider
+     *   answering with an empty string does not know a synopsis.
      * @param externalIdentifiers Optional (provider, externalId) mappings recording which catalog
      *   record this row came from — normally a single [IdentifierProvider.TMDB] pair carrying the
      *   film id as its decimal string. Defaults to empty, which is a hand-entered film: correct, and
@@ -112,6 +115,7 @@ public class MovieRepository(
         coverImageHash: String? = null,
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
         communityRating: Double? = null,
+        synopsis: String? = null,
     ): Resource<String> {
         MovieMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
@@ -133,6 +137,8 @@ public class MovieRepository(
                         createdAt = now,
                         coverImageHash = coverImageHash,
                         communityRating = communityRating,
+                        // Blank becomes null: a provider answering with "" does not know a synopsis.
+                        synopsis = synopsis?.takeIf { it.isNotBlank() },
                     ),
                 details =
                     MovieDetailsEntity(
