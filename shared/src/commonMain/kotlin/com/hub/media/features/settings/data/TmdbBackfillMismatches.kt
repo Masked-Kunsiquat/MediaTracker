@@ -1,5 +1,8 @@
 package com.hub.media.features.settings.data
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
 /**
  * One season where the library and TMDB disagree about how many episodes exist (#123), found by a
  * library-wide backfill run.
@@ -72,8 +75,15 @@ private const val FIELD_COUNT = 4
  * wrong, and the alternative is a Settings screen that cannot open because one row is malformed.
  * Losing one finding is recoverable — the next run re-derives it.
  */
-public suspend fun SettingsRepository.getTmdbBackfillMismatches(): List<ShowSeasonMismatch> {
-    val raw = getString(KEY_MISMATCHES)?.takeIf { it.isNotBlank() } ?: return emptyList()
+public suspend fun SettingsRepository.getTmdbBackfillMismatches(): List<ShowSeasonMismatch> =
+    parseMismatches(getString(KEY_MISMATCHES))
+
+/**
+ * Decodes the stored form, shared by the one-shot read and the stream so the two cannot diverge
+ * about what a record means or which ones are dropped.
+ */
+private fun parseMismatches(stored: String?): List<ShowSeasonMismatch> {
+    val raw = stored?.takeIf { it.isNotBlank() } ?: return emptyList()
     return raw.split(RECORD_SEPARATOR).mapNotNull { record ->
         val parts = record.split(FIELD_SEPARATOR)
         if (parts.size != FIELD_COUNT) return@mapNotNull null
@@ -96,6 +106,17 @@ public suspend fun SettingsRepository.getTmdbBackfillMismatches(): List<ShowSeas
         )
     }
 }
+
+/**
+ * [getTmdbBackfillMismatches] as a stream, for a screen that must not go stale.
+ *
+ * Exists because a one-shot read is wrong in a specific, user-visible way: the Settings row showing
+ * "2 shows disagree" is composed once, and reconciling a season on another screen does not tell it.
+ * Coming back would leave it claiming a disagreement the user had just fixed. Room emits on the
+ * `app_settings` row changing, so both the count and the list follow the store instead of a snapshot.
+ */
+public fun SettingsRepository.observeTmdbBackfillMismatches(): Flow<List<ShowSeasonMismatch>> =
+    observeString(KEY_MISMATCHES).map { parseMismatches(it) }
 
 /** Replaces the stored set with [mismatches]. An empty list clears the key rather than storing "". */
 public suspend fun SettingsRepository.saveTmdbBackfillMismatches(mismatches: List<ShowSeasonMismatch>) {

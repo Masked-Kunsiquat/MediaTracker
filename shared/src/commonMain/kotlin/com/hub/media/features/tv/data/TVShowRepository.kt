@@ -464,6 +464,62 @@ public class TVShowRepository(
     }
 
     /**
+     * Grows a season to [episodeCount] by inserting whichever episode numbers are missing, and
+     * **cannot remove anything**.
+     *
+     * ### Why this exists rather than a call to [setSeasonLength]
+     * [setSeasonLength] makes a season *exactly* [episodeCount] long, which means it deletes
+     * anything numbered above — taking those episodes' `watchedAt` with them. That is correct for a
+     * user typing a length into the season dialog, where the count they type is an instruction.
+     *
+     * It is not correct for #123's reconciliation, where the count comes from a **stored** finding
+     * that may be out of date. Consider a recorded disagreement of "you have 2, TMDB has 5" on a
+     * season the user has since grown to 8 by hand: routing "add the missing episodes" through
+     * `setSeasonLength(5)` would silently delete episodes 6, 7 and 8 and every date on them. The
+     * user asked to *add*.
+     *
+     * So the safe direction gets its own path, and the guarantee is the DAO method rather than this
+     * function's care: [com.hub.media.core.database.dao.TVWriteDao.insertMissingEpisodes] has no
+     * `DELETE` in it, decides what is missing inside the same transaction as the insert, and is the
+     * same call a quick-fill grow already uses.
+     *
+     * @param episodeCount The length to grow *to*, not the number to add. A count at or below what
+     *   the season already holds inserts nothing and succeeds — "there was nothing missing" is an
+     *   ordinary outcome here, not a failure.
+     * @return the number of episode rows actually created.
+     */
+    public suspend fun addMissingEpisodes(
+        mediaId: String,
+        seasonNumber: Int,
+        episodeCount: Int,
+    ): Resource<Int> {
+        TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
+        TVMetadataValidation.validateEpisodeCount(episodeCount)?.let { return Resource.Error(it) }
+
+        return try {
+            val show = db.mediaItemDao().getById(mediaId)
+            if (show == null || show.type != MediaType.TV_SHOW) {
+                return Resource.Error("TV show with id=$mediaId not found")
+            }
+            val candidates =
+                (1..episodeCount).map { episodeNumber ->
+                    EpisodeEntity(
+                        id = newId(),
+                        mediaId = mediaId,
+                        seasonNumber = seasonNumber,
+                        episodeNumber = episodeNumber,
+                    )
+                }
+            Resource.Success(db.tvWriteDao().insertMissingEpisodes(mediaId, seasonNumber, candidates))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to add missing episodes to season $seasonNumber of show: id=$mediaId" }
+            Resource.Error("Failed to add the missing episodes: ${e.message ?: "Unknown error"}", cause = e)
+        }
+    }
+
+    /**
      * Removes a whole season and every episode in it.
      *
      * For a season added by mistake — the wrong number, or one that never existed. Destructive in

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Where a show disagrees with the catalogue about how many episodes a season has, you can now see
+  it and fix it.** After the films-and-shows backfill runs, Settings says how many shows disagree and
+  opens a list of them: the show, the season, what you have, and what TMDB lists.
+
+  Each one offers a single action — add the episodes you are missing, created unwatched. Nothing you
+  have already ticked off is touched, and the episodes you already had keep their dates.
+
+  **Where you have *more* episodes than TMDB lists, there is no button.** That direction is only
+  reported, deliberately: removing episodes would delete the dates you watched them on, and the
+  catalogue is not always right — one real show lists 446 episodes while its seasons add up to 458.
+  Changing a season's length downward stays where it already was, on the show itself, where it warns
+  you first.
+
 ### Internal
 
 - `BulkTmdbBackfillUseCase` now keeps the season-count disagreements it finds instead of discarding

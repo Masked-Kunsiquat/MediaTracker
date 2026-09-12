@@ -17,6 +17,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.MismatchReviewScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MovieSearchScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
@@ -282,6 +283,9 @@ fun AppNavigation(
                 onNavigateToChangelog = {
                     navController.navigate(Route.Changelog.route)
                 },
+                onNavigateToMismatchReview = {
+                    navController.navigate(Route.MismatchReview.route)
+                },
                 onNavigateToAbout = {
                     navController.navigate(Route.About.route)
                 },
@@ -294,6 +298,16 @@ fun AppNavigation(
         composable(Route.About.route) {
             AboutScreen(
                 versionName = BuildConfig.VERSION_NAME,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+            )
+        }
+
+        composable(Route.MismatchReview.route) {
+            MismatchReviewScreenRoute(
+                appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
                 onNavigateBack = {
                     navController.navigateUp()
                 },

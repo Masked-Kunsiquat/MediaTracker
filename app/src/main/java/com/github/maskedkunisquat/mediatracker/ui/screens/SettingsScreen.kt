@@ -87,6 +87,7 @@ import com.github.maskedkunisquat.mediatracker.ui.BackfillViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.BackupViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ImportViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.MismatchReviewViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.RestoreViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
@@ -114,6 +115,7 @@ import com.hub.media.ui.ExportUiState
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportUiState
 import com.hub.media.ui.ImportViewModel
+import com.hub.media.ui.MismatchReviewViewModel
 import com.hub.media.ui.RestoreUiState
 import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsUiState
@@ -140,6 +142,7 @@ fun SettingsScreenRoute(
     onNavigateToLogViewer: () -> Unit,
     onNavigateToChangelog: () -> Unit,
     onNavigateToAbout: () -> Unit,
+    onNavigateToMismatchReview: () -> Unit,
 ) {
     val viewModel: SettingsViewModel =
         viewModel(
@@ -182,6 +185,16 @@ fun SettingsScreenRoute(
     val restoreUiState by restoreViewModel.uiState.collectAsStateWithLifecycle()
     val backfillUiState by backfillViewModel.uiState.collectAsStateWithLifecycle()
     val tmdbBackfillUiState by tmdbBackfillViewModel.uiState.collectAsStateWithLifecycle()
+
+    // The disagreement count comes from the stored findings, which is the only place it is true
+    // after a run has finished -- TmdbBackfillProgress carries one too, but a completed run clears
+    // its resume state, so that number is unreachable by the time anyone opens Settings (#123).
+    val mismatchViewModel: MismatchReviewViewModel =
+        viewModel(factory = remember(appContainer) { MismatchReviewViewModelFactory(appContainer) })
+    val mismatchUiState by mismatchViewModel.uiState.collectAsStateWithLifecycle()
+    // No effect re-reading this: the ViewModel follows the stored findings, so a backfill finding
+    // something and a season being reconciled on the review screen both reach this count on their
+    // own. An effect keyed on the run's state would have covered only the first of those.
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -697,6 +710,8 @@ fun SettingsScreenRoute(
         tmdbBackfillUiState = tmdbBackfillUiState,
         onStartTmdbBackfillClick = tmdbBackfillViewModel::start,
         onCancelTmdbBackfillClick = tmdbBackfillViewModel::cancel,
+        mismatchedShows = mismatchUiState.rows.distinctBy { it.mediaId }.size,
+        onReviewMismatchesClick = onNavigateToMismatchReview,
         snackbarHostState = snackbarHostState,
         onNavigateBack = onNavigateBack,
     )
@@ -1158,6 +1173,8 @@ fun SettingsScreen(
     tmdbBackfillUiState: BackfillUiState<TmdbBackfillProgress>,
     onStartTmdbBackfillClick: () -> Unit,
     onCancelTmdbBackfillClick: () -> Unit,
+    mismatchedShows: Int,
+    onReviewMismatchesClick: () -> Unit,
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
 ) {
@@ -1316,6 +1333,16 @@ fun SettingsScreen(
                             onStartClick = onStartTmdbBackfillClick,
                             onCancelClick = onCancelTmdbBackfillClick,
                         )
+                        // Read from the stored findings rather than from the run's progress (#123).
+                        // A completed run clears its resume state, so peekProgress() is null by the
+                        // time anyone opens this screen -- the count has to come from where the
+                        // findings actually live, or it would show only in the seconds after a run.
+                        if (mismatchedShows > 0) {
+                            MismatchReviewEntry(
+                                shows = mismatchedShows,
+                                onReviewClick = onReviewMismatchesClick,
+                            )
+                        }
                     }
                 }
                 item {
@@ -1931,6 +1958,30 @@ private fun <P : Any> BackfillSetting(
 }
 
 /**
+ * The way into the reconciliation screen (#123), shown only when a run has found something.
+ *
+ * Deliberately below the backfill controls rather than beside them: the disagreements are a *result*
+ * of running the pass, and putting a second button next to Start would make them look like a second
+ * thing to run.
+ */
+@Composable
+private fun MismatchReviewEntry(
+    shows: Int,
+    onReviewClick: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        Text(
+            text = pluralStringResource(R.plurals.settings_tmdb_backfill_mismatch_format, shows, shows),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(onClick = onReviewClick, modifier = Modifier.padding(top = 8.dp)) {
+            Text(stringResource(R.string.settings_tmdb_backfill_review_button))
+        }
+    }
+}
+
+/**
  * One backfill pass's progress, reduced to the handful of things this row actually draws.
  *
  * ### Why the row does not read a progress type directly
@@ -2159,6 +2210,8 @@ private fun SettingsScreenMondayPreview() {
             tmdbBackfillUiState = BackfillUiState.Idle,
             onStartTmdbBackfillClick = {},
             onCancelTmdbBackfillClick = {},
+            mismatchedShows = 0,
+            onReviewMismatchesClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2201,6 +2254,8 @@ private fun SettingsScreenSundayPreview() {
             tmdbBackfillUiState = BackfillUiState.Idle,
             onStartTmdbBackfillClick = {},
             onCancelTmdbBackfillClick = {},
+            mismatchedShows = 0,
+            onReviewMismatchesClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2243,6 +2298,8 @@ private fun SettingsScreenExportingPreview() {
             tmdbBackfillUiState = BackfillUiState.Idle,
             onStartTmdbBackfillClick = {},
             onCancelTmdbBackfillClick = {},
+            mismatchedShows = 0,
+            onReviewMismatchesClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2285,6 +2342,8 @@ private fun SettingsScreenBackingUpPreview() {
             tmdbBackfillUiState = BackfillUiState.Idle,
             onStartTmdbBackfillClick = {},
             onCancelTmdbBackfillClick = {},
+            mismatchedShows = 0,
+            onReviewMismatchesClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )
@@ -2327,6 +2386,8 @@ private fun SettingsScreenValidatingRestorePreview() {
             tmdbBackfillUiState = BackfillUiState.Idle,
             onStartTmdbBackfillClick = {},
             onCancelTmdbBackfillClick = {},
+            mismatchedShows = 0,
+            onReviewMismatchesClick = {},
             snackbarHostState = remember { SnackbarHostState() },
             onNavigateBack = {},
         )

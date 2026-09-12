@@ -190,4 +190,19 @@ sealed interface Route {
     data object About : Route {
         override val route: String = "about"
     }
+
+    /**
+     * Episode-count differences found by the films-and-shows backfill, reached from Settings (#123).
+     *
+     * Its own destination rather than a dialog, because the list is unbounded — one row per
+     * disagreeing season across the whole library — and each row carries an action that writes. A
+     * dialog would have to scroll and would put destructive-looking decisions in a transient surface.
+     *
+     * No arguments: the findings are read from where the backfill stored them, not passed in. That is
+     * what lets the screen survive the process dying between the run that found them and the moment
+     * someone gets round to looking.
+     */
+    data object MismatchReview : Route {
+        override val route: String = "mismatch-review"
+    }
 }
