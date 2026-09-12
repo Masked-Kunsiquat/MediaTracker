@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-12
+
+Your library can now disagree with the catalogue, and say so.
+
+A show typed in from memory — "season two, about six episodes" — was always going to be a guess.
+Until now the app had no way to tell you the guess was wrong. After looking films and shows up,
+it lists the seasons where its own count and the catalogue's differ: the show, the season, what
+you have, what the catalogue says. Each one offers to add the episodes you are missing.
+
+Only that direction is offered, and the reason matters. Episodes carry the dates you watched
+them, so removing one destroys something that cannot be recovered — and the catalogue is not
+always right. One real show lists 446 episodes while its own seasons add up to 458. Shortening a
+season stays where it already was, on the show itself, where it warns you first. Everything
+already ticked off keeps its date, and episodes that already existed are the same episodes
+afterwards.
+
+Underneath, films and books gained somewhere to keep a description. Films fill theirs in from
+the catalogue straight away; books have nowhere to fetch one from yet, and nothing displays a
+description on screen so far. That part arrives with the work on detail screens.
+
 ### Added
 
 - **Where a show disagrees with the catalogue about how many episodes a season has, you can now see
