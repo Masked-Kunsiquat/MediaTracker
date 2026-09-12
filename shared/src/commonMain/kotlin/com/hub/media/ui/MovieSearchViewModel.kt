@@ -134,6 +134,7 @@ public class MovieSearchViewModel(
                                 runtimeMinutes = mapping.runtimeMinutes,
                                 externalIdentifiers = mapping.externalIdentifiers,
                                 communityRating = mapping.communityRating,
+                                synopsis = mapping.synopsis,
                             )
                     ) {
                         is Resource.Success -> {

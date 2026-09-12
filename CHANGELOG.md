@@ -26,8 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Schema v7: a synopsis moved from `tv_details.overview` to `media_items.synopsis` (#133), so
   every media type can hold one rather than shows alone. Existing show descriptions are carried
-  across by the migration. Nothing user-facing yet — no screen renders a synopsis and the film
-  and book paths do not write one; both follow separately.
+  across by the migration. Nothing user-facing yet — no screen renders a synopsis and the book
+  path does not write one; that follows separately.
+
+- The film path writes a synopsis (#133). TMDB's `overview` was parsed and dropped; it now reaches
+  `media_items.synopsis` both when a film is added from search and when the bulk backfill fills one,
+  and a film whose only remaining gap is a synopsis is queued rather than skipped. Blank becomes
+  `null`, and an existing synopsis is never overwritten — the same `COALESCE` rule the show side
+  already follows. Books stay out: their network layer carries no description field at all.
 
 - `BulkTmdbBackfillUseCase` now keeps the season-count disagreements it finds instead of discarding
   them (#123). They are persisted beside the resume state in `app_settings`, counted on

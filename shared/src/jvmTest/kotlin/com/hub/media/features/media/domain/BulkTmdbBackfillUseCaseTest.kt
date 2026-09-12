@@ -210,6 +210,18 @@ class BulkTmdbBackfillUseCaseTest {
         }
 
     @Test
+    fun fillsAFilmsSynopsisFromTheSameResponse() =
+        runTest {
+            // The film half of what the show side already did: TMDB's overview was parsed and
+            // dropped, so a CSV-imported film stayed blank however often the pass ran.
+            val mediaId = bareFilm()
+
+            useCase().execute()
+
+            assertEquals("A hacker learns the truth.", db.mediaItemDao().getById(mediaId)?.synopsis)
+        }
+
+    @Test
     fun fillsAShowsEpisodesOwnColumnsAndPosterFromOneRequest() =
         runTest {
             val mediaId = quickFilledShow()
@@ -259,6 +271,53 @@ class BulkTmdbBackfillUseCaseTest {
             assertEquals(999, db.movieDetailsDao().getByMediaId(mediaId)?.runtimeMinutes, "a corrected runtime wins")
             // The gap it *did* have is still filled -- the guarantee is per column, not per row.
             assertEquals(8.2, db.mediaItemDao().getById(mediaId)?.communityRating)
+        }
+
+    @Test
+    fun findsAFilmWhoseOnlyGapIsTheSynopsis() =
+        runTest {
+            // The seed and the re-check have to agree, and only a film with *nothing else* missing
+            // proves it: every other fixture here is a candidate for some other reason, so dropping
+            // the synopsis clause from filmNeedsFilling passes them all.
+            val result =
+                movies.addMovie(
+                    title = "The Matrix",
+                    releaseYear = 1999,
+                    runtimeMinutes = 136,
+                    communityRating = 8.2,
+                    coverImageHash = "already-stored",
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "603"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            val progress = useCase().execute()
+
+            assertEquals(1, progress.totalCandidates, "a synopsis-only gap must be queued")
+            assertEquals(
+                "A hacker learns the truth.",
+                db.mediaItemDao().getById(result.data)?.synopsis,
+                "and filled",
+            )
+        }
+
+    @Test
+    fun neverOverwritesAFilmsSynopsis() =
+        runTest {
+            val result =
+                movies.addMovie(
+                    title = "The Matrix",
+                    synopsis = "Already written.",
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "603"),
+                )
+            assertIs<Resource.Success<String>>(result)
+
+            useCase().execute()
+
+            assertEquals(
+                "Already written.",
+                db.mediaItemDao().getById(result.data)?.synopsis,
+                "COALESCE keeps the synopsis already held",
+            )
         }
 
     @Test
@@ -729,6 +788,7 @@ class BulkTmdbBackfillUseCaseTest {
                     runtimeMinutes = 136,
                     communityRating = 8.2,
                     coverImageHash = "already-stored",
+                    synopsis = "Already written.",
                     externalIdentifiers = listOf(IdentifierProvider.TMDB to "603"),
                 )
             assertIs<Resource.Success<String>>(result)

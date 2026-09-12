@@ -406,12 +406,17 @@ public class BulkTmdbBackfillUseCase(
         val needsPoster = item.coverImageHash == null
         val needsYear = item.releaseYear == null
         val needsRating = item.communityRating == null
+        // On the item, not on `details`: since v7 the synopsis lives on media_items, which always
+        // exists for a row being processed.
+        val needsSynopsis = item.synopsis == null
         // Gated on the details row existing, not merely on the column being null. A film whose
         // movie_details half is missing (the integrity edge MediaWithDetails.Movie documents) has no
         // row for a runtime to land in, and fillMovieMetadata deliberately does not create one --
         // counting it as filled would report a write that could not have happened.
         val needsRuntime = details != null && details.runtimeMinutes == null
-        if (!needsPoster && !needsYear && !needsRating && !needsRuntime) return StepOutcome.Removed
+        if (!needsPoster && !needsYear && !needsRating && !needsSynopsis && !needsRuntime) {
+            return StepOutcome.Removed
+        }
 
         val mapping =
             when (val result = tmdbClient.movieDetails(tmdbId)) {
@@ -422,13 +427,15 @@ public class BulkTmdbBackfillUseCase(
         var wrote = false
         val year = if (needsYear) mapping.releaseYear else null
         val rating = if (needsRating) mapping.communityRating else null
+        val synopsis = if (needsSynopsis) mapping.synopsis else null
         val runtime = if (needsRuntime) mapping.runtimeMinutes else null
-        if (year != null || rating != null || runtime != null) {
+        if (year != null || rating != null || synopsis != null || runtime != null) {
             val rows =
                 db.movieWriteDao().fillMovieMetadata(
                     mediaId = item.id,
                     releaseYear = year,
                     communityRating = rating,
+                    synopsis = synopsis,
                     runtimeMinutes = runtime,
                 )
             wrote = rows > 0
@@ -674,6 +681,8 @@ private fun filmNeedsFilling(
     item.coverImageHash == null ||
         item.releaseYear == null ||
         item.communityRating == null ||
+        // On the item since v7, exactly as the show side has it: a synopsis-only gap must queue.
+        item.synopsis == null ||
         (details != null && details.runtimeMinutes == null)
 
 /** Whether a show has any column, or any episode row, this pass could fill. */

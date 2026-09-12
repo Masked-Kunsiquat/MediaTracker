@@ -25,21 +25,18 @@ public data class TmdbMovieMapping(
     public val communityRating: Double? = null,
     public val externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
     public val posterPath: String? = null,
+    public val synopsis: String? = null,
 )
 
 /**
  * Turns one TMDB film record into the arguments that create it locally, or `null` if the response
  * carries no usable title.
  *
- * ### The synopsis is still not carried, and the reason has changed
- * TMDB returns an `overview` for films and this does not map it. That used to be because there was
- * nowhere to put one — `movie_details` had no column and v6 was frozen. **Schema v7 removed that
- * obstacle**: `media_items.synopsis` (#133) is type-agnostic and a film can hold one.
- *
- * What is missing now is the wiring, not the column: [TmdbMovieMapping], `MovieRepository.addMovie`
- * and the film half of the bulk backfill all need a synopsis parameter. That is deliberately not
- * in the migration's own change, which stays reviewable as a schema move. Until it lands, a film
- * added by search has a `null` synopsis — not because it cannot have one.
+ * ### The synopsis is carried
+ * TMDB's `overview` becomes [TmdbMovieMapping.synopsis], stored on `media_items.synopsis` — the
+ * type-agnostic column schema v7 added (#133). A blank overview is normalised to `null` here, the
+ * same judgement [com.hub.media.features.tv.data.TVShowRepository.addShow] makes: a provider
+ * answering with `""` does not know a synopsis.
  *
  * ### The release year is bounded, for the reason the show mapper learned
  * `validateReleaseYear` rejects a year outside
@@ -60,6 +57,7 @@ public fun TmdbMovieDetailsDto.toMovieMapping(): TmdbMovieMapping? {
         communityRating = tmdbRatingOf(voteAverage, voteCount),
         externalIdentifiers = listOf(IdentifierProvider.TMDB to id.toString()),
         posterPath = posterPath,
+        synopsis = overview?.takeIf { it.isNotBlank() },
     )
 }
 
