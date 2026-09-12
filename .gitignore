@@ -36,3 +36,9 @@ keystore.properties
 
 # Local-only device pulls (may contain a real API key from app_settings)
 .local-backups/
+
+# Real personal exports, read while building importers (#153). Ignored by directory, not
+# extension: the risk is the contents, so a renamed or .json copy is covered too. Contents
+# rather than the directory itself, because git cannot re-include a file under an excluded one.
+/private-data/*
+!/private-data/README.md
