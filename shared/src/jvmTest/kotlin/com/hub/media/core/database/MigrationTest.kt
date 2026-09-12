@@ -1232,4 +1232,189 @@ class MigrationTest {
             AppLogger.configure(minLevel = LogLevel.WARN)
         }
     }
+
+    // ---- v6 -> v7: the synopsis moves from tv_details.overview to media_items.synopsis (#133) ----
+
+    /** Seeds a v6 show: the `media_items` row, its `tv_details` row, and that row's overview. */
+    private fun androidx.sqlite.SQLiteConnection.seedV6Show(
+        id: String,
+        title: String,
+        overview: String?,
+    ) {
+        execSQL(
+            "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, " +
+                "coverImageHash, communityRating) " +
+                "VALUES ('$id', 'TV_SHOW', '$title', 2019, NULL, 1700000000000, NULL, NULL)",
+        )
+        val value = if (overview == null) "NULL" else "'$overview'"
+        execSQL(
+            "INSERT INTO tv_details (mediaId, totalSeasons, status, airingStatus, overview, " +
+                "firstAirDate, lastAirDate) " +
+                "VALUES ('$id', 1, 'WATCHLIST', 'ENDED', $value, 1557100800000, 1559692800000)",
+        )
+    }
+
+    /**
+     * **The test this migration exists to pass.** Every show's synopsis has to arrive on its own
+     * `media_items` row.
+     *
+     * Asserts on *values*, not on the migration completing, because the failure being guarded
+     * against is silent: reorder the migration so the `tv_details` rebuild runs before the `UPDATE`
+     * and every synopsis becomes `NULL` with no error, no crash and nothing in the log. Verified by
+     * hand while writing this — moving the `UPDATE` below the rebuild fails here and nowhere else.
+     */
+    @Test
+    fun migrate6To7_carriesEveryShowSynopsisOntoMediaItems() {
+        helper.createDatabase(6).use { db ->
+            db.seedV6Show("show-1", "Chernobyl", "A nuclear plant explodes.")
+            db.seedV6Show("show-2", "Fleabag", "A woman copes badly.")
+            // A show that never had one: must land null rather than inheriting a neighbour's.
+            db.seedV6Show("show-3", "Unknown Show", null)
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            val synopses = mutableMapOf<String, String?>()
+            db.prepare("SELECT id, synopsis FROM media_items ORDER BY id").use { stmt ->
+                while (stmt.step()) {
+                    synopses[stmt.getText(0)] = if (stmt.isNull(1)) null else stmt.getText(1)
+                }
+            }
+            assertEquals(
+                mapOf(
+                    "show-1" to "A nuclear plant explodes.",
+                    "show-2" to "A woman copes badly.",
+                    "show-3" to null,
+                ),
+                synopses,
+                "each synopsis must land on its own show",
+            )
+        }
+    }
+
+    /**
+     * The other half of "on the right row": a film or a book had nowhere to hold a synopsis in v6,
+     * so neither may come out of the migration with one. A correlated subquery that matched too
+     * broadly would give every row the same text.
+     */
+    @Test
+    fun migrate6To7_leavesFilmsAndBooksWithANullSynopsis() {
+        helper.createDatabase(6).use { db ->
+            db.seedV6Show("show-1", "Chernobyl", "A nuclear plant explodes.")
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, " +
+                    "coverImageHash, communityRating) " +
+                    "VALUES ('film-1', 'MOVIE', 'Arrival', 2016, NULL, 1700000000000, NULL, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, " +
+                    "coverImageHash, communityRating) " +
+                    "VALUES ('book-1', 'BOOK', 'Dune', 1965, NULL, 1700000000000, NULL, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            db.prepare("SELECT id FROM media_items WHERE synopsis IS NOT NULL").use { stmt ->
+                val withSynopsis = mutableListOf<String>()
+                while (stmt.step()) withSynopsis += stmt.getText(0)
+                assertEquals(listOf("show-1"), withSynopsis, "only the show had one to carry")
+            }
+        }
+    }
+
+    /**
+     * The rebuild trap. `INSERT INTO ... SELECT` matches by position, so a mis-ordered column list
+     * silently shuffles values between columns of the same type — `firstAirDate` and `lastAirDate`
+     * are both `INTEGER` and would swap without a word. Every surviving column is checked by value.
+     */
+    @Test
+    fun migrate6To7_preservesEveryOtherTvDetailColumn() {
+        helper.createDatabase(6).use { db ->
+            db.seedV6Show("show-1", "Chernobyl", "A nuclear plant explodes.")
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            db
+                .prepare(
+                    "SELECT totalSeasons, status, airingStatus, firstAirDate, lastAirDate " +
+                        "FROM tv_details WHERE mediaId = 'show-1'",
+                ).use { stmt ->
+                    assertTrue(stmt.step(), "the tv_details row must survive the rebuild")
+                    assertEquals(1, stmt.getInt(0), "totalSeasons")
+                    assertEquals("WATCHLIST", stmt.getText(1), "status")
+                    assertEquals("ENDED", stmt.getText(2), "airingStatus")
+                    assertEquals(1557100800000L, stmt.getLong(3), "firstAirDate")
+                    assertEquals(1559692800000L, stmt.getLong(4), "lastAirDate")
+                }
+        }
+    }
+
+    /**
+     * A rebuild drops the old table, taking its foreign key with it unless the replacement restates
+     * it. Proven behaviourally rather than by reading `PRAGMA`: deleting the parent `media_items`
+     * row must still cascade the `tv_details` row away.
+     */
+    @Test
+    fun migrate6To7_keepsTheCascadeFromMediaItems() {
+        helper.createDatabase(6).use { db ->
+            db.seedV6Show("show-1", "Chernobyl", "A nuclear plant explodes.")
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            db.execSQL("PRAGMA foreign_keys = ON")
+            db.execSQL("DELETE FROM media_items WHERE id = 'show-1'")
+            db.prepare("SELECT COUNT(*) FROM tv_details").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0), "the foreign key must survive the table rebuild")
+            }
+        }
+    }
+
+    /**
+     * A `tv_details` row pointing at a film must not give that film the show's synopsis.
+     *
+     * The foreign key on `tv_details.mediaId` enforces that the row exists, not that it is a show,
+     * so this state is representable even though no current code path creates it. A migration runs
+     * against whatever is on disk — including states written by versions that no longer exist — and
+     * without the `type = 'TV_SHOW'` predicate the correlated subquery copies the text across.
+     */
+    @Test
+    fun migrate6To7_ignoresATvDetailsRowAttachedToAFilm() {
+        helper.createDatabase(6).use { db ->
+            db.seedV6Show("show-1", "Chernobyl", "A nuclear plant explodes.")
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, " +
+                    "coverImageHash, communityRating) " +
+                    "VALUES ('film-1', 'MOVIE', 'Arrival', 2016, NULL, 1700000000000, NULL, NULL)",
+            )
+            // The corrupt row: tv_details against a MOVIE.
+            db.execSQL(
+                "INSERT INTO tv_details (mediaId, totalSeasons, status, airingStatus, overview, " +
+                    "firstAirDate, lastAirDate) " +
+                    "VALUES ('film-1', 1, 'WATCHLIST', NULL, 'Belongs to nothing.', NULL, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            db.prepare("SELECT synopsis FROM media_items WHERE id = 'film-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertTrue(stmt.isNull(0), "a film must not inherit a stray tv_details row's text")
+            }
+            db.prepare("SELECT synopsis FROM media_items WHERE id = 'show-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals("A nuclear plant explodes.", stmt.getText(0), "the real show still carries")
+            }
+        }
+    }
+
+    /** A library with nothing in it migrates cleanly — matching the v2->v3 empty-database test. */
+    @Test
+    fun migrate6To7_emptyDatabase_validatesCleanly() {
+        helper.createDatabase(6).use { }
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            db.prepare("SELECT COUNT(*) FROM media_items").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals(0, stmt.getInt(0))
+            }
+        }
+    }
 }

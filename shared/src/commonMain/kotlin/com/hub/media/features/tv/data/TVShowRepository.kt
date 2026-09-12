@@ -213,7 +213,7 @@ public class TVShowRepository(
      * @param airingStatus Whether the show itself is still running, or null for "unknown" (every
      *   hand-entered show). **Not** the user's progress through it -- see [TVDetailsEntity.airingStatus]
      *   on why the two are separate columns with deliberately different names.
-     * @param overview The show's synopsis from a provider, or null. Blank is stored as null, for the
+     * @param synopsis The show's synopsis from a provider, or null. Blank is stored as null, for the
      *   reason [episodeRowsFor] gives about empty strings.
      * @param firstAirDate When the show first aired, or null. Taken as an [Instant] and converted to
      *   the epoch milliseconds [TVDetailsEntity] stores, so no caller has to know that this column
@@ -255,7 +255,7 @@ public class TVShowRepository(
         seasons: List<NewSeason> = emptyList(),
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
         airingStatus: AiringStatus? = null,
-        overview: String? = null,
+        synopsis: String? = null,
         firstAirDate: Instant? = null,
         lastAirDate: Instant? = null,
         communityRating: Double? = null,
@@ -294,6 +294,9 @@ public class TVShowRepository(
                         createdAt = now,
                         coverImageHash = coverImageHash,
                         communityRating = communityRating,
+                        // Blank becomes null, for the reason [episodeRowsFor] gives about empty
+                        // strings: a provider answering with "" does not know a synopsis.
+                        synopsis = synopsis?.takeIf { it.isNotBlank() },
                     ),
                 details =
                     TVDetailsEntity(
@@ -301,7 +304,6 @@ public class TVShowRepository(
                         totalSeasons = totalSeasons,
                         status = WatchStatus.WATCHLIST,
                         airingStatus = airingStatus,
-                        overview = overview?.takeIf { it.isNotBlank() },
                         firstAirDate = firstAirDate?.toEpochMilliseconds(),
                         lastAirDate = lastAirDate?.toEpochMilliseconds(),
                     ),

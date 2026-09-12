@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- Schema v7: a synopsis moved from `tv_details.overview` to `media_items.synopsis` (#133), so
+  every media type can hold one rather than shows alone. Existing show descriptions are carried
+  across by the migration. Nothing user-facing yet — no screen renders a synopsis and the film
+  and book paths do not write one; both follow separately.
+
 - `BulkTmdbBackfillUseCase` now keeps the season-count disagreements it finds instead of discarding
   them (#123). They are persisted beside the resume state in `app_settings`, counted on
   `TmdbBackfillProgress.mismatchedShows`, and read back through `BulkTmdbBackfillUseCase.mismatches()`

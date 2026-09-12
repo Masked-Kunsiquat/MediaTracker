@@ -223,7 +223,7 @@ class BulkTmdbBackfillUseCaseTest {
 
             val details = assertNotNull(db.tvDetailsDao().getByMediaId(mediaId))
             assertEquals(AiringStatus.ENDED, details.airingStatus)
-            assertEquals("An explosion at a nuclear plant.", details.overview)
+            assertEquals("An explosion at a nuclear plant.", db.mediaItemDao().getById(mediaId)?.synopsis)
             assertEquals(
                 Instant.parse("2019-05-06T00:00:00Z").toEpochMilliseconds(),
                 details.firstAirDate,
@@ -312,7 +312,7 @@ class BulkTmdbBackfillUseCaseTest {
 
             assertEquals(0, progress.updated, "nothing was written, so nothing was updated")
             assertEquals(1, progress.nothingToFill)
-            assertNull(db.tvDetailsDao().getByMediaId(mediaId)?.overview, "and the column is still blank")
+            assertNull(db.mediaItemDao().getById(mediaId)?.synopsis, "and the column is still blank")
         }
 
     // ---- seasons beyond the append ceiling -------------------------------------------------------
@@ -413,7 +413,7 @@ class BulkTmdbBackfillUseCaseTest {
                 coverImageHash = "already-stored",
                 communityRating = 8.7,
                 airingStatus = AiringStatus.ENDED,
-                overview = "Already written.",
+                synopsis = "Already written.",
                 firstAirDate = Instant.parse("2019-05-06T00:00:00Z"),
                 lastAirDate = Instant.parse("2019-06-03T00:00:00Z"),
                 seasons =
@@ -496,7 +496,7 @@ class BulkTmdbBackfillUseCaseTest {
                     coverImageHash = "already-stored",
                     communityRating = 8.7,
                     airingStatus = AiringStatus.ENDED,
-                    overview = "Already written.",
+                    synopsis = "Already written.",
                     firstAirDate = Instant.parse("2019-05-06T00:00:00Z"),
                     lastAirDate = Instant.parse("2019-06-03T00:00:00Z"),
                     seasons = listOf(SeasonQuickFill(seasonNumber = 0, episodeCount = 2)),

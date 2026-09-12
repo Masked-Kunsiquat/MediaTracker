@@ -952,9 +952,9 @@ public class ImportDataUseCase(
      * Builds the details row for a fresh insert, or for a REPLACE (which overwrites every managed
      * field, so it wants the same full-row construction).
      *
-     * The show branch leaves `airingStatus`/`overview`/`firstAirDate`/`lastAirDate` at their
-     * defaults, and the film branch has no such columns: `library_export.csv` has never carried
-     * them. They were added to the schema in PR #86 for the Task 13 Phase D backfill to fill from
+     * The show branch leaves `airingStatus`/`firstAirDate`/`lastAirDate` at their defaults, and the
+     * film branch has no such columns: `library_export.csv` has never carried them. They were added
+     * to the schema in PR #86 for the Task 13 Phase D backfill to fill from
      * TMDB, and a CSV round trip legitimately drops what the file does not contain -- unlike the
      * episode columns this same change added to `episodes_export.csv`, which it does now carry.
      * Widening the library file to match is a separate decision from making it readable at all.
@@ -1008,6 +1008,8 @@ public class ImportDataUseCase(
                 releaseYear = row.releaseYear,
                 purchasePrice = row.purchasePrice,
                 // createdAt/coverImageHash intentionally untouched -- see class KDoc.
+                // `synopsis` is preserved by this copy and must not be named here: the file does
+                // not carry it, so setting it would blank what a backfill wrote.
             )
         val identifiers =
             row.externalIdentifiers.map { (provider, id) ->
@@ -1025,11 +1027,11 @@ public class ImportDataUseCase(
      * REPLACE's rule -- overwrite every field this importer manages -- applied to whichever details
      * table this item has.
      *
-     * Identical to [freshDetails] except for a show's `airingStatus`/`overview`/`firstAirDate`/
-     * `lastAirDate`, which are **preserved rather than overwritten**. REPLACE overwrites what the
-     * *file* says, and the file says nothing about those four: they were added in PR #86 for the
+     * Identical to [freshDetails] except for a show's `airingStatus`/`firstAirDate`/`lastAirDate`,
+     * which are **preserved rather than overwritten**. REPLACE overwrites what the *file* says, and
+     * the file says nothing about those three: they were added in PR #86 for the
      * Task 13 Phase D backfill to fill from TMDB and `library_export.csv` has never carried them.
-     * Building the row from [freshDetails] here would have defaulted all four to `null`, so
+     * Building the row from [freshDetails] here would have defaulted all three to `null`, so
      * re-importing a backup under REPLACE would silently delete every piece of metadata a backfill
      * had fetched -- the same class of loss that already keeps REPLACE away from `createdAt` and
      * `coverImageHash` on the item itself (see class KDoc).
@@ -1048,7 +1050,6 @@ public class ImportDataUseCase(
                         totalSeasons = row.totalSeasons,
                         status = row.status,
                         airingStatus = existingDetails?.airingStatus,
-                        overview = existingDetails?.overview,
                         firstAirDate = existingDetails?.firstAirDate,
                         lastAirDate = existingDetails?.lastAirDate,
                     ),
@@ -1071,6 +1072,8 @@ public class ImportDataUseCase(
                 releaseYear = existing.item.releaseYear ?: row.releaseYear,
                 purchasePrice = existing.item.purchasePrice ?: row.purchasePrice,
                 // type/title/createdAt/coverImageHash never backfilled -- identity/local-owned fields.
+                // `synopsis` is preserved by this copy and must not be named here: the file does
+                // not carry it, so setting it would blank what a backfill wrote.
             )
         val existingProviders = existingIdentifiers.map { it.provider }.toSet()
         val newIdentifiers =
@@ -1155,7 +1158,6 @@ public class ImportDataUseCase(
                         // in the file, so a merge has nothing to say about them and must not blank
                         // what a backfill already wrote.
                         airingStatus = existingDetails?.airingStatus,
-                        overview = existingDetails?.overview,
                         firstAirDate = existingDetails?.firstAirDate,
                         lastAirDate = existingDetails?.lastAirDate,
                     ),

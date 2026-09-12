@@ -447,6 +447,9 @@ public class BulkTmdbBackfillUseCase(
         val needsYear = item.releaseYear == null
         val needsRating = item.communityRating == null
         val detailGaps = details != null && details.hasGap()
+        // Its own flag, not part of detailGaps: since v7 the synopsis is on media_items, and a
+        // show whose only gap is that would otherwise be queued by the seed and dropped here.
+        val needsSynopsis = item.synopsis == null
         // Re-derived from the current rows rather than reused from the seed scan's set, for the same
         // reason every other gap here is: an episode could have been filled by the per-show refresh
         // (#136) between the two. The condition is the same five columns
@@ -462,7 +465,14 @@ public class BulkTmdbBackfillUseCase(
         // A show with no episode rows is excluded: every season would read "you have 0, TMDB has N",
         // which is a show waiting to be quick-filled (#74) rather than a disagreement to reconcile.
         val worthComparing = localEpisodes.isNotEmpty()
-        if (!needsPoster && !needsYear && !needsRating && !detailGaps && !needsEpisodes && !worthComparing) {
+        if (!needsPoster &&
+            !needsYear &&
+            !needsRating &&
+            !needsSynopsis &&
+            !detailGaps &&
+            !needsEpisodes &&
+            !worthComparing
+        ) {
             return StepOutcome.Removed
         }
 
@@ -483,8 +493,10 @@ public class BulkTmdbBackfillUseCase(
         // no row for these to land in, and fillShowMetadata deliberately does not create one.
         val totalSeasons = if (details != null && details.totalSeasons == null) mapping.totalSeasons else null
         val airingStatus = if (details != null && details.airingStatus == null) mapping.airingStatus else null
-        val overview =
-            if (details != null && details.overview == null) mapping.overview?.takeIf { it.isNotBlank() } else null
+        // Gated on the item, not on `details`: since v7 the synopsis lives on `media_items`, which
+        // always exists for a row being processed. Keeping the `details != null` guard would refuse
+        // to fill the synopsis of a show whose tv_details half is missing, for no reason.
+        val synopsis = if (item.synopsis == null) mapping.overview?.takeIf { it.isNotBlank() } else null
         val firstAirDate =
             if (details != null && details.firstAirDate == null) mapping.firstAirDate?.toEpochMilliseconds() else null
         val lastAirDate =
@@ -497,7 +509,7 @@ public class BulkTmdbBackfillUseCase(
         // a column changed. That is the mistake BackfillShowEpisodesUseCase already paid for once
         // with "Updated 5 episodes" on a show where nothing changed; the fix is the same one.
         val fillsSomething =
-            listOfNotNull(year, rating, totalSeasons, airingStatus, overview, firstAirDate, lastAirDate)
+            listOfNotNull(year, rating, totalSeasons, airingStatus, synopsis, firstAirDate, lastAirDate)
                 .isNotEmpty()
         if (fillsSomething) {
             wrote =
@@ -507,7 +519,7 @@ public class BulkTmdbBackfillUseCase(
                     communityRating = rating,
                     totalSeasons = totalSeasons,
                     airingStatus = airingStatus,
-                    overview = overview,
+                    synopsis = synopsis,
                     firstAirDate = firstAirDate,
                     lastAirDate = lastAirDate,
                 ) > 0
@@ -674,6 +686,9 @@ private fun showNeedsFilling(
     item.coverImageHash == null ||
         item.releaseYear == null ||
         item.communityRating == null ||
+        // On the item since v7: a synopsis-only gap would never be queued if this still asked
+        // tv_details, which no longer holds one.
+        item.synopsis == null ||
         (details != null && details.hasGap()) ||
         hasIncompleteEpisodes ||
         // #123: a show that is set up is always worth asking about, even with nothing left to fill.
@@ -703,7 +718,6 @@ private fun EpisodeEntity.hasGap(): Boolean =
 private fun TVDetailsEntity.hasGap(): Boolean =
     totalSeasons == null ||
         airingStatus == null ||
-        overview == null ||
         firstAirDate == null ||
         lastAirDate == null
 

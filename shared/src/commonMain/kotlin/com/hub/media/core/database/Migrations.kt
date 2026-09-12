@@ -369,3 +369,72 @@ public val MIGRATION_5_6: Migration =
                 )
             }
     }
+
+/**
+ * Schema v6 -> v7 (#133): moves the synopsis from `tv_details.overview` onto
+ * [com.hub.media.core.database.entities.MediaItemEntity.synopsis].
+ *
+ * ### Why a rebuild and not `ALTER TABLE ... DROP COLUMN`
+ * Adding `synopsis` is a plain addition, like [MIGRATION_2_3]'s columns. *Removing* `overview` is
+ * not: `DROP COLUMN` needs SQLite 3.35+, and the version bundled with Android varies by OS release,
+ * so it cannot be relied on across the devices this ships to. The portable form is
+ * [MIGRATION_1_2]'s create-copy-drop-rename, used here for the same reason.
+ *
+ * ### The `UPDATE` must run before the rebuild, and must not be forgotten
+ * It is the only statement that moves user content, and the only moment both the old column and
+ * the new one exist. Running it after the rebuild fails loudly — `overview` no longer exists — but
+ * **omitting it, or mis-correlating it, fails silently**: the migration reports success, every
+ * synopsis is `NULL`, and a user finds their descriptions blank with nothing in the log to say when.
+ * Verified by deleting this statement while writing the tests — the migration still passed and only
+ * the two value-asserting tests caught it, which is why
+ * `migrate6To7_carriesEveryShowSynopsisOntoMediaItems` asserts on values rather than on this
+ * migration completing.
+ *
+ * The `type = 'TV_SHOW'` predicate is belt and braces. The foreign key on `tv_details.mediaId`
+ * enforces that the row *exists*, not that it is a show, so a stray `tv_details` row against a film
+ * would otherwise copy its text onto that film. No current code path creates one — but a migration
+ * runs against whatever is on disk, including states written by versions that no longer exist, and
+ * this is the last moment anyone could notice.
+ *
+ * The `WHERE EXISTS` keeps the write to rows that actually gain something, so a library of films and
+ * books is untouched rather than rewritten with the nulls it already had.
+ *
+ * ### `tv_details` has no indices to recreate
+ * Verified against `shared/schemas/.../6.json`: the table carries a primary key and one foreign key
+ * and nothing else, both of which are restated in the `CREATE` below. A rebuild does not carry
+ * indices across — [MIGRATION_1_2] has to recreate one, and `migrate1To2_recreatesMediaIdIndex`
+ * exists because that was got wrong once.
+ */
+public val MIGRATION_6_7: Migration =
+    object : Migration(6, 7) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(6, 7) {
+                connection.execSQL("ALTER TABLE `media_items` ADD COLUMN `synopsis` TEXT")
+                connection.execSQL(
+                    "UPDATE `media_items` SET `synopsis` = " +
+                        "(SELECT `overview` FROM `tv_details` WHERE `tv_details`.`mediaId` = `media_items`.`id`) " +
+                        "WHERE `media_items`.`type` = 'TV_SHOW' AND EXISTS (SELECT 1 FROM `tv_details` " +
+                        "WHERE `tv_details`.`mediaId` = `media_items`.`id` AND `overview` IS NOT NULL)",
+                )
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tv_details_new` (" +
+                        "`mediaId` TEXT NOT NULL, " +
+                        "`totalSeasons` INTEGER, " +
+                        "`status` TEXT NOT NULL, " +
+                        "`airingStatus` TEXT, " +
+                        "`firstAirDate` INTEGER, " +
+                        "`lastAirDate` INTEGER, " +
+                        "PRIMARY KEY(`mediaId`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `tv_details_new` " +
+                        "(`mediaId`, `totalSeasons`, `status`, `airingStatus`, `firstAirDate`, `lastAirDate`) " +
+                        "SELECT `mediaId`, `totalSeasons`, `status`, `airingStatus`, `firstAirDate`, `lastAirDate` " +
+                        "FROM `tv_details`",
+                )
+                connection.execSQL("DROP TABLE `tv_details`")
+                connection.execSQL("ALTER TABLE `tv_details_new` RENAME TO `tv_details`")
+            }
+    }

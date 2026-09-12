@@ -31,12 +31,15 @@ public data class TmdbMovieMapping(
  * Turns one TMDB film record into the arguments that create it locally, or `null` if the response
  * carries no usable title.
  *
- * ### The synopsis is deliberately dropped
- * TMDB returns an `overview` for films and this does not carry it, which looks like an oversight and
- * is not: **`movie_details` has no column for one.** `tv_details` gained `overview` in #86 while
- * schema v6 was still editable; its film counterpart did not, and v6 froze at `v0.15.0`. Storing a
- * film's synopsis therefore costs a v7 with a tested migration, which is a decision rather than a
- * field. Mapping it to nowhere would only hide that.
+ * ### The synopsis is still not carried, and the reason has changed
+ * TMDB returns an `overview` for films and this does not map it. That used to be because there was
+ * nowhere to put one — `movie_details` had no column and v6 was frozen. **Schema v7 removed that
+ * obstacle**: `media_items.synopsis` (#133) is type-agnostic and a film can hold one.
+ *
+ * What is missing now is the wiring, not the column: [TmdbMovieMapping], `MovieRepository.addMovie`
+ * and the film half of the bulk backfill all need a synopsis parameter. That is deliberately not
+ * in the migration's own change, which stays reviewable as a schema move. Until it lands, a film
+ * added by search has a `null` synopsis — not because it cannot have one.
  *
  * ### The release year is bounded, for the reason the show mapper learned
  * `validateReleaseYear` rejects a year outside
