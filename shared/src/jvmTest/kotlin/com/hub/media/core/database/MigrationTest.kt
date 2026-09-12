@@ -1369,6 +1369,43 @@ class MigrationTest {
         }
     }
 
+    /**
+     * A `tv_details` row pointing at a film must not give that film the show's synopsis.
+     *
+     * The foreign key on `tv_details.mediaId` enforces that the row exists, not that it is a show,
+     * so this state is representable even though no current code path creates it. A migration runs
+     * against whatever is on disk — including states written by versions that no longer exist — and
+     * without the `type = 'TV_SHOW'` predicate the correlated subquery copies the text across.
+     */
+    @Test
+    fun migrate6To7_ignoresATvDetailsRowAttachedToAFilm() {
+        helper.createDatabase(6).use { db ->
+            db.seedV6Show("show-1", "Chernobyl", "A nuclear plant explodes.")
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, " +
+                    "coverImageHash, communityRating) " +
+                    "VALUES ('film-1', 'MOVIE', 'Arrival', 2016, NULL, 1700000000000, NULL, NULL)",
+            )
+            // The corrupt row: tv_details against a MOVIE.
+            db.execSQL(
+                "INSERT INTO tv_details (mediaId, totalSeasons, status, airingStatus, overview, " +
+                    "firstAirDate, lastAirDate) " +
+                    "VALUES ('film-1', 1, 'WATCHLIST', NULL, 'Belongs to nothing.', NULL, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { db ->
+            db.prepare("SELECT synopsis FROM media_items WHERE id = 'film-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertTrue(stmt.isNull(0), "a film must not inherit a stray tv_details row's text")
+            }
+            db.prepare("SELECT synopsis FROM media_items WHERE id = 'show-1'").use { stmt ->
+                assertTrue(stmt.step())
+                assertEquals("A nuclear plant explodes.", stmt.getText(0), "the real show still carries")
+            }
+        }
+    }
+
     /** A library with nothing in it migrates cleanly — matching the v2->v3 empty-database test. */
     @Test
     fun migrate6To7_emptyDatabase_validatesCleanly() {

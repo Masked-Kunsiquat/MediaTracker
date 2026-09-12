@@ -390,6 +390,12 @@ public val MIGRATION_5_6: Migration =
  * `migrate6To7_carriesEveryShowSynopsisOntoMediaItems` asserts on values rather than on this
  * migration completing.
  *
+ * The `type = 'TV_SHOW'` predicate is belt and braces. The foreign key on `tv_details.mediaId`
+ * enforces that the row *exists*, not that it is a show, so a stray `tv_details` row against a film
+ * would otherwise copy its text onto that film. No current code path creates one — but a migration
+ * runs against whatever is on disk, including states written by versions that no longer exist, and
+ * this is the last moment anyone could notice.
+ *
  * The `WHERE EXISTS` keeps the write to rows that actually gain something, so a library of films and
  * books is untouched rather than rewritten with the nulls it already had.
  *
@@ -407,7 +413,7 @@ public val MIGRATION_6_7: Migration =
                 connection.execSQL(
                     "UPDATE `media_items` SET `synopsis` = " +
                         "(SELECT `overview` FROM `tv_details` WHERE `tv_details`.`mediaId` = `media_items`.`id`) " +
-                        "WHERE EXISTS (SELECT 1 FROM `tv_details` " +
+                        "WHERE `media_items`.`type` = 'TV_SHOW' AND EXISTS (SELECT 1 FROM `tv_details` " +
                         "WHERE `tv_details`.`mediaId` = `media_items`.`id` AND `overview` IS NOT NULL)",
                 )
                 connection.execSQL(
