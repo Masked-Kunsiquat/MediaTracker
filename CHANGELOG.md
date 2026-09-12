@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **The two backfill sections moved out of the Settings screen** (#81). `SettingsScreen.kt` had
+  reached 2,433 lines, and this is the first of #81's cuts: the books backfill and the
+  films-and-shows one, taken together because they were already adjacent and already split along
+  the Books / Films & TV line Settings is organised by. Nothing else on the screen had to move for
+  them to leave. The screen is now 2,117 lines, and `SettingsBackfillSections.kt` holds the whole
+  vertical slice — the two sections, the one generic row they share, and the per-pass conversions
+  feeding it.
+
+  Each section now owns its own `SettingsSection` wrapper, so the screen calls one composable per
+  section instead of spelling out the card, the title and the row at the call site. The reasoning
+  that lived in comments there — why each pass is its own section rather than two rows in one card,
+  and why the mismatch count is read from the stored findings rather than from the run's progress —
+  moved into the new composables' documentation rather than being dropped.
+
+  **The moved code is byte-identical.** That was checked by diffing the extracted block against the
+  same line range of the previous commit, not by reading it. The only differences anywhere are
+  visibility keywords: the two section composables are `internal` because their caller no longer
+  shares their file, and `SettingsSection` widened from `private` for the same reason — which is
+  also the seam the remaining Settings cuts will need.
+
+  **What the screenshot test does and does not prove here.** `verifyRoborazziDebug` passes, but the
+  Settings golden captures a `LazyColumn` viewport that ends at the TMDB credential field: the
+  backfill rows sit below the fold and are not in the image. The golden therefore attests that
+  everything above them is unchanged and nothing whatever about the rows themselves. Those were
+  checked on a phone instead — both sections, and the review entry that appears only once a run has
+  found a disagreement.
+
 ## [0.20.0] - 2026-09-12
 
 Your library can now disagree with the catalogue, and say so.
