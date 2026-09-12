@@ -178,7 +178,7 @@ public class TVShowSearchViewModel(
                                 seasons = mapping.seasons,
                                 externalIdentifiers = mapping.externalIdentifiers,
                                 airingStatus = mapping.airingStatus,
-                                overview = mapping.overview,
+                                synopsis = mapping.overview,
                                 firstAirDate = mapping.firstAirDate,
                                 lastAirDate = mapping.lastAirDate,
                                 communityRating = mapping.communityRating,

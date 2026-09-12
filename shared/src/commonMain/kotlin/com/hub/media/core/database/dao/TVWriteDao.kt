@@ -269,13 +269,15 @@ interface TVWriteDao {
     @Query(
         "UPDATE media_items SET " +
             "releaseYear = COALESCE(releaseYear, :releaseYear), " +
-            "communityRating = COALESCE(communityRating, :communityRating) " +
+            "communityRating = COALESCE(communityRating, :communityRating), " +
+            "synopsis = COALESCE(synopsis, :synopsis) " +
             "WHERE id = :mediaId AND type = 'TV_SHOW'",
     )
     suspend fun fillMediaItemMetadata(
         mediaId: String,
         releaseYear: Int?,
         communityRating: Double?,
+        synopsis: String?,
     ): Int
 
     /**
@@ -297,7 +299,6 @@ interface TVWriteDao {
         "UPDATE tv_details SET " +
             "totalSeasons = COALESCE(totalSeasons, :totalSeasons), " +
             "airingStatus = COALESCE(airingStatus, :airingStatus), " +
-            "overview = COALESCE(overview, :overview), " +
             "firstAirDate = COALESCE(firstAirDate, :firstAirDate), " +
             "lastAirDate = COALESCE(lastAirDate, :lastAirDate) " +
             "WHERE mediaId = :mediaId",
@@ -306,7 +307,6 @@ interface TVWriteDao {
         mediaId: String,
         totalSeasons: Int?,
         airingStatus: AiringStatus?,
-        overview: String?,
         firstAirDate: Long?,
         lastAirDate: Long?,
     ): Int
@@ -329,13 +329,13 @@ interface TVWriteDao {
         communityRating: Double?,
         totalSeasons: Int?,
         airingStatus: AiringStatus?,
-        overview: String?,
+        synopsis: String?,
         firstAirDate: Long?,
         lastAirDate: Long?,
     ): Int {
-        val mediaRows = fillMediaItemMetadata(mediaId, releaseYear, communityRating)
+        val mediaRows = fillMediaItemMetadata(mediaId, releaseYear, communityRating, synopsis)
         if (mediaRows > 0) {
-            fillTVDetailMetadata(mediaId, totalSeasons, airingStatus, overview, firstAirDate, lastAirDate)
+            fillTVDetailMetadata(mediaId, totalSeasons, airingStatus, firstAirDate, lastAirDate)
         }
         return mediaRows
     }

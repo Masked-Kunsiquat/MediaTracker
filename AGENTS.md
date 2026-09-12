@@ -309,8 +309,9 @@ so every helper whose callers end up in a sibling file must widen to `internal`.
   | v4 | `v0.6.0` | `MIGRATION_3_4` — adds the `app_settings` key-value table |
   | v5 | `v0.8.0` | `MIGRATION_4_5` — nullable author column on `BookDetailsEntity` |
   | v6 | `v0.15.0` | `MIGRATION_5_6` — `movie_details`, `tv_details`, `episodes`, `watch_logs` |
+  | v7 | **unfrozen** — freezes at the release that ships it | `MIGRATION_6_7` — moves `tv_details.overview` to `media_items.synopsis` (#133) |
 
-  Current: `APP_DATABASE_VERSION = 6` (`shared/.../core/database/AppDatabase.kt`). Migrations live in `Migrations.kt`; each is registered through the `loggedMigration` wrapper and covered by `MigrationTest` (`jvmTest`). `v0.2.0`, `v0.3.0` and `v0.7.0` shipped no schema change.
+  Current: `APP_DATABASE_VERSION = 7` (`shared/.../core/database/AppDatabase.kt`). Migrations live in `Migrations.kt`; each is registered through the `loggedMigration` wrapper and covered by `MigrationTest` (`jvmTest`). `v0.2.0`, `v0.3.0` and `v0.7.0` shipped no schema change.
 
   **Every row above is now frozen.** v6 was the one that was not, and the distinction was the rule rather than an exception to it: the freeze attaches to *shipping in a tag*, not to the version existing. It was held unreleased from PR #76 until Movies and TV actually worked, and that window was spent deliberately rather than allowed to lapse — the release-blocking question (whether TMDB needs a per-episode provider id, which would have meant a new table) was answered *no* against the API docs, and the columns Phase D will fill were added while adding them was still free: `tv_details.airingStatus`/`overview`/`firstAirDate`/`lastAirDate`, `episodes.runtimeMinutes`/`overview`/`stillImageHash`/`communityRating`, and `media_items.communityRating`. See PR #86 and ROADMAP Task 13 Phase D.
 

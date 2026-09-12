@@ -379,7 +379,7 @@ class TVShowRepositoryTest {
     // ---- addShow: show-level provider details ---------------------------------------------------
 
     @Test
-    fun addShow_withProviderDetails_storesThemOnTheDetailsRow() =
+    fun addShow_withProviderDetails_storesThemAcrossBothRows() =
         runTest {
             val first = Instant.parse("2019-05-06T00:00:00Z")
             val last = Instant.parse("2019-06-03T00:00:00Z")
@@ -387,7 +387,7 @@ class TVShowRepositoryTest {
                 repo.addShow(
                     title = "Chernobyl",
                     airingStatus = AiringStatus.ENDED,
-                    overview = "A dramatisation of the 1986 disaster.",
+                    synopsis = "A dramatisation of the 1986 disaster.",
                     firstAirDate = first,
                     lastAirDate = last,
                 )
@@ -395,7 +395,7 @@ class TVShowRepositoryTest {
 
             val details = db.tvDetailsDao().getByMediaId(result.data)
             assertEquals(AiringStatus.ENDED, details?.airingStatus)
-            assertEquals("A dramatisation of the 1986 disaster.", details?.overview)
+            assertEquals("A dramatisation of the 1986 disaster.", db.mediaItemDao().getById(result.data)?.synopsis)
             assertEquals(
                 first.toEpochMilliseconds(),
                 details?.firstAirDate,
@@ -408,25 +408,26 @@ class TVShowRepositoryTest {
     fun addShow_withoutProviderDetails_leavesThemNull() =
         runTest {
             // The manual-entry default. A hand-entered show knows none of these, and null is what
-            // "unknown" means on every one of the four columns.
+            // "unknown" means on all four -- three on tv_details, and the synopsis on media_items
+            // since v7.
             val result = repo.addShow(title = "Typed In By Hand")
             assertIs<Resource.Success<String>>(result)
 
             val details = db.tvDetailsDao().getByMediaId(result.data)
             assertNull(details?.airingStatus)
-            assertNull(details?.overview)
+            assertNull(db.mediaItemDao().getById(result.data)?.synopsis)
             assertNull(details?.firstAirDate)
             assertNull(details?.lastAirDate)
         }
 
     @Test
-    fun addShow_blankOverview_storesNullRatherThanEmpty() =
+    fun addShow_blankSynopsis_storesNullRatherThanEmpty() =
         runTest {
-            val result = repo.addShow(title = "Blank Synopsis", overview = "   ")
+            val result = repo.addShow(title = "Blank Synopsis", synopsis = "   ")
             assertIs<Resource.Success<String>>(result)
 
             assertNull(
-                db.tvDetailsDao().getByMediaId(result.data)?.overview,
+                db.mediaItemDao().getById(result.data)?.synopsis,
                 "a provider answering with an empty synopsis does not know one, and \"\" would " +
                     "defeat a backfill that fills only nulls",
             )

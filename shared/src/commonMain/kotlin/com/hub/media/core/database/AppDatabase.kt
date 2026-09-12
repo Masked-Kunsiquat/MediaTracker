@@ -39,7 +39,7 @@ import com.hub.media.core.database.entities.WatchLogEntity
  * here and by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase]) means the
  * two can never silently drift apart the way two independent literals could.
  */
-public const val APP_DATABASE_VERSION: Int = 6
+public const val APP_DATABASE_VERSION: Int = 7
 
 /**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,

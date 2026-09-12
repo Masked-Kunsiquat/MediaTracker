@@ -41,4 +41,20 @@ data class MediaItemEntity(
      * 5); a bare number whose scale is unrecorded cannot be compared with anything.
      */
     val communityRating: Double? = null,
+    /**
+     * The provider's description of this title, or `null` if none has been fetched.
+     *
+     * On `media_items` for the same reason [communityRating] is, and the reason is the same
+     * sentence: every media type has one. TMDB returns an `overview` for films and shows, Open
+     * Library a description for books.
+     *
+     * This lived on `tv_details.overview` from schema v6 until v7 moved it here (#133). Only
+     * shows could hold a synopsis, so a film's was dropped on the floor at the mapper -- and
+     * the alternative, adding the column to all three details tables, would have left every
+     * later feature asking which of three tables to read.
+     *
+     * Blank is stored as `null`. An empty string is not a shorter synopsis, it is the absence of
+     * one, and two representations of absent is how a "has a synopsis" check goes wrong.
+     */
+    val synopsis: String? = null,
 )

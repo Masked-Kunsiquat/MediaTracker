@@ -41,7 +41,6 @@ import androidx.room.PrimaryKey
  *   aired episode watched, show still running) and *completed* (every episode there will ever be).
  *   Without this column those are indistinguishable, so a running show sits under Finished until
  *   its next season is quick-filled. `null` means unknown, which is every row today.
- * @property overview The show's synopsis from a provider, or `null` if none has been fetched.
  * @property firstAirDate Epoch milliseconds of the first episode's air date, or `null` if unknown.
  *   Stored rather than derived from [EpisodeEntity.airDate] because a quick-filled show has no air
  *   dates at all, and because the earliest *known* episode is not necessarily the first one.
@@ -64,7 +63,6 @@ public data class TVDetailsEntity(
     val totalSeasons: Int? = null,
     val status: WatchStatus = WatchStatus.WATCHLIST,
     val airingStatus: AiringStatus? = null,
-    val overview: String? = null,
     val firstAirDate: Long? = null,
     val lastAirDate: Long? = null,
 )
