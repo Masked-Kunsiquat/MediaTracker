@@ -52,7 +52,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.export.copyFileToUri
 import com.github.maskedkunisquat.mediatracker.export.copyUriToFile
-import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
 import com.github.maskedkunisquat.mediatracker.restartApp
 import com.github.maskedkunisquat.mediatracker.ui.BackfillViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.BackupViewModelFactory
@@ -70,7 +69,6 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BulkBackfillProgress
 import com.hub.media.features.media.domain.TmdbBackfillProgress
 import com.hub.media.features.portability.domain.BackupResult
-import com.hub.media.features.portability.domain.CsvExportBundle
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
@@ -164,9 +162,6 @@ fun SettingsScreenRoute(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val exportSuccessMessage = stringResource(R.string.export_success_message)
-    val exportFailureMessage = stringResource(R.string.export_failure_message)
-    val exportCancelledMessage = stringResource(R.string.export_cancelled_message)
     val backupSuccessMessage = stringResource(R.string.backup_success_message)
     val backupFailureMessage = stringResource(R.string.backup_failure_message)
     val backupCancelledMessage = stringResource(R.string.backup_cancelled_message)
@@ -213,96 +208,7 @@ fun SettingsScreenRoute(
     val launchGoodreadsImport =
         rememberGoodreadsImportLauncher(importViewModel, goodreadsDuplicatePolicy, snackbarHostState)
 
-    // Holds the generated bundle between the three sequential SAF "create document" picks below --
-    // see SettingsScreen.kt's class-level export section KDoc for why all three files are written
-    // from one cached bundle rather than three independent ExportDataUseCase runs.
-    var pendingBundle by remember { mutableStateOf<CsvExportBundle?>(null) }
-
-    val episodesLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-        ) { uri ->
-            val bundle = pendingBundle
-            pendingBundle = null
-            exportViewModel.reset()
-            coroutineScope.launch {
-                // Off the main thread: writing a whole document via SAF is blocking I/O.
-                val message =
-                    when {
-                        uri == null -> exportCancelledMessage
-                        bundle == null -> exportFailureMessage
-                        withContext(
-                            Dispatchers.IO,
-                        ) { writeCsvToUri(context, uri, bundle.episodesCsv) } -> exportSuccessMessage
-                        else -> exportFailureMessage
-                    }
-                snackbarHostState.showSnackbar(message)
-            }
-        }
-
-    val readingLogsLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-        ) { uri ->
-            val bundle = pendingBundle
-            if (uri == null || bundle == null) {
-                pendingBundle = null
-                exportViewModel.reset()
-                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-            } else {
-                // Off the main thread -- see episodesLauncher above.
-                coroutineScope.launch {
-                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.readingLogsCsv) }) {
-                        // Second file written; immediately prompt for the third file's destination so
-                        // all three documents come from the exact same generated snapshot.
-                        episodesLauncher.launch("episodes_export.csv")
-                    } else {
-                        pendingBundle = null
-                        exportViewModel.reset()
-                        snackbarHostState.showSnackbar(exportFailureMessage)
-                    }
-                }
-            }
-        }
-
-    val libraryLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-        ) { uri ->
-            val bundle = pendingBundle
-            if (uri == null || bundle == null) {
-                pendingBundle = null
-                exportViewModel.reset()
-                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-            } else {
-                // Off the main thread -- see episodesLauncher above.
-                coroutineScope.launch {
-                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
-                        // First file written; immediately prompt for the second file's destination so
-                        // every document comes from the exact same generated snapshot.
-                        readingLogsLauncher.launch("reading_logs_export.csv")
-                    } else {
-                        pendingBundle = null
-                        exportViewModel.reset()
-                        snackbarHostState.showSnackbar(exportFailureMessage)
-                    }
-                }
-            }
-        }
-
-    LaunchedEffect(exportUiState) {
-        when (val state = exportUiState) {
-            is ExportUiState.Success -> {
-                pendingBundle = state.bundle
-                libraryLauncher.launch("library_export.csv")
-            }
-            is ExportUiState.Error -> {
-                snackbarHostState.showSnackbar(state.message)
-                exportViewModel.reset()
-            }
-            ExportUiState.Idle, ExportUiState.Loading -> Unit
-        }
-    }
+    CsvExportFlow(exportUiState, exportViewModel, snackbarHostState)
 
     ImportOutcome(
         importUiState = importUiState,
