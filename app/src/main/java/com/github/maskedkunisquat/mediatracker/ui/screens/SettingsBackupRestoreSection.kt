@@ -87,11 +87,14 @@ internal fun BackupRestoreSection(
  *   again afterward, since backups never carry them (see that property's KDoc for why). It does
  *   not name which: the warning is driven off the credential list so it stays true as providers
  *   are added, and the user's next step is the same either way.
+ * @param commitInProgress True once Confirm has been tapped. Both buttons disable, since the dialog
+ *   stays up until the process restarts and a second tap must not start a second commit.
  */
 @Composable
 internal fun RestoreConfirmationDialog(
     info: StagedRestoreInfo,
     credentialsWillBeCleared: Boolean,
+    commitInProgress: Boolean = false,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -129,14 +132,16 @@ internal fun RestoreConfirmationDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                enabled = understood,
+                enabled = understood && !commitInProgress,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             ) {
                 Text(stringResource(R.string.restore_confirm_button))
             }
         },
         dismissButton = {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.restore_cancel_button)) }
+            TextButton(onClick = onCancel, enabled = !commitInProgress) {
+                Text(stringResource(R.string.restore_cancel_button))
+            }
         },
     )
 }
