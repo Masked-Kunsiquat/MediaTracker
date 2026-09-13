@@ -1,7 +1,5 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +40,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -50,9 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
-import com.github.maskedkunisquat.mediatracker.export.copyFileToUri
-import com.github.maskedkunisquat.mediatracker.export.copyUriToFile
-import com.github.maskedkunisquat.mediatracker.restartApp
 import com.github.maskedkunisquat.mediatracker.ui.BackfillViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.BackupViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.ExportViewModelFactory
@@ -68,7 +62,6 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.domain.BulkBackfillProgress
 import com.hub.media.features.media.domain.TmdbBackfillProgress
-import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
@@ -85,11 +78,7 @@ import com.hub.media.ui.RestoreUiState
 import com.hub.media.ui.RestoreViewModel
 import com.hub.media.ui.SettingsUiState
 import com.hub.media.ui.SettingsViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Route-level composable for the Settings screen (ROADMAP Task 7 Phase B).
@@ -159,14 +148,8 @@ fun SettingsScreenRoute(
     // something and a season being reconciled on the review screen both reach this count on their
     // own. An effect keyed on the run's state would have covered only the first of those.
 
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val backupSuccessMessage = stringResource(R.string.backup_success_message)
-    val backupFailureMessage = stringResource(R.string.backup_failure_message)
-    val backupCancelledMessage = stringResource(R.string.backup_cancelled_message)
-    val restoreCancelledMessage = stringResource(R.string.restore_cancelled_message)
-    val restoreReadFailureMessage = stringResource(R.string.restore_read_failure_message)
     val apiKeySavedMessage = stringResource(R.string.settings_google_books_key_saved_message)
     val apiKeyClearedMessage = stringResource(R.string.settings_google_books_key_cleared_message)
     val tmdbSavedMessage = stringResource(R.string.settings_tmdb_key_saved_message)
@@ -217,174 +200,11 @@ fun SettingsScreenRoute(
         onStartBackfill = backfillViewModel::start,
     )
 
-    // ---- Backup (ROADMAP Task 8 Phase C) ------------------------------------------------------
-    // Holds the staged snapshot's path between BackupUiState.Success and the SAF destination
-    // picker below, mirroring pendingBundle's export-side role.
-    var pendingBackupResult by remember { mutableStateOf<BackupResult?>(null) }
+    DatabaseBackupFlow(backupUiState, backupViewModel, snackbarHostState)
 
-    val backupDestinationLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
-        ) { uri ->
-            val result = pendingBackupResult
-            pendingBackupResult = null
-            backupViewModel.reset()
-            coroutineScope.launch {
-                try {
-                    // Off the main thread: copying the staged database snapshot via SAF is blocking
-                    // I/O over a potentially large file.
-                    val message =
-                        when {
-                            uri == null -> backupCancelledMessage
-                            result == null -> backupFailureMessage
-                            withContext(
-                                Dispatchers.IO,
-                            ) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
-                            else -> backupFailureMessage
-                        }
-                    snackbarHostState.showSnackbar(message)
-                } finally {
-                    // The staged snapshot is this screen's own private temp file (not the live
-                    // database itself) -- always clean it up once the SAF copy has been attempted,
-                    // success, failure, or cancellation. This `finally` (rather than a plain statement
-                    // after the `when`, as before) matters because `coroutineScope` comes from
-                    // `rememberCoroutineScope()`: leaving Settings while the copy above is still
-                    // running cancels this launch, and a plain post-`when` statement sitting after that
-                    // suspension point would simply never run, leaking a whole-database-sized file in
-                    // cacheDir. Wrapped in `NonCancellable` so the delete itself can't be skipped by
-                    // that same cancellation.
-                    result?.let { withContext(NonCancellable + Dispatchers.IO) { File(it.stagedFilePath).delete() } }
-                }
-            }
-        }
+    val launchRestoreFile = rememberRestoreFileLauncher(restoreViewModel, snackbarHostState)
 
-    LaunchedEffect(backupUiState) {
-        when (val state = backupUiState) {
-            is BackupUiState.Success -> {
-                pendingBackupResult = state.result
-                backupDestinationLauncher.launch(state.result.suggestedFileName)
-            }
-            is BackupUiState.Error -> {
-                snackbarHostState.showSnackbar(state.message)
-                backupViewModel.reset()
-            }
-            BackupUiState.Idle, BackupUiState.Loading -> Unit
-        }
-    }
-
-    // ---- Restore (ROADMAP Task 8 Phase C) ------------------------------------------------------
-    // The picked file is streamed into the app's own private cache directory *before* the
-    // non-destructive shared-layer validation ever runs -- see RestoreDatabaseUseCase.stage's KDoc
-    // for why this exact copy is what "copy the incoming file to a temp location" means here.
-    val restoreFilePickerLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
-        ) { uri ->
-            if (uri == null) {
-                coroutineScope.launch { snackbarHostState.showSnackbar(restoreCancelledMessage) }
-                return@rememberLauncherForActivityResult
-            }
-            val incomingFile = File(context.cacheDir, "restore-incoming-${System.currentTimeMillis()}.tmp")
-            // Off the main thread: this copies a whole database file via SAF, the largest single I/O
-            // operation on this screen -- doing it synchronously here (as before) would ANR on any
-            // real-sized library.
-            coroutineScope.launch {
-                // Tracks whether incomingFile's lifecycle has been handed off to
-                // validateSelectedFile -- once that call is made, RestoreDatabaseUseCase.stage owns
-                // the file (it deletes it on every rejection path) and, on success, ownership passes
-                // again to the AwaitingConfirmation/commit flow below. Until that handoff happens,
-                // nothing else ever takes ownership, so the `finally` below must clean it up itself.
-                var handedOffToValidation = false
-                try {
-                    val copied = withContext(Dispatchers.IO) { copyUriToFile(context, uri, incomingFile.absolutePath) }
-                    if (!copied) {
-                        snackbarHostState.showSnackbar(restoreReadFailureMessage)
-                        return@launch
-                    }
-                    handedOffToValidation = true
-                    restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
-                } finally {
-                    // `coroutineScope` is composition-scoped: leaving Settings while the copy above is
-                    // still running cancels this launch. Without this `finally`, that cancellation (or
-                    // a plain copy failure -- copyUriToFile already deletes its own partial output on
-                    // an IOException, but not when the resolver simply couldn't open the input stream)
-                    // would leave a whole-database-sized temp file behind in cacheDir with nothing left
-                    // to ever clean it up. NonCancellable so the delete itself can't be skipped by that
-                    // same cancellation.
-                    if (!handedOffToValidation) {
-                        withContext(NonCancellable + Dispatchers.IO) { incomingFile.delete() }
-                    }
-                }
-            }
-        }
-
-    LaunchedEffect(restoreUiState) {
-        val state = restoreUiState
-        if (state is RestoreUiState.Error) {
-            // No staged-file cleanup needed here, and none is possible: RestoreUiState.Error only
-            // ever comes from RestoreViewModel.validateSelectedFile's Resource.Error branch, i.e.
-            // RestoreDatabaseUseCase.stage -- which already deletes incomingFilePath via
-            // deleteFileIfExists on every one of its rejection paths before it ever returns
-            // Resource.Error. RestoreUiState.Error also carries no file path (see its KDoc), so
-            // there is nothing this layer could delete even if the cleanup belonged here.
-            snackbarHostState.showSnackbar(state.message)
-            restoreViewModel.reset()
-        }
-    }
-
-    (restoreUiState as? RestoreUiState.AwaitingConfirmation)?.let { state ->
-        RestoreConfirmationDialog(
-            info = state.info,
-            credentialsWillBeCleared = state.credentialsWillBeCleared,
-            onConfirm = {
-                // Deliberately NOT routed through restoreViewModel.viewModelScope: the very next
-                // step closes the AppContainer this ViewModel's own use case was wired from, and
-                // the process is killed immediately after -- see RestoreViewModel's KDoc.
-                //
-                // The launch itself still comes from rememberCoroutineScope, so its Job is
-                // cancelled the moment this composable leaves composition -- but everything from
-                // appContainer.close() onward runs inside a single NonCancellable block, not just
-                // on Dispatchers.IO. appContainer.close() happens first, so a cancellation landing
-                // anywhere after that point (including the resume-back-to-Main that would
-                // otherwise happen between the old withContext(Dispatchers.IO) block and a
-                // separate restartApp(context) call) would leave a closed AppContainer alive in a
-                // process that never restarts -- the exact "half-live container" AGENTS.md §1
-                // warns against, and worse than doing nothing since the user is left looking at a
-                // running app with no working database. NonCancellable (rather than, say, a
-                // longer-lived application-scoped CoroutineScope) is the minimal fix here: it
-                // guarantees this exact sequence runs to completion once started, without adding a
-                // new scope that would need its own lifecycle management. restartApp is called
-                // unconditionally, matching DefaultRestoreDatabaseUseCase.commit's own KDoc ("a
-                // full process restart follows every commit call, success or failure") -- commit
-                // itself never throws (it catches internally and always returns a Resource), so
-                // the only failure mode this guards against is cancellation, not an exception from
-                // commit.
-                coroutineScope.launch {
-                    withContext(Dispatchers.IO + NonCancellable) {
-                        appContainer.close()
-                        appContainer.restoreDatabaseUseCase.commit(state.info)
-                        restartApp(context)
-                    }
-                }
-            },
-            onCancel = {
-                // Declining the restore is the one place the staged copy is discarded by an
-                // explicit user action rather than a failure path -- but it is still a
-                // whole-database-sized file, so the delete belongs on Dispatchers.IO like every
-                // other file operation on this screen, not on the main thread inside a Compose
-                // callback. NonCancellable for the same reason the two sibling cleanup sites use
-                // it: `coroutineScope` is composition-scoped, so tapping Cancel and immediately
-                // leaving Settings would otherwise cancel this launch before the delete ran and
-                // leak the file with nothing left to clean it up.
-                coroutineScope.launch {
-                    withContext(NonCancellable + Dispatchers.IO) {
-                        File(state.info.stagedFilePath).delete()
-                    }
-                }
-                restoreViewModel.reset()
-            },
-        )
-    }
+    RestoreOutcome(restoreUiState, restoreViewModel, appContainer, snackbarHostState)
 
     SettingsScreen(
         uiState = uiState,
@@ -462,7 +282,7 @@ fun SettingsScreenRoute(
         backupInProgress = backupUiState is BackupUiState.Loading,
         onBackupClick = backupViewModel::backupData,
         restoreInProgress = restoreUiState is RestoreUiState.Validating,
-        onRestoreClick = { restoreFilePickerLauncher.launch(arrayOf("*/*")) },
+        onRestoreClick = launchRestoreFile,
         backfillUiState = backfillUiState,
         onStartBackfillClick = backfillViewModel::start,
         onCancelBackfillClick = backfillViewModel::cancel,
