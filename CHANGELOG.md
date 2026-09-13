@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
-- **`SettingsScreen.kt` is being split by feature; it is down from 2,433 lines to 1,303** (#81).
+- **`SettingsScreen.kt` is being split by feature; it is down from 2,433 lines to 548** (#81).
   #81 has called this file "six features wearing one name" since it was 1,961 lines, and it has only
   grown since. It is coming apart along the seams a reader would name, one cut at a time, and five
   have landed so far:
@@ -50,10 +50,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keyword — the new entry points are `internal` because their callers no longer share their file,
   and `SettingsSection` and `RestoreConfirmationDialog` widened from `private` for the same reason.
 
-  **What is left is the part that deserves its own review.** `SettingsScreenRoute` is now most of the
-  remaining file, and it is the three-launcher SAF chain — where a mistake is a silently broken file
-  picker that no golden and no unit test would catch. It is deliberately untouched here rather than
-  piled onto a refactor that is otherwise boring and checkable.
+  **The route's SAF chains came last, on their own branch, and tests came first.**
+  `SettingsScreenRoute` was most of what remained: four Storage Access Framework chains where a
+  mistake is a silently broken file picker that no golden and no unit test would catch, and none of
+  them had any coverage. `SettingsRouteSafChainsTest` was written against the unmodified route —
+  twenty instrumented tests driving it through a recording `ActivityResultRegistry`, covering each
+  chain's happy path, every cancel branch, and the picked-but-unreadable branches that abandon a
+  chain rather than continue it — and then passed unchanged after every cut. The chains then left:
+
+  - **CSV and Goodreads import** → `SettingsImportFlows.kt`, with the summary dialog both share.
+  - **CSV export** → `SettingsCsvExportFlow.kt`.
+  - **Backup and restore** → `SettingsBackupRestoreFlows.kt`, next to the stateless section file
+    rather than inside it, so a `Section` file never registers a launcher.
+  - **The route itself** → `SettingsScreenRoute.kt`, a pure move once it was down to ViewModels,
+    screen state and the credential callbacks.
+
+  Composables that return a launch lambda are `remember*` and emit nothing; the ones that react to a
+  ViewModel's state or show a dialog return nothing. All are called unconditionally, since a
+  launcher's registration key follows its position in the composition. The moved code is again
+  byte-identical, checked by comparing each commit's removed and added lines. The exceptions are the
+  new signatures, the summary dialog's backfill action calling a passed-in `onStartBackfill`, a KDoc link to
+  that now-private dialog becoming a code span, and one comment that pointed at a KDoc which no
+  longer existed under that name.
 
   **What the screenshot test does and does not prove here.** `verifyRoborazziDebug` passes, and for
   the credential sections that is real evidence: both rows are inside the Settings golden's viewport,
