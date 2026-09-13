@@ -44,7 +44,9 @@ Compose screens have instrumented tests, which need a connected device:
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
-That run **uninstalls the app when it finishes**, so to get a working debug build back with sample
+That run **uninstalls the app when it finishes**. (While iterating on a few test classes, adding
+`-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true` keeps it installed. Leave the flag
+off for the full run before a PR; see AGENTS.md §7.) To get a working debug build back with sample
 data in it:
 
 ```bash
