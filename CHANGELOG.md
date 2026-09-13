@@ -9,32 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
-- **The two backfill sections moved out of the Settings screen** (#81). `SettingsScreen.kt` had
-  reached 2,433 lines, and this is the first of #81's cuts: the books backfill and the
-  films-and-shows one, taken together because they were already adjacent and already split along
-  the Books / Films & TV line Settings is organised by. Nothing else on the screen had to move for
-  them to leave. The screen is now 2,117 lines, and `SettingsBackfillSections.kt` holds the whole
-  vertical slice — the two sections, the one generic row they share, and the per-pass conversions
-  feeding it.
+- **`SettingsScreen.kt` is being split by feature; it is down from 2,433 lines to 1,681** (#81).
+  #81 has called this file "six features wearing one name" since it was 1,961 lines, and it has only
+  grown since. It is coming apart along the seams a reader would name, one cut at a time, and three
+  have landed so far:
+
+  - **The two backfill sections** → `SettingsBackfillSections.kt`. Taken first because they were
+    already adjacent and already split along the Books / Films & TV line Settings is organised by,
+    so nothing else on the screen had to move for them to leave. The file holds the whole vertical
+    slice: the two sections, the one generic row they share, and the per-pass conversions feeding it.
+  - **The previews** → `SettingsScreenPreviews.kt`, following the split `BookDetailScreenPreviews.kt`
+    already made. Previews are the cheapest thing a large screen file can shed — they are leaves,
+    nothing calls them, and each is a wall of `{}` callbacks whose bulk is out of all proportion to
+    what it says.
+  - **The Diagnostics and About sections** → `SettingsDiagnosticsSections.kt`. About rides along
+    rather than taking a file of its own: it is one nineteen-line row sitting inside the same
+    contiguous run of the original file, and a file per section would be a file per row here.
 
   Each section now owns its own `SettingsSection` wrapper, so the screen calls one composable per
-  section instead of spelling out the card, the title and the row at the call site. The reasoning
-  that lived in comments there — why each pass is its own section rather than two rows in one card,
-  and why the mismatch count is read from the stored findings rather than from the run's progress —
-  moved into the new composables' documentation rather than being dropped.
+  section instead of spelling out the card, the title and the rows at every call site. The reasoning
+  that lived in comments at those call sites — why each backfill pass is its own section rather than
+  two rows in one card, why the mismatch count is read from the stored findings rather than the run's
+  progress, and why About cannot be filed under Diagnostics without putting a licence notice behind a
+  word that means "something has gone wrong" — moved into the new composables' documentation rather
+  than being dropped.
 
-  **The moved code is byte-identical.** That was checked by diffing the extracted block against the
-  same line range of the previous commit, not by reading it. The only differences anywhere are
-  visibility keywords: the two section composables are `internal` because their caller no longer
-  shares their file, and `SettingsSection` widened from `private` for the same reason — which is
-  also the seam the remaining Settings cuts will need.
+  **The moved code is byte-identical**, checked by diffing each extracted block against the same line
+  range of the previous commit rather than by reading it. There is exactly one exception, and it is a
+  comment: a KDoc link to `WeekStartDaySetting`, which stays on the screen, became a plain code span,
+  because widening a composable's visibility purely so a documentation link resolves is the wrong
+  trade. Every other difference anywhere is a visibility keyword — the new entry points are
+  `internal` because their callers no longer share their file, and `SettingsSection` and
+  `RestoreConfirmationDialog` widened from `private` for the same reason.
 
   **What the screenshot test does and does not prove here.** `verifyRoborazziDebug` passes, but the
-  Settings golden captures a `LazyColumn` viewport that ends at the TMDB credential field: the
-  backfill rows sit below the fold and are not in the image. The golden therefore attests that
-  everything above them is unchanged and nothing whatever about the rows themselves. Those were
-  checked on a phone instead — both sections, and the review entry that appears only once a run has
-  found a disagreement.
+  Settings golden captures a `LazyColumn` viewport that ends at the TMDB credential field: everything
+  moved so far sits below that fold and is not in the image. The golden therefore attests that the
+  part of the screen it can see is unchanged, and nothing whatever about the rows that moved. Those
+  were checked on a phone instead.
 
 ## [0.20.0] - 2026-09-12
 
