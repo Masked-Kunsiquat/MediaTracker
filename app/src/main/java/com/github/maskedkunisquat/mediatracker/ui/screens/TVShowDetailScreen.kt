@@ -573,13 +573,21 @@ private fun SeasonHeader(
                 imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = toggleDescription,
             )
-            TextButton(onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) }) {
+            // Shrinks and ellipsizes like the header text, so the chevron (#130) and the overflow
+            // button keep their width. Without it, font scale 1.1 on a narrow row squeezed the
+            // overflow button to zero again (#163).
+            TextButton(
+                onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) },
+                modifier = Modifier.weight(1f, fill = false),
+            ) {
                 Text(
                     if (allWatched) {
                         stringResource(R.string.tv_show_detail_clear_season)
                     } else {
                         stringResource(R.string.tv_show_detail_mark_season_watched)
                     },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Box {

@@ -3,7 +3,9 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -18,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
@@ -121,30 +124,37 @@ class TVShowDetailScreenTest {
         // see 3042a48's commit message for the pixel breakdown -- and this test device is wide
         // enough that a two-digit episode count alone does not run out of room on it.
         narrowWidth: Boolean = false,
+        // Overrides the device's font scale, so a layout guard fails the same way on every device.
+        fontScale: Float? = null,
     ) {
         composeRule.setContent {
-            MediaTrackerTheme {
-                val content =
-                    @Composable {
-                        TVShowDetailScreen(
-                            // See MovieDetailScreenTest: no artwork is asserted here either.
-                            coverStorageDir = NO_COVERS,
-                            uiState = uiState,
-                            onEpisodeWatchedChange = { _, _ -> },
-                            onSeasonWatchedChange = { _, _ -> },
-                            onSetSeasonLength = onSetSeasonLength,
-                            onRemoveSeason = onRemoveSeason,
-                            onAbandonedChange = onAbandonedChange,
-                            onDelete = onDelete,
-                            onErrorShown = onErrorShown,
-                            onNavigateBack = onNavigateBack,
-                            onRefreshMetadata = onRefreshMetadata,
-                        )
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale ?: density.fontScale),
+            ) {
+                MediaTrackerTheme {
+                    val content =
+                        @Composable {
+                            TVShowDetailScreen(
+                                // See MovieDetailScreenTest: no artwork is asserted here either.
+                                coverStorageDir = NO_COVERS,
+                                uiState = uiState,
+                                onEpisodeWatchedChange = { _, _ -> },
+                                onSeasonWatchedChange = { _, _ -> },
+                                onSetSeasonLength = onSetSeasonLength,
+                                onRemoveSeason = onRemoveSeason,
+                                onAbandonedChange = onAbandonedChange,
+                                onDelete = onDelete,
+                                onErrorShown = onErrorShown,
+                                onNavigateBack = onNavigateBack,
+                                onRefreshMetadata = onRefreshMetadata,
+                            )
+                        }
+                    if (narrowWidth) {
+                        Box(modifier = Modifier.width(220.dp)) { content() }
+                    } else {
+                        content()
                     }
-                if (narrowWidth) {
-                    Box(modifier = Modifier.width(220.dp)) { content() }
-                } else {
-                    content()
                 }
             }
         }
@@ -179,6 +189,19 @@ class TVShowDetailScreenTest {
         // "displayed" actually catches this. narrowWidth pins this test to a narrow-phone width
         // rather than this test device's actual (much wider) one -- see [setContent]'s KDoc.
         setContent(readyState(episodeCount = 10), narrowWidth = true)
+
+        val menuDesc = context.getString(R.string.tv_show_detail_season_menu_content_description, 1)
+        composeRule.onNodeWithContentDescription(menuDesc).assertIsDisplayed()
+    }
+
+    /**
+     * #163: the test above passed at font scale 1.0 and failed at 1.1, so it guarded only on devices
+     * that happened to use a larger font. Pinning the scale makes the guard device-independent; 2.0
+     * is the largest system setting.
+     */
+    @Test
+    fun seasonMenuButton_isDisplayed_atLargeFontScaleOnANarrowRow() {
+        setContent(readyState(episodeCount = 10), narrowWidth = true, fontScale = 2.0f)
 
         val menuDesc = context.getString(R.string.tv_show_detail_season_menu_content_description, 1)
         composeRule.onNodeWithContentDescription(menuDesc).assertIsDisplayed()

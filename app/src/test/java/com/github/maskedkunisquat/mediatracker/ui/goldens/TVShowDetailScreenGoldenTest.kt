@@ -3,7 +3,9 @@ package com.github.maskedkunisquat.mediatracker.ui.goldens
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreen
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -86,6 +88,22 @@ class TVShowDetailScreenGoldenTest {
             name = "tv-show-detail-with-poster",
             alsoAssert = { assertTextIsShown("Twin Peaks", "Season 1") },
         ) { WithPosterFixture(coverDir.absolutePath, coverHash) }
+    }
+
+    /**
+     * The same fixture at the largest system font scale (#163). Every other golden renders at 1.0,
+     * which is how a season header that broke at 1.1 got past all of them. This one records what
+     * the header gives up at large text: the season title shrinks to an ellipsis before the other
+     * controls do. It is not the regression guard. At full width the header still fits with the fix
+     * removed, so the guard lives in `TVShowDetailScreenOcclusionTest` on a narrow row.
+     */
+    @Test
+    fun tvShowDetail_largestFontScale() {
+        composeRule.captureGolden(
+            name = "tv-show-detail-font-scale-2",
+            fontScale = 2f,
+            alsoAssert = { onNodeWithContentDescription("Season 1 options").assertIsDisplayed() },
+        ) { Fixture() }
     }
 
     @Composable

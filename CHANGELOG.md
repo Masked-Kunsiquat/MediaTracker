@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A season's ⋮ menu no longer disappears with a slightly larger system font** (#163). At font
+  scale 1.1 on a narrow screen, the season header squeezed its overflow button to zero width. That
+  menu is the only way to change a season's episode count or remove the season, and a tap aimed at it
+  could land on "Mark season watched" instead. It is the same failure #80 fixed, brought back when
+  #130 added the fold chevron to that row. "Mark season watched" now shrinks and ellipsizes the way
+  the season title already did, so the chevron and the menu keep their size at any font scale.
+  Nothing changes at the default font size.
 - **A restore can no longer be committed twice.** The confirmation dialog stays on screen until the
   app restarts, and its Confirm button stayed enabled during that time. A second tap started a second
   commit, which would move the freshly restored database over the backup of the one it replaced.
