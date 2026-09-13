@@ -144,6 +144,9 @@ fun SettingsScreenRoute(
     // writes to the user's real library.
     var duplicatePolicy by remember { mutableStateOf(DuplicatePolicy.SKIP) }
 
+    // Every flow below is called unconditionally. Each owns its own coroutine scope and launchers, so
+    // gating one behind an `if` would cancel its in-flight work, and drop its registered picker, on its
+    // own schedule rather than the screen's.
     val launchCsvImport = rememberCsvImportLauncher(importViewModel, duplicatePolicy, snackbarHostState)
 
     // ---- Goodreads import (ROADMAP Task 8 Phase D) ---------------------------------------------

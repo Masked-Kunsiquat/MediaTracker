@@ -67,6 +67,10 @@ class SettingsRouteSafChainsTest {
     private lateinit var registry: RecordingActivityResultRegistry
     private lateinit var workDir: File
 
+    /** Temp files that existed before this test, so [tearDown] only deletes what the test created. */
+    private var restoreIncomingBefore: Set<File> = emptySet()
+    private var stagedBackupBefore: Set<File> = emptySet()
+
     /** Files this test created outside of [workDir] (e.g. a backup staged in the database directory). */
     private val extraFilesToDelete = mutableListOf<File>()
 
@@ -74,6 +78,8 @@ class SettingsRouteSafChainsTest {
     fun setUp() {
         registry = RecordingActivityResultRegistry()
         workDir = File(instrumentationContext.cacheDir, "safChainsTest").apply { mkdirs() }
+        restoreIncomingBefore = restoreIncomingFiles().toSet()
+        stagedBackupBefore = stagedBackupFiles().toSet()
 
         composeRule.setContent {
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides FakeRegistryOwner(registry)) {
@@ -94,6 +100,10 @@ class SettingsRouteSafChainsTest {
         workDir.deleteRecursively()
         extraFilesToDelete.forEach { it.delete() }
         extraFilesToDelete.clear()
+        // A test that fails before production cleanup runs would otherwise leave a whole-database copy
+        // behind on the device.
+        (restoreIncomingFiles() - restoreIncomingBefore).forEach { it.delete() }
+        (stagedBackupFiles() - stagedBackupBefore).forEach { it.delete() }
     }
 
     // ---- helpers ---------------------------------------------------------------------------------

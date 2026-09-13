@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -186,8 +187,9 @@ internal fun RestoreOutcome(
 
     // Set synchronously on the first Confirm tap. The dialog stays up until the process restarts, and
     // a second commit would move the freshly restored database over the pre-restore backup, while a
-    // Cancel or dismiss would delete the staged file mid-commit.
-    var commitStarted by remember { mutableStateOf(false) }
+    // Cancel or dismiss would delete the staged file mid-commit. Saveable because the AwaitingConfirmation
+    // state lives in the ViewModel and survives a rotation mid-commit; a plain `remember` would not.
+    var commitStarted by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(restoreUiState) {
         val state = restoreUiState
