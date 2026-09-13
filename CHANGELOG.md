@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **`SettingsScreen.kt` is being split by feature; it is down from 2,433 lines to 1,303** (#81).
+  #81 has called this file "six features wearing one name" since it was 1,961 lines, and it has only
+  grown since. It is coming apart along the seams a reader would name, one cut at a time, and five
+  have landed so far:
+
+  - **The two backfill sections** → `SettingsBackfillSections.kt`. Taken first because they were
+    already adjacent and already split along the Books / Films & TV line Settings is organised by,
+    so nothing else on the screen had to move for them to leave. The file holds the whole vertical
+    slice: the two sections, the one generic row they share, and the per-pass conversions feeding it.
+  - **The previews** → `SettingsScreenPreviews.kt`, following the split `BookDetailScreenPreviews.kt`
+    already made. Previews are the cheapest thing a large screen file can shed — they are leaves,
+    nothing calls them, and each is a wall of `{}` callbacks whose bulk is out of all proportion to
+    what it says.
+  - **The Diagnostics and About sections** → `SettingsDiagnosticsSections.kt`. About rides along
+    rather than taking a file of its own: it is one nineteen-line row sitting inside the same
+    contiguous run of the original file, and a file per section would be a file per row here.
+  - **The two provider-credential sections** → `SettingsCredentialSections.kt`. The row itself was
+    already generalised over its strings and test tag (#75), so what was left at the call sites was
+    twelve resource arguments apiece, the bulk of which said nothing except which provider this was.
+    Each section now names its provider once and supplies the rest itself.
+  - **Backup & restore** → `SettingsBackupRestoreSection.kt`, and the confirmation dialog guarding
+    the destructive half travels with it rather than staying beside the route that shows it: it
+    exists only to confirm this section's one action, and the reasoning in the two KDocs is a single
+    argument split across them.
+
+  Each section now owns its own `SettingsSection` wrapper, so the screen calls one composable per
+  section instead of spelling out the card, the title and the rows at every call site. The reasoning
+  that lived in comments at those call sites — why each backfill pass is its own section rather than
+  two rows in one card, why the mismatch count is read from the stored findings rather than the run's
+  progress, and why About cannot be filed under Diagnostics without putting a licence notice behind a
+  word that means "something has gone wrong" — moved into the new composables' documentation rather
+  than being dropped.
+
+  **The moved code is byte-identical**, checked by diffing each extracted block against the same line
+  range of the previous commit rather than by reading it. There are exactly two exceptions and both
+  are comments: KDoc links to `WeekStartDaySetting` and `ExportDataSetting`, which stay on the
+  screen, became plain code spans, because widening a composable's visibility purely so a
+  documentation link resolves is the wrong trade. Every other difference anywhere is a visibility
+  keyword — the new entry points are `internal` because their callers no longer share their file,
+  and `SettingsSection` and `RestoreConfirmationDialog` widened from `private` for the same reason.
+
+  **What is left is the part that deserves its own review.** `SettingsScreenRoute` is now most of the
+  remaining file, and it is the three-launcher SAF chain — where a mistake is a silently broken file
+  picker that no golden and no unit test would catch. It is deliberately untouched here rather than
+  piled onto a refactor that is otherwise boring and checkable.
+
+  **What the screenshot test does and does not prove here.** `verifyRoborazziDebug` passes, and for
+  the credential sections that is real evidence: both rows are inside the Settings golden's viewport,
+  so the image confirms they are pixel-identical after the move. It proves nothing about the rest.
+  That viewport ends at the TMDB credential field, and the backfill, diagnostics, about and
+  backup/restore sections all sit below the fold and are absent from the image entirely. Those were
+  checked on a phone instead.
+
 ## [0.20.0] - 2026-09-12
 
 Your library can now disagree with the catalogue, and say so.

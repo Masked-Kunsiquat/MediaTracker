@@ -2,15 +2,10 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,29 +17,19 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -61,19 +46,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -93,7 +70,6 @@ import com.github.maskedkunisquat.mediatracker.ui.SettingsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.TmdbBackfillViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
-import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Resource
@@ -104,7 +80,6 @@ import com.hub.media.features.portability.domain.CsvExportBundle
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportRejection
 import com.hub.media.features.portability.domain.ImportSummary
-import com.hub.media.features.portability.domain.StagedRestoreInfo
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackfillUiState
@@ -125,8 +100,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.ceil
-import kotlin.time.DurationUnit
 
 /**
  * Route-level composable for the Settings screen (ROADMAP Task 7 Phase B).
@@ -735,161 +708,6 @@ fun SettingsScreenRoute(
  *   "nothing pending". The distinction did not exist while only books could be imported.
  */
 
-/**
- * The levels offered in "Log detail", most verbose first to match [LogLevel]'s declaration order.
- *
- * [LogLevel.DEBUG] is deliberately absent: there is still not one DEBUG call site in the codebase,
- * so offering it promised a level of detail that behaved identically to Detailed. A value already
- * persisted as DEBUG is left alone rather than rewritten -- it still displays and still works, and
- * silently downgrading a diagnostic setting somebody deliberately turned on would be worse than
- * leaving one unlisted option in place. Add DEBUG back here the moment something logs at it.
- */
-private val SELECTABLE_LOG_LEVELS: List<LogLevel> =
-    listOf(LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR)
-
-/**
- * The log-verbosity setting row (ROADMAP Task 15 Phase B2).
- *
- * A dropdown rather than [WeekStartDaySetting]'s segmented buttons: Material 3 reserves segmented
- * buttons for a small set meant to be compared side by side, and options whose labels are words
- * rather than single tokens would crowd a phone-width row. The order follows [LogLevel]'s own
- * declaration order, most verbose first, so "more detail" reads as down-the-list.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun LogVerbositySetting(
-    selected: LogLevel,
-    onSelectedChange: (LogLevel) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val label = stringResource(R.string.settings_log_verbosity_label)
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(R.string.settings_log_verbosity_description),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-        ) {
-            OutlinedTextField(
-                value = selected.displayLabel(),
-                onValueChange = {},
-                readOnly = true,
-                label = null,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                // The label is drawn as a separate Text above (matching WeekStartDaySetting's
-                // layout), so this field has no Material label of its own and TalkBack would
-                // otherwise announce only the bare value -- "Warnings", with no indication of which
-                // setting it belongs to. Restating it here as a contentDescription gives screen
-                // readers that context without changing the visual layout.
-                modifier =
-                    Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                        .semantics { contentDescription = label },
-            )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                SELECTABLE_LOG_LEVELS.forEach { level ->
-                    DropdownMenuItem(
-                        text = { Text(level.displayLabel()) },
-                        onClick = {
-                            onSelectedChange(level)
-                            expanded = false
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * The log-viewer row (ROADMAP Task 15 Phase B2): navigates to the read-only viewer rather than
- * showing entries inline, since that screen needs its own scroll and selection behaviour that a
- * card inside this screen's `LazyColumn` could not provide.
- *
- * The description states the privacy guarantee explicitly. That is deliberate: a user about to
- * share a log with someone should be able to see, at the point of doing it, that it never contained
- * their titles, authors, or notes -- the identifier rule from Phase A is only reassuring if it is
- * visible where the decision is made.
- */
-
-/**
- * The "What's new" row (ROADMAP Task 15 Phase B2b). Sits in Diagnostics beside the log viewer
- * rather than in its own section: both are read-only reference screens reached from here, and a
- * one-row section for each would be more chrome than content.
- */
-@Composable
-private fun ChangelogSetting(onViewChangelogClick: () -> Unit) {
-    Column {
-        Text(
-            text = stringResource(R.string.settings_changelog_label),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(R.string.settings_changelog_description),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        Button(onClick = onViewChangelogClick) {
-            Text(stringResource(R.string.settings_changelog_button))
-        }
-    }
-}
-
-/**
- * The About row (#137). Opens the credits screen where the provider attributions live.
- *
- * The description names what is on the other side rather than saying "about this app", because the
- * one thing a user might come looking for here -- which catalogue their film data came from -- is
- * otherwise invisible from the row.
- */
-@Composable
-private fun AboutSetting(onViewAboutClick: () -> Unit) {
-    Column {
-        Text(
-            text = stringResource(R.string.settings_about_label),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(R.string.settings_about_description),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        Button(onClick = onViewAboutClick) {
-            Text(stringResource(R.string.settings_about_button))
-        }
-    }
-}
-
-@Composable
-private fun LogViewerSetting(onViewLogClick: () -> Unit) {
-    Column {
-        Text(
-            text = stringResource(R.string.settings_log_viewer_label),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(R.string.settings_log_viewer_description),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        Button(onClick = onViewLogClick) {
-            Text(stringResource(R.string.settings_log_viewer_button))
-        }
-    }
-}
-
 @Composable
 private fun ImportSummaryDialog(
     summary: ImportSummary,
@@ -989,75 +807,6 @@ private fun ImportSummaryDialog(
 }
 
 /**
- * The restore destructive-action confirmation (ROADMAP Task 8 Phase C task brief: "Require an
- * explicit, unambiguous confirmation that states what will be lost. Do not make it a single tap
- * next to the export button.") -- a dedicated modal dialog, reached only after the picked file has
- * already passed non-destructive header/version validation (so this dialog never appears for a
- * file that turns out to be unusable), requiring an explicit checkbox acknowledgement before the
- * destructive confirm button becomes enabled, with that button styled in the theme's `error` color
- * to read as visually distinct from every other action on this screen.
- *
- * @param credentialsWillBeCleared Mirrors
- *   [com.hub.media.ui.RestoreUiState.AwaitingConfirmation.credentialsWillBeCleared] -- when true,
- *   an extra sentence warns that the provider keys the user has entered will need to be entered
- *   again afterward, since backups never carry them (see that property's KDoc for why). It does
- *   not name which: the warning is driven off the credential list so it stays true as providers
- *   are added, and the user's next step is the same either way.
- */
-@Composable
-private fun RestoreConfirmationDialog(
-    info: StagedRestoreInfo,
-    credentialsWillBeCleared: Boolean,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    var understood by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(stringResource(R.string.restore_confirm_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.restore_confirm_message))
-                if (info.isOlderSchemaVersion) {
-                    Text(
-                        text = stringResource(R.string.restore_confirm_message_older_version, info.schemaVersionFound),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                if (credentialsWillBeCleared) {
-                    Text(
-                        text = stringResource(R.string.restore_confirm_message_credentials),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { understood = !understood },
-                ) {
-                    Checkbox(checked = understood, onCheckedChange = { understood = it })
-                    Text(
-                        text = stringResource(R.string.restore_confirm_checkbox_label),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = understood,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) {
-                Text(stringResource(R.string.restore_confirm_button))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.restore_cancel_button)) }
-        },
-    )
-}
-
-/**
  * Stateless Settings screen composable (AGENTS.md §5 State Hoisting).
  *
  * ### Structure, built to be extended
@@ -1134,8 +883,8 @@ private fun RestoreConfirmationDialog(
  *   [BackfillViewModel.cancel].
  * @param tmdbBackfillUiState Current state of the films-and-shows artwork/metadata pass (#140). A
  *   second state rather than a merged one because the two passes are two actions, decided against
- *   #126's domain-sectioned Settings screen — see [BackfillRowContent] on why they cannot share a
- *   progress type either.
+ *   #126's domain-sectioned Settings screen — see [FilmsAndTvBackfillSection] on why they cannot
+ *   share a progress type either.
  * @param onStartTmdbBackfillClick Called when that pass's start/resume button is tapped.
  * @param onCancelTmdbBackfillClick Called when that pass's cancel button is tapped.
  * @param onNavigateBack Called when the back icon is pressed.
@@ -1221,65 +970,27 @@ fun SettingsScreen(
                     }
                 }
                 item {
-                    // Its own section rather than a row under "Data": this is about how books are
-                    // looked up when they are added, not about moving data in and out of the app,
-                    // and it is the only setting on this screen that stores a credential.
-                    SettingsSection(title = stringResource(R.string.settings_section_book_lookups)) {
-                        ProviderCredentialSetting(
-                            labelRes = R.string.settings_google_books_key_label,
-                            descriptionRes = R.string.settings_google_books_key_description,
-                            savedRes = R.string.settings_google_books_key_saved,
-                            notSavedRes = R.string.settings_google_books_key_not_saved,
-                            fieldLabelRes = R.string.settings_google_books_key_field_label,
-                            saveButtonRes = R.string.settings_google_books_key_save_button,
-                            replaceButtonRes = R.string.settings_google_books_key_replace_button,
-                            clearButtonRes = R.string.settings_google_books_key_clear_button,
-                            fieldTestTag = TestTags.Settings.API_KEY_FIELD,
-                            credentialSet = uiState.googleBooksApiKeySet,
-                            onSave = onGoogleBooksApiKeySave,
-                            onClear = onGoogleBooksApiKeyClear,
-                        )
-                    }
+                    BookLookupsSection(
+                        credentialSet = uiState.googleBooksApiKeySet,
+                        onSave = onGoogleBooksApiKeySave,
+                        onClear = onGoogleBooksApiKeyClear,
+                    )
                 }
                 item {
-                    // Its own section rather than sharing "Book lookups", which is what the first
-                    // recording of this golden actually showed: a TMDB credential filed under a
-                    // heading that says books. The tag assertion could not see that -- the control
-                    // was present and correct, under the wrong words. This is the case #102 rule 3
-                    // exists for.
-                    SettingsSection(title = stringResource(R.string.settings_section_film_tv_lookups)) {
-                        ProviderCredentialSetting(
-                            labelRes = R.string.settings_tmdb_key_label,
-                            descriptionRes = R.string.settings_tmdb_key_description,
-                            savedRes = R.string.settings_tmdb_key_saved,
-                            notSavedRes = R.string.settings_tmdb_key_not_saved,
-                            fieldLabelRes = R.string.settings_tmdb_key_field_label,
-                            saveButtonRes = R.string.settings_tmdb_key_save_button,
-                            replaceButtonRes = R.string.settings_tmdb_key_replace_button,
-                            clearButtonRes = R.string.settings_tmdb_key_clear_button,
-                            fieldTestTag = TestTags.Settings.TMDB_KEY_FIELD,
-                            credentialSet = uiState.tmdbCredentialSet,
-                            onSave = onTmdbCredentialSave,
-                            onClear = onTmdbCredentialClear,
-                            testAction =
-                                CredentialTestAction(
-                                    labelRes = R.string.settings_tmdb_key_test_button,
-                                    onTest = onTmdbCredentialTest,
-                                ),
-                        )
-                    }
+                    FilmAndTvLookupsSection(
+                        credentialSet = uiState.tmdbCredentialSet,
+                        onSave = onTmdbCredentialSave,
+                        onClear = onTmdbCredentialClear,
+                        onTest = onTmdbCredentialTest,
+                    )
                 }
                 item {
-                    SettingsSection(title = stringResource(R.string.settings_section_diagnostics)) {
-                        LogVerbositySetting(
-                            selected = uiState.logVerbosity,
-                            onSelectedChange = onLogVerbosityChange,
-                        )
-                        HorizontalDivider()
-                        LogViewerSetting(onViewLogClick = onNavigateToLogViewer)
-                        HorizontalDivider()
-                        ChangelogSetting(onViewChangelogClick = onNavigateToChangelog)
-                    }
+                    DiagnosticsSection(
+                        logVerbosity = uiState.logVerbosity,
+                        onLogVerbosityChange = onLogVerbosityChange,
+                        onViewLogClick = onNavigateToLogViewer,
+                        onViewChangelogClick = onNavigateToChangelog,
+                    )
                 }
                 item {
                     SettingsSection(title = stringResource(R.string.settings_section_data)) {
@@ -1304,79 +1015,31 @@ fun SettingsScreen(
                     }
                 }
                 item {
-                    // Its own section, not another row in the "Data" card above -- this is a
-                    // long-running, resumable, cancellable action (ROADMAP Task 14 Phase A's
-                    // brief: "not a single tap"), unlike the export/import rows above it, and
-                    // reads better grouped with the repair-your-library concern it serves rather
-                    // than folded into the import/export card.
-                    SettingsSection(title = stringResource(R.string.settings_section_backfill)) {
-                        BackfillSetting(
-                            description = stringResource(R.string.settings_backfill_description),
-                            uiState = backfillUiState,
-                            describe = { bookBackfillRowContent(it) },
-                            onStartClick = onStartBackfillClick,
-                            onCancelClick = onCancelBackfillClick,
-                        )
-                    }
+                    BookBackfillSection(
+                        uiState = backfillUiState,
+                        onStartClick = onStartBackfillClick,
+                        onCancelClick = onCancelBackfillClick,
+                    )
                 }
                 item {
-                    // Its own section rather than a second row inside the books one, because #126
-                    // decided Settings is sectioned by domain -- Books / Films & TV / Data /
-                    // Diagnostics. This is the Films & TV half of the same repair concern, and #140
-                    // chose two actions over one merged pass on exactly that basis: a control
-                    // spanning both domains would have had to live in neither.
-                    SettingsSection(title = stringResource(R.string.settings_section_tmdb_backfill)) {
-                        BackfillSetting(
-                            description = stringResource(R.string.settings_tmdb_backfill_description),
-                            uiState = tmdbBackfillUiState,
-                            describe = { tmdbBackfillRowContent(it) },
-                            onStartClick = onStartTmdbBackfillClick,
-                            onCancelClick = onCancelTmdbBackfillClick,
-                        )
-                        // Read from the stored findings rather than from the run's progress (#123).
-                        // A completed run clears its resume state, so peekProgress() is null by the
-                        // time anyone opens this screen -- the count has to come from where the
-                        // findings actually live, or it would show only in the seconds after a run.
-                        if (mismatchedShows > 0) {
-                            MismatchReviewEntry(
-                                shows = mismatchedShows,
-                                onReviewClick = onReviewMismatchesClick,
-                            )
-                        }
-                    }
+                    FilmsAndTvBackfillSection(
+                        uiState = tmdbBackfillUiState,
+                        onStartClick = onStartTmdbBackfillClick,
+                        onCancelClick = onCancelTmdbBackfillClick,
+                        mismatchedShows = mismatchedShows,
+                        onReviewClick = onReviewMismatchesClick,
+                    )
                 }
                 item {
-                    // A separate section (not another row in the "Data" card above) -- ROADMAP
-                    // Task 8 Phase C's brief calls for backup and restore to be "clearly
-                    // separated by risk" from CSV export/import and from each other; a whole-
-                    // database restore is destructive in a way the CSV importer's DuplicatePolicy
-                    // (SKIP/MERGE always preserve existing rows) never is.
-                    SettingsSection(title = stringResource(R.string.settings_section_backup_restore)) {
-                        BackupDataSetting(
-                            backupInProgress = backupInProgress,
-                            onBackupClick = onBackupClick,
-                        )
-                        HorizontalDivider()
-                        RestoreDataSetting(
-                            restoreInProgress = restoreInProgress,
-                            onRestoreClick = onRestoreClick,
-                        )
-                    }
+                    BackupRestoreSection(
+                        backupInProgress = backupInProgress,
+                        onBackupClick = onBackupClick,
+                        restoreInProgress = restoreInProgress,
+                        onRestoreClick = onRestoreClick,
+                    )
                 }
                 item {
-                    // Its own section, and last, rather than a third row in Diagnostics beside the
-                    // log viewer and the changelog (#137).
-                    //
-                    // [ChangelogSetting]'s KDoc argues that a one-row section is "more chrome than
-                    // content", and that reasoning is sound for what it covered: two read-only
-                    // reference screens that belong together. It does not extend here. TMDB's terms
-                    // require their attribution to live in an "About or Credits type section", so
-                    // the section heading is part of what satisfies the term -- filing it under
-                    // Diagnostics would put a licence notice behind a word that means "something
-                    // has gone wrong", which is both wrong and harder to find.
-                    SettingsSection(title = stringResource(R.string.settings_section_about)) {
-                        AboutSetting(onViewAboutClick = onNavigateToAbout)
-                    }
+                    AboutSection(onViewAboutClick = onNavigateToAbout)
                 }
                 // Future settings sections are added here as additional `item { SettingsSection(...) }`
                 // blocks -- see this composable's KDoc.
@@ -1391,7 +1054,7 @@ fun SettingsScreen(
  * new [SettingsSection] with its own title.
  */
 @Composable
-private fun SettingsSection(
+internal fun SettingsSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
@@ -1410,167 +1073,6 @@ private fun SettingsSection(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 content()
-            }
-        }
-    }
-}
-
-/**
- * A credential row's optional "test this" button: its label and what pressing it does.
- *
- * One nullable parameter rather than two, because two independently-nullable ones can disagree: a
- * caller passing the action and forgetting the label gets no button and no complaint. That is the
- * failure shape this screen has already produced twice on this branch -- a control present but
- * wrong, and silent about it -- so the type makes half-specifying it unrepresentable.
- */
-private data class CredentialTestAction(
-    @StringRes val labelRes: Int,
-    val onTest: () -> Unit,
-)
-
-/**
- * One provider credential row: label, explanation, saved/not-saved status, a masked field, and
- * Save/Clear.
- *
- * ### Generalised, because there are two of these now
- * This was `GoogleBooksApiKeySetting` until TMDB's credential arrived (#75). Copying ninety lines to
- * get a second one would have been two rows that drift apart -- and credential handling is the worst
- * possible place for a drift, since the half that stops masking its field is not obviously broken to
- * look at. #81 already tracks duplicated layers of exactly this shape, so this takes its strings and
- * test tag as parameters instead.
- *
- * ### The stored credential is never displayed
- * [credentialSet] is a boolean, and this row has no way to read the saved value even if it wanted to
- * (see [SettingsUiState.googleBooksApiKeySet]/[SettingsUiState.tmdbCredentialSet]). A saved
- * credential is reported as saved; the text field always starts empty and holds its own local state,
- * so what it contains is only ever what the user has just typed in this composition. Re-entering a
- * credential to change it is a deliberate cost: echoing one back into an on-screen field, in an app
- * whose Settings screen is a normal, non-authenticated destination, buys nothing but a
- * shoulder-surfing surface.
- *
- * Masked by default with an explicit Show toggle, and [KeyboardType.Password] regardless of that
- * toggle -- which is what keeps the soft keyboard from learning and later suggesting the value, a
- * leak that would outlive the app entirely. Show exists because these are pasted far more often than
- * typed, and a paste you cannot verify is a support problem.
- *
- * @param labelRes Row heading, e.g. "TMDB API key".
- * @param descriptionRes What the credential buys and what happens without it.
- * @param savedRes Status line shown when [credentialSet].
- * @param notSavedRes Status line shown when it is not.
- * @param fieldLabelRes Label on the text field itself.
- * @param saveButtonRes Save button text when no credential is stored yet.
- * @param replaceButtonRes Save button text when one already is -- saving overwrites, and a button
- *   still reading "Save" would hide that.
- * @param clearButtonRes Clear button text.
- * @param fieldTestTag Test tag for the field, so the two rows are separately addressable from
- *   instrumented tests.
- * @param credentialSet Whether a credential is currently stored, driving the status line and whether
- *   Clear is offered at all.
- * @param onSave Called with the trimmed-by-the-repository field contents when Save is tapped.
- * @param onClear Called when Clear is tapped -- offered only when [credentialSet], since clearing
- *   nothing is not an action.
- * @param testAction Optional "check this actually works" affordance, shown only when non-null *and*
- *   a credential is stored. Optional because only TMDB has an endpoint for it: Google Books has no
- *   equivalent, and a button that could only ever report "we tried a book lookup" would be a
- *   different, vaguer promise wearing the same label.
- */
-@Composable
-private fun ProviderCredentialSetting(
-    @StringRes labelRes: Int,
-    @StringRes descriptionRes: Int,
-    @StringRes savedRes: Int,
-    @StringRes notSavedRes: Int,
-    @StringRes fieldLabelRes: Int,
-    @StringRes saveButtonRes: Int,
-    @StringRes replaceButtonRes: Int,
-    @StringRes clearButtonRes: Int,
-    fieldTestTag: String,
-    credentialSet: Boolean,
-    onSave: (String) -> Unit,
-    onClear: () -> Unit,
-    testAction: CredentialTestAction? = null,
-) {
-    var entered by remember { mutableStateOf("") }
-    var revealed by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(labelRes),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(descriptionRes),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = if (credentialSet) stringResource(savedRes) else stringResource(notSavedRes),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedTextField(
-            value = entered,
-            onValueChange = { entered = it },
-            label = { Text(stringResource(fieldLabelRes)) },
-            singleLine = true,
-            visualTransformation =
-                if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
-            // Password even when revealed -- see this composable's KDoc: the point is the keyboard's
-            // learning/suggestion behavior, not the on-screen masking, and those are separate.
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            trailingIcon = {
-                TextButton(onClick = { revealed = !revealed }) {
-                    Text(
-                        text =
-                            if (revealed) {
-                                stringResource(R.string.settings_google_books_key_hide)
-                            } else {
-                                stringResource(R.string.settings_google_books_key_show)
-                            },
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth().testTag(fieldTestTag),
-        )
-        // FlowRow, not Row: three buttons of provider-length labels overflow 1080px at default font
-        // scale -- verified on device, where the third simply never rendered and no test noticed,
-        // because the golden asserts the *field's* tag rather than the buttons. Two of them already
-        // came close enough that a larger font scale would have clipped Clear, so this fixes a
-        // latent bug as well as the new one.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Button(
-                onClick = {
-                    onSave(entered)
-                    // Dropped as soon as it has been handed over: nothing on this screen needs the
-                    // credential again, and leaving it sitting in a composition-scoped field would
-                    // keep it on screen (and in the recomposition snapshot) for the rest of the
-                    // visit for no reason.
-                    entered = ""
-                    revealed = false
-                },
-                enabled = entered.isNotBlank(),
-            ) {
-                Text(text = if (credentialSet) stringResource(replaceButtonRes) else stringResource(saveButtonRes))
-            }
-            if (credentialSet) {
-                OutlinedButton(
-                    onClick = {
-                        onClear()
-                        entered = ""
-                        revealed = false
-                    },
-                ) {
-                    Text(stringResource(clearButtonRes))
-                }
-                // Only offered once something is stored: testing nothing is not an action, and the
-                // answer would be a foregone "no credential" rather than anything about the
-                // provider.
-                if (testAction != null) {
-                    TextButton(onClick = testAction.onTest) {
-                        Text(stringResource(testAction.labelRes))
-                    }
-                }
             }
         }
     }
@@ -1797,637 +1299,5 @@ private fun ImportGoodreadsDataSetting(
                 Text(stringResource(R.string.settings_import_goodreads_button))
             }
         }
-    }
-}
-
-/**
- * The `.sqlite` backup setting row (ROADMAP Task 8 Phase C): a label, a short description, and a
- * single button that produces a complete database snapshot and then prompts (via the route
- * composable's SAF `CreateDocument` launcher) for where to save it. Non-destructive -- unlike
- * [RestoreDataSetting], this never reads anything other than the live database and never writes to
- * it, so it needs no confirmation dialog, matching [ExportDataSetting]'s shape.
- */
-@Composable
-private fun BackupDataSetting(
-    backupInProgress: Boolean,
-    onBackupClick: () -> Unit,
-) {
-    Column {
-        Text(
-            text = stringResource(R.string.settings_backup_label),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(R.string.settings_backup_description),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        Button(onClick = onBackupClick, enabled = !backupInProgress) {
-            if (backupInProgress) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text(stringResource(R.string.settings_backup_button))
-            }
-        }
-    }
-}
-
-/**
- * The `.sqlite` restore setting row (ROADMAP Task 8 Phase C) -- the single most dangerous action in
- * the app (AGENTS.md §1). Deliberately styled and worded to read as higher-risk than every other
- * row on this screen:
- * - An [OutlinedButton] in the theme's `error` color, not a filled primary [Button] like every
- *   other action here -- visually distinct at a glance, before the user even reads the label.
- * - The description states plainly that this replaces the whole library and cannot be undone,
- *   rather than a neutral "restore your data" framing.
- * - Tapping this button only ever *launches the file picker* -- it never touches the live database
- *   by itself. The actual destructive action requires the picked file to first pass non-destructive
- *   validation, then an explicit checkbox-gated confirmation dialog (see
- *   `RestoreConfirmationDialog`, shown by the route composable), satisfying this phase's brief that
- *   restore must not be "a single tap next to the export button."
- */
-@Composable
-private fun RestoreDataSetting(
-    restoreInProgress: Boolean,
-    onRestoreClick: () -> Unit,
-) {
-    Column {
-        Text(
-            text = stringResource(R.string.settings_restore_label),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = stringResource(R.string.settings_restore_description),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        OutlinedButton(
-            onClick = onRestoreClick,
-            enabled = !restoreInProgress,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-        ) {
-            if (restoreInProgress) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                Text(
-                    text = stringResource(R.string.restore_validating_message),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            } else {
-                Text(stringResource(R.string.settings_restore_button))
-            }
-        }
-    }
-}
-
-/**
- * The bulk cover/author backfill setting row (ROADMAP Task 14 Phase A). Unlike every other row on
- * this screen, its body branches on a full sealed [BackfillUiState] rather than a bare in-progress
- * boolean -- a plain "loading" flag can't express "312 of 480 done, paused until the quota resets"
- * (this phase's explicit brief for honest partial progress), a resumable state left over from a
- * previous session, or the distinction between "finished cleanly" and "paused by the rate limit."
- */
-@Composable
-private fun <P : Any> BackfillSetting(
-    description: String,
-    uiState: BackfillUiState<P>,
-    describe: @Composable (P) -> BackfillRowContent,
-    onStartClick: () -> Unit,
-    onCancelClick: () -> Unit,
-) {
-    Column {
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        when (uiState) {
-            BackfillUiState.Idle -> {
-                Button(onClick = onStartClick) {
-                    Text(stringResource(R.string.settings_backfill_start_button))
-                }
-            }
-            is BackfillUiState.Running -> {
-                BackfillRunningContent(content = uiState.progress?.let { describe(it) })
-                OutlinedButton(onClick = onCancelClick, modifier = Modifier.padding(top = 8.dp)) {
-                    Text(stringResource(R.string.settings_backfill_cancel_button))
-                }
-            }
-            is BackfillUiState.Stopped -> {
-                val content = describe(uiState.progress)
-                BackfillStoppedContent(content = content)
-                Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
-                    Text(
-                        stringResource(
-                            if (content.remaining > 0) {
-                                R.string.settings_backfill_resume_button
-                            } else {
-                                R.string.settings_backfill_start_button
-                            },
-                        ),
-                    )
-                }
-            }
-            is BackfillUiState.Failed -> {
-                val content = uiState.progress?.let { describe(it) }
-                BackfillFailedContent(content = content)
-                Button(onClick = onStartClick, modifier = Modifier.padding(top = 8.dp)) {
-                    Text(
-                        stringResource(
-                            if ((content?.remaining ?: 0) > 0) {
-                                R.string.settings_backfill_resume_button
-                            } else {
-                                R.string.settings_backfill_start_button
-                            },
-                        ),
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * The way into the reconciliation screen (#123), shown only when a run has found something.
- *
- * Deliberately below the backfill controls rather than beside them: the disagreements are a *result*
- * of running the pass, and putting a second button next to Start would make them look like a second
- * thing to run.
- */
-@Composable
-private fun MismatchReviewEntry(
-    shows: Int,
-    onReviewClick: () -> Unit,
-) {
-    Column(modifier = Modifier.padding(top = 12.dp)) {
-        Text(
-            text = pluralStringResource(R.plurals.settings_tmdb_backfill_mismatch_format, shows, shows),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedButton(onClick = onReviewClick, modifier = Modifier.padding(top = 8.dp)) {
-            Text(stringResource(R.string.settings_tmdb_backfill_review_button))
-        }
-    }
-}
-
-/**
- * One backfill pass's progress, reduced to the handful of things this row actually draws.
- *
- * ### Why the row does not read a progress type directly
- * There are two passes (#140) and their snapshots deliberately do not carry the same facts: the book
- * pass can be paused by an exhausted Open Library quota and counts books with no ISBN, while the TMDB
- * pass cannot be paused at all — a rate is waited out — and counts titles never added from TMDB.
- * Neither type can honestly be given the other's fields.
- *
- * What is genuinely common is what a *row* shows: a fraction, an optional status sentence, and some
- * detail lines. Each pass converts itself into this once, and the four state bodies below are written
- * once against it — the UI-side application of the same "two actions, one set of machinery" rule
- * [com.hub.media.ui.BackfillViewModel] follows.
- *
- * @property statusMessage The sentence above the fraction — paused, blocked, or complete — or `null`
- *   when there is nothing to say.
- * @property statusIsError Whether [statusMessage] describes something the user has to act on. A
- *   finished run and a run stopped by a rejected credential are both "stopped", and must not look it.
- * @property detailLines The trailing dimmed lines, in order. Empty when nothing is worth adding.
- */
-private data class BackfillRowContent(
-    val processed: Int,
-    val totalCandidates: Int,
-    val remaining: Int,
-    val statusMessage: String?,
-    val statusIsError: Boolean,
-    val detailLines: List<String>,
-)
-
-/** The book pass's progress ([BulkBackfillProgress]) as a [BackfillRowContent]. */
-@Composable
-private fun bookBackfillRowContent(progress: BulkBackfillProgress): BackfillRowContent {
-    val paused =
-        progress.retryAfter?.let { retryAfter ->
-            // Round up, floored at one minute, so a sub-minute wait (e.g. 30s) never renders
-            // as the misleading "about 0 min" -- any nonzero wait is at least "about 1 min".
-            val minutes = ceil(retryAfter.toDouble(DurationUnit.MINUTES)).toInt().coerceAtLeast(1)
-            pluralStringResource(R.plurals.settings_backfill_paused_with_wait_format, minutes, minutes)
-        } ?: stringResource(R.string.settings_backfill_paused_message)
-    val complete = stringResource(R.string.settings_backfill_complete_message)
-    val summary =
-        stringResource(
-            R.string.settings_backfill_summary_format,
-            progress.updated,
-            progress.noProviderData,
-        )
-    val noIsbn = stringResource(R.string.settings_backfill_no_isbn_format, progress.noIsbnSkipped)
-
-    return BackfillRowContent(
-        processed = progress.processed,
-        totalCandidates = progress.totalCandidates,
-        remaining = progress.remaining,
-        statusMessage =
-            when {
-                progress.isPaused -> paused
-                progress.isComplete -> complete
-                else -> null
-            },
-        statusIsError = progress.isPaused,
-        detailLines =
-            buildList {
-                if (progress.processed > 0) add(summary)
-                if (progress.noIsbnSkipped > 0) add(noIsbn)
-            },
-    )
-}
-
-/** The films-and-shows pass's progress ([TmdbBackfillProgress]) as a [BackfillRowContent]. */
-@Composable
-private fun tmdbBackfillRowContent(progress: TmdbBackfillProgress): BackfillRowContent {
-    val complete = stringResource(R.string.settings_backfill_complete_message)
-    val summary =
-        stringResource(
-            R.string.settings_tmdb_backfill_summary_format,
-            progress.updated,
-            progress.nothingToFill,
-        )
-    val noId = stringResource(R.string.settings_tmdb_backfill_no_id_format, progress.noTmdbIdSkipped)
-
-    return BackfillRowContent(
-        processed = progress.processed,
-        totalCandidates = progress.totalCandidates,
-        remaining = progress.remaining,
-        // TMDB's own sentence, not one of ours. Both of the messages it produces here already name
-        // the remedy ("Add one in Settings", "Check the key or token saved in Settings"), and giving
-        // the same advice a second author is how the two drift apart.
-        statusMessage =
-            when {
-                progress.isBlocked -> progress.blockedMessage
-                progress.isComplete -> complete
-                else -> null
-            },
-        statusIsError = progress.isBlocked,
-        detailLines =
-            buildList {
-                if (progress.processed > 0) add(summary)
-                if (progress.noTmdbIdSkipped > 0) add(noId)
-            },
-    )
-}
-
-/** [BackfillUiState.Running]'s body: a progress bar once the first item has been checkpointed. */
-@Composable
-private fun BackfillRunningContent(content: BackfillRowContent?) {
-    if (content != null && content.totalCandidates > 0) {
-        LinearProgressIndicator(
-            progress = { content.processed.toFloat() / content.totalCandidates },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp),
-        )
-        Text(
-            text =
-                stringResource(
-                    R.string.settings_backfill_progress_format,
-                    content.processed,
-                    content.totalCandidates,
-                ),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    } else {
-        // Nothing checkpointed yet (fresh start, still scanning the library for candidates), or
-        // there were zero candidates to begin with -- an indeterminate bar reads better than a
-        // 0/0 fraction either way.
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-    }
-}
-
-/**
- * [BackfillUiState.Stopped]'s body: whichever status sentence applies (paused by a quota, blocked on
- * a credential, or finished), plus the running totals so far.
- */
-@Composable
-private fun BackfillStoppedContent(content: BackfillRowContent) {
-    content.statusMessage?.let { message ->
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color =
-                if (content.statusIsError) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    Color.Unspecified
-                },
-        )
-    }
-    if (content.totalCandidates > 0) {
-        Text(
-            text =
-                stringResource(
-                    R.string.settings_backfill_progress_format,
-                    content.processed,
-                    content.totalCandidates,
-                ),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-    content.detailLines.forEach { line ->
-        Text(
-            text = line,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/**
- * [BackfillUiState.Failed]'s body: an explicit failure signal, distinct from
- * [BackfillStoppedContent]'s "paused"/"complete" messaging, so the user isn't left thinking a
- * genuine mid-run failure was just a clean stop. [content] is `null` when nothing was
- * checkpointed before the failure, in which case there is no partial-progress line to show.
- */
-@Composable
-private fun BackfillFailedContent(content: BackfillRowContent?) {
-    Text(
-        text = stringResource(R.string.settings_backfill_failed_message),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error,
-    )
-    if (content != null && content.totalCandidates > 0) {
-        Text(
-            text =
-                stringResource(
-                    R.string.settings_backfill_progress_format,
-                    content.processed,
-                    content.totalCandidates,
-                ),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
-/** Preview of the Settings screen with the default (Monday) week-start-day selected. */
-@Preview(showBackground = true)
-@Composable
-private fun SettingsScreenMondayPreview() {
-    MediaTrackerTheme {
-        SettingsScreen(
-            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
-            onWeekStartDayChange = {},
-            onLogVerbosityChange = {},
-            onGoogleBooksApiKeySave = {},
-            onGoogleBooksApiKeyClear = {},
-            onTmdbCredentialSave = {},
-            onTmdbCredentialClear = {},
-            onTmdbCredentialTest = {},
-            onNavigateToLogViewer = {},
-            onNavigateToChangelog = {},
-            onNavigateToAbout = {},
-            exportInProgress = false,
-            onExportClick = {},
-            importInProgress = false,
-            duplicatePolicy = DuplicatePolicy.SKIP,
-            onDuplicatePolicyChange = {},
-            onImportClick = {},
-            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
-            onGoodreadsDuplicatePolicyChange = {},
-            onImportGoodreadsClick = {},
-            backupInProgress = false,
-            onBackupClick = {},
-            restoreInProgress = false,
-            onRestoreClick = {},
-            backfillUiState = BackfillUiState.Idle,
-            onStartBackfillClick = {},
-            onCancelBackfillClick = {},
-            tmdbBackfillUiState = BackfillUiState.Idle,
-            onStartTmdbBackfillClick = {},
-            onCancelTmdbBackfillClick = {},
-            mismatchedShows = 0,
-            onReviewMismatchesClick = {},
-            snackbarHostState = remember { SnackbarHostState() },
-            onNavigateBack = {},
-        )
-    }
-}
-
-/** Preview of the Settings screen with Sunday selected as the week-start day. */
-@Preview(showBackground = true)
-@Composable
-private fun SettingsScreenSundayPreview() {
-    MediaTrackerTheme {
-        SettingsScreen(
-            uiState = SettingsUiState(weekStartDay = WeekStartDay.SUNDAY),
-            onWeekStartDayChange = {},
-            onLogVerbosityChange = {},
-            onGoogleBooksApiKeySave = {},
-            onGoogleBooksApiKeyClear = {},
-            onTmdbCredentialSave = {},
-            onTmdbCredentialClear = {},
-            onTmdbCredentialTest = {},
-            onNavigateToLogViewer = {},
-            onNavigateToChangelog = {},
-            onNavigateToAbout = {},
-            exportInProgress = false,
-            onExportClick = {},
-            importInProgress = false,
-            duplicatePolicy = DuplicatePolicy.SKIP,
-            onDuplicatePolicyChange = {},
-            onImportClick = {},
-            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
-            onGoodreadsDuplicatePolicyChange = {},
-            onImportGoodreadsClick = {},
-            backupInProgress = false,
-            onBackupClick = {},
-            restoreInProgress = false,
-            onRestoreClick = {},
-            backfillUiState = BackfillUiState.Idle,
-            onStartBackfillClick = {},
-            onCancelBackfillClick = {},
-            tmdbBackfillUiState = BackfillUiState.Idle,
-            onStartTmdbBackfillClick = {},
-            onCancelTmdbBackfillClick = {},
-            mismatchedShows = 0,
-            onReviewMismatchesClick = {},
-            snackbarHostState = remember { SnackbarHostState() },
-            onNavigateBack = {},
-        )
-    }
-}
-
-/** Preview of the Settings screen mid-export (progress indicator on the export button). */
-@Preview(showBackground = true)
-@Composable
-private fun SettingsScreenExportingPreview() {
-    MediaTrackerTheme {
-        SettingsScreen(
-            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
-            onWeekStartDayChange = {},
-            onLogVerbosityChange = {},
-            onGoogleBooksApiKeySave = {},
-            onGoogleBooksApiKeyClear = {},
-            onTmdbCredentialSave = {},
-            onTmdbCredentialClear = {},
-            onTmdbCredentialTest = {},
-            onNavigateToLogViewer = {},
-            onNavigateToChangelog = {},
-            onNavigateToAbout = {},
-            exportInProgress = true,
-            onExportClick = {},
-            importInProgress = false,
-            duplicatePolicy = DuplicatePolicy.SKIP,
-            onDuplicatePolicyChange = {},
-            onImportClick = {},
-            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
-            onGoodreadsDuplicatePolicyChange = {},
-            onImportGoodreadsClick = {},
-            backupInProgress = false,
-            onBackupClick = {},
-            restoreInProgress = false,
-            onRestoreClick = {},
-            backfillUiState = BackfillUiState.Idle,
-            onStartBackfillClick = {},
-            onCancelBackfillClick = {},
-            tmdbBackfillUiState = BackfillUiState.Idle,
-            onStartTmdbBackfillClick = {},
-            onCancelTmdbBackfillClick = {},
-            mismatchedShows = 0,
-            onReviewMismatchesClick = {},
-            snackbarHostState = remember { SnackbarHostState() },
-            onNavigateBack = {},
-        )
-    }
-}
-
-/** Preview of the Settings screen mid-backup (progress indicator on the backup button). */
-@Preview(showBackground = true)
-@Composable
-private fun SettingsScreenBackingUpPreview() {
-    MediaTrackerTheme {
-        SettingsScreen(
-            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
-            onWeekStartDayChange = {},
-            onLogVerbosityChange = {},
-            onGoogleBooksApiKeySave = {},
-            onGoogleBooksApiKeyClear = {},
-            onTmdbCredentialSave = {},
-            onTmdbCredentialClear = {},
-            onTmdbCredentialTest = {},
-            onNavigateToLogViewer = {},
-            onNavigateToChangelog = {},
-            onNavigateToAbout = {},
-            exportInProgress = false,
-            onExportClick = {},
-            importInProgress = false,
-            duplicatePolicy = DuplicatePolicy.SKIP,
-            onDuplicatePolicyChange = {},
-            onImportClick = {},
-            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
-            onGoodreadsDuplicatePolicyChange = {},
-            onImportGoodreadsClick = {},
-            backupInProgress = true,
-            onBackupClick = {},
-            restoreInProgress = false,
-            onRestoreClick = {},
-            backfillUiState = BackfillUiState.Idle,
-            onStartBackfillClick = {},
-            onCancelBackfillClick = {},
-            tmdbBackfillUiState = BackfillUiState.Idle,
-            onStartTmdbBackfillClick = {},
-            onCancelTmdbBackfillClick = {},
-            mismatchedShows = 0,
-            onReviewMismatchesClick = {},
-            snackbarHostState = remember { SnackbarHostState() },
-            onNavigateBack = {},
-        )
-    }
-}
-
-/** Preview of the Settings screen while a picked restore candidate is being validated. */
-@Preview(showBackground = true)
-@Composable
-private fun SettingsScreenValidatingRestorePreview() {
-    MediaTrackerTheme {
-        SettingsScreen(
-            uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
-            onWeekStartDayChange = {},
-            onLogVerbosityChange = {},
-            onGoogleBooksApiKeySave = {},
-            onGoogleBooksApiKeyClear = {},
-            onTmdbCredentialSave = {},
-            onTmdbCredentialClear = {},
-            onTmdbCredentialTest = {},
-            onNavigateToLogViewer = {},
-            onNavigateToChangelog = {},
-            onNavigateToAbout = {},
-            exportInProgress = false,
-            onExportClick = {},
-            importInProgress = false,
-            duplicatePolicy = DuplicatePolicy.SKIP,
-            onDuplicatePolicyChange = {},
-            onImportClick = {},
-            goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
-            onGoodreadsDuplicatePolicyChange = {},
-            onImportGoodreadsClick = {},
-            backupInProgress = false,
-            onBackupClick = {},
-            restoreInProgress = true,
-            onRestoreClick = {},
-            backfillUiState = BackfillUiState.Idle,
-            onStartBackfillClick = {},
-            onCancelBackfillClick = {},
-            tmdbBackfillUiState = BackfillUiState.Idle,
-            onStartTmdbBackfillClick = {},
-            onCancelTmdbBackfillClick = {},
-            mismatchedShows = 0,
-            onReviewMismatchesClick = {},
-            snackbarHostState = remember { SnackbarHostState() },
-            onNavigateBack = {},
-        )
-    }
-}
-
-/** Preview of the destructive restore confirmation dialog, for a backup at the current schema version. */
-@Preview(showBackground = true)
-@Composable
-private fun RestoreConfirmationDialogPreview() {
-    MediaTrackerTheme {
-        RestoreConfirmationDialog(
-            info =
-                StagedRestoreInfo(
-                    stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
-                    schemaVersionFound = 4,
-                    isOlderSchemaVersion = false,
-                ),
-            credentialsWillBeCleared = false,
-            onConfirm = {},
-            onCancel = {},
-        )
-    }
-}
-
-/** Preview of the destructive restore confirmation dialog, for a backup from an older schema version. */
-@Preview(showBackground = true)
-@Composable
-private fun RestoreConfirmationDialogOlderVersionPreview() {
-    MediaTrackerTheme {
-        RestoreConfirmationDialog(
-            info =
-                StagedRestoreInfo(
-                    stagedFilePath = "/data/user/0/com.github.maskedkunisquat.mediatracker/cache/restore-incoming.tmp",
-                    schemaVersionFound = 2,
-                    isOlderSchemaVersion = true,
-                ),
-            credentialsWillBeCleared = true,
-            onConfirm = {},
-            onCancel = {},
-        )
     }
 }
