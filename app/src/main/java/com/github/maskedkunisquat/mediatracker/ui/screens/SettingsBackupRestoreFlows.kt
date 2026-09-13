@@ -137,7 +137,7 @@ internal fun rememberRestoreFileLauncher(
             // real-sized library.
             coroutineScope.launch {
                 // Tracks whether incomingFile's lifecycle has been handed off to
-                // validateSelectedFile -- once that call is made, RestoreDatabaseUseCase.stage owns
+                // validateSelectedFile -- once that call accepts it, RestoreDatabaseUseCase.stage owns
                 // the file (it deletes it on every rejection path) and, on success, ownership passes
                 // again to the AwaitingConfirmation/commit flow below. Until that handoff happens,
                 // nothing else ever takes ownership, so the `finally` below must clean it up itself.
@@ -148,8 +148,9 @@ internal fun rememberRestoreFileLauncher(
                         snackbarHostState.showSnackbar(restoreReadFailureMessage)
                         return@launch
                     }
-                    handedOffToValidation = true
-                    restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
+                    // A refused file (a validation already running or awaiting confirmation) stays
+                    // ours, so the `finally` below deletes it.
+                    handedOffToValidation = restoreViewModel.validateSelectedFile(incomingFile.absolutePath)
                 } finally {
                     // `coroutineScope` is composition-scoped: leaving Settings while the copy above is
                     // still running cancels this launch. Without this `finally`, that cancellation (or
@@ -183,6 +184,11 @@ internal fun RestoreOutcome(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // Set synchronously on the first Confirm tap. The dialog stays up until the process restarts, and
+    // a second commit would move the freshly restored database over the pre-restore backup, while a
+    // Cancel or dismiss would delete the staged file mid-commit.
+    var commitStarted by remember { mutableStateOf(false) }
+
     LaunchedEffect(restoreUiState) {
         val state = restoreUiState
         if (state is RestoreUiState.Error) {
@@ -201,7 +207,10 @@ internal fun RestoreOutcome(
         RestoreConfirmationDialog(
             info = state.info,
             credentialsWillBeCleared = state.credentialsWillBeCleared,
-            onConfirm = {
+            commitInProgress = commitStarted,
+            onConfirm = onConfirm@{
+                if (commitStarted) return@onConfirm
+                commitStarted = true
                 // Deliberately NOT routed through restoreViewModel.viewModelScope: the very next
                 // step closes the AppContainer this ViewModel's own use case was wired from, and
                 // the process is killed immediately after -- see RestoreViewModel's KDoc.
@@ -232,7 +241,8 @@ internal fun RestoreOutcome(
                     }
                 }
             },
-            onCancel = {
+            onCancel = onCancel@{
+                if (commitStarted) return@onCancel
                 // Declining the restore is the one place the staged copy is discarded by an
                 // explicit user action rather than a failure path -- but it is still a
                 // whole-database-sized file, so the delete belongs on Dispatchers.IO like every

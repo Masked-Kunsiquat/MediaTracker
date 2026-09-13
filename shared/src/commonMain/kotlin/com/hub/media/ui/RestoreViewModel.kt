@@ -51,11 +51,19 @@ public class RestoreViewModel(
     /**
      * Validates/stages [incomingFilePath] (the app layer's own private copy of whatever the user
      * picked via SAF -- see [RestoreDatabaseUseCase.stage]'s KDoc for why staging happens before
-     * this is even called). If a validation is already in flight ([RestoreUiState.Validating]),
-     * this call is silently ignored.
+     * this is even called).
+     *
+     * Refused while a validation is in flight ([RestoreUiState.Validating]) or a staged file is
+     * already awaiting confirmation, so a second pick can neither be dropped mid-validation nor
+     * swap the file out from under an open confirmation dialog.
+     *
+     * @return Whether the file was accepted. Only an accepted file's ownership passes to
+     *   [RestoreDatabaseUseCase.stage]; on `false` the caller still owns [incomingFilePath] and
+     *   must delete it.
      */
-    public fun validateSelectedFile(incomingFilePath: String) {
-        if (_uiState.value is RestoreUiState.Validating) return
+    public fun validateSelectedFile(incomingFilePath: String): Boolean {
+        val current = _uiState.value
+        if (current is RestoreUiState.Validating || current is RestoreUiState.AwaitingConfirmation) return false
 
         _uiState.value = RestoreUiState.Validating
         viewModelScope.launch {
@@ -88,6 +96,7 @@ public class RestoreViewModel(
                     is Resource.Error -> RestoreUiState.Error(keyCheckResult.message)
                 }
         }
+        return true
     }
 
     /** Resets state back to [RestoreUiState.Idle], e.g. after the user cancels or dismisses an error. */

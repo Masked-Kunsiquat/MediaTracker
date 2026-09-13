@@ -6,6 +6,8 @@ import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -98,6 +100,43 @@ class RestoreViewModelTest {
             val state = viewModel.uiState.first { it is RestoreUiState.Error }
             val error = assertIs<RestoreUiState.Error>(state)
             assertEquals("not a MediaTracker backup", error.message)
+        }
+
+    /**
+     * A refused file is still the caller's to delete, so the return value is what stops it leaking,
+     * and a refusal must not replace the file the open confirmation dialog is describing.
+     */
+    @Test
+    fun validateSelectedFile_whileAwaitingConfirmation_isRefusedAndLeavesStagedFileAlone() =
+        runTest {
+            val fake = FakeRestoreDatabaseUseCase()
+            val viewModel = newViewModel(fake)
+
+            assertTrue(viewModel.validateSelectedFile("/incoming/first.sqlite"))
+            val awaiting = viewModel.uiState.first { it is RestoreUiState.AwaitingConfirmation }
+
+            assertFalse(viewModel.validateSelectedFile("/incoming/second.sqlite"))
+            assertEquals(1, fake.stageCallCount)
+            assertEquals(awaiting, viewModel.uiState.value)
+
+            viewModel.reset()
+            assertTrue(viewModel.validateSelectedFile("/incoming/third.sqlite"), "reset must accept again")
+        }
+
+    @Test
+    fun validateSelectedFile_whileValidating_isRefused() =
+        runTest {
+            // A paused dispatcher, so the first validation is still in flight when the second arrives.
+            viewModels.installMain(StandardTestDispatcher(testScheduler))
+            val fake = FakeRestoreDatabaseUseCase()
+            val viewModel = newViewModel(fake)
+
+            assertTrue(viewModel.validateSelectedFile("/incoming/first.sqlite"))
+            assertEquals(RestoreUiState.Validating, viewModel.uiState.value)
+            assertFalse(viewModel.validateSelectedFile("/incoming/second.sqlite"))
+
+            advanceUntilIdle()
+            assertEquals(1, fake.stageCallCount)
         }
 
     @Test

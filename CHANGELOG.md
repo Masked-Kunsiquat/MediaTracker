@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A restore can no longer be committed twice.** The confirmation dialog stays on screen until the
+  app restarts, and its Confirm button stayed enabled during that time. A second tap started a second
+  commit, which would move the freshly restored database over the backup of the one it replaced.
+  Back, or tapping outside the dialog, could instead delete the staged file mid-commit. After the
+  first tap, Confirm and Cancel both disable and dismissing is ignored. Found in review of #161.
+- **A second restore file picked while one is being checked is no longer left behind.** The copied
+  file was handed to validation even when validation ignored it, so nothing deleted it. A pick that
+  arrived while the confirmation dialog was open was not ignored at all: it replaced the file the
+  dialog was describing. Both are now refused, and the refused copy is deleted. Found in review of #161.
+
 ### Internal
 
 - **`SettingsScreen.kt` is being split by feature; it is down from 2,433 lines to 548** (#81).
