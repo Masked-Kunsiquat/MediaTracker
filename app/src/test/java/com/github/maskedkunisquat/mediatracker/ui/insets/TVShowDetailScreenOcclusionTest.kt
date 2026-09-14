@@ -1,8 +1,21 @@
 package com.github.maskedkunisquat.mediatracker.ui.insets
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreen
+import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
@@ -15,6 +28,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import kotlin.time.Instant
 
 /**
@@ -43,6 +57,34 @@ class TVShowDetailScreenOcclusionTest {
     @Test
     fun withTheNavigationBarShowing_theLastEpisodeRowStaysAboveIt() {
         composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar { Fixture() }
+    }
+
+    /**
+     * #163: on a narrow row, a font scale of 1.1 squeezed the season overflow button to zero width.
+     * The goldens render at full width, where the header fits even at 2.0, so neither they nor a
+     * default-scale test could see it. 220dp matches `TVShowDetailScreenTest`'s narrow-phone width.
+     *
+     * NATIVE graphics is what makes this able to fail: Robolectric's default text measurement is not
+     * real, and under it this test passed with the fix removed.
+     */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun onANarrowRow_theSeasonMenuStaysDisplayed_atEnlargedFontScales() {
+        var fontScale by mutableFloatStateOf(1.1f)
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+                MediaTrackerTheme {
+                    Box(modifier = Modifier.width(220.dp)) { Fixture() }
+                }
+            }
+        }
+
+        listOf(1.1f, 2f).forEach { scale ->
+            fontScale = scale
+            composeRule
+                .onNodeWithContentDescription("Season 1 options")
+                .assertIsDisplayed()
+        }
     }
 
     @Composable

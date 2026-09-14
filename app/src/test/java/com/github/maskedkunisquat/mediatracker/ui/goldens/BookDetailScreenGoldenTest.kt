@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.goldens
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreen
@@ -16,6 +18,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlin.time.Instant
 
 /**
@@ -78,6 +82,27 @@ class BookDetailScreenGoldenTest {
     }
 
     /**
+     * A book **with** a cover (#141) -- the state [bookDetail] does NOT cover. `GOLDEN_BOOK`'s
+     * `coverImageHash` is null, but unlike Movie/TV (whose `?.let` skips `CoverImage` entirely for
+     * a null hash) `InteractiveCoverBox` calls `CoverImage` unconditionally, so `book-detail.png`
+     * already shows its emoji *placeholder* box -- not the empty space Movie/TV's no-poster goldens
+     * show, and not a decoded image either. This golden is the third state: a real cover actually
+     * drawn in [InteractiveCoverBox]'s box. See `MovieDetailScreenGoldenTest.writeFakeCoverFile` for
+     * how a real, `BitmapFactory`-decodable file gets onto disk for this to resolve.
+     */
+    @Test
+    fun bookDetail_withCover() {
+        val coverDir = createTempDirectory("book-detail-golden").toFile()
+        val coverHash = "cover.jpg"
+        writeFakeCoverFile(coverDir, coverHash)
+
+        composeRule.captureGolden(
+            name = "book-detail-with-cover",
+            alsoAssert = { assertTextIsShown("Dune", "Frank Herbert") },
+        ) { WithCoverFixture(coverDir.absolutePath, coverHash) }
+    }
+
+    /**
      * The fixture is a book mid-read with two logged sessions, not a fresh one.
      *
      * An empty book detail screen is mostly empty space, and an empty-state picture cannot show a
@@ -112,6 +137,57 @@ class BookDetailScreenGoldenTest {
             onStatusChange = {},
             onRefetchCover = {},
         )
+    }
+
+    @Composable
+    private fun WithCoverFixture(
+        coverStorageDir: String,
+        coverImageHash: String,
+    ) {
+        BookDetailScreen(
+            uiState =
+                BookDetailUiState.Ready(
+                    book = DUNE_BOOK.copy(coverImageHash = coverImageHash),
+                    details = DUNE_DETAILS,
+                    sessions = DUNE_SESSIONS,
+                ),
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            coverStorageDir = coverStorageDir,
+            onNavigateBack = {},
+            onDeleteBook = {},
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
+            onSaveSession = { _, _, _, _ -> },
+            onDiscardPendingSession = {},
+            onLogManualSession = { _, _, _, _, _, _ -> },
+            onDeleteSession = {},
+            onEditSession = { _, _, _, _, _, _, _ -> },
+            onEditBook = {},
+            onStatusChange = {},
+            onRefetchCover = {},
+        )
+    }
+
+    private companion object {
+        /**
+         * Writes a tiny, real, `BitmapFactory`-decodable JPEG to `<dir>/<fileName>` -- see
+         * `MovieDetailScreenGoldenTest`'s copy of this helper for why this is what it takes to reach
+         * `CoverImage`'s decoded-image branch in a Robolectric test (this class already runs under
+         * `@GraphicsMode(NATIVE)`, which is what makes it possible at all).
+         */
+        fun writeFakeCoverFile(
+            dir: File,
+            fileName: String,
+        ) {
+            val bitmap = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(Color.RED)
+            File(dir, fileName).outputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            }
+        }
     }
 }
 
@@ -164,6 +240,50 @@ private val GOLDEN_SESSIONS =
             startUnit = 0.0,
             endUnit = 42.0,
             deltaPages = 42,
+            notes = null,
+        ),
+    )
+
+/**
+ * A second, distinct book/details/session set for [BookDetailScreenGoldenTest.bookDetail_withCover]
+ * -- not a reuse of [GOLDEN_BOOK] with a hash bolted on, so the two goldens are visually
+ * distinguishable at a glance rather than differing only in the one detail under test.
+ */
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val DUNE_BOOK =
+    MediaItemEntity(
+        id = "book-2",
+        type = MediaType.BOOK,
+        title = "Dune",
+        releaseYear = 1965,
+        purchasePrice = 12.99,
+        createdAt = Instant.fromEpochMilliseconds(0),
+        coverImageHash = null,
+    )
+
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val DUNE_DETAILS =
+    BookDetailsEntity(
+        mediaId = "book-2",
+        isbn = "9780441013593",
+        format = BookFormat.PAPERBACK,
+        totalPages = 412,
+        status = ReadingStatus.READING,
+        authors = "Frank Herbert",
+    )
+
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val DUNE_SESSIONS =
+    listOf(
+        ReadingSessionEntity(
+            id = "dune-session-1",
+            mediaId = "book-2",
+            timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000),
+            timestampEnd = Instant.fromEpochMilliseconds(1_700_003_600_000),
+            durationSeconds = 3_600,
+            startUnit = 0.0,
+            endUnit = 96.0,
+            deltaPages = 96,
             notes = null,
         ),
     )

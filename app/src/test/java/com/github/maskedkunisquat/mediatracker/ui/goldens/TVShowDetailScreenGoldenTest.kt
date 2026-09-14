@@ -1,7 +1,11 @@
 package com.github.maskedkunisquat.mediatracker.ui.goldens
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreen
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -16,6 +20,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlin.time.Instant
 
 /**
@@ -62,6 +68,44 @@ class TVShowDetailScreenGoldenTest {
         ) { Fixture() }
     }
 
+    /**
+     * A show **with** a poster (#141) -- the state [tvShowDetail] does NOT cover: that fixture's
+     * `coverImageHash` is null too, so `tv-show-detail.png` already is the no-poster golden. See
+     * [MovieDetailScreenGoldenTest.filmDetail_withPosterAndSparseMetadata] for the same pairing on
+     * film, including why a real file on disk (via `writeFakeCoverFile`) is what it takes to reach
+     * `CoverImage`'s decoded-image branch rather than its placeholder.
+     *
+     * `releaseYear` is also null here, pinning that the year row is omitted (not "Year:") alongside
+     * the poster, since both are branches a header refactor could disturb together.
+     */
+    @Test
+    fun tvShowDetail_withPosterAndNoYear() {
+        val coverDir = createTempDirectory("tv-show-detail-golden").toFile()
+        val coverHash = "poster.jpg"
+        writeFakeCoverFile(coverDir, coverHash)
+
+        composeRule.captureGolden(
+            name = "tv-show-detail-with-poster",
+            alsoAssert = { assertTextIsShown("Twin Peaks", "Season 1") },
+        ) { WithPosterFixture(coverDir.absolutePath, coverHash) }
+    }
+
+    /**
+     * The same fixture at the largest system font scale (#163). Every other golden renders at 1.0,
+     * which is how a season header that broke at 1.1 got past all of them. This one records what
+     * the header gives up at large text: the season title shrinks to an ellipsis before the other
+     * controls do. It is not the regression guard. At full width the header still fits with the fix
+     * removed, so the guard lives in `TVShowDetailScreenOcclusionTest` on a narrow row.
+     */
+    @Test
+    fun tvShowDetail_largestFontScale() {
+        composeRule.captureGolden(
+            name = "tv-show-detail-font-scale-2",
+            fontScale = 2f,
+            alsoAssert = { onNodeWithContentDescription("Season 1 options").assertIsDisplayed() },
+        ) { Fixture() }
+    }
+
     @Composable
     private fun Fixture() {
         val episodes = (1..EPISODE_COUNT).map { episode(it) }
@@ -94,35 +138,82 @@ class TVShowDetailScreenGoldenTest {
         )
     }
 
-    private fun show(id: String = "show-1") =
-        MediaWithDetails.TVShow(
-            item =
-                MediaItemEntity(
-                    id = id,
-                    type = MediaType.TV_SHOW,
-                    title = "Chernobyl",
-                    releaseYear = 2019,
-                    purchasePrice = null,
-                    createdAt = Instant.fromEpochMilliseconds(0),
-                    coverImageHash = null,
+    @Composable
+    private fun WithPosterFixture(
+        coverStorageDir: String,
+        coverImageHash: String,
+    ) {
+        val episodes = (1..EPISODE_COUNT).map { episode(it, showId = "show-2") }
+        TVShowDetailScreen(
+            coverStorageDir = coverStorageDir,
+            uiState =
+                TVShowDetailUiState.Ready(
+                    show =
+                        show(
+                            id = "show-2",
+                            title = "Twin Peaks",
+                            releaseYear = null,
+                            coverImageHash = coverImageHash,
+                        ),
+                    seasons =
+                        listOf(
+                            SeasonGroup(
+                                seasonNumber = 1,
+                                episodes = episodes,
+                                watchedCount = WATCHED_COUNT,
+                            ),
+                        ),
+                    watchedEpisodes = WATCHED_COUNT,
+                    totalEpisodes = EPISODE_COUNT,
+                    isAbandoned = false,
                 ),
-            details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = WatchStatus.WATCHING),
+            onEpisodeWatchedChange = { _, _ -> },
+            onSeasonWatchedChange = { _, _ -> },
+            onSetSeasonLength = { _, _ -> },
+            onRemoveSeason = {},
+            onAbandonedChange = {},
+            onRefreshMetadata = {},
+            onDelete = {},
+            onErrorShown = {},
+            onNavigateBack = {},
         )
+    }
 
-    private fun episode(episodeNumber: Int) =
-        EpisodeEntity(
-            title = EPISODE_TITLES[episodeNumber],
-            id = "ep-show-1-1-$episodeNumber",
-            mediaId = "show-1",
-            seasonNumber = 1,
-            episodeNumber = episodeNumber,
-            watchedAt =
-                if (episodeNumber <= WATCHED_COUNT) {
-                    Instant.fromEpochMilliseconds(1_700_000_000_000L)
-                } else {
-                    null
-                },
-        )
+    private fun show(
+        id: String = "show-1",
+        title: String = "Chernobyl",
+        releaseYear: Int? = 2019,
+        coverImageHash: String? = null,
+    ) = MediaWithDetails.TVShow(
+        item =
+            MediaItemEntity(
+                id = id,
+                type = MediaType.TV_SHOW,
+                title = title,
+                releaseYear = releaseYear,
+                purchasePrice = null,
+                createdAt = Instant.fromEpochMilliseconds(0),
+                coverImageHash = coverImageHash,
+            ),
+        details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = WatchStatus.WATCHING),
+    )
+
+    private fun episode(
+        episodeNumber: Int,
+        showId: String = "show-1",
+    ) = EpisodeEntity(
+        title = EPISODE_TITLES[episodeNumber],
+        id = "ep-$showId-1-$episodeNumber",
+        mediaId = showId,
+        seasonNumber = 1,
+        episodeNumber = episodeNumber,
+        watchedAt =
+            if (episodeNumber <= WATCHED_COUNT) {
+                Instant.fromEpochMilliseconds(1_700_000_000_000L)
+            } else {
+                null
+            },
+    )
 
     private companion object {
         /**
@@ -156,5 +247,21 @@ class TVShowDetailScreenGoldenTest {
                 9 to "Vichnaya Pamyat",
                 10 to "A Two-Digit Row",
             )
+
+        /**
+         * Writes a tiny, real, `BitmapFactory`-decodable JPEG to `<dir>/<fileName>` -- see
+         * `MovieDetailScreenGoldenTest`'s copy of this helper for why this is what it takes to
+         * reach `CoverImage`'s decoded-image branch in a Robolectric test.
+         */
+        fun writeFakeCoverFile(
+            dir: File,
+            fileName: String,
+        ) {
+            val bitmap = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(Color.RED)
+            File(dir, fileName).outputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            }
+        }
     }
 }
