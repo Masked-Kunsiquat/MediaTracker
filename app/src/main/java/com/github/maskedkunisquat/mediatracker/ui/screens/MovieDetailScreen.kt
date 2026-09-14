@@ -40,8 +40,9 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MovieDetailViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
-import com.github.maskedkunisquat.mediatracker.ui.components.StatusDropdownChip
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
@@ -224,13 +225,7 @@ fun MovieDetailScreen(
                             },
                         statusNote = watchedNote(details?.status, details?.watchedAt),
                     ) {
-                        StatusDropdownChip(
-                            value = details?.status ?: WatchStatus.WATCHLIST,
-                            options = WatchStatus.entries,
-                            label = { it.displayLabel() },
-                            onSelect = onStatusChange,
-                            onClickLabel = stringResource(R.string.detail_status_change_action_label),
-                        )
+                        DetailStatusChip(movieStatusControl(details?.status, onStatusChange))
                     }
                     DetailSynopsis(text = movie.item.synopsis)
                 }
@@ -272,3 +267,21 @@ private fun watchedNote(
     val date = DATE_ONLY_FORMATTER.format(instantToLocalDateTime(watchedAt))
     return stringResource(R.string.movie_detail_watched_note, date)
 }
+
+/**
+ * Film's status mapper (#141 step 2): editable over [WatchStatus.entries], unchanged in look and
+ * behaviour from the [StatusDropdownChip] this screen wired directly before the per-domain model
+ * existed -- a film's stored status is the real answer, so it stays a four-way picker.
+ */
+@Composable
+private fun movieStatusControl(
+    status: WatchStatus?,
+    onStatusChange: (WatchStatus) -> Unit,
+): DetailStatus.Editable<WatchStatus> =
+    DetailStatus.Editable(
+        value = status ?: WatchStatus.WATCHLIST,
+        options = WatchStatus.entries,
+        label = { it.displayLabel() },
+        onSelect = onStatusChange,
+        onClickLabel = stringResource(R.string.detail_status_change_action_label),
+    )
