@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
@@ -116,21 +117,28 @@ private fun ReadOnlyStatusChip(
     ) {
         AssistChip(
             onClick = {},
-            label = { Text(status.label) },
+            label = {
+                Text(status.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
             colors =
                 AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ),
             border = null,
+            // weight(fill = false), same #163 fix as the season header's title: without it, an
+            // unbounded label can grow to claim the whole row and squeeze the action button beside
+            // it to zero width instead of sharing space.
             modifier =
-                Modifier.clearAndSetSemantics {
-                    text = AnnotatedString(status.label)
-                },
+                Modifier
+                    .weight(1f, fill = false)
+                    .clearAndSetSemantics {
+                        text = AnnotatedString(status.label)
+                    },
         )
         if (status.action != null) {
             TextButton(onClick = status.action.onClick) {
-                Text(status.action.label)
+                Text(status.action.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

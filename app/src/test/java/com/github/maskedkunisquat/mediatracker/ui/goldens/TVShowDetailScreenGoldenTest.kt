@@ -154,6 +154,10 @@ class TVShowDetailScreenGoldenTest {
                             title = "Twin Peaks",
                             releaseYear = null,
                             coverImageHash = coverImageHash,
+                            communityRating = 8.8,
+                            synopsis =
+                                "A FBI agent investigates the murder of a homecoming queen in a " +
+                                    "small logging town full of secrets.",
                         ),
                     seasons =
                         listOf(
@@ -184,6 +188,8 @@ class TVShowDetailScreenGoldenTest {
         title: String = "Chernobyl",
         releaseYear: Int? = 2019,
         coverImageHash: String? = null,
+        communityRating: Double? = null,
+        synopsis: String? = null,
     ) = MediaWithDetails.TVShow(
         item =
             MediaItemEntity(
@@ -194,6 +200,8 @@ class TVShowDetailScreenGoldenTest {
                 purchasePrice = null,
                 createdAt = Instant.fromEpochMilliseconds(0),
                 coverImageHash = coverImageHash,
+                communityRating = communityRating,
+                synopsis = synopsis,
             ),
         details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = WatchStatus.WATCHING),
     )
