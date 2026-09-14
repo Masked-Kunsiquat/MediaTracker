@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -41,7 +42,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import com.hub.media.core.database.entities.MediaType
-import java.util.Locale
 
 /**
  * Shared Option A detail header (#141), built film-first and designed so TV and Book can adopt it
@@ -174,8 +174,10 @@ private fun RatingRow(
     rating: Double,
     scale: Int,
 ) {
-    // The viewer's locale, so a comma-decimal device reads "7,9" (the class of bug #78 fixed on input).
-    val formatted = String.format(Locale.getDefault(), "%.1f", rating)
+    // The viewer's locale, so a comma-decimal device reads "7,9" (#78's bug class). Read through
+    // LocalConfiguration so a locale change recomposes this; lint's NonObservableLocale enforces it.
+    val locale = LocalConfiguration.current.locales[0]
+    val formatted = String.format(locale, "%.1f", rating)
     val description = stringResource(R.string.detail_rating_content_description, formatted, scale)
     Row(
         verticalAlignment = Alignment.CenterVertically,
