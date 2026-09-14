@@ -141,10 +141,26 @@
 
     <!-- Movie detail (Task 13 Phase B) -->
     <string name="movie_detail_not_found">Movie not found</string>
+    <!-- Superseded by movie_detail_runtime_hours_minutes/movie_detail_runtime_minutes_only (#141),
+         kept because runtimeMinutesNull_showsRuntimeUnknownText_notZeroMinutes still builds this
+         string to assert its absence: a real zero-minute runtime must never render as this. -->
     <string name="movie_detail_runtime">Runtime: %1$d min</string>
     <string name="movie_detail_runtime_unknown">Runtime unknown</string>
     <string name="movie_detail_delete">Delete movie</string>
     <string name="movie_detail_delete_confirm">Delete this movie? This cannot be undone.</string>
+
+    <!-- DetailHeader (#141): shared header adopted first by MovieDetailScreen -->
+    <string name="movie_detail_kind">Film</string>
+    <string name="movie_detail_runtime_hours_minutes">%1$dh %2$dm</string>
+    <string name="movie_detail_runtime_minutes_only">%1$dm</string>
+    <string name="movie_detail_watched_note">Watched %1$s</string>
+    <!-- "Film · 2016", or just "%1$s" when the year is omitted by the caller. -->
+    <string name="detail_kind_year_format">%1$s · %2$d</string>
+    <string name="detail_rating_content_description">Rated %1$s out of %2$d</string>
+    <string name="detail_rating_scale_suffix">/ %1$d</string>
+    <string name="detail_status_change_action_label">Change status</string>
+    <string name="detail_synopsis_more">More</string>
+    <string name="detail_synopsis_less">Less</string>
     <string name="library_filter_all">All</string>
     <!-- Library status filter chips. Deliberately media-neutral: the same chip must read
          correctly for a book and a film, so these are not the book-specific reading_status_*

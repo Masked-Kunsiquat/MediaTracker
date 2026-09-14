@@ -1,12 +1,10 @@
+@file:OptIn(kotlin.time.ExperimentalTime::class)
+
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,10 +15,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -36,20 +32,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MovieDetailViewModelFactory
-import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.components.StatusDropdownChip
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.MovieDetailUiState
 import com.hub.media.ui.MovieDetailViewModel
+import kotlin.time.Instant
 
 /**
  * Route wrapper: owns the [MovieDetailViewModel] and leaves the screen once the movie is gone.
@@ -133,15 +132,9 @@ fun MovieDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        (uiState as? MovieDetailUiState.Ready)
-                            ?.movie
-                            ?.item
-                            ?.title
-                            .orEmpty(),
-                    )
-                },
+                // Empty: the title now lives in DetailHeader below, since it no longer needs the
+                // top bar to be announced as a heading -- DetailHeader marks it one directly.
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -179,65 +172,67 @@ fun MovieDetailScreen(
             //
             // Scrolling brings #99's rule with it: insets as contentPadding rather than padding(),
             // so the content passes under the bars while the last row still clears them.
+            // #141: DetailHeader and DetailSynopsis carry their own 16dp horizontal margins (the
+            // header's own top/bottom padding is asymmetric by design -- 8dp to the app bar above,
+            // 20dp to whatever follows below), so this container adds none of its own. Loading and
+            // NotFound have no such built-in margin and add their own 16dp instead.
             modifier =
                 Modifier
                     .fillMaxSize()
                     .consumeWindowInsets(innerPadding)
                     .verticalScroll(rememberScrollState())
-                    .padding(scrollingContentPadding(innerPadding, PaddingValues(16.dp))),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(scrollingContentPadding(innerPadding)),
         ) {
             when (uiState) {
                 is MovieDetailUiState.Loading ->
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    CircularProgressIndicator(
+                        modifier =
+                            Modifier
+                                .padding(16.dp)
+                                .align(Alignment.CenterHorizontally),
+                    )
 
                 // Rendered rather than left blank even though the effect above pops the screen:
                 // the pop is not instantaneous, and an empty frame in between reads as a crash.
                 is MovieDetailUiState.NotFound ->
-                    Text(stringResource(R.string.movie_detail_not_found))
+                    Text(
+                        text = stringResource(R.string.movie_detail_not_found),
+                        modifier = Modifier.padding(16.dp),
+                    )
 
                 is MovieDetailUiState.Ready -> {
                     val movie = uiState.movie
-                    // Only when there is one. CoverImage draws a placeholder for a null hash, which
-                    // is right in the library where every row needs the same shape -- but at this
-                    // size it is a large empty panel, and a film entered by hand will never have
-                    // artwork, so it would be permanent. Caught by looking at the re-recorded
-                    // golden rather than by a test.
-                    movie.item.coverImageHash?.let { hash ->
-                        CoverImage(
-                            coverDir = coverStorageDir,
-                            coverImageHash = hash,
-                            mediaType = MediaType.MOVIE,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxWidth().height(DETAIL_POSTER_HEIGHT),
+                    val details = movie.details
+                    DetailHeader(
+                        kind = stringResource(R.string.movie_detail_kind),
+                        year = movie.item.releaseYear,
+                        title = movie.item.title,
+                        subline = formatRuntime(details?.runtimeMinutes),
+                        rating = movie.item.communityRating,
+                        // Only when there is one. CoverImage draws a placeholder for a null hash,
+                        // which is right in the library where every row needs the same shape -- but
+                        // at this size it is a large empty panel, and a film entered by hand will
+                        // never have artwork, so it would be permanent. Caught by looking at the
+                        // re-recorded golden rather than by a test.
+                        artwork =
+                            movie.item.coverImageHash?.let { hash ->
+                                DetailArtwork(
+                                    coverStorageDir = coverStorageDir,
+                                    coverImageHash = hash,
+                                    mediaType = MediaType.MOVIE,
+                                )
+                            },
+                        statusNote = watchedNote(details?.status, details?.watchedAt),
+                    ) {
+                        StatusDropdownChip(
+                            value = details?.status ?: WatchStatus.WATCHLIST,
+                            options = WatchStatus.entries,
+                            label = { it.displayLabel() },
+                            onSelect = onStatusChange,
+                            onClickLabel = stringResource(R.string.detail_status_change_action_label),
                         )
                     }
-                    movie.item.releaseYear?.let { year ->
-                        Text(
-                            text = stringResource(R.string.library_year_label, year),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                    Text(
-                        text =
-                            movie.details?.runtimeMinutes?.let {
-                                stringResource(R.string.movie_detail_runtime, it)
-                            } ?: stringResource(R.string.movie_detail_runtime_unknown),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.add_movie_status_label),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        WatchStatus.entries.forEach { option ->
-                            FilterChip(
-                                selected = movie.details?.status == option,
-                                onClick = { onStatusChange(option) },
-                                label = { Text(option.displayLabel()) },
-                            )
-                        }
-                    }
+                    DetailSynopsis(text = movie.item.synopsis)
                 }
             }
         }
@@ -245,8 +240,35 @@ fun MovieDetailScreen(
 }
 
 /**
- * Poster height on a detail screen. Mirrors [TVShowDetailScreen]'s constant of the same name --
- * duplicated rather than shared because a film and a show sizing their header identically is a
- * coincidence worth keeping changeable, not a rule worth enforcing from one place.
+ * "1h 56m", "56m" under an hour, or [R.string.movie_detail_runtime_unknown] for `null` --
+ * [MovieDetailsEntity.runtimeMinutes][com.hub.media.core.database.entities.MovieDetailsEntity.runtimeMinutes]'s
+ * KDoc on why `null` and `0` are different facts and must not share a rendering.
  */
-private val DETAIL_POSTER_HEIGHT = 220.dp
+@Composable
+private fun formatRuntime(minutes: Int?): String {
+    if (minutes == null) return stringResource(R.string.movie_detail_runtime_unknown)
+    val hours = minutes / 60
+    val remainder = minutes % 60
+    return if (hours > 0) {
+        stringResource(R.string.movie_detail_runtime_hours_minutes, hours, remainder)
+    } else {
+        stringResource(R.string.movie_detail_runtime_minutes_only, remainder)
+    }
+}
+
+/**
+ * "Watched <date>" for a WATCHED film with a recorded [watchedAt], `null` otherwise -- an
+ * ABANDONED-then-WATCHLISTed film keeps a stale [watchedAt] in the data (see
+ * [MovieDetailsEntity.watchedAt][com.hub.media.core.database.entities.MovieDetailsEntity.watchedAt]),
+ * so [status] is checked too rather than trusting the date alone. Uses the same
+ * [DATE_ONLY_FORMATTER] Book's detail screen formats dates with.
+ */
+@Composable
+private fun watchedNote(
+    status: WatchStatus?,
+    watchedAt: Instant?,
+): String? {
+    if (status != WatchStatus.WATCHED || watchedAt == null) return null
+    val date = DATE_ONLY_FORMATTER.format(instantToLocalDateTime(watchedAt))
+    return stringResource(R.string.movie_detail_watched_note, date)
+}

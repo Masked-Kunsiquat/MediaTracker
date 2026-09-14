@@ -130,6 +130,12 @@ class MovieDetailScreenGoldenTest {
                                     purchasePrice = null,
                                     createdAt = Instant.fromEpochMilliseconds(0),
                                     coverImageHash = coverImageHash,
+                                    // #141: covers the rating row and a synopsis that clamps to 4
+                                    // lines with a "More" button -- the no-poster golden stays
+                                    // sparse on purpose (it covers absence), so both new blocks
+                                    // are exercised only here.
+                                    communityRating = 7.9,
+                                    synopsis = WITH_POSTER_SYNOPSIS,
                                 ),
                             details =
                                 MovieDetailsEntity(
@@ -154,6 +160,18 @@ class MovieDetailScreenGoldenTest {
          * [CoverImage] draws its placeholder and never reads from disk.
          */
         const val NO_COVERS = "no-covers-in-this-fixture"
+
+        /**
+         * Long enough to clamp at [DetailSynopsis][com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis]'s
+         * 4-line limit and show its "More" button, so the golden actually pictures that block
+         * rather than a synopsis short enough to render in full.
+         */
+        const val WITH_POSTER_SYNOPSIS =
+            "A team of engineers accidentally build a device in a garage that allows them to " +
+                "revisit the recent past, and the moral and practical complications of exploiting " +
+                "it consume them one increasingly paranoid decision at a time, until neither they " +
+                "nor the audience can say for certain how many versions of each of them exist, or " +
+                "which one is telling the truth about what actually happened."
 
         /**
          * Writes a tiny, real, `BitmapFactory`-decodable JPEG to `<dir>/<fileName>` -- what

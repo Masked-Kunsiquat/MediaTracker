@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrived while the confirmation dialog was open was not ignored at all: it replaced the file the
   dialog was describing. Both are now refused, and the refused copy is deleted. Found in review of #161.
 
+### Changed
+
+- **The film detail screen has a new header, a synopsis, and one status control** (#141), the first
+  step of unifying the three detail screens behind a shared design. The title moved out of the top
+  bar into a header beside the poster, alongside the release year, runtime, and (when the provider
+  supplied one) a star rating out of 10. A synopsis now renders below the header when one is on
+  record, clamped to four lines with a "More" button for longer ones. The four stacked status chips
+  are replaced by a single dropdown chip showing the current status. TV and Book pick up the same
+  header in later PRs.
+
 ### Internal
 
 - **`SettingsScreen.kt` is being split by feature; it is down from 2,433 lines to 548** (#81).
