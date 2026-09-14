@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -170,7 +171,8 @@ private fun RatingRow(
     rating: Double,
     scale: Int,
 ) {
-    val formatted = String.format(Locale.ROOT, "%.1f", rating)
+    // The viewer's locale, so a comma-decimal device reads "7,9" (the class of bug #78 fixed on input).
+    val formatted = String.format(Locale.getDefault(), "%.1f", rating)
     val description = stringResource(R.string.detail_rating_content_description, formatted, scale)
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -300,7 +302,8 @@ fun DetailSynopsis(
             },
         )
         if (overflowing || expanded) {
-            TextButton(onClick = { expanded = !expanded }) {
+            // Offset by the button's own 12dp content padding, so "More" lines up with the text above.
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.offset(x = (-12).dp)) {
                 Text(
                     text =
                         stringResource(
