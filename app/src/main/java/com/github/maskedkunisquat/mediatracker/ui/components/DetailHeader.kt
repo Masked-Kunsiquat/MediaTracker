@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
@@ -103,7 +104,9 @@ fun DetailHeader(
                     coverDir = artwork.coverStorageDir,
                     coverImageHash = artwork.coverImageHash,
                     mediaType = artwork.mediaType,
-                    contentScale = ContentScale.Fit,
+                    // Crop, so the rounded clip lands on the image itself. Fit letterboxes any art that
+                    // isn't exactly 2:3, leaving square image corners inside rounded empty margins.
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth().height(ARTWORK_HEIGHT),
                 )
             }
@@ -177,7 +180,9 @@ private fun RatingRow(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = description },
+        // clearAndSet, not merge: a merged node keeps the children's "7.9" and "/ 10" as text beside the
+        // description, which TalkBack can read out after it.
+        modifier = Modifier.clearAndSetSemantics { contentDescription = description },
     ) {
         Icon(
             imageVector = Icons.Filled.Star,
@@ -288,8 +293,10 @@ fun DetailSynopsis(
 ) {
     if (text.isNullOrBlank()) return
 
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    var overflowing by remember { mutableStateOf(false) }
+    // Keyed on the text: an edited synopsis starts collapsed and re-measures, rather than inheriting
+    // "Less" from text that is no longer there.
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    var overflowing by remember(text) { mutableStateOf(false) }
 
     Column(modifier = modifier.padding(horizontal = 16.dp)) {
         Text(
