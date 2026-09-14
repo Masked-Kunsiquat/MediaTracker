@@ -206,7 +206,9 @@ private fun RatingRow(
  *
  * @param value The currently selected status, shown as the chip's label via [label].
  * @param options Every selectable status, in menu order.
- * @param label Renders a status as its display string.
+ * @param label Renders a status as its display string. `@Composable` because every existing
+ *   `displayLabel()` (e.g. [com.hub.media.core.database.entities.WatchStatus]'s) reads it via
+ *   `stringResource`.
  * @param onSelect Invoked with the tapped option; the caller decides what re-selecting the current
  *   value does (Book's equivalent treats it as a harmless no-op re-application).
  * @param onClickLabel The accessibility action label for opening the menu, e.g. "Change status".
@@ -215,7 +217,7 @@ private fun RatingRow(
 fun <T> StatusDropdownChip(
     value: T,
     options: List<T>,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelect: (T) -> Unit,
     onClickLabel: String,
     modifier: Modifier = Modifier,

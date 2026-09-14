@@ -46,6 +46,9 @@ class MovieDetailScreenTest {
         releaseYear: Int? = 2014,
         runtimeMinutes: Int? = 169,
         status: WatchStatus = WatchStatus.WATCHLIST,
+        communityRating: Double? = null,
+        synopsis: String? = null,
+        watchedAt: Instant? = null,
     ) = MediaWithDetails.Movie(
         item =
             MediaItemEntity(
@@ -56,13 +59,15 @@ class MovieDetailScreenTest {
                 purchasePrice = null,
                 createdAt = Instant.fromEpochMilliseconds(0),
                 coverImageHash = null,
+                communityRating = communityRating,
+                synopsis = synopsis,
             ),
         details =
             MovieDetailsEntity(
                 mediaId = id,
                 runtimeMinutes = runtimeMinutes,
                 status = status,
-                watchedAt = null,
+                watchedAt = watchedAt,
             ),
     )
 
@@ -92,16 +97,25 @@ class MovieDetailScreenTest {
         }
     }
 
+    // #141: the year moved into DetailHeader's "kind · year" line above the title (was its own
+    // "Year: 2014" row from library_year_label), and runtime now renders as "Xh Ym"/"Ym" (was
+    // "Runtime: 169 min" from movie_detail_runtime) -- both assertions below are new for that reason.
     @Test
     fun ready_rendersTitleReleaseYearAndRuntime() {
         setContent(MovieDetailUiState.Ready(movie(title = "Interstellar", releaseYear = 2014, runtimeMinutes = 169)))
 
         composeRule.onNodeWithText("Interstellar").assertIsDisplayed()
 
-        val yearText = context.getString(R.string.library_year_label, 2014)
-        composeRule.onNodeWithText(yearText).assertIsDisplayed()
+        val kindYearText =
+            context.getString(
+                R.string.detail_kind_year_format,
+                context.getString(R.string.movie_detail_kind),
+                2014,
+            )
+        composeRule.onNodeWithText(kindYearText).assertIsDisplayed()
 
-        val runtimeText = context.getString(R.string.movie_detail_runtime, 169)
+        // 169 minutes = 2h 49m.
+        val runtimeText = context.getString(R.string.movie_detail_runtime_hours_minutes, 2, 49)
         composeRule.onNodeWithText(runtimeText).assertIsDisplayed()
     }
 
@@ -116,6 +130,9 @@ class MovieDetailScreenTest {
         composeRule.onNodeWithText(zeroMinutesText).assertDoesNotExist()
     }
 
+    // #141: status is now one StatusDropdownChip rather than four stacked FilterChips, so the old
+    // single performClick() on the target label is now two steps -- open the chip (which shows the
+    // *current* status, "Watchlist"), then pick the target from the menu it opens.
     @Test
     fun tappingAStatusChip_invokesOnStatusChangeWithThatStatus() {
         var captured: WatchStatus? = null
@@ -124,10 +141,27 @@ class MovieDetailScreenTest {
             onStatusChange = { captured = it },
         )
 
+        val watchlistLabel = context.getString(R.string.watch_status_watchlist)
+        composeRule.onNodeWithText(watchlistLabel).performClick()
+
         val watchedLabel = context.getString(R.string.watch_status_watched)
         composeRule.onNodeWithText(watchedLabel).performClick()
 
         assertEquals(WatchStatus.WATCHED, captured)
+    }
+
+    @Test
+    fun statusChip_opensDropdownMenuShowingEveryOption() {
+        setContent(MovieDetailUiState.Ready(movie(status = WatchStatus.WATCHLIST)))
+
+        val watchingLabel = context.getString(R.string.watch_status_watching)
+        // Menu closed: the chip shows only the current status ("Watchlist"), not the other options.
+        composeRule.onNodeWithText(watchingLabel).assertDoesNotExist()
+
+        val watchlistLabel = context.getString(R.string.watch_status_watchlist)
+        composeRule.onNodeWithText(watchlistLabel).performClick()
+
+        composeRule.onNodeWithText(watchingLabel).assertIsDisplayed()
     }
 
     @Test
@@ -255,6 +289,80 @@ class MovieDetailScreenTest {
         assertEquals(1, errorShownCount)
     }
 
+    // --- #141: DetailHeader/DetailSynopsis behaviour adopted onto this screen ---
+
+    @Test
+    fun synopsisNull_rendersNothing() {
+        setContent(MovieDetailUiState.Ready(movie(synopsis = null)))
+
+        val moreLabel = context.getString(R.string.detail_synopsis_more)
+        composeRule.onNodeWithText(moreLabel).assertDoesNotExist()
+    }
+
+    @Test
+    fun longSynopsis_showsMoreButton_andExpandsOnClick() {
+        setContent(MovieDetailUiState.Ready(movie(synopsis = LONG_SYNOPSIS)))
+
+        val moreLabel = context.getString(R.string.detail_synopsis_more)
+        composeRule.onNodeWithText(moreLabel).assertIsDisplayed()
+        composeRule.onNodeWithText(moreLabel).performClick()
+
+        val lessLabel = context.getString(R.string.detail_synopsis_less)
+        composeRule.onNodeWithText(lessLabel).assertIsDisplayed()
+    }
+
+    @Test
+    fun communityRatingNull_rendersNoRatingRow() {
+        setContent(MovieDetailUiState.Ready(movie(communityRating = null)))
+
+        composeRule.onNodeWithContentDescription("Rated", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun communityRatingPresent_showsRatingContentDescription() {
+        setContent(MovieDetailUiState.Ready(movie(communityRating = 7.9)))
+
+        val description = context.getString(R.string.detail_rating_content_description, "7.9", 10)
+        composeRule.onNodeWithContentDescription(description).assertIsDisplayed()
+    }
+
+    @Test
+    fun watchedWithDate_showsWatchedNote() {
+        val watchedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        setContent(MovieDetailUiState.Ready(movie(status = WatchStatus.WATCHED, watchedAt = watchedAt)))
+
+        val localDate =
+            java.time.Instant
+                .ofEpochMilli(watchedAt.toEpochMilliseconds())
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+        val formattedDate =
+            java.time.format.DateTimeFormatter
+                .ofPattern("MMM d, yyyy")
+                .format(localDate)
+        val expectedNote = context.getString(R.string.movie_detail_watched_note, formattedDate)
+
+        composeRule.onNodeWithText(expectedNote).assertIsDisplayed()
+    }
+
+    @Test
+    fun notWatched_showsNoWatchedNote() {
+        val watchedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        // A stale watchedAt (e.g. re-added to the watchlist after being watched) must not read as
+        // a note -- the status is what gates it, not the date's mere presence.
+        setContent(MovieDetailUiState.Ready(movie(status = WatchStatus.WATCHLIST, watchedAt = watchedAt)))
+
+        val watchedPrefix = context.getString(R.string.movie_detail_watched_note, "").trim()
+        composeRule.onNodeWithText(watchedPrefix, substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun titleIsMarkedAsHeading() {
+        setContent(MovieDetailUiState.Ready(movie(title = "Interstellar")))
+
+        composeRule.onNode(isHeading and hasText("Interstellar")).assertExists()
+    }
+
     @Test
     fun coverImageHashNull_rendersNoPosterPlaceholder() {
         // A film has no separate "no poster" placeholder box the way CoverImage's caller in
@@ -279,6 +387,18 @@ class MovieDetailScreenTest {
 
         /** [MediaType.MOVIE]'s placeholder glyph in `CoverImage`'s `CoverPlaceholder`. */
         const val MOVIE_COVER_PLACEHOLDER_EMOJI = "🎬"
+
+        /**
+         * Long enough to overflow [DetailSynopsis][com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis]'s
+         * 4-line clamp on a real device at any reasonable font scale -- a short sentence would pass
+         * locally and then flake the moment the line wraps differently.
+         */
+        const val LONG_SYNOPSIS =
+            "A team of explorers travel through a wormhole in space in an attempt to ensure " +
+                "humanity's survival. With Earth becoming increasingly uninhabitable, a former " +
+                "NASA pilot leads a crew through interstellar space to search for a new home " +
+                "among the stars, racing against time and the limits of relativity itself, as " +
+                "the mission's true cost becomes clear to everyone left behind on a dying world."
     }
 }
 
@@ -290,4 +410,10 @@ class MovieDetailScreenTest {
 private val isProgressIndicator =
     SemanticsMatcher("has ProgressBarRangeInfo") {
         it.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo) != null
+    }
+
+/** Matches a node carrying [SemanticsProperties.Heading], as [DetailHeader] marks its title. */
+private val isHeading =
+    SemanticsMatcher("is a heading") {
+        it.config.getOrNull(SemanticsProperties.Heading) != null
     }
