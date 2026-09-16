@@ -2,6 +2,7 @@
 
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
@@ -182,151 +183,150 @@ private fun BookDetailScreenLoadingPreview() {
 }
 
 /**
- * Preview of the Details tab's content in isolation (ROADMAP Task 6 Phase D -- previews now cover
- * both tabs, alongside [BookDetailScreenReadyPreview] above which renders the whole screen
- * defaulted to this same tab). Also covers: no cover ([PREVIEW_BOOK.coverImageHash] is null), the
- * timer card, and the [ProgressSection]/[MetadataCard] split from the books-polish revamp.
+ * Preview of the header section in isolation (#141 step 3 -- previously [DetailsTabPreview] of the
+ * whole former Details tab, alongside [BookDetailScreenReadyPreview] above which renders the whole
+ * single-page screen). Also covers: no cover ([PREVIEW_BOOK.coverImageHash] is null).
  */
 @Preview(showBackground = true)
 @Composable
-private fun DetailsTabPreview() {
+private fun BookDetailHeaderSectionPreview() {
     MediaTrackerTheme {
-        DetailsTab(
+        BookDetailHeaderSection(
             book = PREVIEW_BOOK,
             details = PREVIEW_DETAILS,
-            currentProgress = 78.0,
             coverStorageDir = "/fake/path",
-            timerState = ReadingTimerState.Idle,
-            elapsedSeconds = 0,
-            onStartReading = {},
-            onPauseReading = {},
-            onResumeReading = {},
-            onStopReading = {},
             onStatusChange = {},
-            onCopyIsbn = {},
         )
     }
 }
 
-/** Dark-theme counterpart of [DetailsTabPreview], same data. */
+/** Dark-theme counterpart of [BookDetailHeaderSectionPreview], same data. */
 @Preview(showBackground = true)
 @Composable
-private fun DetailsTabDarkPreview() {
+private fun BookDetailHeaderSectionDarkPreview() {
     MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
-        DetailsTab(
+        BookDetailHeaderSection(
             book = PREVIEW_BOOK,
             details = PREVIEW_DETAILS,
-            currentProgress = 78.0,
             coverStorageDir = "/fake/path",
+            onStatusChange = {},
+        )
+    }
+}
+
+/** Preview of [BookProgressSection] with a page-mode fraction (light theme). */
+@Preview(showBackground = true)
+@Composable
+private fun BookProgressSectionPreview() {
+    MediaTrackerTheme {
+        BookProgressSection(currentProgress = 78.0, totalPages = 180, trackingMode = TrackingMode.PAGES)
+    }
+}
+
+/**
+ * Awkward-state preview: a book explicitly [TrackingMode.PAGES] with no known
+ * [BookDetailsEntity.totalPages] (bare "Page 142" progress text, no progress bar -- see
+ * [progressFraction]'s KDoc).
+ */
+@Preview(showBackground = true)
+@Composable
+private fun BookProgressSectionUnknownTotalPagesPreview() {
+    MediaTrackerTheme {
+        BookProgressSection(currentProgress = 142.0, totalPages = null, trackingMode = TrackingMode.PAGES)
+    }
+}
+
+/** Awkward-state preview: no session ever logged, so [BookProgressSection] shows its "not started" message. */
+@Preview(showBackground = true)
+@Composable
+private fun BookProgressSectionNoProgressPreview() {
+    MediaTrackerTheme {
+        BookProgressSection(currentProgress = null, totalPages = 180, trackingMode = TrackingMode.PAGES)
+    }
+}
+
+/** Preview of [BookTimerRow] in each [ReadingTimerState]. */
+@Preview(showBackground = true)
+@Composable
+private fun BookTimerRowIdlePreview() {
+    MediaTrackerTheme {
+        BookTimerRow(
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
-            onStartReading = {},
-            onPauseReading = {},
-            onResumeReading = {},
-            onStopReading = {},
-            onStatusChange = {},
-            onCopyIsbn = {},
+            onStart = {},
+            onPause = {},
+            onResume = {},
+            onStop = {},
+        )
+    }
+}
+
+/** [BookTimerRow] while [ReadingTimerState.Running]. */
+@Preview(showBackground = true)
+@Composable
+private fun BookTimerRowRunningPreview() {
+    MediaTrackerTheme {
+        BookTimerRow(
+            timerState = ReadingTimerState.Running,
+            elapsedSeconds = 754,
+            onStart = {},
+            onPause = {},
+            onResume = {},
+            onStop = {},
         )
     }
 }
 
 /**
- * Awkward-state preview: an unusually long title (heading-block wrap/overflow), a book explicitly
- * [TrackingMode.PAGES] with no known [BookDetailsEntity.totalPages] (bare "Page 142" progress text,
- * no progress bar -- see [progressFraction]'s KDoc -- and [R.string.detail_value_unknown] in
- * [MetadataCard]'s total-pages row).
+ * Preview of the reading-history section in isolation (#141 step 3 -- it is a [LazyListScope]
+ * extension now rather than its own composable, so previews wrap it in a bare [LazyColumn]). No
+ * longer includes the timer row (books-polish pass moved it to the header section); renders as the
+ * books-polish-pass timeline (see [buildTimelineEntries]/[TimelineRow]).
  */
 @Preview(showBackground = true)
 @Composable
-private fun DetailsTabLongTitleUnknownTotalPagesPreview() {
+private fun ReadingHistorySectionPreview() {
     MediaTrackerTheme {
-        DetailsTab(
-            book =
-                PREVIEW_BOOK.copy(
-                    title =
-                        "The Extraordinarily Long and Overly Descriptive Title of a Book That " +
-                            "Simply Refuses to Fit on a Single Line, Volume One",
-                ),
-            details = PREVIEW_DETAILS.copy(totalPages = null, trackingMode = TrackingMode.PAGES),
-            currentProgress = 142.0,
-            coverStorageDir = "/fake/path",
-            timerState = ReadingTimerState.Idle,
-            elapsedSeconds = 0,
-            onStartReading = {},
-            onPauseReading = {},
-            onResumeReading = {},
-            onStopReading = {},
-            onStatusChange = {},
-            onCopyIsbn = {},
-        )
+        LazyColumn {
+            readingHistorySection(
+                sessions = PREVIEW_SESSIONS,
+                onLogManuallyClick = {},
+                onEditSessionClick = {},
+                onDeleteSessionClick = {},
+            )
+        }
     }
 }
 
-/** Awkward-state preview: no session ever logged, so [ProgressSection] shows its "not started" message. */
+/** Dark-theme counterpart of [ReadingHistorySectionPreview], same data. */
 @Preview(showBackground = true)
 @Composable
-private fun DetailsTabNoProgressPreview() {
-    MediaTrackerTheme {
-        DetailsTab(
-            book = PREVIEW_BOOK,
-            details = PREVIEW_DETAILS,
-            currentProgress = null,
-            coverStorageDir = "/fake/path",
-            timerState = ReadingTimerState.Idle,
-            elapsedSeconds = 0,
-            onStartReading = {},
-            onPauseReading = {},
-            onResumeReading = {},
-            onStopReading = {},
-            onStatusChange = {},
-            onCopyIsbn = {},
-        )
-    }
-}
-
-/**
- * Preview of the Reading history tab's content in isolation (ROADMAP Task 6 Phase D). No longer
- * includes the timer card (books-polish pass moved it to [DetailsTabPreview]/[DetailsTab]); now
- * renders as the books-polish-pass timeline (see [buildTimelineEntries]/[TimelineRow]).
- */
-@Preview(showBackground = true)
-@Composable
-private fun ReadingHistoryTabPreview() {
-    MediaTrackerTheme {
-        ReadingHistoryTab(
-            sessions = PREVIEW_SESSIONS,
-            onLogManuallyClick = {},
-            onEditSessionClick = {},
-            onDeleteSessionClick = {},
-        )
-    }
-}
-
-/** Dark-theme counterpart of [ReadingHistoryTabPreview], same data. */
-@Preview(showBackground = true)
-@Composable
-private fun ReadingHistoryTabDarkPreview() {
+private fun ReadingHistorySectionDarkPreview() {
     MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
-        ReadingHistoryTab(
-            sessions = PREVIEW_SESSIONS,
-            onLogManuallyClick = {},
-            onEditSessionClick = {},
-            onDeleteSessionClick = {},
-        )
+        LazyColumn {
+            readingHistorySection(
+                sessions = PREVIEW_SESSIONS,
+                onLogManuallyClick = {},
+                onEditSessionClick = {},
+                onDeleteSessionClick = {},
+            )
+        }
     }
 }
 
 /** Awkward-state preview: no sessions logged yet, so the timeline shows its empty state instead. */
 @Preview(showBackground = true)
 @Composable
-private fun ReadingHistoryTabEmptyPreview() {
+private fun ReadingHistorySectionEmptyPreview() {
     MediaTrackerTheme {
-        ReadingHistoryTab(
-            sessions = emptyList(),
-            onLogManuallyClick = {},
-            onEditSessionClick = {},
-            onDeleteSessionClick = {},
-        )
+        LazyColumn {
+            readingHistorySection(
+                sessions = emptyList(),
+                onLogManuallyClick = {},
+                onEditSessionClick = {},
+                onDeleteSessionClick = {},
+            )
+        }
     }
 }
 
@@ -337,14 +337,16 @@ private fun ReadingHistoryTabEmptyPreview() {
  */
 @Preview(showBackground = true)
 @Composable
-private fun ReadingHistoryTabUnknownDurationPreview() {
+private fun ReadingHistorySectionUnknownDurationPreview() {
     MediaTrackerTheme {
-        ReadingHistoryTab(
-            sessions = PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION,
-            onLogManuallyClick = {},
-            onEditSessionClick = {},
-            onDeleteSessionClick = {},
-        )
+        LazyColumn {
+            readingHistorySection(
+                sessions = PREVIEW_SESSIONS_WITH_UNKNOWN_DURATION,
+                onLogManuallyClick = {},
+                onEditSessionClick = {},
+                onDeleteSessionClick = {},
+            )
+        }
     }
 }
 

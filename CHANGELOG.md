@@ -44,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only rather than a picker, since where a show sits on the shelf is derived from its episodes
   rather than chosen; "Abandon"/"Resume" sits beside it as a small action instead of a full-width
   button. Seasons and episodes render exactly as before.
+- **The book detail screen adopts the same header and becomes one scrolling page** (#141 step 3,
+  completing the unification). The Details/Reading history tabs are gone: header, synopsis,
+  progress, a compact reading-timer row, a facts card, and reading history now all sit on one page
+  in that order. The header shows artwork only when a cover exists, the same rule film and TV
+  follow, so the always-drawn placeholder box is gone; tapping the cover still opens it enlarged.
+  The status chip drops its "Status:" prefix, and a book finished on a known date shows a "Finished"
+  note the way a watched film does. Community rating now reads out of 10 rather than the mockup's
+  "/ 5" — books were never on a five-point scale. The reading timer keeps its states and callbacks
+  but reads as a compact row instead of a full-height card, so it doesn't push reading history far
+  down the page. "Re-fetch cover" moves from the cover's long-press (now gone, along with the
+  always-present cover box it lived on) into a ⋮ menu in the top bar, with a small spinner there
+  while a refetch is running. The facts card keeps the ISBN row's copy-to-clipboard button.
 
 ### Internal
 

@@ -37,22 +37,16 @@ import kotlin.time.Instant
  *
  * ### One image, and what is deliberately left out
  *
- * This records the Details tab: header, cover box, progress, the reading timer, and the metadata
- * card whose ISBN row carries the tap-to-copy behaviour.
+ * This records however much of the single scrolling page (#141 step 3: header, synopsis, progress,
+ * the compact reading-timer row, and the facts card whose ISBN row carries the tap-to-copy
+ * behaviour) fits the fixed golden viewport -- the reading-history section at the bottom of the
+ * page is real content now rather than a second tab, but is not guaranteed to be visible in every
+ * capture, the same way TV's season list runs off the bottom of its own goldens.
  *
- * The Reading history tab is **not** recorded, and neither are the session dialogs, for the same
- * reason in two different shapes. The history tab is reached through `selectedTabIndex`, which is
- * `remember` state private to `BookDetailContent`; photographing it would mean either exposing an
- * initial-tab parameter on a production composable purely so a test could reach it, or tapping the
- * tab inside `captureGolden`'s `alsoAssert` and relying on the fact that the capture currently
- * happens after that callback. The first changes shipping code to suit a test. The second builds in
- * a silent failure -- reorder `captureGolden` later and this becomes a second picture of the
- * Details tab that still passes, which is precisely the golden-that-agrees-with-anything trap #102
- * was written against. The dialogs are separate windows, and an image of a form proves far less
- * about it than driving it does.
- *
- * Both are covered instead by the parse-migration tests landing alongside this, which is the better
- * instrument for them: they assert behaviour rather than pixels.
+ * The session dialogs are **not** recorded: they are separate windows, and an image of a form
+ * proves far less about it than driving it does -- they are covered instead by the parse-migration
+ * tests landing alongside this, which is the better instrument for them: they assert behaviour
+ * rather than pixels.
  *
  * ### The paired assertion, and how it was falsified
  *
@@ -83,12 +77,12 @@ class BookDetailScreenGoldenTest {
 
     /**
      * A book **with** a cover (#141) -- the state [bookDetail] does NOT cover. `GOLDEN_BOOK`'s
-     * `coverImageHash` is null, but unlike Movie/TV (whose `?.let` skips `CoverImage` entirely for
-     * a null hash) `InteractiveCoverBox` calls `CoverImage` unconditionally, so `book-detail.png`
-     * already shows its emoji *placeholder* box -- not the empty space Movie/TV's no-poster goldens
-     * show, and not a decoded image either. This golden is the third state: a real cover actually
-     * drawn in [InteractiveCoverBox]'s box. See `MovieDetailScreenGoldenTest.writeFakeCoverFile` for
-     * how a real, `BitmapFactory`-decodable file gets onto disk for this to resolve.
+     * `coverImageHash` is null, and as of #141 step 3 Book's header matches Movie/TV: the shared
+     * `DetailHeader`'s `artwork` slot (built via `?.let`) skips `CoverImage` entirely for a null
+     * hash, so `book-detail.png` shows no cover slot at all rather than an emoji placeholder. This
+     * golden is the artwork-present state: a real cover actually decoded and drawn. See
+     * `MovieDetailScreenGoldenTest.writeFakeCoverFile` for how a real, `BitmapFactory`-decodable
+     * file gets onto disk for this to resolve.
      */
     @Test
     fun bookDetail_withCover() {
@@ -249,6 +243,11 @@ private val GOLDEN_SESSIONS =
  * -- not a reuse of [GOLDEN_BOOK] with a hash bolted on, so the two goldens are visually
  * distinguishable at a glance rather than differing only in the one detail under test.
  */
+/**
+ * [communityRating] and [MediaItemEntity.synopsis] are both set here (#141 step 3), even though
+ * production books don't carry a synopsis until #157 -- see [BookDetailScreen]'s KDoc -- so this
+ * golden exercises the rating row and the synopsis block the shared [DetailHeader] now draws.
+ */
 @OptIn(kotlin.time.ExperimentalTime::class)
 private val DUNE_BOOK =
     MediaItemEntity(
@@ -259,6 +258,12 @@ private val DUNE_BOOK =
         purchasePrice = 12.99,
         createdAt = Instant.fromEpochMilliseconds(0),
         coverImageHash = null,
+        // Out of 10, matching the scale MediaItemEntity.communityRating's KDoc documents -- #141
+        // step 3's decision comment corrected the mockup's "/ 5", which was wrong for this field.
+        communityRating = 8.5,
+        synopsis =
+            "A noble family accepts stewardship of the desert planet Arrakis, the only source " +
+                "of the most valuable substance in the universe.",
     )
 
 @OptIn(kotlin.time.ExperimentalTime::class)

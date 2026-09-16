@@ -7,27 +7,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.DisableSelection
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,9 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,99 +35,17 @@ import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_R
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailProgressCard
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
-import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.timer.ReadingTimerState
+import kotlin.math.roundToInt
 import kotlin.time.Instant
-
-/**
- * Details tab content (books-polish pass revamp; originally ROADMAP Task 6 Phase D). Replaces the
- * former single stack of prefix-string [Text] rows ("Released: …", "ISBN: …", "Format: …") with a
- * considered hierarchy, top to bottom:
- * 1. [BookDetailHeaderSection] -- the shared [DetailHeader] (#141 step 3): cover, title/subline,
- *    rating and the status chip, in the same shape Film and TV use.
- * 2. [ProgressSection] -- current reading progress, the thing this screen is checked for most
- *    (per the ROADMAP revamp brief), promoted above the timer and given its own prominent card with
- *    a [LinearProgressIndicator] wherever a fraction is derivable.
- * 3. [TimerCard] -- restyled with a `primaryContainer` background and full-width buttons so it
- *    reads as *the* primary action on this tab, not another stacked card of equal visual weight.
- * 4. [MetadataCard] -- ISBN/format/total-pages/tracking-mode as a compact two-column key/value
- *    grid, replacing the old `released_prefix`/`isbn_prefix`/`format_prefix`/`total_pages_prefix`/
- *    `progress_prefix` strings (all deleted -- see `strings.xml`) that existed only because the
- *    layout was too primitive to give each fact its own visual slot.
- *
- * ### Selectable/copyable text (ROADMAP backlog, addressed alongside Task 6 Phase D)
- * [MetadataCard] is wrapped in its own [SelectionContainer] so ISBN/format/etc. text stays
- * long-press selectable/copyable, carrying its own [DisableSelection] carve-out around the ISBN
- * copy button exactly as before. [BookDetailHeaderSection] is **not** wrapped (#141 step 3) --
- * [DetailHeader] is the same shared component Film and TV render unwrapped, and wrapping only
- * Book's copy of it would mean auditing gesture conflicts (the artwork's tap-to-enlarge, the status
- * chip's dropdown) against long-press-to-select that Film/TV never had to solve either.
- * [TimerCard]'s live elapsed-time readout -- which changes every second while running -- stays
- * outside any [SelectionContainer] as before.
- */
-@Composable
-internal fun DetailsTab(
-    book: MediaItemEntity,
-    details: BookDetailsEntity?,
-    currentProgress: Double?,
-    coverStorageDir: String,
-    timerState: ReadingTimerState,
-    elapsedSeconds: Long,
-    onStartReading: () -> Unit,
-    onPauseReading: () -> Unit,
-    onResumeReading: () -> Unit,
-    onStopReading: () -> Unit,
-    onStatusChange: (ReadingStatus) -> Unit,
-    onCopyIsbn: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                // Inside the scroll: the tab's content passes under the navigation bar, and its
-                // last row still clears it. The screen's Box deliberately does not apply this.
-                .padding(barPadding(WindowInsetsSides.Bottom))
-                .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        BookDetailHeaderSection(
-            book = book,
-            details = details,
-            coverStorageDir = coverStorageDir,
-            onStatusChange = onStatusChange,
-        )
-
-        ProgressSection(
-            currentProgress = currentProgress,
-            totalPages = details?.totalPages,
-            trackingMode = details?.trackingMode,
-        )
-
-        TimerCard(
-            timerState = timerState,
-            elapsedSeconds = elapsedSeconds,
-            onStart = onStartReading,
-            onPause = onPauseReading,
-            onResume = onResumeReading,
-            onStop = onStopReading,
-        )
-
-        if (details != null) {
-            SelectionContainer {
-                MetadataCard(details = details, onCopyIsbn = onCopyIsbn)
-            }
-        }
-    }
-}
 
 /**
  * Book's header (#141 step 3): the shared [DetailHeader] -- kind + release year, title, authors as
@@ -187,29 +92,64 @@ internal fun BookDetailHeaderSection(
 }
 
 /**
- * Reading-progress section (books-polish pass), promoted above [TimerCard] on [DetailsTab] since
- * progress is "the thing the user checks most" (ROADMAP revamp brief) -- previously a single
- * `progress_prefix` body-text row buried in the old header's metadata stack.
- *
- * Degrades gracefully through three cases, exactly mirroring [formatProgress]'s own precedence:
- * - No session ever logged ([currentProgress] null): a muted "nothing to show yet" message, no bar.
- * - A fraction is derivable (percent mode, or page mode with a known [totalPages]): the formatted
- *   text plus a [LinearProgressIndicator] for an at-a-glance visual, via [progressFraction].
+ * Reading-progress section (#141 step 3), using the shared [DetailProgressCard] wherever a
+ * fraction is derivable -- the same card show's episode progress uses -- while still preserving
+ * Book's own two degraded cases, which [DetailProgressCard] cannot express (its own "renders
+ * nothing" guard is for a show with zero episodes *tracked*, not for "no progress logged yet," and
+ * it always draws a bar, which a bare page number has no denominator for):
+ * - No session ever logged ([currentProgress] null): a muted "nothing to show yet" message, no bar
+ *   ([ProgressPlaceholderCard]).
  * - Page mode with no known [totalPages]: the formatted text (a bare page number) with no bar,
- *   since there is no denominator to visualize a fraction of.
+ *   since there is no denominator to visualize a fraction of ([ProgressPlaceholderCard] again, in
+ *   its emphasized style).
+ * - Otherwise (a fraction is derivable): [DetailProgressCard] itself. [completed] is clamped to
+ *   [total] -- unlike a show's watched-episode count, [currentProgress] is user-entered and not
+ *   validated against [totalPages] at save time, so an overshoot must not draw a bar past 100%
+ *   (mirrors [progressFraction]'s own `coerceIn(0f, 1f)`, which this replaces as the fraction
+ *   source but must still honour).
  */
 @Composable
-private fun ProgressSection(
+internal fun BookProgressSection(
     currentProgress: Double?,
     totalPages: Int?,
     trackingMode: TrackingMode?,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    if (currentProgress == null) {
+        ProgressPlaceholderCard(text = stringResource(R.string.detail_progress_not_started), emphasize = false)
+        return
+    }
+    val value = formatProgress(currentProgress, totalPages, trackingMode) ?: return
+    val fraction = progressFraction(currentProgress, totalPages, trackingMode)
+    if (fraction == null) {
+        ProgressPlaceholderCard(text = value, emphasize = true)
+        return
+    }
+    val total = if (trackingMode == TrackingMode.PAGES && totalPages != null) totalPages else PERCENT_TOTAL
+    val completed = currentProgress.roundToInt().coerceIn(0, total)
+    DetailProgressCard(value = value, completed = completed, total = total)
+}
+
+/** The denominator [BookProgressSection] uses for [TrackingMode.PERCENT] (and `null`) books. */
+private const val PERCENT_TOTAL = 100
+
+/**
+ * [BookProgressSection]'s two text-only degraded cases, drawn in [DetailProgressCard]'s own card
+ * shell (shape, colour, padding) so they read as the same component even though no bar is drawn.
+ * [emphasize] selects [DetailProgressCard]'s value styling (bold, `headlineSmall`, primary colour)
+ * for a real-but-unbarred progress value, or a muted `bodyMedium` line for "nothing logged yet".
+ */
+@Composable
+private fun ProgressPlaceholderCard(
+    text: String,
+    emphasize: Boolean,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
         Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -217,129 +157,17 @@ private fun ProgressSection(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (currentProgress == null) {
-                Text(
-                    text = stringResource(R.string.detail_progress_not_started),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                val progressText = formatProgress(currentProgress, totalPages, trackingMode)
-                if (progressText != null) {
-                    Text(
-                        text = progressText,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                val fraction = progressFraction(currentProgress, totalPages, trackingMode)
-                if (fraction != null) {
-                    LinearProgressIndicator(
-                        progress = { fraction },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Book metadata as a compact, scannable two-column key/value grid (books-polish pass), replacing
- * the old `isbn_prefix`/`format_prefix`/`total_pages_prefix` concatenated-string [Text] rows that
- * used to live in [BookHeader] -- each fact now gets its own [MetadataRow] rather than sharing a
- * body-text line with a hardcoded label prefix. ISBN keeps its existing copy [IconButton] affordance
- * (wrapped in [DisableSelection] since the caller wraps this whole composable in a
- * [SelectionContainer]); total pages shows [R.string.detail_value_unknown] rather than being
- * omitted, so the grid's shape doesn't jump around depending on which fields a given book happens
- * to have.
- */
-@Composable
-private fun MetadataCard(
-    details: BookDetailsEntity,
-    onCopyIsbn: (String) -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val authors = details.authors
-            if (!authors.isNullOrBlank()) {
-                // Degrades cleanly when absent (ROADMAP Task 9 Phase A): most existing books have
-                // no author on record until re-fetched -- this row is simply omitted, matching the
-                // ISBN row's own conditional-display pattern just below, rather than showing a
-                // "detail_value_unknown" placeholder every book would otherwise carry.
-                MetadataRow(label = stringResource(R.string.detail_label_authors)) {
-                    Text(text = authors, style = MaterialTheme.typography.bodyMedium)
-                }
-                HorizontalDivider()
-            }
-            val isbn = details.isbn
-            if (!isbn.isNullOrBlank()) {
-                val copyIsbnDescription = stringResource(R.string.isbn_copy_content_description)
-                MetadataRow(label = stringResource(R.string.detail_label_isbn)) {
-                    Text(text = isbn, style = MaterialTheme.typography.bodyMedium)
-                    DisableSelection {
-                        IconButton(
-                            onClick = { onCopyIsbn(isbn) },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_content_copy),
-                                contentDescription = copyIsbnDescription,
-                            )
-                        }
-                    }
-                }
-                HorizontalDivider()
-            }
-            MetadataRow(label = stringResource(R.string.detail_label_format)) {
-                Text(text = details.format.displayLabel(), style = MaterialTheme.typography.bodyMedium)
-            }
-            HorizontalDivider()
-            MetadataRow(label = stringResource(R.string.detail_label_total_pages)) {
-                Text(
-                    text = details.totalPages?.toString() ?: stringResource(R.string.detail_value_unknown),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            HorizontalDivider()
-            MetadataRow(label = stringResource(R.string.detail_label_tracking_mode)) {
-                Text(text = details.trackingMode.displayLabel(), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
-/** One label/value row of [MetadataCard]'s key/value grid; [value] renders the row's right side. */
-@Composable
-private fun MetadataRow(
-    label: String,
-    value: @Composable () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            value()
+            Text(
+                text = text,
+                style = if (emphasize) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.bodyMedium,
+                fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal,
+                color =
+                    if (emphasize) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
         }
     }
 }
@@ -420,18 +248,16 @@ internal fun finishedNote(
 }
 
 /**
- * Timer card: formatted elapsed time and action buttons gated by [timerState] --
- * [ReadingTimerState.Idle] shows "Start reading"; [ReadingTimerState.Running] shows "Pause" +
- * "Stop"; [ReadingTimerState.Paused] shows "Resume" + "Stop".
- *
- * Restyled in the books-polish pass to read as *the* primary action on [DetailsTab] rather than
- * another stacked card of equal visual weight: a `primaryContainer` background (Material 3's
- * highest-emphasis container short of `primary` itself, which would fight with the filled action
- * [Button]s below it) and full-width, evenly [Modifier.weight]ed buttons instead of the small
- * side-by-side pill buttons the plain-`Card` version used.
+ * Compact reading-timer row (#141 step 3), replacing the old full-height `TimerCard`: "Reading
+ * timer" and the elapsed time on the left, [timerState]'s action buttons on the right, in one row
+ * instead of stacked -- on a single scrolling page the old card's full height would sit between
+ * progress and reading history and push the history far down. Same gating, same callbacks, same
+ * strings as before: [ReadingTimerState.Idle] shows Start; [ReadingTimerState.Running] shows Pause
+ * + Stop; [ReadingTimerState.Paused] shows Resume + Stop. Stays a `primaryContainer` card so it
+ * still reads as *the* primary action on the page.
  */
 @Composable
-private fun TimerCard(
+internal fun BookTimerRow(
     timerState: ReadingTimerState,
     elapsedSeconds: Long,
     onStart: () -> Unit,
@@ -441,52 +267,52 @@ private fun TimerCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
     ) {
-        Column(
+        Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stringResource(R.string.timer_card_title),
-                style = MaterialTheme.typography.labelLarge,
-            )
-            Text(
-                text = formatElapsed(elapsedSeconds),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.timer_card_title),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    text = formatElapsed(elapsedSeconds),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 when (timerState) {
                     is ReadingTimerState.Idle -> {
-                        Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = onStart) {
                             Text(stringResource(R.string.start_reading_button))
                         }
                     }
                     is ReadingTimerState.Running -> {
-                        Button(onClick = onPause, modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = onPause) {
                             Text(stringResource(R.string.pause_button))
                         }
-                        Button(onClick = onStop, modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = onStop) {
                             Text(stringResource(R.string.stop_button))
                         }
                     }
                     is ReadingTimerState.Paused -> {
-                        Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = onResume) {
                             Text(stringResource(R.string.resume_button))
                         }
-                        Button(onClick = onStop, modifier = Modifier.weight(1f)) {
+                        TextButton(onClick = onStop) {
                             Text(stringResource(R.string.stop_button))
                         }
                     }

@@ -5,11 +5,14 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import android.content.ClipData
 import android.os.Build
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -24,22 +27,18 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -51,7 +50,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.BookDetailViewModelFactory
-import com.github.maskedkunisquat.mediatracker.ui.insets.exceptBottom
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailFact
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailFactAction
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.timer.ReadingTimerState
@@ -176,8 +179,8 @@ fun BookDetailScreenRoute(
  * - [BookDetailUiState.Loading]: a centered [CircularProgressIndicator].
  * - [BookDetailUiState.NotFound]: nothing (the route wrapper navigates back before this would be
  *   visible for more than a frame).
- * - [BookDetailUiState.Ready]: cover + metadata header, timer card, manual-entry affordance, and
- *   session history -- see [BookDetailContent].
+ * - [BookDetailUiState.Ready]: one scrolling page -- header, synopsis, progress, timer row, facts
+ *   and reading history, in that order (#141 step 3; see this function's body).
  *
  * @param uiState Current [BookDetailUiState].
  * @param timerState Current [ReadingTimerState], gating which timer buttons are shown.
@@ -212,10 +215,9 @@ fun BookDetailScreenRoute(
  *   [BookDetailUiState.Ready]), to navigate to the edit-metadata screen (ROADMAP Task 6 Phase A).
  * @param onStatusChange Called with the newly selected [ReadingStatus] from the header's quick
  *   status chip/dropdown (ROADMAP Task 6 Phase C), wired to [BookDetailViewModel.updateStatus].
- * @param onRefetchCover Called when the "Re-fetch cover" item is selected from the Details tab
- *   cover's long-press menu (ROADMAP Task 6 Phase E; moved off a standalone button and onto the
- *   cover's own interactions in the books-polish pass -- see [InteractiveCoverBox]), wired to
- *   [BookDetailViewModel.refetchCover].
+ * @param onRefetchCover Called when the "Re-fetch cover" item is selected from the TopAppBar's
+ *   overflow menu (ROADMAP Task 6 Phase E; moved there from the cover's long-press in #141 step 3
+ *   -- see this function's `topBar`), wired to [BookDetailViewModel.refetchCover].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -363,42 +365,187 @@ fun BookDetailScreen(
             )
         },
     ) { innerPadding ->
-        Box(
-            // Library's shape: the tab row below is pinned and takes the top app bar and the
-            // horizontal cutout as real padding, while the navigation bar goes to whichever tab is
-            // showing -- both of them scroll, and both re-add it themselves.
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .consumeWindowInsets(innerPadding)
-                    .padding(innerPadding.exceptBottom()),
+        // #141 step 3: one scrolling page replaces the Details/Reading history tabs. Lazy, not a
+        // scrolling Column, for the same reason TVShowDetailScreen's season list is lazy -- the
+        // reading-history timeline can grow long, and a Column would compose every row on entry
+        // whether or not it is on screen. Each section is its own item, per that same file's
+        // comment.
+        //
+        // This dialog-related state used to live on the now-deleted `BookDetailContent`, scoped to
+        // the Ready branch only; it is hoisted here instead since there is no longer a second
+        // composable for it to live on, but is otherwise unchanged.
+        var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
+        var showManualEntry by remember { mutableStateOf(false) }
+        // Non-null while the manual-entry dialog is open in *edit* mode (opened from a session
+        // row's edit icon, prefilled from this row); null while it's open in *create* mode
+        // (opened from the reading-history section's "Log session manually" button). See
+        // ManualSessionDialog's KDoc.
+        var sessionToEdit by remember { mutableStateOf<ReadingSessionEntity?>(null) }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().consumeWindowInsets(innerPadding),
+            contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
         ) {
             when (uiState) {
-                is BookDetailUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                is BookDetailUiState.NotFound -> {
-                    // Nothing to render; the route wrapper navigates back on this state.
-                }
+                is BookDetailUiState.Loading ->
+                    item {
+                        CircularProgressIndicator(modifier = Modifier.fillMaxWidth().wrapContentWidth())
+                    }
+
+                // Nothing to render; the route wrapper navigates back on this state.
+                is BookDetailUiState.NotFound -> {}
+
                 is BookDetailUiState.Ready -> {
-                    BookDetailContent(
-                        state = uiState,
-                        timerState = timerState,
-                        elapsedSeconds = elapsedSeconds,
-                        coverStorageDir = coverStorageDir,
-                        onStartReading = onStartReading,
-                        onPauseReading = onPauseReading,
-                        onResumeReading = onResumeReading,
-                        onStopReading = onStopReading,
-                        onSaveSession = onSaveSession,
-                        onDiscardPendingSession = onDiscardPendingSession,
-                        onLogManualSession = onLogManualSession,
-                        onDeleteSession = onDeleteSession,
-                        onEditSession = onEditSession,
-                        onStatusChange = onStatusChange,
-                        onCopyIsbn = onCopyIsbn,
+                    val book = uiState.book
+                    val details = uiState.details
+
+                    // Every other mutation that can fail (manual-entry save/edit, session delete,
+                    // book delete, status change, cover refetch) has no dialog left open to show
+                    // it in by the time it fails, so show it here instead, scoped to the case
+                    // where the pending-session dialog isn't already surfacing it below.
+                    val errorMessage = uiState.errorMessage
+                    if (errorMessage != null && uiState.pendingSession == null) {
+                        item {
+                            Text(
+                                text = errorMessage,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+
+                    item {
+                        BookDetailHeaderSection(
+                            book = book,
+                            details = details,
+                            coverStorageDir = coverStorageDir,
+                            onStatusChange = onStatusChange,
+                        )
+                    }
+                    item { DetailSynopsis(text = book.synopsis) }
+                    item {
+                        BookProgressSection(
+                            currentProgress = uiState.currentProgress,
+                            totalPages = details?.totalPages,
+                            trackingMode = details?.trackingMode,
+                        )
+                    }
+                    item {
+                        BookTimerRow(
+                            timerState = timerState,
+                            elapsedSeconds = elapsedSeconds,
+                            onStart = onStartReading,
+                            onPause = onPauseReading,
+                            onResume = onResumeReading,
+                            onStop = onStopReading,
+                        )
+                    }
+                    if (details != null) {
+                        item {
+                            DetailFacts(
+                                facts =
+                                    listOf(
+                                        DetailFact(
+                                            label = stringResource(R.string.detail_label_format),
+                                            value = details.format.displayLabel(),
+                                        ),
+                                        DetailFact(
+                                            label = stringResource(R.string.detail_label_pages),
+                                            value = details.totalPages?.toString(),
+                                        ),
+                                        DetailFact(
+                                            label = stringResource(R.string.detail_label_isbn),
+                                            value = details.isbn,
+                                            // Only when there's an ISBN to copy -- a null/blank
+                                            // ISBN drops the whole row before this action would
+                                            // ever render (DetailFacts' own null-value rule).
+                                            action =
+                                                details.isbn?.takeUnless { it.isBlank() }?.let { isbn ->
+                                                    DetailFactAction(
+                                                        iconRes = R.drawable.ic_content_copy,
+                                                        contentDescription =
+                                                            stringResource(R.string.isbn_copy_content_description),
+                                                        onClick = { onCopyIsbn(isbn) },
+                                                    )
+                                                },
+                                        ),
+                                        DetailFact(
+                                            label = stringResource(R.string.detail_label_tracking_mode),
+                                            value = details.trackingMode.displayLabel(),
+                                        ),
+                                    ),
+                            )
+                        }
+                    }
+
+                    readingHistorySection(
+                        sessions = uiState.sessions,
+                        onLogManuallyClick = {
+                            sessionToEdit = null
+                            showManualEntry = true
+                        },
+                        onEditSessionClick = { session ->
+                            sessionToEdit = session
+                            showManualEntry = true
+                        },
+                        onDeleteSessionClick = { session -> sessionToDelete = session },
                     )
                 }
+            }
+        }
+
+        if (uiState is BookDetailUiState.Ready) {
+            val pendingSession = uiState.pendingSession
+            if (pendingSession != null) {
+                PendingSessionDialog(
+                    pendingSession = pendingSession,
+                    errorMessage = uiState.errorMessage,
+                    currentProgress = uiState.currentProgress,
+                    trackingMode = uiState.details?.trackingMode,
+                    onSave = onSaveSession,
+                    onDiscard = onDiscardPendingSession,
+                )
+            }
+
+            if (showManualEntry) {
+                ManualSessionDialog(
+                    currentProgress = uiState.currentProgress,
+                    trackingMode = uiState.details?.trackingMode,
+                    sessionToEdit = sessionToEdit,
+                    onSave = { durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes ->
+                        val editing = sessionToEdit
+                        if (editing != null) {
+                            onEditSession(
+                                editing.id,
+                                durationSeconds,
+                                timestampEnd,
+                                startUnit,
+                                endUnit,
+                                deltaPages,
+                                notes,
+                            )
+                        } else {
+                            onLogManualSession(durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes)
+                        }
+                        showManualEntry = false
+                        sessionToEdit = null
+                    },
+                    onDismiss = {
+                        showManualEntry = false
+                        sessionToEdit = null
+                    },
+                )
+            }
+
+            val session = sessionToDelete
+            if (session != null) {
+                DeleteSessionConfirmationDialog(
+                    onConfirm = {
+                        onDeleteSession(session.id)
+                        sessionToDelete = null
+                    },
+                    onDismiss = { sessionToDelete = null },
+                )
             }
         }
     }
@@ -441,181 +588,4 @@ private fun DeleteBookConfirmationDialog(
             }
         },
     )
-}
-
-/**
- * Content for [BookDetailUiState.Ready]: a [PrimaryTabRow] splitting the screen into a Details tab
- * (cover/metadata header, reading status, progress, and -- as of the books-polish pass below --
- * the live reading timer -- see [DetailsTab]) and a Reading history tab (manual-entry affordance,
- * session history -- see [ReadingHistoryTab]), per ROADMAP Task 6 Phase D. **The timer moved from
- * Reading history to Details in the books-polish pass**: users found it counter-intuitive that
- * starting/stopping a reading session lived under a history tab rather than alongside the book
- * itself; the manual-entry affordance and session list stay on Reading history unchanged. A
- * Purchase & Borrow tab is deliberately NOT included -- that data model doesn't exist yet (see
- * ROADMAP's Task 6 Phase D note; tracked in the backlog).
- *
- * ### State survives the tab split
- * [sessionToDelete]/[showManualEntry]/[sessionToEdit] (all pre-existing) and [selectedTabIndex]
- * (new) are all hoisted to this function, one level above the tab content -- switching tabs never
- * tears down or recreates them, so a dialog opened from either tab (Reading history's manual-entry/
- * delete dialogs, or Details' pending-timer-session dialog now that the timer lives there) keeps
- * working exactly as before regardless of which tab happens to be selected when it renders; the
- * dialogs themselves ([PendingSessionDialog]/[ManualSessionDialog]/[DeleteSessionConfirmationDialog])
- * are rendered unconditionally on this same state below, outside the `when (selectedTabIndex)`
- * branch, so they overlay whichever tab is showing rather than only the one that opened them.
- * [state.errorMessage] is likewise rendered here, above the tab content, rather than inside either
- * tab -- it now surfaces failures from session mutations, book deletion, status changes, *and*
- * a cover refetch (ROADMAP Task 6 Phase E; triggered from the TopAppBar's overflow menu as of #141
- * step 3, not from this function), so pinning its display to one specific tab would hide it
- * whenever that failure happened to originate from an action on the other tab.
- */
-@Composable
-private fun BookDetailContent(
-    state: BookDetailUiState.Ready,
-    timerState: ReadingTimerState,
-    elapsedSeconds: Long,
-    coverStorageDir: String,
-    onStartReading: () -> Unit,
-    onPauseReading: () -> Unit,
-    onResumeReading: () -> Unit,
-    onStopReading: () -> Unit,
-    onSaveSession: (startUnit: Double, endUnit: Double, deltaPages: Int?, notes: String?) -> Unit,
-    onDiscardPendingSession: () -> Unit,
-    onLogManualSession: (
-        durationSeconds: Long?,
-        timestampEnd: Instant,
-        startUnit: Double,
-        endUnit: Double,
-        deltaPages: Int?,
-        notes: String?,
-    ) -> Unit,
-    onDeleteSession: (String) -> Unit,
-    onEditSession: (
-        sessionId: String,
-        durationSeconds: Long?,
-        timestampEnd: Instant,
-        startUnit: Double,
-        endUnit: Double,
-        deltaPages: Int?,
-        notes: String?,
-    ) -> Unit,
-    onStatusChange: (ReadingStatus) -> Unit,
-    onCopyIsbn: (String) -> Unit,
-) {
-    var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
-    var showManualEntry by remember { mutableStateOf(false) }
-    // Non-null while the manual-entry dialog is open in *edit* mode (opened from a session row's
-    // edit icon, prefilled from this row); null while it's open in *create* mode (opened from
-    // ReadingHistoryTab's "Log session manually" button). See ManualSessionDialog's KDoc.
-    var sessionToEdit by remember { mutableStateOf<ReadingSessionEntity?>(null) }
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-            Tab(
-                selected = selectedTabIndex == 0,
-                onClick = { selectedTabIndex = 0 },
-                text = { Text(stringResource(R.string.tab_details)) },
-            )
-            Tab(
-                selected = selectedTabIndex == 1,
-                onClick = { selectedTabIndex = 1 },
-                text = { Text(stringResource(R.string.tab_reading_history)) },
-            )
-        }
-
-        // The pending-session dialog already surfaces state.errorMessage while a timer-backed
-        // session is awaiting save (see below). Every other mutation that can fail (manual-entry
-        // save/edit, session delete, book delete, status change, cover refetch) has no dialog left
-        // open to show it in by the time it fails, so show it here instead, scoped to the case
-        // where it isn't already visible elsewhere -- see this function's KDoc for why this lives
-        // above the tab content rather than inside one specific tab.
-        val errorMessage = state.errorMessage
-        if (errorMessage != null && state.pendingSession == null) {
-            Text(
-                text = errorMessage,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-        }
-
-        when (selectedTabIndex) {
-            0 ->
-                DetailsTab(
-                    book = state.book,
-                    details = state.details,
-                    currentProgress = state.currentProgress,
-                    coverStorageDir = coverStorageDir,
-                    timerState = timerState,
-                    elapsedSeconds = elapsedSeconds,
-                    onStartReading = onStartReading,
-                    onPauseReading = onPauseReading,
-                    onResumeReading = onResumeReading,
-                    onStopReading = onStopReading,
-                    onStatusChange = onStatusChange,
-                    onCopyIsbn = onCopyIsbn,
-                    modifier = Modifier.weight(1f),
-                )
-            1 ->
-                ReadingHistoryTab(
-                    sessions = state.sessions,
-                    onLogManuallyClick = {
-                        sessionToEdit = null
-                        showManualEntry = true
-                    },
-                    onEditSessionClick = { session ->
-                        sessionToEdit = session
-                        showManualEntry = true
-                    },
-                    onDeleteSessionClick = { session -> sessionToDelete = session },
-                    modifier = Modifier.weight(1f),
-                )
-        }
-    }
-
-    val pendingSession = state.pendingSession
-    if (pendingSession != null) {
-        PendingSessionDialog(
-            pendingSession = pendingSession,
-            errorMessage = state.errorMessage,
-            currentProgress = state.currentProgress,
-            trackingMode = state.details?.trackingMode,
-            onSave = onSaveSession,
-            onDiscard = onDiscardPendingSession,
-        )
-    }
-
-    if (showManualEntry) {
-        ManualSessionDialog(
-            currentProgress = state.currentProgress,
-            trackingMode = state.details?.trackingMode,
-            sessionToEdit = sessionToEdit,
-            onSave = { durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes ->
-                val editing = sessionToEdit
-                if (editing != null) {
-                    onEditSession(editing.id, durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes)
-                } else {
-                    onLogManualSession(durationSeconds, timestampEnd, startUnit, endUnit, deltaPages, notes)
-                }
-                showManualEntry = false
-                sessionToEdit = null
-            },
-            onDismiss = {
-                showManualEntry = false
-                sessionToEdit = null
-            },
-        )
-    }
-
-    val session = sessionToDelete
-    if (session != null) {
-        DeleteSessionConfirmationDialog(
-            onConfirm = {
-                onDeleteSession(session.id)
-                sessionToDelete = null
-            },
-            onDismiss = { sessionToDelete = null },
-        )
-    }
 }

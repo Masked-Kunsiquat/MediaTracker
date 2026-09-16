@@ -30,12 +30,8 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 /**
- * Behavioural tests for the Book Detail screen (#141), pinning the chrome/header/status/tab
- * surface a shared detail-screen scaffold would absorb, before that refactor moves it.
- *
- * Deliberately does not touch the reading-timer or session-editing flows -- see #141's task
- * scope. Those are `BookDetailContent`'s own concern, not the header/chrome this class pins, and
- * `BookDetailScreenGoldenTest` already exercises the timer card's idle rendering.
+ * Behavioural tests for the Book Detail screen (#141), pinning the chrome/header/status/single-page
+ * surface a shared detail-screen scaffold now supplies most of.
  */
 @OptIn(ExperimentalTime::class)
 class BookDetailScreenTest {
@@ -99,21 +95,27 @@ class BookDetailScreenTest {
         onStatusChange: (ReadingStatus) -> Unit = {},
         onEditBook: () -> Unit = {},
         onRefetchCover: () -> Unit = {},
+        timerState: ReadingTimerState = ReadingTimerState.Idle,
+        elapsedSeconds: Long = 0,
+        onStartReading: () -> Unit = {},
+        onPauseReading: () -> Unit = {},
+        onResumeReading: () -> Unit = {},
+        onStopReading: () -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
                 BookDetailScreen(
                     uiState = uiState,
-                    timerState = ReadingTimerState.Idle,
-                    elapsedSeconds = 0,
+                    timerState = timerState,
+                    elapsedSeconds = elapsedSeconds,
                     // See MovieDetailScreenTest: no artwork is asserted here either.
                     coverStorageDir = NO_COVERS,
                     onNavigateBack = onNavigateBack,
                     onDeleteBook = onDeleteBook,
-                    onStartReading = {},
-                    onPauseReading = {},
-                    onResumeReading = {},
-                    onStopReading = {},
+                    onStartReading = onStartReading,
+                    onPauseReading = onPauseReading,
+                    onResumeReading = onResumeReading,
+                    onStopReading = onStopReading,
                     onSaveSession = { _, _, _, _ -> },
                     onDiscardPendingSession = {},
                     onLogManualSession = { _, _, _, _, _, _ -> },
@@ -368,24 +370,102 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(finishedPrefix, substring = true).assertDoesNotExist()
     }
 
-    // --- Tab switching: Details <-> Reading history ---
+    // --- Single scrolling page: reading history sits below progress, no tab switch (#141 step 3) ---
 
+    /**
+     * Was `tappingReadingHistoryTab_showsLogSessionAffordance_andDetailsTabHidesTheStatusChip`,
+     * which switched `selectedTabIndex` to reach the manual-entry affordance and asserted the
+     * status chip disappeared while on the other tab. Tabs are gone (#141 step 3): both now render
+     * on the same page without any navigation between them.
+     */
     @Test
-    fun tappingReadingHistoryTab_showsLogSessionAffordance_andDetailsTabHidesTheStatusChip() {
-        setContent(BookDetailUiState.Ready(book = book(), details = details()))
+    fun readingHistorySection_rendersOnTheSamePageAsProgress_noTabSwitch() {
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details(totalPages = 180), sessions = listOf(session())),
+        )
 
+        // The progress card's own value text ("Page 78 / 180"), not detail_progress_title
+        // ("Progress") -- session_stat_progress_label on the timeline row below is also literally
+        // "Progress", and the two would otherwise collide.
+        val progressValue = context.getString(R.string.progress_page_format, 78, 180)
         val chipLabel = context.getString(R.string.reading_status_reading)
         composeRule.onNodeWithText(chipLabel).assertIsDisplayed()
-
-        composeRule.onNodeWithText(context.getString(R.string.tab_reading_history)).performClick()
-
+        composeRule.onNodeWithText(progressValue).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.tab_reading_history)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.log_session_manually)).assertIsDisplayed()
-        composeRule.onNodeWithText(chipLabel).assertDoesNotExist()
+    }
 
-        composeRule.onNodeWithText(context.getString(R.string.tab_details)).performClick()
+    // --- Reading timer row: compact, same states/callbacks as the old TimerCard (#141 step 3) ---
 
-        composeRule.onNodeWithText(chipLabel).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.log_session_manually)).assertDoesNotExist()
+    @Test
+    fun timerRow_idle_showsStartAndInvokesOnStartReading() {
+        var starts = 0
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details()),
+            timerState = ReadingTimerState.Idle,
+            onStartReading = { starts++ },
+        )
+
+        composeRule.onNodeWithText(context.getString(R.string.start_reading_button)).performClick()
+
+        assertEquals(1, starts)
+    }
+
+    @Test
+    fun timerRow_running_showsPauseAndStop_andInvokesEachCallback() {
+        var pauses = 0
+        var stops = 0
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details()),
+            timerState = ReadingTimerState.Running,
+            onPauseReading = { pauses++ },
+            onStopReading = { stops++ },
+        )
+
+        composeRule.onNodeWithText(context.getString(R.string.pause_button)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.stop_button)).performClick()
+
+        assertEquals(1, pauses)
+        assertEquals(1, stops)
+    }
+
+    @Test
+    fun timerRow_paused_showsResumeAndStop_andInvokesEachCallback() {
+        var resumes = 0
+        var stops = 0
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details()),
+            timerState = ReadingTimerState.Paused,
+            onResumeReading = { resumes++ },
+            onStopReading = { stops++ },
+        )
+
+        composeRule.onNodeWithText(context.getString(R.string.resume_button)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.stop_button)).performClick()
+
+        assertEquals(1, resumes)
+        assertEquals(1, stops)
+    }
+
+    // --- Facts: DetailFacts replacing MetadataCard (#141 step 3) ---
+
+    @Test
+    fun facts_isbnCopyAction_copiesIsbnToClipboard() {
+        setContent(BookDetailUiState.Ready(book = book(), details = details(isbn = "9780743273565")))
+
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.isbn_copy_content_description))
+            .performClick()
+        composeRule.waitForIdle()
+
+        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+        val clipText =
+            clipboard
+                ?.primaryClip
+                ?.getItemAt(0)
+                ?.text
+                ?.toString()
+        assertEquals("9780743273565", clipText)
     }
 
     // --- Artwork: now matches Movie/TV (#141 step 3) ---
@@ -413,12 +493,17 @@ class BookDetailScreenTest {
                 },
             )
         artwork.assertExists()
+        // The rest of the screen (Edit/Delete/⋮, the status chip, Start reading, the ISBN copy
+        // button, Log session manually...) already carries plenty of its own clickable nodes, so
+        // the dialog opening is asserted as one *more* than whatever that baseline is, not a
+        // hardcoded total.
+        val clickableCountBeforeTap = composeRule.onAllNodes(hasClickAction()).fetchSemanticsNodes().size
+
         artwork.performClick()
 
-        // The enlarged-cover dialog draws the same placeholder glyph a second time (the file at
-        // "no-covers-in-this-fixture" doesn't resolve), overlaying the header's own thumbnail --
-        // a second clickable node appearing is evidence the dialog opened.
-        composeRule.onAllNodes(hasClickAction()).assertCountEquals(2)
+        // EnlargedCoverDialog's dismiss Box is the one new clickable node the dialog adds to the
+        // tree; it carries no distinguishing label of its own, so a bare count delta is the signal.
+        composeRule.onAllNodes(hasClickAction()).assertCountEquals(clickableCountBeforeTap + 1)
     }
 
     // --- Top bar overflow menu: "Re-fetch cover" (#141 step 3) ---
