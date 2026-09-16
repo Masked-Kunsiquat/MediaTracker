@@ -196,7 +196,6 @@ private fun DetailsTabPreview() {
             details = PREVIEW_DETAILS,
             currentProgress = 78.0,
             coverStorageDir = "/fake/path",
-            isRefetchingCover = false,
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
             onStartReading = {},
@@ -205,7 +204,6 @@ private fun DetailsTabPreview() {
             onStopReading = {},
             onStatusChange = {},
             onCopyIsbn = {},
-            onRefetchCover = {},
         )
     }
 }
@@ -220,7 +218,6 @@ private fun DetailsTabDarkPreview() {
             details = PREVIEW_DETAILS,
             currentProgress = 78.0,
             coverStorageDir = "/fake/path",
-            isRefetchingCover = false,
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
             onStartReading = {},
@@ -229,7 +226,6 @@ private fun DetailsTabDarkPreview() {
             onStopReading = {},
             onStatusChange = {},
             onCopyIsbn = {},
-            onRefetchCover = {},
         )
     }
 }
@@ -254,7 +250,6 @@ private fun DetailsTabLongTitleUnknownTotalPagesPreview() {
             details = PREVIEW_DETAILS.copy(totalPages = null, trackingMode = TrackingMode.PAGES),
             currentProgress = 142.0,
             coverStorageDir = "/fake/path",
-            isRefetchingCover = false,
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
             onStartReading = {},
@@ -263,7 +258,6 @@ private fun DetailsTabLongTitleUnknownTotalPagesPreview() {
             onStopReading = {},
             onStatusChange = {},
             onCopyIsbn = {},
-            onRefetchCover = {},
         )
     }
 }
@@ -278,7 +272,6 @@ private fun DetailsTabNoProgressPreview() {
             details = PREVIEW_DETAILS,
             currentProgress = null,
             coverStorageDir = "/fake/path",
-            isRefetchingCover = false,
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
             onStartReading = {},
@@ -287,7 +280,6 @@ private fun DetailsTabNoProgressPreview() {
             onStopReading = {},
             onStatusChange = {},
             onCopyIsbn = {},
-            onRefetchCover = {},
         )
     }
 }

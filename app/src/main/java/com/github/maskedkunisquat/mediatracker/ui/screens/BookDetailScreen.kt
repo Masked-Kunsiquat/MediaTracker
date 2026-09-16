@@ -9,14 +9,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +30,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,7 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -273,17 +278,15 @@ fun BookDetailScreen(
         }
     }
 
+    var showOverflowMenu by remember { mutableStateOf(false) }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = if (uiState is BookDetailUiState.Ready) uiState.book.title else "",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
+            TopAppBar(
+                // Empty: the title now lives in DetailHeader below, the same move Movie/TV made
+                // (#141) -- DetailHeader marks it a heading directly.
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -305,6 +308,55 @@ fun BookDetailScreen(
                                 imageVector = Icons.Filled.Delete,
                                 contentDescription = stringResource(R.string.delete_book_content_description),
                             )
+                        }
+                        // "Re-fetch cover" moved here from the cover's long-press (#141 step 3) --
+                        // it was unreachable exactly when it was most wanted: with no cover, there
+                        // was only a placeholder to long-press, and that placeholder is gone now
+                        // that the header draws artwork only when a hash exists.
+                        if (uiState.isRefetchingCover) {
+                            val refetchingDescription = stringResource(R.string.refetch_cover_in_progress)
+                            CircularProgressIndicator(
+                                modifier =
+                                    Modifier
+                                        .padding(horizontal = 12.dp)
+                                        .size(24.dp)
+                                        .semantics { contentDescription = refetchingDescription },
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Box {
+                                IconButton(onClick = { showOverflowMenu = true }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.MoreVert,
+                                        contentDescription =
+                                            stringResource(
+                                                R.string.book_detail_overflow_menu_content_description,
+                                            ),
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflowMenu,
+                                    onDismissRequest = { showOverflowMenu = false },
+                                ) {
+                                    val hasIsbn = !uiState.details?.isbn.isNullOrBlank()
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (hasIsbn) {
+                                                    stringResource(R.string.refetch_cover_button)
+                                                } else {
+                                                    stringResource(R.string.refetch_cover_no_isbn)
+                                                },
+                                            )
+                                        },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            onRefetchCover()
+                                        },
+                                        enabled = hasIsbn,
+                                    )
+                                }
+                            }
                         }
                     }
                 },
@@ -345,7 +397,6 @@ fun BookDetailScreen(
                         onEditSession = onEditSession,
                         onStatusChange = onStatusChange,
                         onCopyIsbn = onCopyIsbn,
-                        onRefetchCover = onRefetchCover,
                     )
                 }
             }
@@ -414,9 +465,9 @@ private fun DeleteBookConfirmationDialog(
  * branch, so they overlay whichever tab is showing rather than only the one that opened them.
  * [state.errorMessage] is likewise rendered here, above the tab content, rather than inside either
  * tab -- it now surfaces failures from session mutations, book deletion, status changes, *and*
- * [onRefetchCover] (ROADMAP Task 6 Phase E, now triggered from the cover's long-press menu rather
- * than a standalone button -- see [BookHeader]), so pinning its display to one specific tab would
- * hide it whenever that failure happened to originate from an action on the other tab.
+ * a cover refetch (ROADMAP Task 6 Phase E; triggered from the TopAppBar's overflow menu as of #141
+ * step 3, not from this function), so pinning its display to one specific tab would hide it
+ * whenever that failure happened to originate from an action on the other tab.
  */
 @Composable
 private fun BookDetailContent(
@@ -450,7 +501,6 @@ private fun BookDetailContent(
     ) -> Unit,
     onStatusChange: (ReadingStatus) -> Unit,
     onCopyIsbn: (String) -> Unit,
-    onRefetchCover: () -> Unit,
 ) {
     var sessionToDelete by remember { mutableStateOf<ReadingSessionEntity?>(null) }
     var showManualEntry by remember { mutableStateOf(false) }
@@ -497,7 +547,6 @@ private fun BookDetailContent(
                     details = state.details,
                     currentProgress = state.currentProgress,
                     coverStorageDir = coverStorageDir,
-                    isRefetchingCover = state.isRefetchingCover,
                     timerState = timerState,
                     elapsedSeconds = elapsedSeconds,
                     onStartReading = onStartReading,
@@ -506,7 +555,6 @@ private fun BookDetailContent(
                     onStopReading = onStopReading,
                     onStatusChange = onStatusChange,
                     onCopyIsbn = onCopyIsbn,
-                    onRefetchCover = onRefetchCover,
                     modifier = Modifier.weight(1f),
                 )
             1 ->

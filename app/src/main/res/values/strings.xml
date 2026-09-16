@@ -61,10 +61,8 @@
     <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
     <string name="refetch_cover_in_progress">Re-fetching cover…</string>
     <string name="cover_view_action_label">View enlarged cover</string>
-    <string name="cover_options_action_label">Cover options</string>
 
     <!-- BookDetailScreen: Details tab (books-polish pass revamp) -->
-    <string name="detail_published_year">Published %1$d</string>
     <string name="detail_label_isbn">ISBN</string>
     <string name="detail_label_format">Format</string>
     <string name="detail_label_total_pages">Total pages</string>
@@ -73,6 +71,11 @@
     <string name="detail_progress_title">Progress</string>
     <string name="detail_progress_not_started">No progress logged yet</string>
     <string name="timer_card_title">Reading timer</string>
+
+    <!-- DetailHeader (#141 step 3): shared header adopted by BookDetailScreen -->
+    <string name="book_detail_kind">Book</string>
+    <string name="book_detail_finished_note">Finished %1$s</string>
+    <string name="book_detail_overflow_menu_content_description">More options</string>
 
     <!-- BookDetailScreen: Reading history timeline (books-polish pass revamp) -->
     <string name="timeline_today">Today</string>

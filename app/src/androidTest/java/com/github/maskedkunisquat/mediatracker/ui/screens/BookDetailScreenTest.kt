@@ -1,10 +1,12 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -46,6 +48,7 @@ class BookDetailScreenTest {
         id: String = "book-1",
         title: String = "The Great Gatsby",
         releaseYear: Int? = 1925,
+        coverImageHash: String? = null,
     ) = MediaItemEntity(
         id = id,
         type = MediaType.BOOK,
@@ -53,7 +56,7 @@ class BookDetailScreenTest {
         releaseYear = releaseYear,
         purchasePrice = null,
         createdAt = Instant.fromEpochMilliseconds(0),
-        coverImageHash = null,
+        coverImageHash = coverImageHash,
     )
 
     private fun details(
@@ -62,6 +65,7 @@ class BookDetailScreenTest {
         authors: String? = "F. Scott Fitzgerald",
         isbn: String? = "9780743273565",
         totalPages: Int? = 180,
+        finishedAt: Instant? = null,
     ) = BookDetailsEntity(
         mediaId = mediaId,
         isbn = isbn,
@@ -69,6 +73,7 @@ class BookDetailScreenTest {
         totalPages = totalPages,
         status = status,
         authors = authors,
+        finishedAt = finishedAt,
     )
 
     private fun session(
@@ -93,6 +98,7 @@ class BookDetailScreenTest {
         onDeleteBook: () -> Unit = {},
         onStatusChange: (ReadingStatus) -> Unit = {},
         onEditBook: () -> Unit = {},
+        onRefetchCover: () -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -115,7 +121,7 @@ class BookDetailScreenTest {
                     onEditSession = { _, _, _, _, _, _, _ -> },
                     onEditBook = onEditBook,
                     onStatusChange = onStatusChange,
-                    onRefetchCover = {},
+                    onRefetchCover = onRefetchCover,
                 )
             }
         }
@@ -124,14 +130,14 @@ class BookDetailScreenTest {
     // --- Chrome: title, back, edit/delete actions ---
 
     @Test
-    fun ready_showsTitleInTopBarAndHeader_unlikeMovieAndTV() {
-        // Book's own divergence: BookHeader (BookDetailsTab.kt) repeats the title as a headline
-        // below the cover, in addition to the CenterAlignedTopAppBar's title -- Movie/TV render
-        // the title only once, in their TopAppBar. onNodeWithText would fail here with "found 2
-        // nodes"; that failure is itself the behaviour being pinned.
+    fun ready_showsTitleOnlyOnceInHeader_likeMovieAndTV() {
+        // #141 step 3: the title moved out of the top bar into DetailHeader, the same move
+        // Movie/TV made in steps 1-2 -- Book no longer repeats it in both places. Was
+        // `ready_showsTitleInTopBarAndHeader_unlikeMovieAndTV`, asserting a count of 2 (top bar +
+        // BookHeader's own headline); that divergence from Movie/TV is gone.
         setContent(BookDetailUiState.Ready(book = book(), details = details()))
 
-        composeRule.onAllNodesWithText("The Great Gatsby").assertCountEquals(2)
+        composeRule.onAllNodesWithText("The Great Gatsby").assertCountEquals(1)
     }
 
     @Test
@@ -252,20 +258,33 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(confirmBody).assertDoesNotExist()
     }
 
-    // --- Header rows: year, progress ---
+    // --- Header rows: kind/year, progress ---
 
+    /**
+     * Was `ready_rendersPublishedYear`, asserting `detail_published_year` ("Published 1925") --
+     * that string and the row it labelled belonged to the old `BookHeader`. #141 step 3 replaces
+     * it with the shared [DetailHeader]'s kind/year line ("Book · 1925"), the same format Film and
+     * TV already use.
+     */
     @Test
-    fun ready_rendersPublishedYear() {
+    fun ready_rendersKindAndYearInHeader() {
         setContent(BookDetailUiState.Ready(book = book(releaseYear = 1925), details = details()))
 
-        composeRule.onNodeWithText(context.getString(R.string.detail_published_year, 1925)).assertIsDisplayed()
+        val expected =
+            context.getString(
+                R.string.detail_kind_year_format,
+                context.getString(R.string.book_detail_kind),
+                1925,
+            )
+        composeRule.onNodeWithText(expected).assertIsDisplayed()
     }
 
+    /** Was `releaseYearNull_rendersNoPublishedYearRow` -- see [ready_rendersKindAndYearInHeader]. */
     @Test
-    fun releaseYearNull_rendersNoPublishedYearRow() {
+    fun releaseYearNull_rendersKindAloneInHeader() {
         setContent(BookDetailUiState.Ready(book = book(releaseYear = null), details = details()))
 
-        composeRule.onNodeWithText("Published", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.book_detail_kind)).assertIsDisplayed()
     }
 
     @Test
@@ -287,8 +306,12 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.detail_progress_not_started)).assertDoesNotExist()
     }
 
-    // --- Status control: Book's StatusChip + dropdown ---
+    // --- Status control: Book's status mapper + shared dropdown chip ---
 
+    /**
+     * Was asserting `status_prefix` ("Status: Reading"); #141 step 3's [bookStatusControl] drops
+     * the prefix -- [DetailStatusChip]'s label is the status alone, same as film's and TV's.
+     */
     @Test
     fun tappingAStatusOption_invokesOnStatusChangeWithThatStatus() {
         var captured: ReadingStatus? = null
@@ -297,12 +320,52 @@ class BookDetailScreenTest {
             onStatusChange = { captured = it },
         )
 
-        val chipLabel =
-            context.getString(R.string.status_prefix, context.getString(R.string.reading_status_reading))
+        val chipLabel = context.getString(R.string.reading_status_reading)
         composeRule.onNodeWithText(chipLabel).performClick()
         composeRule.onNodeWithText(context.getString(R.string.reading_status_finished)).performClick()
 
         assertEquals(ReadingStatus.FINISHED, captured)
+    }
+
+    @Test
+    fun finishedWithDate_showsFinishedNote() {
+        val finishedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        setContent(
+            BookDetailUiState.Ready(
+                book = book(),
+                details = details(status = ReadingStatus.FINISHED, finishedAt = finishedAt),
+            ),
+        )
+
+        val localDate =
+            java.time.Instant
+                .ofEpochMilli(finishedAt.toEpochMilliseconds())
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+        val formattedDate =
+            java.time.format.DateTimeFormatter
+                .ofPattern("MMM d, yyyy")
+                .format(localDate)
+        val expectedNote = context.getString(R.string.book_detail_finished_note, formattedDate)
+
+        composeRule.onNodeWithText(expectedNote).assertIsDisplayed()
+    }
+
+    @Test
+    fun notFinished_showsNoFinishedNote() {
+        val finishedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
+        // A stale finishedAt (e.g. re-opened after finishing) must not read as a note -- the
+        // status is what gates it, not the date's mere presence. Mirrors MovieDetailScreenTest's
+        // notWatched_showsNoWatchedNote.
+        setContent(
+            BookDetailUiState.Ready(
+                book = book(),
+                details = details(status = ReadingStatus.READING, finishedAt = finishedAt),
+            ),
+        )
+
+        val finishedPrefix = context.getString(R.string.book_detail_finished_note, "").trim()
+        composeRule.onNodeWithText(finishedPrefix, substring = true).assertDoesNotExist()
     }
 
     // --- Tab switching: Details <-> Reading history ---
@@ -311,8 +374,7 @@ class BookDetailScreenTest {
     fun tappingReadingHistoryTab_showsLogSessionAffordance_andDetailsTabHidesTheStatusChip() {
         setContent(BookDetailUiState.Ready(book = book(), details = details()))
 
-        val chipLabel =
-            context.getString(R.string.status_prefix, context.getString(R.string.reading_status_reading))
+        val chipLabel = context.getString(R.string.reading_status_reading)
         composeRule.onNodeWithText(chipLabel).assertIsDisplayed()
 
         composeRule.onNodeWithText(context.getString(R.string.tab_reading_history)).performClick()
@@ -326,17 +388,83 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.log_session_manually)).assertDoesNotExist()
     }
 
-    // --- Artwork: Book's own divergence from Movie/TV ---
+    // --- Artwork: now matches Movie/TV (#141 step 3) ---
 
+    /** Was `coverImageHashNull_stillRendersThePlaceholder_unlikeMovieAndTV` -- see that rename's KDoc below. */
     @Test
-    fun coverImageHashNull_stillRendersThePlaceholder_unlikeMovieAndTV() {
-        // BookDetailsTab's InteractiveCoverBox calls CoverImage unconditionally -- unlike
-        // MovieDetailScreen/TVShowDetailScreen, which skip CoverImage entirely (via `?.let`) for a
-        // null hash, Book's cover box is always present and CoverImage's own null-hash branch
-        // renders the placeholder synchronously. A shared scaffold has to pick one of these.
+    fun coverImageHashNull_rendersNoArtwork_likeMovieAndTV() {
+        // BookDetailHeaderSection now renders the shared DetailHeader, whose artwork slot is
+        // built only when a cover hash exists (`?.let`) -- the always-present InteractiveCoverBox
+        // placeholder this test used to pin is gone, matching Movie/TV.
         setContent(BookDetailUiState.Ready(book = book(), details = details()))
 
-        composeRule.onNodeWithText(BOOK_COVER_PLACEHOLDER_EMOJI).assertIsDisplayed()
+        composeRule.onNodeWithText(BOOK_COVER_PLACEHOLDER_EMOJI).assertDoesNotExist()
+    }
+
+    @Test
+    fun tappingCover_opensEnlargedCoverDialog() {
+        setContent(BookDetailUiState.Ready(book = book(coverImageHash = "cover.jpg"), details = details()))
+
+        val viewCoverLabel = context.getString(R.string.cover_view_action_label)
+        val artwork =
+            composeRule.onNode(
+                SemanticsMatcher("artwork OnClick labelled \"$viewCoverLabel\"") {
+                    it.config.getOrNull(SemanticsActions.OnClick)?.label == viewCoverLabel
+                },
+            )
+        artwork.assertExists()
+        artwork.performClick()
+
+        // The enlarged-cover dialog draws the same placeholder glyph a second time (the file at
+        // "no-covers-in-this-fixture" doesn't resolve), overlaying the header's own thumbnail --
+        // a second clickable node appearing is evidence the dialog opened.
+        composeRule.onAllNodes(hasClickAction()).assertCountEquals(2)
+    }
+
+    // --- Top bar overflow menu: "Re-fetch cover" (#141 step 3) ---
+
+    @Test
+    fun overflowMenu_refetchItem_invokesOnRefetchCover_whenIsbnPresent() {
+        var refetches = 0
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details(isbn = "9780743273565")),
+            onRefetchCover = { refetches++ },
+        )
+
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
+            .performClick()
+        composeRule.onNodeWithText(context.getString(R.string.refetch_cover_button)).performClick()
+
+        assertEquals(1, refetches)
+    }
+
+    @Test
+    fun overflowMenu_refetchItem_disabledAndExplainsWhenNoIsbn() {
+        var refetches = 0
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details(isbn = null)),
+            onRefetchCover = { refetches++ },
+        )
+
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
+            .performClick()
+        composeRule.onNodeWithText(context.getString(R.string.refetch_cover_no_isbn)).performClick()
+
+        assertEquals("a disabled menu item must not invoke the callback", 0, refetches)
+    }
+
+    @Test
+    fun refetchingCover_showsProgressInTopBar_insteadOfOverflowIcon() {
+        setContent(BookDetailUiState.Ready(book = book(), details = details(), isRefetchingCover = true))
+
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.refetch_cover_in_progress))
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
+            .assertDoesNotExist()
     }
 
     private companion object {
