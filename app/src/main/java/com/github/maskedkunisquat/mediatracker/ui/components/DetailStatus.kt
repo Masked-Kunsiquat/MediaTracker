@@ -94,12 +94,14 @@ private fun <T> EditableStatusChip(
 }
 
 /**
- * A chip in [StatusDropdownChip]'s shape and colours, but not one: no dropdown arrow, and its own
- * click handler is a no-op that [Modifier.clearAndSetSemantics] then strips out entirely, rather than
- * merely disabling it -- disabling would also mute [AssistChip]'s colours, which the design keeps
- * identical between the editable and read-only chip. [text] re-adds the label so it is still
- * announced, since `clearAndSetSemantics` drops the child [Text]'s own merged semantics along with
- * the click action.
+ * A chip in [StatusDropdownChip]'s shape and colours, but not one: no dropdown arrow, and `enabled =
+ * false` so a press does not ripple as though something were about to happen. The disabled colours
+ * are mapped to the enabled ones, because this chip is not a muted control -- it is a label the
+ * design draws identically either way.
+ *
+ * [Modifier.clearAndSetSemantics] then leaves only [text]: not the click action, and not the disabled
+ * state either, which would have TalkBack announce a status display as an unavailable control. It
+ * also re-adds the label, since clearing drops the child [Text]'s own semantics with everything else.
  *
  * When [DetailStatus.ReadOnly.action] exists, it renders as a [TextButton] beside the chip -- the
  * chip first, per #141's step-2 decision (Abandon/Resume sits next to the read-only chip rather than
@@ -117,6 +119,7 @@ private fun ReadOnlyStatusChip(
     ) {
         AssistChip(
             onClick = {},
+            enabled = false,
             label = {
                 Text(status.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             },
@@ -124,6 +127,8 @@ private fun ReadOnlyStatusChip(
                 AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ),
             border = null,
             // weight(fill = false), same #163 fix as the season header's title: without it, an
