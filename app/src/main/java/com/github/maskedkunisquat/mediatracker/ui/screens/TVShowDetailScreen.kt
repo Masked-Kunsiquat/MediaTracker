@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -33,7 +32,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -50,7 +48,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -63,16 +60,29 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TVShowDetailViewModelFactory
-import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailFact
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailProgressCard
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
+import com.hub.media.core.database.dao.TVProgressRow
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import com.hub.media.ui.TVShowDetailViewModel
 import com.hub.media.ui.filterIntegerInput
 import com.hub.media.ui.parseRequiredInt
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * Route wrapper: owns the [TVShowDetailViewModel] and leaves the screen once the show is gone.
@@ -335,15 +345,10 @@ fun TVShowDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        (uiState as? TVShowDetailUiState.Ready)
-                            ?.show
-                            ?.item
-                            ?.title
-                            .orEmpty(),
-                    )
-                },
+                // Empty: the title now lives in DetailHeader below, same move MovieDetailScreen
+                // made -- DetailHeader marks it a heading directly, so the top bar does not need to
+                // carry it for that announcement either.
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -401,53 +406,70 @@ fun TVShowDetailScreen(
                     item { Text(stringResource(R.string.tv_show_detail_not_found)) }
 
                 is TVShowDetailUiState.Ready -> {
-                    // Only emitted when there is a poster -- see MovieDetailScreen on why a
-                    // placeholder is wrong at this size. Its own item rather than part of the header
-                    // block below: a LazyColumn composes only what is visible, so a poster scrolled
-                    // off screen costs nothing on a show with hundreds of episode rows.
-                    uiState.show.item.coverImageHash?.let { hash ->
-                        item {
-                            CoverImage(
-                                coverDir = coverStorageDir,
-                                coverImageHash = hash,
-                                mediaType = MediaType.TV_SHOW,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.fillMaxWidth().height(DETAIL_POSTER_HEIGHT),
-                            )
+                    val show = uiState.show
+                    val details = show.details
+
+                    // #141 step 2: DetailHeader replaces the old poster item, the year/progress text
+                    // and the full-width abandon button below. Each of header/synopsis/progress/facts
+                    // is its own LazyColumn item, same reasoning as the old poster item's comment --
+                    // only what is visible composes, which matters on a show with hundreds of
+                    // episode rows.
+                    item {
+                        DetailHeader(
+                            kind = stringResource(R.string.tv_show_detail_kind),
+                            year = show.item.releaseYear,
+                            title = show.item.title,
+                            subline = showSubline(uiState.seasons.size, details?.airingStatus),
+                            rating = show.item.communityRating,
+                            artwork =
+                                show.item.coverImageHash?.let { hash ->
+                                    DetailArtwork(
+                                        coverStorageDir = coverStorageDir,
+                                        coverImageHash = hash,
+                                        mediaType = MediaType.TV_SHOW,
+                                    )
+                                },
+                            statusNote = null,
+                        ) {
+                            DetailStatusChip(showStatusControl(uiState, onAbandonedChange))
                         }
                     }
+                    item { DetailSynopsis(text = show.item.synopsis) }
                     item {
-                        uiState.show.item.releaseYear?.let { year ->
-                            Text(
-                                text = stringResource(R.string.library_year_label, year),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        // Parameterized, not concatenated -- see AddMovieScreen's note on the
-                        // trailing-space bug concatenation caused there. Quantity keyed on total.
-                        Text(
-                            text =
+                        DetailProgressCard(
+                            value =
                                 pluralStringResource(
                                     R.plurals.tv_show_detail_progress,
                                     uiState.totalEpisodes,
                                     uiState.watchedEpisodes,
                                     uiState.totalEpisodes,
                                 ),
-                            style = MaterialTheme.typography.bodyMedium,
+                            completed = uiState.watchedEpisodes,
+                            total = uiState.totalEpisodes,
                         )
-
-                        OutlinedButton(
-                            onClick = { onAbandonedChange(!uiState.isAbandoned) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                if (uiState.isAbandoned) {
-                                    stringResource(R.string.tv_show_detail_resume_button)
-                                } else {
-                                    stringResource(R.string.tv_show_detail_abandon_button)
-                                },
-                            )
-                        }
+                    }
+                    item {
+                        DetailFacts(
+                            facts =
+                                listOf(
+                                    DetailFact(
+                                        label = stringResource(R.string.tv_show_detail_fact_first_aired),
+                                        value = details?.firstAirDate?.let(::formatFirstAirDate),
+                                    ),
+                                    DetailFact(
+                                        label = stringResource(R.string.tv_show_detail_fact_airing),
+                                        value = details?.airingStatus?.displayLabel(),
+                                    ),
+                                    DetailFact(
+                                        label = stringResource(R.string.add_tv_show_seasons_section_label),
+                                        value = uiState.seasons.size.toString(),
+                                    ),
+                                    DetailFact(
+                                        label = stringResource(R.string.tv_show_detail_fact_episodes),
+                                        value = uiState.totalEpisodes.toString(),
+                                    ),
+                                ),
+                        )
                     }
 
                     if (uiState.seasons.isEmpty()) {
@@ -792,11 +814,93 @@ private fun SeasonLengthDialog(
 }
 
 /**
- * Poster height on a detail screen.
+ * Show's status mapper (#141 step 2): read-only, since a show's place on the shelf is derived from
+ * its episodes by [LibraryStatusFilter.ofShow] rather than picked -- see [TVShowDetailViewModel.setAbandoned]'s
+ * KDoc for why this screen never offers a four-way picker. [TVProgressRow] is built the same way the
+ * library builds it: `null` when there are no episode rows at all (mirroring
+ * [com.hub.media.core.database.dao.EpisodeDao.observeProgress]'s `GROUP BY`, which omits such shows
+ * entirely), a real row otherwise -- constructed here from [uiState]'s already-derived counts rather
+ * than a fourth database query.
  *
- * Fixed height with the image scaled to fit rather than a fixed aspect ratio: TMDB posters are
- * nominally 2:3 but the API does not promise it, and a hardcoded ratio would crop or letterbox
- * whatever does not comply. A height with `ContentScale.Fit` renders any shape correctly and keeps
- * every detail screen's header the same size regardless of what the provider sent.
+ * The side action toggles [TVShowDetailUiState.Ready.isAbandoned] -- "Abandon" when not abandoned,
+ * "Resume" when it is -- the one status a show has that episodes cannot express.
  */
-private val DETAIL_POSTER_HEIGHT = 220.dp
+@Composable
+private fun showStatusControl(
+    uiState: TVShowDetailUiState.Ready,
+    onAbandonedChange: (Boolean) -> Unit,
+): DetailStatus.ReadOnly {
+    val details = uiState.show.details
+    val storedStatus = details?.status ?: WatchStatus.WATCHLIST
+    val progress =
+        if (uiState.totalEpisodes > 0) {
+            TVProgressRow(
+                mediaId = uiState.show.item.id,
+                totalEpisodes = uiState.totalEpisodes,
+                watchedEpisodes = uiState.watchedEpisodes,
+            )
+        } else {
+            null
+        }
+    val filterStatus = LibraryStatusFilter.ofShow(storedStatus, progress, details?.airingStatus)
+    val actionLabel =
+        stringResource(
+            if (uiState.isAbandoned) {
+                R.string.detail_show_status_resume_action
+            } else {
+                R.string.detail_show_status_abandon_action
+            },
+        )
+    return DetailStatus.ReadOnly(
+        label = filterStatus.showStatusLabel(),
+        action = DetailStatus.StatusAction(actionLabel) { onAbandonedChange(!uiState.isAbandoned) },
+    )
+}
+
+/**
+ * Show-specific labels for [LibraryStatusFilter] (#141 step 2's decisions), distinct from
+ * `filterLabel()` (`LibraryStatusFilterDisplay.kt`, the library's own chip wording): "Watching"/
+ * "Watched" read naturally on a show's own detail screen where that media-neutral "In progress"/
+ * "Finished" would not, and reuse [WatchStatus]'s own strings rather than adding duplicates with
+ * the same wording.
+ */
+@Composable
+private fun LibraryStatusFilter.showStatusLabel(): String =
+    when (this) {
+        LibraryStatusFilter.NOT_STARTED -> stringResource(R.string.library_filter_not_started)
+        LibraryStatusFilter.IN_PROGRESS -> stringResource(R.string.watch_status_watching)
+        LibraryStatusFilter.FINISHED -> stringResource(R.string.watch_status_watched)
+        LibraryStatusFilter.ABANDONED -> stringResource(R.string.library_filter_abandoned)
+    }
+
+/**
+ * "N seasons · <airing status>", using only the parts that exist and omitting the subline entirely
+ * when neither does -- mirrors [DetailHeader]'s own `subline` contract (`null` omits the row rather
+ * than rendering an empty one). [seasonCount] is [TVShowDetailUiState.Ready.seasons]' actual size
+ * (derived, tracked episodes), not [com.hub.media.core.database.entities.TVDetailsEntity.totalSeasons]
+ * (advisory, only what a provider or the user claimed) -- the same derived-over-stored preference
+ * [DetailFacts]' Seasons/Episodes pair below makes.
+ */
+@Composable
+private fun showSubline(
+    seasonCount: Int,
+    airingStatus: AiringStatus?,
+): String? {
+    val seasonsPart =
+        if (seasonCount > 0) {
+            pluralStringResource(R.plurals.tv_show_detail_season_count, seasonCount, seasonCount)
+        } else {
+            null
+        }
+    val airingPart = airingStatus?.displayLabel()
+    val parts = listOfNotNull(seasonsPart, airingPart)
+    return if (parts.isEmpty()) null else parts.joinToString(" · ")
+}
+
+/**
+ * [TVDetailsEntity.firstAirDate][com.hub.media.core.database.entities.TVDetailsEntity.firstAirDate]'s
+ * epoch milliseconds formatted with the same [DATE_ONLY_FORMATTER] Movie and Book both use.
+ */
+@OptIn(ExperimentalTime::class)
+private fun formatFirstAirDate(epochMillis: Long): String =
+    DATE_ONLY_FORMATTER.format(instantToLocalDateTime(Instant.fromEpochMilliseconds(epochMillis)))

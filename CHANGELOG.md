@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record, clamped to four lines with a "More" button for longer ones. The four stacked status chips
   are replaced by a single dropdown chip showing the current status. TV and Book pick up the same
   header in later PRs.
+- **The TV show detail screen adopts the same header, plus a progress card and a facts grid**
+  (#141 step 2). The title moves out of the top bar the same way film's did, alongside the release
+  year, a "N seasons · airing status" line, and a star rating when TMDB supplied one. The old
+  "Year: 2019" row, the plain progress line and the full-width abandon button are gone: progress now
+  sits in its own card, and a facts card shows first aired date, airing status, season count and
+  episode count — any of which quietly drops out when it isn't known. A show's status chip is
+  read-only rather than a picker, since where a show sits on the shelf is derived from its episodes
+  rather than chosen; "Abandon"/"Resume" sits beside it as a small action instead of a full-width
+  button. Seasons and episodes render exactly as before.
 
 ### Internal
 

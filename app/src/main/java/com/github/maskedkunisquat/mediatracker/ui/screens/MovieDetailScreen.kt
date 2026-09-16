@@ -3,6 +3,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -40,8 +41,9 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MovieDetailViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
-import com.github.maskedkunisquat.mediatracker.ui.components.StatusDropdownChip
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
@@ -172,23 +174,22 @@ fun MovieDetailScreen(
             //
             // Scrolling brings #99's rule with it: insets as contentPadding rather than padding(),
             // so the content passes under the bars while the last row still clears them.
-            // #141: DetailHeader and DetailSynopsis carry their own 16dp horizontal margins (the
-            // header's own top/bottom padding is asymmetric by design -- 8dp to the app bar above,
-            // 20dp to whatever follows below), so this container adds none of its own. Loading and
-            // NotFound have no such built-in margin and add their own 16dp instead.
+            // #141: this container owns the 16dp side margin for everything in it. The shared blocks
+            // carry vertical padding only, so a screen that already pads its container (TV's
+            // LazyColumn contentPadding) does not end up with 32dp.
             modifier =
                 Modifier
                     .fillMaxSize()
                     .consumeWindowInsets(innerPadding)
                     .verticalScroll(rememberScrollState())
-                    .padding(scrollingContentPadding(innerPadding)),
+                    .padding(scrollingContentPadding(innerPadding, PaddingValues(horizontal = 16.dp))),
         ) {
             when (uiState) {
                 is MovieDetailUiState.Loading ->
                     CircularProgressIndicator(
                         modifier =
                             Modifier
-                                .padding(16.dp)
+                                .padding(vertical = 16.dp)
                                 .align(Alignment.CenterHorizontally),
                     )
 
@@ -197,7 +198,7 @@ fun MovieDetailScreen(
                 is MovieDetailUiState.NotFound ->
                     Text(
                         text = stringResource(R.string.movie_detail_not_found),
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(vertical = 16.dp),
                     )
 
                 is MovieDetailUiState.Ready -> {
@@ -224,13 +225,7 @@ fun MovieDetailScreen(
                             },
                         statusNote = watchedNote(details?.status, details?.watchedAt),
                     ) {
-                        StatusDropdownChip(
-                            value = details?.status ?: WatchStatus.WATCHLIST,
-                            options = WatchStatus.entries,
-                            label = { it.displayLabel() },
-                            onSelect = onStatusChange,
-                            onClickLabel = stringResource(R.string.detail_status_change_action_label),
-                        )
+                        DetailStatusChip(movieStatusControl(details?.status, onStatusChange))
                     }
                     DetailSynopsis(text = movie.item.synopsis)
                 }
@@ -272,3 +267,21 @@ private fun watchedNote(
     val date = DATE_ONLY_FORMATTER.format(instantToLocalDateTime(watchedAt))
     return stringResource(R.string.movie_detail_watched_note, date)
 }
+
+/**
+ * Film's status mapper (#141 step 2): editable over [WatchStatus.entries], unchanged in look and
+ * behaviour from the [StatusDropdownChip] this screen wired directly before the per-domain model
+ * existed -- a film's stored status is the real answer, so it stays a four-way picker.
+ */
+@Composable
+private fun movieStatusControl(
+    status: WatchStatus?,
+    onStatusChange: (WatchStatus) -> Unit,
+): DetailStatus.Editable<WatchStatus> =
+    DetailStatus.Editable(
+        value = status ?: WatchStatus.WATCHLIST,
+        options = WatchStatus.entries,
+        label = { it.displayLabel() },
+        onSelect = onStatusChange,
+        onClickLabel = stringResource(R.string.detail_status_change_action_label),
+    )

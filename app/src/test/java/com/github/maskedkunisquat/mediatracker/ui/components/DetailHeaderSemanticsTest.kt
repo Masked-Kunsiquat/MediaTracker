@@ -91,6 +91,24 @@ class DetailHeaderSemanticsTest {
         composeRule.onAllNodesWithText("More").assertCountEquals(0)
     }
 
+    /**
+     * #141 step 2: the read-only status chip ([DetailStatus.ReadOnly]) looks like
+     * [StatusDropdownChip] but carries no click action -- TalkBack must not offer to "change status"
+     * on a chip whose value is derived, not picked. `onNodeWithText` finding the node at all is the
+     * "label still reaches accessibility" half: a `clearAndSetSemantics` bug that wiped the text along
+     * with the click action would fail this lookup outright, not merely leave `OnClick` behind.
+     */
+    @Test
+    fun readOnlyStatusChip_exposesNoClickAction_butKeepsItsLabel() {
+        composeRule.setContent {
+            DetailStatusChip(DetailStatus.ReadOnly(label = "Watching"))
+        }
+
+        composeRule
+            .onNodeWithText("Watching")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+    }
+
     private companion object {
         val LONG = List(12) { "A sentence long enough to wrap across the synopsis width." }.joinToString(" ")
     }

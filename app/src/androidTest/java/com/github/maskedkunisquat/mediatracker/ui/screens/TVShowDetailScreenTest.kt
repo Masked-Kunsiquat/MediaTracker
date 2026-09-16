@@ -9,12 +9,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
@@ -61,6 +64,9 @@ class TVShowDetailScreenTest {
         id: String = "show-1",
         title: String = "Chernobyl",
         releaseYear: Int? = 2019,
+        synopsis: String? = null,
+        status: WatchStatus = WatchStatus.WATCHLIST,
+        airingStatus: AiringStatus? = null,
     ) = MediaWithDetails.TVShow(
         item =
             MediaItemEntity(
@@ -71,8 +77,9 @@ class TVShowDetailScreenTest {
                 purchasePrice = null,
                 createdAt = Instant.fromEpochMilliseconds(0),
                 coverImageHash = null,
+                synopsis = synopsis,
             ),
-        details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = WatchStatus.WATCHLIST),
+        details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = status, airingStatus = airingStatus),
     )
 
     private fun episode(
@@ -95,10 +102,11 @@ class TVShowDetailScreenTest {
         errorMessage: String? = null,
         canRefreshMetadata: Boolean = false,
         isRefreshingMetadata: Boolean = false,
+        synopsis: String? = null,
     ): TVShowDetailUiState.Ready {
         val episodes = (1..episodeCount).map { episode(seasonNumber, it) }
         return TVShowDetailUiState.Ready(
-            show = show(releaseYear = releaseYear),
+            show = show(releaseYear = releaseYear, synopsis = synopsis),
             seasons = listOf(SeasonGroup(seasonNumber = seasonNumber, episodes = episodes, watchedCount = 0)),
             watchedEpisodes = 0,
             totalEpisodes = episodeCount,
@@ -106,6 +114,32 @@ class TVShowDetailScreenTest {
             errorMessage = errorMessage,
             canRefreshMetadata = canRefreshMetadata,
             isRefreshingMetadata = isRefreshingMetadata,
+        )
+    }
+
+    /**
+     * A [TVShowDetailUiState.Ready] built for the read-only status chip's derived-bucket tests
+     * (#141 step 2): independent control over stored status, watched/total episodes and airing
+     * status -- the three inputs [com.hub.media.ui.LibraryStatusFilter.ofShow] combines.
+     */
+    private fun readyStateForBucket(
+        watched: Int,
+        total: Int,
+        status: WatchStatus = WatchStatus.WATCHLIST,
+        airingStatus: AiringStatus? = null,
+    ): TVShowDetailUiState.Ready {
+        val episodes =
+            (1..total).map { n ->
+                episode(seasonNumber = 1, episodeNumber = n).copy(
+                    watchedAt = if (n <= watched) Instant.fromEpochMilliseconds(1_700_000_000_000L) else null,
+                )
+            }
+        return TVShowDetailUiState.Ready(
+            show = show(status = status, airingStatus = airingStatus),
+            seasons = listOf(SeasonGroup(seasonNumber = 1, episodes = episodes, watchedCount = watched)),
+            watchedEpisodes = watched,
+            totalEpisodes = total,
+            isAbandoned = status == WatchStatus.ABANDONED,
         )
     }
 
@@ -273,7 +307,9 @@ class TVShowDetailScreenTest {
     // --- #141: pinning the chrome/header/status behaviour a shared scaffold would absorb ---
 
     @Test
-    fun ready_showsTitleInTopBar() {
+    fun ready_showsTitleInHeader() {
+        // #141 step 2: the title moved out of the (now empty) top bar into DetailHeader, the same
+        // move MovieDetailScreen made in step 1.
         setContent(readyState(episodeCount = 3))
 
         composeRule.onNodeWithText("Chernobyl").assertIsDisplayed()
@@ -401,47 +437,135 @@ class TVShowDetailScreenTest {
     }
 
     @Test
-    fun ready_rendersYearAndProgressText() {
+    fun ready_rendersKindAndYearInHeader() {
+        // #141 step 2: the year moved off its own "Year: 2019" row (library_year_label) into
+        // DetailHeader's "kind · year" line, mirroring film's step-1 change. The progress text that
+        // used to sit beside it moved to DetailProgressCard -- see
+        // progressCard_rendersWatchedOverTotalValue below.
         setContent(readyState(episodeCount = 4, releaseYear = 2019))
 
-        val yearText = context.getString(R.string.library_year_label, 2019)
-        composeRule.onNodeWithText(yearText).assertIsDisplayed()
+        val kindYearText =
+            context.getString(
+                R.string.detail_kind_year_format,
+                context.getString(R.string.tv_show_detail_kind),
+                2019,
+            )
+        composeRule.onNodeWithText(kindYearText).assertIsDisplayed()
+    }
+
+    @Test
+    fun releaseYearNull_rendersKindAloneInHeader() {
+        // Mirrors Movie's null-year handling: DetailHeader renders the bare kind ("TV show")
+        // rather than a "kind · year" line with a missing year.
+        setContent(readyState(episodeCount = 4, releaseYear = null))
+
+        composeRule.onNodeWithText(context.getString(R.string.tv_show_detail_kind)).assertIsDisplayed()
+        composeRule.onNodeWithText("Year:", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun progressCard_rendersWatchedOverTotalValue() {
+        setContent(readyState(episodeCount = 4))
 
         val progressText = context.resources.getQuantityString(R.plurals.tv_show_detail_progress, 4, 0, 4)
         composeRule.onNodeWithText(progressText).assertIsDisplayed()
     }
 
     @Test
-    fun releaseYearNull_rendersNoYearRow() {
-        // Mirrors Movie's null-year handling (library_year_label is the same shared string) --
-        // nothing renders rather than "Year: null".
-        setContent(readyState(episodeCount = 4, releaseYear = null))
-
-        composeRule.onNodeWithText("Year:", substring = true).assertDoesNotExist()
-    }
-
-    @Test
-    fun tappingAbandonButton_invokesOnAbandonedChangeWithTrue() {
-        // TV's status model is a single boolean toggle button, not the per-status chip row Movie
-        // and Book both use -- see onAbandonedChange's signature.
+    fun tappingAbandonAction_invokesOnAbandonedChangeWithTrue() {
+        // TV's status control is now a read-only chip (DetailStatus.ReadOnly) with a side action --
+        // "Abandon"/"Resume" -- rather than the removed full-width toggle button.
         var captured: Boolean? = null
         setContent(readyState(episodeCount = 3, isAbandoned = false), onAbandonedChange = { captured = it })
 
-        val abandonLabel = context.getString(R.string.tv_show_detail_abandon_button)
+        val abandonLabel = context.getString(R.string.detail_show_status_abandon_action)
         composeRule.onNodeWithText(abandonLabel).performClick()
 
         assertEquals(true, captured)
     }
 
     @Test
-    fun tappingResumeButton_invokesOnAbandonedChangeWithFalse() {
+    fun tappingResumeAction_invokesOnAbandonedChangeWithFalse() {
         var captured: Boolean? = null
         setContent(readyState(episodeCount = 3, isAbandoned = true), onAbandonedChange = { captured = it })
 
-        val resumeLabel = context.getString(R.string.tv_show_detail_resume_button)
+        val resumeLabel = context.getString(R.string.detail_show_status_resume_action)
         composeRule.onNodeWithText(resumeLabel).performClick()
 
         assertEquals(false, captured)
+    }
+
+    // --- #141 step 2: the read-only status chip's derived label, per LibraryStatusFilter.ofShow ---
+
+    @Test
+    fun statusChip_showsNotStarted_whenNoEpisodesAreWatched() {
+        setContent(readyStateForBucket(watched = 0, total = 5))
+
+        composeRule.onNodeWithText(context.getString(R.string.library_filter_not_started)).assertIsDisplayed()
+    }
+
+    @Test
+    fun statusChip_showsWatching_whenPartlyWatched() {
+        setContent(readyStateForBucket(watched = 2, total = 5))
+
+        composeRule.onNodeWithText(context.getString(R.string.watch_status_watching)).assertIsDisplayed()
+    }
+
+    @Test
+    fun statusChip_showsWatched_whenFullyWatchedAndEnded() {
+        setContent(readyStateForBucket(watched = 5, total = 5, airingStatus = AiringStatus.ENDED))
+
+        composeRule.onNodeWithText(context.getString(R.string.watch_status_watched)).assertIsDisplayed()
+    }
+
+    @Test
+    fun statusChip_showsWatching_whenFullyWatchedButStillContinuing() {
+        // LibraryStatusFilter.ofShow's KDoc: a fully-watched show still in production is
+        // IN_PROGRESS, not FINISHED -- there is more of it, and the viewer is only caught up.
+        setContent(readyStateForBucket(watched = 5, total = 5, airingStatus = AiringStatus.CONTINUING))
+
+        composeRule.onNodeWithText(context.getString(R.string.watch_status_watching)).assertIsDisplayed()
+    }
+
+    @Test
+    fun statusChip_showsAbandoned_whenStoredStatusIsAbandoned() {
+        setContent(readyStateForBucket(watched = 0, total = 5, status = WatchStatus.ABANDONED))
+
+        composeRule.onNodeWithText(context.getString(R.string.library_filter_abandoned)).assertIsDisplayed()
+    }
+
+    // --- #141 step 2: DetailSynopsis and DetailFacts adopted onto this screen ---
+
+    @Test
+    fun synopsisPresent_isDisplayed() {
+        setContent(readyState(episodeCount = 3, synopsis = "A miniseries about the Chernobyl disaster."))
+
+        composeRule.onNodeWithText("A miniseries about the Chernobyl disaster.").assertIsDisplayed()
+    }
+
+    @Test
+    fun synopsisNull_rendersNothing() {
+        setContent(readyState(episodeCount = 3, synopsis = null))
+
+        val moreLabel = context.getString(R.string.detail_synopsis_more)
+        composeRule.onNodeWithText(moreLabel).assertDoesNotExist()
+    }
+
+    @Test
+    fun factsWithUnknownAiringData_omitFirstAiredAndAiring() {
+        // The fixture sets neither firstAirDate nor airingStatus, so those two facts are dropped;
+        // Seasons/Episodes are derived counts and always present.
+        setContent(readyState(episodeCount = 4))
+
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.tv_show_detail_fact_first_aired))
+            .assertCountEquals(0)
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.tv_show_detail_fact_airing))
+            .assertCountEquals(0)
+        composeRule
+            .onNodeWithText(context.getString(R.string.tv_show_detail_fact_episodes))
+            .assertIsDisplayed()
     }
 
     @Test

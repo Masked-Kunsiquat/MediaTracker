@@ -161,6 +161,10 @@
     <string name="detail_status_change_action_label">Change status</string>
     <string name="detail_synopsis_more">More</string>
     <string name="detail_synopsis_less">Less</string>
+    <!-- DetailHeader (#141 step 2): TV's read-only status chip's side action, next to the chip
+         rather than the removed full-width tv_show_detail_abandon_button/resume_button. -->
+    <string name="detail_show_status_abandon_action">Abandon</string>
+    <string name="detail_show_status_resume_action">Resume</string>
     <string name="library_filter_all">All</string>
     <!-- Library status filter chips. Deliberately media-neutral: the same chip must read
          correctly for a book and a film, so these are not the book-specific reading_status_*
@@ -456,8 +460,6 @@
         <item quantity="one">%1$d / %2$d episode</item>
         <item quantity="other">%1$d / %2$d episodes</item>
     </plurals>
-    <string name="tv_show_detail_abandon_button">Mark as abandoned</string>
-    <string name="tv_show_detail_resume_button">Resume watching</string>
     <string name="tv_show_detail_no_seasons">No seasons yet. Add one below to start tracking episodes.</string>
     <string name="tv_show_detail_add_season">Add season</string>
     <!-- No trailing "episodes": the row also carries the watched toggle and the season overflow
@@ -475,6 +477,21 @@
     <string name="tv_show_detail_refresh_metadata">Refresh episode details from TMDB</string>
     <string name="tv_show_detail_delete">Delete show</string>
     <string name="tv_show_detail_delete_confirm">Delete this show? This cannot be undone.</string>
+
+    <!-- DetailHeader (#141 step 2): TV show adopts the shared header -->
+    <string name="tv_show_detail_kind">TV show</string>
+    <plurals name="tv_show_detail_season_count">
+        <item quantity="one">%1$d season</item>
+        <item quantity="other">%1$d seasons</item>
+    </plurals>
+    <!-- AiringStatus display labels: no display mapping existed before this screen rendered one. -->
+    <string name="airing_status_continuing">Continuing</string>
+    <string name="airing_status_ended">Ended</string>
+    <string name="airing_status_cancelled">Cancelled</string>
+    <!-- DetailFacts labels. "Seasons" reuses add_tv_show_seasons_section_label's exact wording. -->
+    <string name="tv_show_detail_fact_first_aired">First aired</string>
+    <string name="tv_show_detail_fact_airing">Airing</string>
+    <string name="tv_show_detail_fact_episodes">Episodes</string>
 
     <!-- Per-season overflow menu: change a season's length or remove it outright (fix/tv-season-shrink) -->
     <string name="tv_show_detail_season_menu_content_description">Season %1$d options</string>

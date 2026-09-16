@@ -119,3 +119,29 @@ private fun DetailSynopsisLongPreview() {
         )
     }
 }
+
+/** Preview of [DetailProgressCard] partway through (#141 step 2). */
+@Preview(showBackground = true)
+@Composable
+private fun DetailProgressCardPreview() {
+    MediaTrackerTheme {
+        DetailProgressCard(value = "12 / 19 episodes", completed = 12, total = 19)
+    }
+}
+
+/** Preview of [DetailFacts], including a dropped pair -- one fewer cell than the label list below. */
+@Preview(showBackground = true)
+@Composable
+private fun DetailFactsPreview() {
+    MediaTrackerTheme {
+        DetailFacts(
+            facts =
+                listOf(
+                    DetailFact("First aired", "May 26, 2019"),
+                    DetailFact("Airing", "Ended"),
+                    DetailFact("Seasons", "1"),
+                    DetailFact("Episodes", null),
+                ),
+        )
+    }
+}
