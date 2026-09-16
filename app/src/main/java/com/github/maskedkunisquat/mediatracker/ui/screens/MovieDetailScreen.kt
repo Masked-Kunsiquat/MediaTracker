@@ -3,6 +3,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -173,23 +174,22 @@ fun MovieDetailScreen(
             //
             // Scrolling brings #99's rule with it: insets as contentPadding rather than padding(),
             // so the content passes under the bars while the last row still clears them.
-            // #141: DetailHeader and DetailSynopsis carry their own 16dp horizontal margins (the
-            // header's own top/bottom padding is asymmetric by design -- 8dp to the app bar above,
-            // 20dp to whatever follows below), so this container adds none of its own. Loading and
-            // NotFound have no such built-in margin and add their own 16dp instead.
+            // #141: this container owns the 16dp side margin for everything in it. The shared blocks
+            // carry vertical padding only, so a screen that already pads its container (TV's
+            // LazyColumn contentPadding) does not end up with 32dp.
             modifier =
                 Modifier
                     .fillMaxSize()
                     .consumeWindowInsets(innerPadding)
                     .verticalScroll(rememberScrollState())
-                    .padding(scrollingContentPadding(innerPadding)),
+                    .padding(scrollingContentPadding(innerPadding, PaddingValues(horizontal = 16.dp))),
         ) {
             when (uiState) {
                 is MovieDetailUiState.Loading ->
                     CircularProgressIndicator(
                         modifier =
                             Modifier
-                                .padding(16.dp)
+                                .padding(vertical = 16.dp)
                                 .align(Alignment.CenterHorizontally),
                     )
 
@@ -198,7 +198,7 @@ fun MovieDetailScreen(
                 is MovieDetailUiState.NotFound ->
                     Text(
                         text = stringResource(R.string.movie_detail_not_found),
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(vertical = 16.dp),
                     )
 
                 is MovieDetailUiState.Ready -> {

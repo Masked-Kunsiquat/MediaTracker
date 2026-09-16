@@ -156,7 +156,7 @@ class TVShowDetailScreenGoldenTest {
                             coverImageHash = coverImageHash,
                             communityRating = 8.8,
                             synopsis =
-                                "A FBI agent investigates the murder of a homecoming queen in a " +
+                                "An FBI agent investigates the murder of a homecoming queen in a " +
                                     "small logging town full of secrets.",
                         ),
                     seasons =

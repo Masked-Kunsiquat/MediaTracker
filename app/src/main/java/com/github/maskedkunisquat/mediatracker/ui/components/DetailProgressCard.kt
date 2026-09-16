@@ -47,7 +47,8 @@ fun DetailProgressCard(
     if (total <= 0) return
 
     Card(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        // No side margin of its own: the screen owns it, so a padded container does not double it.
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
@@ -108,7 +109,8 @@ fun DetailFacts(
     if (present.isEmpty()) return
 
     Card(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        // No side margin of its own: the screen owns it, so a padded container does not double it.
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {

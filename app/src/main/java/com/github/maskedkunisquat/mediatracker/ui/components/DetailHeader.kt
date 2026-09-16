@@ -89,7 +89,10 @@ fun DetailHeader(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 20.dp),
+                // Vertical only: the screen owns the side margin, so a caller that already pads its
+                // container (TV's LazyColumn contentPadding) does not end up with 32dp. Asymmetric by
+                // design -- 8dp to the app bar above, 20dp to whatever follows.
+                .padding(top = 8.dp, bottom = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -300,7 +303,7 @@ fun DetailSynopsis(
     var expanded by rememberSaveable(text) { mutableStateOf(false) }
     var overflowing by remember(text) { mutableStateOf(false) }
 
-    Column(modifier = modifier.padding(horizontal = 16.dp)) {
+    Column(modifier = modifier) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
