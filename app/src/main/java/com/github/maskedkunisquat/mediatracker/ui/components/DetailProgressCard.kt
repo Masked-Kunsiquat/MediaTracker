@@ -1,20 +1,26 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +93,20 @@ fun DetailProgressCard(
 data class DetailFact(
     val label: String,
     val value: String?,
+    /**
+     * An optional trailing icon action beside [value] (#141 step 3), e.g. Book's ISBN
+     * copy-to-clipboard button. `null` (the default) renders the row exactly as before this
+     * parameter existed -- a bare value [Text], no icon, no extra `Row` wrapper -- so Film/TV's
+     * facts (which never pass one) are unaffected.
+     */
+    val action: DetailFactAction? = null,
+)
+
+/** [DetailFact.action]'s icon, accessibility label and handler. */
+data class DetailFactAction(
+    @param:DrawableRes val iconRes: Int,
+    val contentDescription: String,
+    val onClick: () -> Unit,
 )
 
 /**
@@ -132,13 +152,33 @@ fun DetailFacts(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
-                                text = fact.value.orEmpty(),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            val action = fact.action
+                            if (action == null) {
+                                Text(
+                                    text = fact.value.orEmpty(),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = fact.value.orEmpty(),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    IconButton(onClick = action.onClick, modifier = Modifier.size(32.dp)) {
+                                        Icon(
+                                            painter = painterResource(action.iconRes),
+                                            contentDescription = action.contentDescription,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     // Keeps an odd final row's single cell in the left column rather than stretching

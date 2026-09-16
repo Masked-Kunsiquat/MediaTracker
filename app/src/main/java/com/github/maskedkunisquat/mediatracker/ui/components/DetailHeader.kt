@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,6 +70,13 @@ import com.hub.media.core.database.entities.MediaType
  *   when a cover hash exists -- see [DetailArtwork]'s KDoc for why the null case matters.
  * @param statusNote An optional line under the status control (e.g. "Watched Jan 3, 2024"). `null`
  *   omits it.
+ * @param onArtworkClick Optional tap handler for the artwork alone (#141 step 3), e.g. Book's
+ *   tap-to-enlarge. `null` (the default, and what Film/TV pass) leaves the artwork non-interactive --
+ *   its `Modifier` chain is then identical to before this parameter existed, which is what keeps
+ *   their goldens byte-for-byte unchanged. Ignored entirely when [artwork] is `null`, since there is
+ *   then no artwork `Box` to attach a click to.
+ * @param artworkClickLabel The accessibility action label for [onArtworkClick] (e.g. "View enlarged
+ *   cover"). Required whenever [onArtworkClick] is non-null; unused otherwise.
  * @param statusControl The status-change control for this media type, typically a
  *   [StatusDropdownChip]. A slot rather than a fixed type so each media type supplies its own enum.
  */
@@ -83,6 +91,8 @@ fun DetailHeader(
     statusNote: String?,
     modifier: Modifier = Modifier,
     ratingScale: Int = 10,
+    onArtworkClick: (() -> Unit)? = null,
+    artworkClickLabel: String? = null,
     statusControl: @Composable () -> Unit,
 ) {
     Row(
@@ -101,7 +111,17 @@ fun DetailHeader(
                 modifier =
                     Modifier
                         .size(width = ARTWORK_WIDTH, height = ARTWORK_HEIGHT)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(RoundedCornerShape(12.dp))
+                        // Only when a click was actually supplied -- Film/TV pass none, so this
+                        // `then` is a no-op and their modifier chain is unchanged from before
+                        // `onArtworkClick` existed (see that parameter's KDoc).
+                        .then(
+                            if (onArtworkClick != null) {
+                                Modifier.clickable(onClickLabel = artworkClickLabel, onClick = onArtworkClick)
+                            } else {
+                                Modifier
+                            },
+                        ),
             ) {
                 CoverImage(
                     coverDir = artwork.coverStorageDir,
