@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -90,7 +91,8 @@ internal fun LazyListScope.readingHistorySection(
     item {
         TextButton(
             onClick = onLogManuallyClick,
-            modifier = Modifier.padding(bottom = 8.dp),
+            // Offset by the button's own 12dp content padding, so it lines up with the heading above.
+            modifier = Modifier.offset(x = (-12).dp).padding(bottom = 8.dp),
         ) {
             Text(stringResource(R.string.log_session_manually))
         }

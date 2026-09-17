@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -293,27 +294,29 @@ internal fun BookTimerRow(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            // One filled button per state, so the row's primary action carries the weight the old
+            // full-width TimerCard gave it; Stop stays secondary beside it.
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 when (timerState) {
                     is ReadingTimerState.Idle -> {
-                        TextButton(onClick = onStart) {
+                        Button(onClick = onStart) {
                             Text(stringResource(R.string.start_reading_button))
                         }
                     }
                     is ReadingTimerState.Running -> {
-                        TextButton(onClick = onPause) {
-                            Text(stringResource(R.string.pause_button))
-                        }
                         TextButton(onClick = onStop) {
                             Text(stringResource(R.string.stop_button))
+                        }
+                        Button(onClick = onPause) {
+                            Text(stringResource(R.string.pause_button))
                         }
                     }
                     is ReadingTimerState.Paused -> {
-                        TextButton(onClick = onResume) {
-                            Text(stringResource(R.string.resume_button))
-                        }
                         TextButton(onClick = onStop) {
                             Text(stringResource(R.string.stop_button))
+                        }
+                        Button(onClick = onResume) {
+                            Text(stringResource(R.string.resume_button))
                         }
                     }
                 }
