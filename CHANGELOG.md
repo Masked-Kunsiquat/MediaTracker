@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A show with no episodes yet no longer reads "Seasons 0"** (#167). The detail screen counted the
+  seasons it could see in your episode list, so a show you have never filled in showed 0 even when
+  its record says 6 — which is how a show looks right after a TMDB backfill, since that pass fills in
+  details but never creates episodes. It now falls back to the recorded season count, and drops the
+  seasons and episodes rows entirely when there is nothing to show.
 - **A season's ⋮ menu no longer disappears with a slightly larger system font** (#163). At font
   scale 1.1 on a narrow screen, the season header squeezed its overflow button to zero width. That
   menu is the only way to change a season's episode count or remove the season, and a tap aimed at it

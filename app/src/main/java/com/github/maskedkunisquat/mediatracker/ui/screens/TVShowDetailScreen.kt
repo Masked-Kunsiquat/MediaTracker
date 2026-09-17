@@ -460,13 +460,25 @@ fun TVShowDetailScreen(
                                         label = stringResource(R.string.tv_show_detail_fact_airing),
                                         value = details?.airingStatus?.displayLabel(),
                                     ),
+                                    // Episode rows are the truth about what exists, so the derived
+                                    // count wins -- but a show nobody has quick-filled has none, and
+                                    // reading "Seasons 0" beside a record that says 6 looks broken
+                                    // rather than empty (#167). Fall back to the stored advisory
+                                    // count, which is null for a show that never had one, and then
+                                    // DetailFacts drops the row.
                                     DetailFact(
                                         label = stringResource(R.string.add_tv_show_seasons_section_label),
-                                        value = uiState.seasons.size.toString(),
+                                        value =
+                                            uiState.seasons.size
+                                                .takeIf { it > 0 }
+                                                ?.toString()
+                                                ?: details?.totalSeasons?.toString(),
                                     ),
+                                    // Dropped rather than shown as 0, for the same reason: there is
+                                    // nothing to count yet, and the empty body below already says so.
                                     DetailFact(
                                         label = stringResource(R.string.tv_show_detail_fact_episodes),
-                                        value = uiState.totalEpisodes.toString(),
+                                        value = uiState.totalEpisodes.takeIf { it > 0 }?.toString(),
                                     ),
                                 ),
                         )
