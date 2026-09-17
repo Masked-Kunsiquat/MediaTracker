@@ -4,7 +4,11 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import com.github.maskedkunisquat.mediatracker.R
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,5 +52,37 @@ class DetailFactsTest {
 
         composeRule.onAllNodesWithText("First aired").assertCountEquals(0)
         composeRule.onAllNodesWithText("Airing").assertCountEquals(0)
+    }
+
+    /**
+     * #141 step 3: a fact carrying [DetailFactAction] (Book's ISBN copy button) renders both its
+     * value and the trailing icon, and tapping the icon invokes the action rather than the row
+     * itself doing anything.
+     */
+    @Test
+    fun factWithAnAction_rendersValueAndIcon_andInvokesOnClick() {
+        var copies = 0
+        composeRule.setContent {
+            DetailFacts(
+                facts =
+                    listOf(
+                        DetailFact(
+                            label = "ISBN",
+                            value = "9780743273565",
+                            action =
+                                DetailFactAction(
+                                    iconRes = R.drawable.ic_content_copy,
+                                    contentDescription = "Copy ISBN",
+                                    onClick = { copies++ },
+                                ),
+                        ),
+                    ),
+            )
+        }
+
+        composeRule.onNodeWithText("9780743273565").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Copy ISBN").performClick()
+
+        assertEquals(1, copies)
     }
 }

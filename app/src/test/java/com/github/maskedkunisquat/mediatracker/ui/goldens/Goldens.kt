@@ -22,6 +22,7 @@ import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
+import java.util.TimeZone
 
 /**
  * Screenshot goldens for the canonical screens (#102).
@@ -127,6 +128,27 @@ fun ComposeContentTestRule.captureGolden(
     name: String,
     theme: Theme = Theme.LIGHT,
     fontScale: Float = 1f,
+    alsoAssert: ComposeContentTestRule.() -> Unit,
+    content: @Composable () -> Unit,
+) {
+    // Every golden renders in UTC, whatever the recording machine is set to. Any screen that shows a
+    // time formats it in the default zone, so an image recorded in EDT and verified on a UTC runner
+    // differs by exactly the offset: #168's book goldens failed CI that way, on "5:13 PM" against
+    // "10:13 PM", with the rest of the image identical. Restored afterwards, since this is global
+    // state shared with every other test in the JVM.
+    val recordingZone = TimeZone.getDefault()
+    TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    try {
+        captureGoldenInFixedZone(name, theme, fontScale, alsoAssert, content)
+    } finally {
+        TimeZone.setDefault(recordingZone)
+    }
+}
+
+private fun ComposeContentTestRule.captureGoldenInFixedZone(
+    name: String,
+    theme: Theme,
+    fontScale: Float,
     alsoAssert: ComposeContentTestRule.() -> Unit,
     content: @Composable () -> Unit,
 ) {

@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import com.hub.media.core.database.entities.MediaType
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,6 +108,65 @@ class DetailHeaderSemanticsTest {
         composeRule
             .onNodeWithText("Watching")
             .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+    }
+
+    /**
+     * #141 step 3: when a caller (only Book) passes [DetailHeader]'s `onArtworkClick`, the label
+     * reaches accessibility on the artwork's own click action -- verified the same way the status
+     * chip's click label is above, via [SemanticsActions.OnClick]'s `label`.
+     */
+    @Test
+    fun artworkClick_exposesItsLabel_whenSupplied() {
+        composeRule.setContent {
+            DetailHeader(
+                kind = "Book",
+                year = null,
+                title = "Dune",
+                subline = null,
+                rating = null,
+                artwork = DetailArtwork("no-covers", "hash.jpg", MediaType.BOOK),
+                statusNote = null,
+                onArtworkClick = {},
+                artworkClickLabel = "View enlarged cover",
+                statusControl = {},
+            )
+        }
+
+        composeRule
+            .onNode(
+                SemanticsMatcher("OnClick is labelled \"View enlarged cover\"") {
+                    it.config.getOrNull(SemanticsActions.OnClick)?.label == "View enlarged cover"
+                },
+            ).assertExists()
+    }
+
+    /**
+     * The other half of the same guard: no `onArtworkClick` (Film/TV's case) means no click action
+     * on the artwork at all -- not merely an unlabelled one -- so their artwork stays inert.
+     */
+    @Test
+    fun artworkClick_isAbsent_whenNotSupplied() {
+        composeRule.setContent {
+            DetailHeader(
+                kind = "Book",
+                year = null,
+                title = "Dune",
+                subline = null,
+                rating = null,
+                artwork = DetailArtwork("no-covers", "hash.jpg", MediaType.BOOK),
+                statusNote = null,
+                statusControl = {},
+            )
+        }
+
+        // Only the status-control slot (empty here) would otherwise carry an OnClick action; the
+        // artwork itself must contribute none.
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher("has an OnClick action") {
+                    it.config.getOrNull(SemanticsActions.OnClick) != null
+                },
+            ).assertCountEquals(0)
     }
 
     private companion object {

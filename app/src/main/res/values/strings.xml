@@ -53,7 +53,6 @@
     <string name="pages_read_derived_label">Pages read (auto): %1$s</string>
     <string name="pages_read_derived_placeholder">—</string>
     <string name="status_prefix">Status: %1$s</string>
-    <string name="tab_details">Details</string>
     <string name="tab_reading_history">Reading history</string>
     <string name="isbn_copy_content_description">Copy ISBN</string>
     <string name="isbn_copied_message">ISBN copied to clipboard</string>
@@ -61,18 +60,20 @@
     <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
     <string name="refetch_cover_in_progress">Re-fetching cover…</string>
     <string name="cover_view_action_label">View enlarged cover</string>
-    <string name="cover_options_action_label">Cover options</string>
 
     <!-- BookDetailScreen: Details tab (books-polish pass revamp) -->
-    <string name="detail_published_year">Published %1$d</string>
     <string name="detail_label_isbn">ISBN</string>
     <string name="detail_label_format">Format</string>
-    <string name="detail_label_total_pages">Total pages</string>
+    <string name="detail_label_pages">Pages</string>
     <string name="detail_label_tracking_mode">Tracking</string>
-    <string name="detail_value_unknown">—</string>
     <string name="detail_progress_title">Progress</string>
     <string name="detail_progress_not_started">No progress logged yet</string>
     <string name="timer_card_title">Reading timer</string>
+
+    <!-- DetailHeader (#141 step 3): shared header adopted by BookDetailScreen -->
+    <string name="book_detail_kind">Book</string>
+    <string name="book_detail_finished_note">Finished %1$s</string>
+    <string name="book_detail_overflow_menu_content_description">More options</string>
 
     <!-- BookDetailScreen: Reading history timeline (books-polish pass revamp) -->
     <string name="timeline_today">Today</string>
@@ -183,9 +184,6 @@
     <string name="library_search_content_description">Search library</string>
     <string name="library_search_clear_content_description">Clear search</string>
     <string name="library_filtered_empty">No items match the current filters</string>
-
-    <!-- Author display (ROADMAP Task 9 Phase A) -->
-    <string name="detail_label_authors">Author</string>
 
     <!-- StatsScreen -->
     <string name="stats_title">Stats</string>

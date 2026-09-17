@@ -8,17 +8,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,7 +33,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -45,17 +42,23 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
-import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
-import com.github.maskedkunisquat.mediatracker.ui.insets.plus
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
 import com.hub.media.core.database.entities.ReadingSessionEntity
 
 /**
- * Reading history tab content: the manual-entry affordance plus a **timeline** of session history
- * (books-polish pass revamp; originally ROADMAP Task 6 Phase D's flat [LazyColumn] of
- * concatenated-string [SessionRow]s). **The live timer moved to the Details tab in an earlier
- * books-polish pass** (see [BookDetailContent]'s KDoc) -- this tab keeps only the manual-entry
- * affordance and the session history, per that same change's scope.
+ * Reading history section (#141 step 3): the manual-entry affordance plus a **timeline** of session
+ * history, as the last section of [BookDetailScreen]'s single scrolling page rather than a second
+ * tab (books-polish pass revamp; originally ROADMAP Task 6 Phase D's flat `LazyColumn` of
+ * concatenated-string [SessionRow]s; the tab it lived on until #141 step 3 is gone -- see
+ * [BookDetailScreen]'s KDoc). **The live timer moved to the header section in an earlier
+ * books-polish pass** -- this section keeps only the manual-entry affordance and the session
+ * history, per that same change's scope.
+ *
+ * A [LazyListScope] extension rather than its own composable with its own `LazyColumn`: the whole
+ * page is one `LazyColumn` now (#141 step 3's page order), and a scrollable nested inside a
+ * scrollable of the same orientation cannot be measured -- this emits its `item`s directly into the
+ * caller's scope instead, the same shape [TVShowDetailScreen] already uses for its season/episode
+ * rows.
  *
  * ### Timeline construction (Compose primitives only -- AGENTS.md §5, no chart/timeline library)
  * [buildTimelineEntries] flattens [sessions] (already most-recent-first) into a single ordered list
@@ -69,70 +72,68 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
  * [SessionEventCard] rather than one concatenated string.
  *
  * [onEditSessionClick]/[onDeleteSessionClick] receive the whole [ReadingSessionEntity] (rather than
- * just its id) so [BookDetailContent] can populate `sessionToEdit`/`sessionToDelete` exactly as
+ * just its id) so [BookDetailScreen] can populate `sessionToEdit`/`sessionToDelete` exactly as
  * before this was split out.
  */
-@Composable
-internal fun ReadingHistoryTab(
+internal fun LazyListScope.readingHistorySection(
     sessions: List<ReadingSessionEntity>,
     onLogManuallyClick: () -> Unit,
     onEditSessionClick: (ReadingSessionEntity) -> Unit,
     onDeleteSessionClick: (ReadingSessionEntity) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val entries = remember(sessions) { buildTimelineEntries(sessions) }
-    val today = remember { java.time.LocalDate.now() }
-
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        // Bottom bar inset only -- the screen's pinned tab row above already applied the
-        // horizontal one, and applying it twice would indent the sessions past the tabs.
-        contentPadding = PaddingValues(16.dp).plus(barPadding(WindowInsetsSides.Bottom)),
-    ) {
-        item {
-            TextButton(
-                onClick = onLogManuallyClick,
-                modifier = Modifier.padding(bottom = 8.dp),
-            ) {
-                Text(stringResource(R.string.log_session_manually))
-            }
+    item {
+        Text(
+            text = stringResource(R.string.tab_reading_history),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
+    item {
+        TextButton(
+            onClick = onLogManuallyClick,
+            // Offset by the button's own 12dp content padding, so it lines up with the heading above.
+            modifier = Modifier.offset(x = (-12).dp).padding(bottom = 8.dp),
+        ) {
+            Text(stringResource(R.string.log_session_manually))
         }
+    }
 
-        if (sessions.isEmpty()) {
-            item {
-                Text(
-                    text = stringResource(R.string.no_sessions_logged_yet),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            itemsIndexed(entries, key = { _, entry -> entry.key }) { index, entry ->
-                val showTopLine = index > 0
-                val showBottomLine = index < entries.lastIndex
-                when (entry) {
-                    is TimelineEntry.DateHeader ->
-                        TimelineRow(
-                            showTopLine = showTopLine,
-                            showBottomLine = showBottomLine,
-                            showDot = false,
-                        ) {
-                            TimelineDateHeader(date = entry.date, today = today)
-                        }
-                    is TimelineEntry.SessionEntry ->
-                        TimelineRow(
-                            showTopLine = showTopLine,
-                            showBottomLine = showBottomLine,
-                            showDot = true,
-                        ) {
-                            SessionEventCard(
-                                session = entry.session,
-                                onEditClick = { onEditSessionClick(entry.session) },
-                                onDeleteClick = { onDeleteSessionClick(entry.session) },
-                                modifier = Modifier.padding(bottom = 12.dp),
-                            )
-                        }
-                }
+    if (sessions.isEmpty()) {
+        item {
+            Text(
+                text = stringResource(R.string.no_sessions_logged_yet),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        val entries = buildTimelineEntries(sessions)
+        val today = java.time.LocalDate.now()
+        itemsIndexed(entries, key = { _, entry -> entry.key }) { index, entry ->
+            val showTopLine = index > 0
+            val showBottomLine = index < entries.lastIndex
+            when (entry) {
+                is TimelineEntry.DateHeader ->
+                    TimelineRow(
+                        showTopLine = showTopLine,
+                        showBottomLine = showBottomLine,
+                        showDot = false,
+                    ) {
+                        TimelineDateHeader(date = entry.date, today = today)
+                    }
+                is TimelineEntry.SessionEntry ->
+                    TimelineRow(
+                        showTopLine = showTopLine,
+                        showBottomLine = showBottomLine,
+                        showDot = true,
+                    ) {
+                        SessionEventCard(
+                            session = entry.session,
+                            onEditClick = { onEditSessionClick(entry.session) },
+                            onDeleteClick = { onDeleteSessionClick(entry.session) },
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
+                    }
             }
         }
     }
