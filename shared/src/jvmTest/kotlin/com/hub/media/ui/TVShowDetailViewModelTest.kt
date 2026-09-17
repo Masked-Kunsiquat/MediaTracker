@@ -17,15 +17,22 @@ import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -105,13 +112,41 @@ class TVShowDetailViewModelTest {
         return result.data
     }
 
-    private suspend fun readyViewModel(showId: String): TVShowDetailViewModel {
+    private suspend fun readyViewModel(
+        showId: String,
+        backfill: BackfillShowEpisodesUseCase = backfillUseCase,
+    ): TVShowDetailViewModel {
         val viewModel =
             viewModels.track(
-                TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfill),
             )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
         return viewModel
+    }
+
+    /**
+     * A [BackfillShowEpisodesUseCase] backed by a [MockEngine] returning [body], mirroring
+     * [com.hub.media.features.tv.domain.BackfillShowEpisodesUseCaseTest]'s own helper -- these
+     * tests need a real TMDB response to derive [SeasonCountMismatch]es from, which the
+     * always-failing [backfillUseCase] built in [setUp] deliberately cannot provide.
+     */
+    private fun mockBackfillUseCase(
+        body: String = TWO_SEASON_SHOW,
+        status: HttpStatusCode = HttpStatusCode.OK,
+    ): BackfillShowEpisodesUseCase {
+        val engine =
+            MockEngine {
+                if (status == HttpStatusCode.OK) {
+                    respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                } else {
+                    respondError(status)
+                }
+            }
+        return BackfillShowEpisodesUseCase(
+            db = db,
+            tmdbClient = TmdbClient(createHttpClient(engine), credentialProvider = { "test-token" }),
+            tvShowRepository = tvShowRepository,
+        )
     }
 
     @Test
@@ -335,4 +370,208 @@ class TVShowDetailViewModelTest {
             val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready }
             assertFalse((state as TVShowDetailUiState.Ready).canRefreshMetadata)
         }
+
+    // ---- seasonFindings / addMissingEpisodes / addAllMissingEpisodes (#167) ---------------------
+
+    @Test
+    fun seasonFindings_isEmptyBeforeAnyRefresh() =
+        runTest {
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+
+            val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready } as TVShowDetailUiState.Ready
+
+            assertTrue(state.seasonFindings.isEmpty())
+        }
+
+    @Test
+    fun refreshMetadata_populatesSeasonFindings_fromTheReport() =
+        runTest {
+            // Mirrors #167's The Expanse exactly: no local episodes at all, so both of TMDB's
+            // seasons come back as "you have 0."
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+
+            viewModel.refreshMetadata()
+
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.seasonFindings.isNotEmpty()
+                } as TVShowDetailUiState.Ready
+            assertEquals(
+                listOf(
+                    SeasonCountMismatch(seasonNumber = 1, localEpisodes = 0, providerEpisodes = 3),
+                    SeasonCountMismatch(seasonNumber = 2, localEpisodes = 0, providerEpisodes = 2),
+                ),
+                state.seasonFindings,
+            )
+        }
+
+    @Test
+    fun addMissingEpisodes_callsTheRepositoryWithTheProviderCount_andDropsTheRow() =
+        runTest {
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
+
+            viewModel.addMissingEpisodes(seasonNumber = 1)
+
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.seasonFindings.size == 1
+                } as TVShowDetailUiState.Ready
+            assertEquals(listOf(2), state.seasonFindings.map { it.seasonNumber }, "only season 1 must drop out")
+            assertEquals(
+                3,
+                db.episodeDao().getByMediaIdAndSeason(showId, 1).size,
+                "season 1 must be grown to TMDB's own count, the same call ReconcileMismatchesUseCase makes",
+            )
+            assertEquals(0, db.episodeDao().getByMediaIdAndSeason(showId, 2).size, "season 2 must be untouched")
+        }
+
+    @Test
+    fun addAllMissingEpisodes_appliesEverySeasonInOrder() =
+        runTest {
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
+
+            viewModel.addAllMissingEpisodes()
+
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.seasonFindings.isEmpty()
+                } as TVShowDetailUiState.Ready
+            assertTrue(state.addingSeasonNumbers.isEmpty())
+            assertEquals(3, db.episodeDao().getByMediaIdAndSeason(showId, 1).size)
+            assertEquals(2, db.episodeDao().getByMediaIdAndSeason(showId, 2).size)
+        }
+
+    @Test
+    fun addMissingEpisodes_whenTheRepositoryErrors_surfacesTheErrorAndLeavesTheFinding() =
+        runTest {
+            // A season TMDB lists beyond TVMetadataValidation.MAX_EPISODE_COUNT (500) is the one real
+            // way to make TVShowRepository.addMissingEpisodes itself refuse -- there is no seam to
+            // fake this repository through (see this class's own KDoc), so the failure has to be a
+            // genuine one the repository's own validation produces.
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "99999"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase(body = tooManyEpisodesShow()))
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.isNotEmpty() }
+
+            viewModel.addMissingEpisodes(seasonNumber = 1)
+
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.errorMessage != null
+                } as TVShowDetailUiState.Ready
+            assertTrue(state.errorMessage!!.contains("500"), state.errorMessage!!)
+            assertEquals(
+                listOf(1),
+                state.seasonFindings.map { it.seasonNumber },
+                "a failed add must leave the finding in place rather than dropping it",
+            )
+        }
+
+    @Test
+    fun addMissingEpisodes_secondTapWhileTheFirstIsStillEnqueued_isIgnored() =
+        runTest {
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
+
+            // Dispatchers.Main becomes a StandardTestDispatcher for the two addMissingEpisodes calls
+            // below, so the first one's launch only *enqueues* rather than running to completion
+            // inside the call that started it -- same technique and reason as
+            // EditBookViewModelTest.save_doubleTapBeforeCompletion. Under the default eager
+            // dispatcher the first launch can finish before the second call is even made, which would
+            // make "call this twice while the first is in flight" a race the test could not actually
+            // guarantee. Installed only now, after reaching Ready and refreshing under the default
+            // dispatcher those steps already rely on elsewhere in this file.
+            viewModels.installMain(StandardTestDispatcher(testScheduler))
+
+            viewModel.addMissingEpisodes(seasonNumber = 1)
+            // addingSeasonNumbers.value is set synchronously before the launch, but it only reaches
+            // the *public* uiState once combine()'s own collecting coroutine (dispatched via Main)
+            // runs -- see AGENTS.md §7 on never reading .value straight after an action. runCurrent()
+            // drains exactly that virtual-scheduler work; the repository call itself needs a real
+            // dispatch (Room's query context) that runCurrent() cannot cross, so the launch is left
+            // genuinely pending here rather than completed.
+            runCurrent()
+            assertEquals(setOf(1), addingSeasonNumbersOf(viewModel))
+
+            // The second tap, while the first is still pending on that real dispatch.
+            viewModel.addMissingEpisodes(seasonNumber = 1)
+            runCurrent()
+            assertEquals(
+                setOf(1),
+                addingSeasonNumbersOf(viewModel),
+                "a second tap on a season already being added must not grow the busy set",
+            )
+
+            // Back to the eager dispatcher for the wait below. The pending launch finishes on Room's
+            // own context, which virtual time cannot advance: left on StandardTestDispatcher the
+            // await never resumes and runTest fails after a minute with "did not run to completion".
+            viewModels.installMain(UnconfinedTestDispatcher(testScheduler))
+
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.seasonFindings.none { f -> f.seasonNumber == 1 }
+                } as TVShowDetailUiState.Ready
+            assertTrue(state.addingSeasonNumbers.isEmpty())
+            assertEquals(
+                3,
+                db.episodeDao().getByMediaIdAndSeason(showId, 1).size,
+                "season 1 must end up complete exactly once, not partially or doubly applied",
+            )
+        }
+
+    /** [TVShowDetailUiState.Ready.addingSeasonNumbers] as it stands right now, with no dispatch. */
+    private fun addingSeasonNumbersOf(viewModel: TVShowDetailViewModel): Set<Int> =
+        (viewModel.uiState.value as TVShowDetailUiState.Ready).addingSeasonNumbers
+
+    private companion object {
+        /**
+         * A show with two seasons and no episode payload trimmed out -- season 1 has 3 episodes,
+         * season 2 has 2. Paired with a show inserted with no local episodes at all, so both come
+         * back as findings: (1, 0, 3) and (2, 0, 2).
+         */
+        const val TWO_SEASON_SHOW = """
+            {"id":12345,"name":"Sample Show","number_of_seasons":2,"number_of_episodes":5,
+             "status":"Ended","in_production":false,
+             "seasons":[{"season_number":1,"episode_count":3,"name":"Season One"},
+                        {"season_number":2,"episode_count":2,"name":"Season Two"}],
+             "season/1":{"season_number":1,"name":"Season One","episodes":[
+               {"episode_number":1,"season_number":1,"name":"S1E1"},
+               {"episode_number":2,"season_number":1,"name":"S1E2"},
+               {"episode_number":3,"season_number":1,"name":"S1E3"}
+             ]},
+             "season/2":{"season_number":2,"name":"Season Two","episodes":[
+               {"episode_number":1,"season_number":2,"name":"S2E1"},
+               {"episode_number":2,"season_number":2,"name":"S2E2"}
+             ]}}
+        """
+
+        /**
+         * A show whose one season lists one more episode than
+         * [com.hub.media.features.tv.data.TVMetadataValidation.MAX_EPISODE_COUNT] allows -- the one
+         * real way to make [TVShowRepository.addMissingEpisodes] itself return a [Resource.Error].
+         * Built rather than written literally: 501 episode objects is not something to hand-type.
+         */
+        fun tooManyEpisodesShow(episodeCount: Int = 501): String {
+            val episodes =
+                (1..episodeCount).joinToString(",") { n ->
+                    """{"episode_number":$n,"season_number":1,"name":"Ep$n"}"""
+                }
+            return """
+                {"id":99999,"name":"Big Show","number_of_seasons":1,"number_of_episodes":$episodeCount,
+                 "status":"Ended","in_production":false,
+                 "seasons":[{"season_number":1,"episode_count":$episodeCount,"name":"Season One"}],
+                 "season/1":{"season_number":1,"name":"Season One","episodes":[$episodes]}}
+            """
+        }
+    }
 }
