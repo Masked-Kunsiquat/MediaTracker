@@ -475,6 +475,38 @@ class TVShowDetailViewModelTest {
             )
         }
 
+    /**
+     * The whole batch is reserved before the first season is applied, so no row is left tappable
+     * while "add all" is walking toward it -- an add-all that marked seasons busy one at a time
+     * invited a per-row tap on a season it was about to take itself.
+     */
+    @Test
+    fun addAllMissingEpisodes_marksEverySeasonBusyBeforeApplyingAnyOfThem() =
+        runTest {
+            val showId = insertShow(externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"))
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
+
+            // Paused Main, so the loop only enqueues: see the double-tap test below for why.
+            viewModels.installMain(StandardTestDispatcher(testScheduler))
+            viewModel.addAllMissingEpisodes()
+            runCurrent()
+
+            assertEquals(
+                setOf(1, 2),
+                addingSeasonNumbersOf(viewModel),
+                "every season in the batch must be busy before the first one is applied",
+            )
+
+            viewModels.installMain(UnconfinedTestDispatcher(testScheduler))
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.seasonFindings.isEmpty()
+                } as TVShowDetailUiState.Ready
+            assertTrue(state.addingSeasonNumbers.isEmpty(), "the busy set must be empty once the batch ends")
+        }
+
     @Test
     fun addMissingEpisodes_secondTapWhileTheFirstIsStillEnqueued_isIgnored() =
         runTest {

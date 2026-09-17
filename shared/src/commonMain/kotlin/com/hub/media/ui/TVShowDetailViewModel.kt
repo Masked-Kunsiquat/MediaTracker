@@ -326,8 +326,13 @@ public class TVShowDetailViewModel(
 
         addingSeasonNumbers.value = addingSeasonNumbers.value + seasonNumber
         viewModelScope.launch {
-            addOneSeason(finding)
-            addingSeasonNumbers.value = addingSeasonNumbers.value - seasonNumber
+            // finally, matching MismatchReviewViewModel's busyKeys: a cancelled add must not leave a
+            // row disabled with nothing left to clear it.
+            try {
+                addOneSeason(finding)
+            } finally {
+                addingSeasonNumbers.value = addingSeasonNumbers.value - seasonNumber
+            }
         }
     }
 
@@ -336,18 +341,29 @@ public class TVShowDetailViewModel(
      * surfacing it -- a season that already succeeded before the failure stays applied and stays
      * dropped from [seasonFindings]; the ones after it are left for another attempt.
      *
-     * Guarded the same way [addMissingEpisodes] is: a season already being created individually, or
-     * a second "add all" tap while this one is still running, is ignored rather than doubled up.
+     * Every season is marked busy up front, not one at a time as the loop reaches it. Marking them
+     * individually left the rows this run had not reached yet still tappable, so a per-row Add could
+     * run against a season the loop was about to take -- harmless at the database
+     * ([com.hub.media.core.database.dao.TVWriteDao.insertMissingEpisodes] decides and inserts in one
+     * transaction, so the loser inserts nothing) but an affordance that invites work already under
+     * way. A second "add all" is ignored for the same reason.
      */
     public fun addAllMissingEpisodes() {
         if (addingSeasonNumbers.value.isNotEmpty()) return
+        val batch = seasonFindings.value.toList()
+        if (batch.isEmpty()) return
 
+        addingSeasonNumbers.value = batch.map { it.seasonNumber }.toSet()
         viewModelScope.launch {
-            for (finding in seasonFindings.value.toList()) {
-                addingSeasonNumbers.value = addingSeasonNumbers.value + finding.seasonNumber
-                val succeeded = addOneSeason(finding)
-                addingSeasonNumbers.value = addingSeasonNumbers.value - finding.seasonNumber
-                if (!succeeded) break
+            try {
+                for (finding in batch) {
+                    val succeeded = addOneSeason(finding)
+                    addingSeasonNumbers.value = addingSeasonNumbers.value - finding.seasonNumber
+                    if (!succeeded) break
+                }
+            } finally {
+                // Whatever the loop did or did not reach -- including a cancellation mid-season.
+                addingSeasonNumbers.value = emptySet()
             }
         }
     }
