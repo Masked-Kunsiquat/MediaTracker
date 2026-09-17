@@ -34,6 +34,7 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import org.junit.Assert.assertEquals
@@ -110,6 +111,8 @@ class TVShowDetailScreenTest {
         canRefreshMetadata: Boolean = false,
         isRefreshingMetadata: Boolean = false,
         synopsis: String? = null,
+        seasonFindings: List<SeasonCountMismatch> = emptyList(),
+        addingSeasonNumbers: Set<Int> = emptySet(),
     ): TVShowDetailUiState.Ready {
         val episodes = (1..episodeCount).map { episode(seasonNumber, it) }
         return TVShowDetailUiState.Ready(
@@ -121,6 +124,8 @@ class TVShowDetailScreenTest {
             errorMessage = errorMessage,
             canRefreshMetadata = canRefreshMetadata,
             isRefreshingMetadata = isRefreshingMetadata,
+            seasonFindings = seasonFindings,
+            addingSeasonNumbers = addingSeasonNumbers,
         )
     }
 
@@ -159,6 +164,8 @@ class TVShowDetailScreenTest {
         onErrorShown: () -> Unit = {},
         onNavigateBack: () -> Unit = {},
         onRefreshMetadata: () -> Unit = {},
+        onAddMissingEpisodes: (Int) -> Unit = {},
+        onAddAllMissingEpisodes: () -> Unit = {},
         // Pins the composable to a narrow-phone logical width instead of letting it fill this test
         // device's actual (much wider) screen. The #83 layout regression this test class guards
         // against only reproduces once the season header row is genuinely over its width budget --
@@ -189,6 +196,8 @@ class TVShowDetailScreenTest {
                                 onErrorShown = onErrorShown,
                                 onNavigateBack = onNavigateBack,
                                 onRefreshMetadata = onRefreshMetadata,
+                                onAddMissingEpisodes = onAddMissingEpisodes,
+                                onAddAllMissingEpisodes = onAddAllMissingEpisodes,
                             )
                         }
                     if (narrowWidth) {
@@ -605,14 +614,19 @@ class TVShowDetailScreenTest {
     }
 
     /** A show with no episode rows at all, which [readyState] cannot express: it always builds one season. */
-    private fun emptyShowState(totalSeasons: Int?) =
-        TVShowDetailUiState.Ready(
-            show = show(totalSeasons = totalSeasons),
-            seasons = emptyList(),
-            watchedEpisodes = 0,
-            totalEpisodes = 0,
-            isAbandoned = false,
-        )
+    private fun emptyShowState(
+        totalSeasons: Int?,
+        seasonFindings: List<SeasonCountMismatch> = emptyList(),
+        addingSeasonNumbers: Set<Int> = emptySet(),
+    ) = TVShowDetailUiState.Ready(
+        show = show(totalSeasons = totalSeasons),
+        seasons = emptyList(),
+        watchedEpisodes = 0,
+        totalEpisodes = 0,
+        isAbandoned = false,
+        seasonFindings = seasonFindings,
+        addingSeasonNumbers = addingSeasonNumbers,
+    )
 
     @Test
     fun coverImageHashNull_rendersNoPosterPlaceholder() {
@@ -621,6 +635,96 @@ class TVShowDetailScreenTest {
         setContent(readyState(episodeCount = 3))
 
         composeRule.onNodeWithText(TV_COVER_PLACEHOLDER_EMOJI).assertDoesNotExist()
+    }
+
+    // --- #167: the "seasons TMDB lists" section, fed by the last Refresh's findings ---
+
+    @Test
+    fun noFindings_rendersNoSection() {
+        setContent(readyState(episodeCount = 3))
+
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.tv_show_detail_season_findings_heading))
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun findings_renderOneRowEach_withTheSeasonAndCountsText() {
+        setContent(
+            emptyShowState(
+                totalSeasons = 6,
+                seasonFindings =
+                    listOf(
+                        SeasonCountMismatch(seasonNumber = 1, localEpisodes = 0, providerEpisodes = 10),
+                        SeasonCountMismatch(seasonNumber = 2, localEpisodes = 0, providerEpisodes = 13),
+                    ),
+            ),
+        )
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.tv_show_detail_season_findings_heading))
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithText(context.getString(R.string.tv_show_detail_season_finding_format, 1, 0, 10))
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithText(context.getString(R.string.tv_show_detail_season_finding_format, 2, 0, 13))
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun tappingAdd_invokesOnAddMissingEpisodes_withThatSeasonNumber() {
+        var captured: Int? = null
+        setContent(
+            emptyShowState(
+                totalSeasons = 1,
+                seasonFindings =
+                    listOf(SeasonCountMismatch(seasonNumber = 1, localEpisodes = 0, providerEpisodes = 10)),
+            ),
+            onAddMissingEpisodes = { captured = it },
+        )
+
+        val addLabel = context.getString(R.string.mismatch_review_add_all_format, 10)
+        composeRule.onNodeWithText(addLabel).performClick()
+
+        assertEquals(1, captured)
+    }
+
+    @Test
+    fun tappingAddAll_invokesOnAddAllMissingEpisodes() {
+        var calls = 0
+        setContent(
+            emptyShowState(
+                totalSeasons = 2,
+                seasonFindings =
+                    listOf(
+                        SeasonCountMismatch(seasonNumber = 1, localEpisodes = 0, providerEpisodes = 10),
+                        SeasonCountMismatch(seasonNumber = 2, localEpisodes = 0, providerEpisodes = 13),
+                    ),
+            ),
+            onAddAllMissingEpisodes = { calls++ },
+        )
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.tv_show_detail_add_all_season_findings))
+            .performClick()
+
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun busySeason_disablesItsAddButton() {
+        setContent(
+            emptyShowState(
+                totalSeasons = 1,
+                seasonFindings =
+                    listOf(SeasonCountMismatch(seasonNumber = 1, localEpisodes = 0, providerEpisodes = 10)),
+                addingSeasonNumbers = setOf(1),
+            ),
+        )
+
+        val addLabel = context.getString(R.string.mismatch_review_add_all_format, 10)
+        composeRule.onNodeWithText(addLabel).assertIsNotEnabled()
     }
 
     private companion object {

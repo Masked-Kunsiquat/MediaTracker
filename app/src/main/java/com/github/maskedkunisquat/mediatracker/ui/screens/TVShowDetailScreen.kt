@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +33,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -74,6 +76,7 @@ import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.SeasonGroup
@@ -107,6 +110,8 @@ fun TVShowDetailScreenRoute(
         onRemoveSeason = viewModel::removeSeason,
         onAbandonedChange = viewModel::setAbandoned,
         onRefreshMetadata = viewModel::refreshMetadata,
+        onAddMissingEpisodes = viewModel::addMissingEpisodes,
+        onAddAllMissingEpisodes = viewModel::addAllMissingEpisodes,
         onDelete = viewModel::deleteShow,
         onErrorShown = viewModel::consumeError,
         onNavigateBack = onNavigateBack,
@@ -129,6 +134,8 @@ fun TVShowDetailScreen(
     onRemoveSeason: (Int) -> Unit,
     onAbandonedChange: (Boolean) -> Unit,
     onRefreshMetadata: () -> Unit,
+    onAddMissingEpisodes: (Int) -> Unit,
+    onAddAllMissingEpisodes: () -> Unit,
     onDelete: () -> Unit,
     onErrorShown: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -484,6 +491,23 @@ fun TVShowDetailScreen(
                         )
                     }
 
+                    // Placed after the facts card and before the seasons list, so on an empty show
+                    // (#167) it sits directly above "No seasons yet" -- the invitation right beside
+                    // the emptiness it explains. Renders nothing when there is nothing to offer.
+                    // The item itself is conditional, not just its content: an item that renders
+                    // nothing still takes this LazyColumn's 8dp verticalArrangement spacing, which
+                    // moved every existing show golden by 8dp when it was emitted unconditionally.
+                    if (uiState.seasonFindings.isNotEmpty()) {
+                        item {
+                            SeasonFindingsSection(
+                                findings = uiState.seasonFindings,
+                                addingSeasonNumbers = uiState.addingSeasonNumbers,
+                                onAdd = onAddMissingEpisodes,
+                                onAddAll = onAddAllMissingEpisodes,
+                            )
+                        }
+                    }
+
                     if (uiState.seasons.isEmpty()) {
                         item {
                             Text(
@@ -531,15 +555,136 @@ fun TVShowDetailScreen(
                     }
 
                     item {
-                        Button(
-                            onClick = { showAddSeasonDialog = true },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(stringResource(R.string.tv_show_detail_add_season))
+                        // Outlined while the TMDB offer above is on screen: adding a season by hand is
+                        // still available, but two filled buttons would read as two primary choices.
+                        if (uiState.seasonFindings.isEmpty()) {
+                            Button(
+                                onClick = { showAddSeasonDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.tv_show_detail_add_season))
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { showAddSeasonDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.tv_show_detail_add_season))
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Seasons TMDB's last Refresh disagreed with the library about (#167) -- one row per
+ * [SeasonCountMismatch], each naming what it would add, plus a section-level "Add all". Renders
+ * nothing when [findings] is empty, which is the common case: this only ever has content right
+ * after a Refresh that found something.
+ *
+ * A single [LazyColumn] item rather than one per row, unlike the episode list above -- [findings]
+ * is bounded by how many seasons a show has, nowhere near the scale that list's laziness exists
+ * for.
+ */
+@Composable
+private fun SeasonFindingsSection(
+    findings: List<SeasonCountMismatch>,
+    addingSeasonNumbers: Set<Int>,
+    onAdd: (Int) -> Unit,
+    onAddAll: () -> Unit,
+) {
+    if (findings.isEmpty()) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.tv_show_detail_season_findings_heading),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            // Hidden rather than merely disabled when every finding is an over-count: there is
+            // nothing "Add all" could do, and a control that is always refused is exactly what
+            // canRefreshMetadata's own KDoc says to avoid.
+            if (findings.any { it.isUnderCount }) {
+                // The section's one filled action. Six filled per-row buttons under a text link read
+                // as six primary actions and no obvious way to take them all at once.
+                Button(onClick = onAddAll, enabled = addingSeasonNumbers.isEmpty()) {
+                    Text(stringResource(R.string.tv_show_detail_add_all_season_findings))
+                }
+            }
+        }
+        findings.forEach { finding ->
+            SeasonFindingRow(
+                finding = finding,
+                isBusy = finding.seasonNumber in addingSeasonNumbers,
+                onAdd = { onAdd(finding.seasonNumber) },
+            )
+        }
+    }
+}
+
+/**
+ * One [SeasonCountMismatch], worded like Review differences' own row (#123) so the two screens
+ * agree: an over-count gets [R.string.mismatch_review_over_count]'s sentence rather than a button
+ * that would create nothing, and an empty season's button says "Add all N" ([finding]'s
+ * [SeasonCountMismatch.isEmptySeason]) rather than "Add N missing" -- both reuse Review differences'
+ * exact strings.
+ */
+@Composable
+private fun SeasonFindingRow(
+    finding: SeasonCountMismatch,
+    isBusy: Boolean,
+    onAdd: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text =
+                stringResource(
+                    R.string.tv_show_detail_season_finding_format,
+                    finding.seasonNumber,
+                    finding.localEpisodes,
+                    finding.providerEpisodes,
+                ),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (finding.isUnderCount) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onAdd, enabled = !isBusy) {
+                    Text(
+                        stringResource(
+                            if (finding.isEmptySeason) {
+                                R.string.mismatch_review_add_all_format
+                            } else {
+                                R.string.mismatch_review_add_missing_format
+                            },
+                            finding.missingEpisodes,
+                        ),
+                    )
+                }
+                if (isBusy) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                }
+            }
+        } else {
+            Text(
+                text = stringResource(R.string.mismatch_review_over_count),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
