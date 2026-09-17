@@ -67,6 +67,7 @@ class TVShowDetailScreenTest {
         synopsis: String? = null,
         status: WatchStatus = WatchStatus.WATCHLIST,
         airingStatus: AiringStatus? = null,
+        totalSeasons: Int? = 1,
     ) = MediaWithDetails.TVShow(
         item =
             MediaItemEntity(
@@ -79,7 +80,13 @@ class TVShowDetailScreenTest {
                 coverImageHash = null,
                 synopsis = synopsis,
             ),
-        details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = status, airingStatus = airingStatus),
+        details =
+            TVDetailsEntity(
+                mediaId = id,
+                totalSeasons = totalSeasons,
+                status = status,
+                airingStatus = airingStatus,
+            ),
     )
 
     private fun episode(
@@ -553,8 +560,9 @@ class TVShowDetailScreenTest {
 
     @Test
     fun factsWithUnknownAiringData_omitFirstAiredAndAiring() {
-        // The fixture sets neither firstAirDate nor airingStatus, so those two facts are dropped;
-        // Seasons/Episodes are derived counts and always present.
+        // The fixture sets neither firstAirDate nor airingStatus, so those two facts are dropped.
+        // This show has episodes, so its derived Seasons/Episodes counts are both present -- see the
+        // #167 tests below for the show that has none.
         setContent(readyState(episodeCount = 4))
 
         composeRule
@@ -567,6 +575,44 @@ class TVShowDetailScreenTest {
             .onNodeWithText(context.getString(R.string.tv_show_detail_fact_episodes))
             .assertIsDisplayed()
     }
+
+    /**
+     * #167: a show nobody has quick-filled has no episode rows, so the derived season count is 0
+     * while the stored advisory count can say 6 -- which is how the sample library's The Expanse
+     * reads after a TMDB backfill. Showing the 0 made the screen look broken rather than empty.
+     */
+    @Test
+    fun showWithNoEpisodes_showsTheStoredSeasonCount_ratherThanZero() {
+        setContent(emptyShowState(totalSeasons = 6))
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.add_tv_show_seasons_section_label))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("6").assertIsDisplayed()
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.tv_show_detail_fact_episodes))
+            .assertCountEquals(0)
+    }
+
+    /** With no rows and no stored count either, the fact has nothing to say and is dropped. */
+    @Test
+    fun showWithNoEpisodesAndNoStoredCount_omitsTheSeasonsFact() {
+        setContent(emptyShowState(totalSeasons = null))
+
+        composeRule
+            .onAllNodesWithText(context.getString(R.string.add_tv_show_seasons_section_label))
+            .assertCountEquals(0)
+    }
+
+    /** A show with no episode rows at all, which [readyState] cannot express: it always builds one season. */
+    private fun emptyShowState(totalSeasons: Int?) =
+        TVShowDetailUiState.Ready(
+            show = show(totalSeasons = totalSeasons),
+            seasons = emptyList(),
+            watchedEpisodes = 0,
+            totalEpisodes = 0,
+            isAbandoned = false,
+        )
 
     @Test
     fun coverImageHashNull_rendersNoPosterPlaceholder() {
