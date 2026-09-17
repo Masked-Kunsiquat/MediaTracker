@@ -13,6 +13,7 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import org.junit.Rule
@@ -106,6 +107,62 @@ class TVShowDetailScreenGoldenTest {
         ) { Fixture() }
     }
 
+    /**
+     * #167's exact motivating state: a show with a TMDB-reported season count but no episode rows
+     * at all -- the sample library's The Expanse after a backfill, six seasons and no episodes. The
+     * facts card falls back to the stored count (#169) and the seasons-TMDB-lists section this issue
+     * adds is what fills the gap "No seasons yet" used to leave silent.
+     */
+    @Test
+    fun tvShowDetail_noEpisodesWithSeasonFindings() {
+        composeRule.captureGolden(
+            name = "tv-show-detail-no-episodes-with-findings",
+            alsoAssert = {
+                assertTextIsShown(
+                    "No Episodes Yet",
+                    "Seasons TMDB lists",
+                    "No seasons yet. Add one below to start tracking episodes.",
+                )
+            },
+        ) { EmptyShowWithFindingsFixture() }
+    }
+
+    @Composable
+    private fun EmptyShowWithFindingsFixture() {
+        TVShowDetailScreen(
+            coverStorageDir = NO_COVERS,
+            uiState =
+                TVShowDetailUiState.Ready(
+                    show = show(id = "show-3", title = "No Episodes Yet", totalSeasons = 6),
+                    seasons = emptyList(),
+                    watchedEpisodes = 0,
+                    totalEpisodes = 0,
+                    isAbandoned = false,
+                    canRefreshMetadata = true,
+                    seasonFindings =
+                        listOf(
+                            SeasonCountMismatch(seasonNumber = 1, localEpisodes = 0, providerEpisodes = 10),
+                            SeasonCountMismatch(seasonNumber = 2, localEpisodes = 0, providerEpisodes = 13),
+                            SeasonCountMismatch(seasonNumber = 3, localEpisodes = 0, providerEpisodes = 13),
+                            SeasonCountMismatch(seasonNumber = 4, localEpisodes = 0, providerEpisodes = 10),
+                            SeasonCountMismatch(seasonNumber = 5, localEpisodes = 0, providerEpisodes = 10),
+                            SeasonCountMismatch(seasonNumber = 6, localEpisodes = 0, providerEpisodes = 6),
+                        ),
+                ),
+            onEpisodeWatchedChange = { _, _ -> },
+            onSeasonWatchedChange = { _, _ -> },
+            onSetSeasonLength = { _, _ -> },
+            onRemoveSeason = {},
+            onAbandonedChange = {},
+            onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
+            onDelete = {},
+            onErrorShown = {},
+            onNavigateBack = {},
+        )
+    }
+
     @Composable
     private fun Fixture() {
         val episodes = (1..EPISODE_COUNT).map { episode(it) }
@@ -132,6 +189,8 @@ class TVShowDetailScreenGoldenTest {
             onRemoveSeason = {},
             onAbandonedChange = {},
             onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},
@@ -177,6 +236,8 @@ class TVShowDetailScreenGoldenTest {
             onRemoveSeason = {},
             onAbandonedChange = {},
             onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},
@@ -190,6 +251,7 @@ class TVShowDetailScreenGoldenTest {
         coverImageHash: String? = null,
         communityRating: Double? = null,
         synopsis: String? = null,
+        totalSeasons: Int? = 1,
     ) = MediaWithDetails.TVShow(
         item =
             MediaItemEntity(
@@ -203,7 +265,7 @@ class TVShowDetailScreenGoldenTest {
                 communityRating = communityRating,
                 synopsis = synopsis,
             ),
-        details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = WatchStatus.WATCHING),
+        details = TVDetailsEntity(mediaId = id, totalSeasons = totalSeasons, status = WatchStatus.WATCHING),
     )
 
     private fun episode(

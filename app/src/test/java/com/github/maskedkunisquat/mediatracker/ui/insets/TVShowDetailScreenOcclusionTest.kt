@@ -106,6 +106,8 @@ class TVShowDetailScreenOcclusionTest {
             onRemoveSeason = {},
             onAbandonedChange = {},
             onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},

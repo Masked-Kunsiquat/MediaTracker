@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A TV show's own screen now offers to create the seasons TMDB knows about.** Refreshing a show
+  you have never filled in used to end in a snackbar that named every season TMDB reports and then
+  faded, with no way to act on any of it — the show still read "0 seasons, 0 episodes" afterwards.
+  A "Seasons TMDB lists" section now stays on the screen instead, one row per season with an Add
+  button naming how many episodes it would create, and an Add all for the whole show. It also picks
+  up a show you have partly filled in but disagree with TMDB about, the same case Settings' Review
+  differences already covers, without leaving the show you are looking at.
+
 ## [0.21.0] - 2026-09-17
 
 Films, shows and books finally look like the same app.

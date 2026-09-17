@@ -112,6 +112,8 @@ class TVShowDetailRefreshActionTest {
                 onRemoveSeason = {},
                 onAbandonedChange = {},
                 onRefreshMetadata = onRefresh,
+                onAddMissingEpisodes = {},
+                onAddAllMissingEpisodes = {},
                 onDelete = {},
                 onErrorShown = {},
                 onNavigateBack = {},
