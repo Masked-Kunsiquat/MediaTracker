@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-17
+
+Films, shows and books finally look like the same app.
+
+Each detail screen was built on its own, one media type at a time, and it showed: three different
+headers, three ways of changing status, a title printed twice on books. They now share one header —
+artwork beside the title, the year, the catalogue's rating where there is one, and a single status
+control — with the synopsis underneath when one has been fetched. Books lose their tabs: progress,
+the reading timer, the details and the whole reading history now sit on one page.
+
+Two restore bugs are fixed, both found in review rather than by anyone losing data. Confirming a
+restore twice could move the freshly restored database over the backup of the one it replaced, and
+dismissing the confirmation while a restore ran could delete the file it was reading. Neither is
+possible now.
+
+Two smaller ones went with them: a season's ⋮ menu disappeared at a slightly larger system font,
+taking the only route to changing or removing that season with it, and a show with no episodes
+recorded yet claimed "Seasons 0" while its own record said six.
+
 ### Fixed
 
 - **A show with no episodes yet no longer reads "Seasons 0"** (#167). The detail screen counted the
