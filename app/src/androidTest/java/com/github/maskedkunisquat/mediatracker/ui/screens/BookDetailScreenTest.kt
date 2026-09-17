@@ -6,6 +6,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -535,7 +536,11 @@ class BookDetailScreenTest {
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
             .performClick()
-        composeRule.onNodeWithText(context.getString(R.string.refetch_cover_no_isbn)).performClick()
+        // Both halves: that the item is disabled, and that it does nothing. The click alone would pass
+        // for an item that was enabled but wired to nothing, which is not what this test's name claims.
+        val item = composeRule.onNodeWithText(context.getString(R.string.refetch_cover_no_isbn))
+        item.assertIsNotEnabled()
+        item.performClick()
 
         assertEquals("a disabled menu item must not invoke the callback", 0, refetches)
     }
