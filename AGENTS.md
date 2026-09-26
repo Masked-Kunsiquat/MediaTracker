@@ -4,6 +4,17 @@ This file serves as the strict architectural and coding guideline for AI agents 
 
 **Where planning lives.** `ROADMAP.md` holds *why and what*; the [project board](https://github.com/users/Masked-Kunsiquat/projects/12) holds *when* — `Priority`, `Kind` and `Blocked by` per open issue. Where the two disagree about what to pick up next, the board wins: ordering churns and prose is a poor medium for it. Do not add or maintain "suggested sequencing" tables inside issue bodies now that the board exists.
 
+**Where memory lives: Graphban, not your own notes.** This project runs a self-hosted [Graphban](https://github.com/asc-me/graphban) (MCP server `graphban`, project `mediatracker`, keys `MT-n`) as the shared memory for every agent, whatever its vendor. A private memory store (Claude Code's auto-memory, Gemini's, anything else) helps one agent and silently drifts from everyone else's, so it holds a pointer to this paragraph and nothing more.
+- **Start of session:** `register_agent`, then `heartbeat` at the interval it returns while you work. Orient with `get_context`, `get_backlog` and `search_memory`, and read an issue's item (`get_item_details`, tagged `gh-N`) before re-reading its GitHub thread. Item descriptions are dated, so confirm them against the code.
+- **What you learn:** a durable lesson goes to `add_memory` as a candidate for the owner to promote. What you learn about one issue goes on its item. Neither goes in a file only you will read.
+- **Finished work** moves to `review` with evidence. Only a gate-scoped attestation reaches `done` (see §6's `attest.py`).
+- **Graphban unreachable?** Read `.graphban-snapshot/` (gitignored, refreshed by `python scripts/graphban/snapshot.py`) and say in your summary that you worked from a snapshot. Never write the snapshot back; Graphban is the only place memory is written.
+- **PRDs cannot be deleted**, and closing one is irreversible. Draft a PRD with the owner before `create_prd`, never as a test.
+
+**Two rules that must survive any outage, so they live here rather than only in Graphban:**
+- **Never merge a PR, push a tag or publish a release without the owner's explicit go-ahead in that conversation.** A go-ahead for one release covers only that release.
+- **Never attest your own work, and never hold the gate key.** If one is pasted into a conversation, tell the owner to rotate it; do not use it.
+
 **Keeping this file true.** `CHANGELOG.md` and `ROADMAP.md` each have an update ritual (§8's changelog discipline; a ROADMAP edit per scheduling decision), and both have stayed accurate because of it. This file had none, and drifted for eight releases — it pointed at an `androidApp/` module that does not exist, mandated a verification command that skips the entire data layer, and recorded one frozen schema version out of five. Documentation that instructs an agent is more dangerous when stale than documentation that merely describes, because the agent obeys it.
 
 So: **update this file in the same commit as the change that invalidates it.** Concretely, that means a new top-level package or module (§6), a change to how tests are located or run (§7), a schema version bump (§8's ledger), a new external API or storage protocol (§4), or an approved new dependency (§5). If you find something here that contradicts the repo, fix it in that commit rather than working around it — a wrong line here misleads every future agent, not just you.
@@ -162,7 +173,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
       ├── ui/theme/           <-- MediaTrackerTheme, colour scheme, typography
       ├── ui/TestTags.kt      <-- testTag constants (see §7)
       └── ui/ViewModelFactories.kt   <-- bridges AppContainer to androidx ViewModel factories
-scripts/graphban/             <-- Graphban loaders: code graph (structure.json) and issue mirror
+scripts/graphban/             <-- Graphban: code graph, issue mirror, attestation, offline snapshot
 ```
 
 `scripts/graphban/code_graph.py` re-describes the repository to Graphban (usage in its docstring).

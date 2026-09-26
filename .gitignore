@@ -50,3 +50,7 @@ keystore.properties
 
 # Python bytecode from scripts/
 __pycache__/
+
+# Read-only local snapshot of Graphban memory (scripts/graphban/snapshot.py). Local fallback
+# only: it holds item context and lessons written for this machine, not for the public repo.
+/.graphban-snapshot/
