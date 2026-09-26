@@ -165,12 +165,16 @@ def structure():
 
 
 class Mcp:
-    def __init__(self):
+    def __init__(self, api_key=None):
+        """`api_key` replaces the key from .mcp.json (the URL is still read from there)."""
         cfg_path = os.path.join(ROOT, ".mcp.json")
         if not os.path.exists(cfg_path):
             sys.exit(".mcp.json not found: add the server with `claude mcp add ... graphban ...` first.")
         cfg = json.load(open(cfg_path, encoding="utf-8"))["mcpServers"]["graphban"]
         self.url, self.headers, self.session, self.next_id = cfg["url"], dict(cfg.get("headers", {})), None, 1
+        if api_key:
+            self.headers = {k: v for k, v in self.headers.items() if k.lower() != "x-api-key"}
+            self.headers["X-API-Key"] = api_key
         init = self.call("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                         "clientInfo": {"name": "mediatracker-code-graph", "version": "1"}})
         print("connected:", init["serverInfo"]["name"], init["serverInfo"].get("version", ""))

@@ -174,6 +174,11 @@ file-level summaries come from KDoc automatically, but package summaries are han
 Graphban, or the next sync puts it back. An item's description is written once and then curated
 by hand (why the issue is still open, what is decided) — the sync never overwrites it.
 
+`scripts/graphban/attest.py` writes attestation receipts by hand, as a named human. Graphban will
+not move an item to `done` without one, and only a gate-scoped key may write it. **An agent never
+runs this script or holds that key**: the point of the gate is that the proof comes from someone
+other than whoever did the work.
+
 **A screen larger than a file is split by region, not by layer.** `BookDetailScreen` reached 3,255
 lines and 45 composables before #81 broke it up, and the seams that worked were the ones a *user*
 would name: the details tab, the reading-history tab, the session dialogs, the formatting helpers,
