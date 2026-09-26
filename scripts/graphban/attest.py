@@ -16,9 +16,11 @@ Every item is shown with its predicates and needs a `y` before anything is writt
 attestation is your claim that you looked, so look. `--done` also moves each attested item to
 done; without it the receipt is written and the item stays where it is.
 
-The gate key comes from GRAPHBAN_GATE_KEY, or a hidden prompt if unset. It is never read from
+The gate key comes from, in order: GRAPHBAN_GATE_KEY; the 1Password reference in `--op-ref` /
+GRAPHBAN_GATE_KEY_REF / OP_REF below, read with `op read`; a hidden prompt. It is never read from
 .mcp.json (that holds the agent's key, which must not be the one attesting its own work) and never
-taken as an argument (argv lands in shell history). The server URL is read from .mcp.json.
+taken as an argument (argv lands in shell history). A 1Password reference is only a pointer, not a
+secret, and `op` asks the owner to authorise it. The server URL is read from .mcp.json.
 """
 
 import argparse
@@ -30,6 +32,24 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from code_graph import ROOT, Mcp  # noqa: E402
+
+OP_REF = "op://Private/graphban/MediaTracker/qzqqng3bon52r4k7nqif2jw6va"
+
+
+def gate_key(op_ref):
+    key = os.environ.get("GRAPHBAN_GATE_KEY", "").strip()
+    if key:
+        return key
+    ref = op_ref or os.environ.get("GRAPHBAN_GATE_KEY_REF", "").strip() or OP_REF
+    try:
+        out = subprocess.run(["op", "read", ref], capture_output=True, text=True)
+    except FileNotFoundError:
+        print("1Password CLI (`op`) not found; falling back to a prompt.")
+    else:
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+        print(f"`op read` failed ({out.stderr.strip()[:200] or 'no output'}); falling back to a prompt.")
+    return getpass.getpass("Graphban gate key (hidden): ").strip()
 
 
 def evidence_kinds(tools):
@@ -79,6 +99,7 @@ def main():
     ap.add_argument("--commit", help="commit the observation binds to (default: origin/main)")
     ap.add_argument("--done", action="store_true", help="also move each attested item to done")
     ap.add_argument("--dry-run", action="store_true", help="show the receipts; contact nothing")
+    ap.add_argument("--op-ref", help=f"1Password reference for the gate key (default: {OP_REF})")
     args = ap.parse_args()
 
     if args.adapter.strip().lower() in {"github-actions", "ci"}:
@@ -93,7 +114,7 @@ def main():
                               **({"status": "done"} if args.done else {})}, indent=2))
         return
 
-    key = os.environ.get("GRAPHBAN_GATE_KEY", "").strip() or getpass.getpass("Graphban gate key (hidden): ").strip()
+    key = gate_key(args.op_ref)
     if not key:
         sys.exit("no gate key given")
     mcp = Mcp(api_key=key)
