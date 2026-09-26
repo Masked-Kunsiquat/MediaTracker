@@ -292,7 +292,9 @@ public class TVShowDetailViewModel(
      * came from a real pass and remain true, so a transient network error should not blank them.
      */
     public fun refreshMetadata() {
-        if (isRefreshing.value) return
+        // Also refused while an add is running: a refresh replaces seasonFindings wholesale, and the
+        // add in flight is acting on an entry from the list being replaced.
+        if (isRefreshing.value || addingSeasonNumbers.value.isNotEmpty()) return
         isRefreshing.value = true
         viewModelScope.launch {
             when (val result = backfillUseCase.execute(showId)) {
@@ -321,7 +323,7 @@ public class TVShowDetailViewModel(
      * [MismatchReviewViewModel.addMissingEpisodes]'s `busyKeys` guard is -- see that function's KDoc.
      */
     public fun addMissingEpisodes(seasonNumber: Int) {
-        if (seasonNumber in addingSeasonNumbers.value) return
+        if (isRefreshing.value || seasonNumber in addingSeasonNumbers.value) return
         val finding = seasonFindings.value.firstOrNull { it.seasonNumber == seasonNumber } ?: return
 
         addingSeasonNumbers.value = addingSeasonNumbers.value + seasonNumber
@@ -349,8 +351,12 @@ public class TVShowDetailViewModel(
      * way. A second "add all" is ignored for the same reason.
      */
     public fun addAllMissingEpisodes() {
-        if (addingSeasonNumbers.value.isNotEmpty()) return
-        val batch = seasonFindings.value.toList()
+        if (isRefreshing.value || addingSeasonNumbers.value.isNotEmpty()) return
+        // Under-count only. An over-count season -- more episodes held than TMDB lists -- has no Add
+        // button of its own and nothing to create: passing it to addOneSeason would insert nothing,
+        // report success, and silently drop an informational row. ReconcileMismatchesUseCase refuses
+        // the same case outright rather than calling the repository.
+        val batch = seasonFindings.value.filter { it.isUnderCount }
         if (batch.isEmpty()) return
 
         addingSeasonNumbers.value = batch.map { it.seasonNumber }.toSet()

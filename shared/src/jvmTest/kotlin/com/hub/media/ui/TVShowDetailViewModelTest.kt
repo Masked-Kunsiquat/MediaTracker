@@ -476,6 +476,47 @@ class TVShowDetailViewModelTest {
         }
 
     /**
+     * "Add all" takes only the seasons it offers an Add for. An over-count season -- more episodes
+     * held than TMDB lists -- has no button of its own, and nothing to create: handing it to the
+     * repository would insert nothing, report success, and drop an informational row off the screen.
+     */
+    @Test
+    fun addAllMissingEpisodes_skipsOverCountSeasons_andLeavesTheirFindings() =
+        runTest {
+            // Season 2 holds five locally against TMDB's two; season 1 holds none against three.
+            val showId =
+                insertShow(
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"),
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 2, episodeCount = 5)),
+                )
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
+
+            viewModel.addAllMissingEpisodes()
+
+            // Waits for the batch to *finish*, not for a size of 1: processing both seasons passes
+            // through size 1 on its way to 0, so a size check alone passes against the old behaviour.
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready &&
+                        it.addingSeasonNumbers.isEmpty() &&
+                        it.seasonFindings.none { finding -> finding.seasonNumber == 1 }
+                } as TVShowDetailUiState.Ready
+            assertEquals(
+                listOf(2),
+                state.seasonFindings.map { it.seasonNumber },
+                "the over-count season must stay on screen as the informational row it is",
+            )
+            assertEquals(3, db.episodeDao().getByMediaIdAndSeason(showId, 1).size, "season 1 grows to TMDB's three")
+            assertEquals(
+                5,
+                db.episodeDao().getByMediaIdAndSeason(showId, 2).size,
+                "season 2 must keep every episode it already held",
+            )
+        }
+
+    /**
      * The whole batch is reserved before the first season is applied, so no row is left tappable
      * while "add all" is walking toward it -- an add-all that marked seasons busy one at a time
      * invited a per-row tap on a season it was about to take itself.

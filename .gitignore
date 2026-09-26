@@ -43,3 +43,7 @@ keystore.properties
 # rather than the directory itself, because git cannot re-include a file under an excluded one.
 /private-data/*
 !/private-data/README.md
+
+# Project-scoped MCP server config. `claude mcp add --header` writes credentials into it in
+# plain text, so it stays local rather than riding along on an over-broad `git add`.
+/.mcp.json
