@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package layer from hand-written summaries in `structure.json`, and every Kotlin file with its
   KDoc summary, imports and tests. It reads credentials from `.mcp.json`, which is now gitignored
   because `claude mcp add --header` writes the API key into it in plain text.
+- `scripts/graphban/issues.py` mirrors open GitHub issues into Graphban as items, one way, with
+  the project board's priority, kind and blocker. Re-running it updates status and fields but never
+  overwrites an item's hand-written description.
 
 ## [0.21.0] - 2026-09-17
 
