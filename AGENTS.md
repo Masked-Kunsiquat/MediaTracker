@@ -162,7 +162,22 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
       ├── ui/theme/           <-- MediaTrackerTheme, colour scheme, typography
       ├── ui/TestTags.kt      <-- testTag constants (see §7)
       └── ui/ViewModelFactories.kt   <-- bridges AppContainer to androidx ViewModel factories
+scripts/graphban/             <-- Graphban loaders: code graph (structure.json) and issue mirror
 ```
+
+`scripts/graphban/code_graph.py` re-describes the repository to Graphban (usage in its docstring).
+When you add or repurpose a package, update its entry in `structure.json` in the same commit —
+file-level summaries come from KDoc automatically, but package summaries are hand-written.
+
+`scripts/graphban/issues.py` mirrors open GitHub issues into Graphban one way, as items tagged
+`gh-N`. GitHub and the board stay authoritative: fix a wrong priority or blocker there, not in
+Graphban, or the next sync puts it back. An item's description is written once and then curated
+by hand (why the issue is still open, what is decided) — the sync never overwrites it.
+
+`scripts/graphban/attest.py` writes attestation receipts by hand, as a named human. Graphban will
+not move an item to `done` without one, and only a gate-scoped key may write it. **An agent never
+runs this script or holds that key**: the point of the gate is that the proof comes from someone
+other than whoever did the work.
 
 **A screen larger than a file is split by region, not by layer.** `BookDetailScreen` reached 3,255
 lines and 45 composables before #81 broke it up, and the seams that worked were the ones a *user*

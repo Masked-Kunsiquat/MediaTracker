@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- `scripts/graphban/code_graph.py` describes the repository to Graphban as a code graph: the
+  package layer from hand-written summaries in `structure.json`, and every Kotlin file with its
+  KDoc summary, imports and tests. It reads credentials from `.mcp.json`, which is now gitignored
+  because `claude mcp add --header` writes the API key into it in plain text.
+- `scripts/graphban/issues.py` mirrors open GitHub issues into Graphban as items, one way, with
+  the project board's priority, kind and blocker. Re-running it updates status and fields but never
+  overwrites an item's hand-written description.
+- `scripts/graphban/attest.py` lets a person attest Graphban items by hand with a gate-scoped key,
+  confirming each item before anything is written. The key comes from an environment variable or a
+  hidden prompt, never from `.mcp.json` or the command line.
+
 ## [0.21.0] - 2026-09-17
 
 Films, shows and books finally look like the same app.
