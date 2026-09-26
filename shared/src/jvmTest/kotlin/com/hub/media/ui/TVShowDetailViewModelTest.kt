@@ -476,6 +476,43 @@ class TVShowDetailViewModelTest {
         }
 
     /**
+     * A single-season add refuses an over-count finding, the same guard "add all" applies: the row
+     * has no Add button, and handing it to the repository would drop an informational row.
+     */
+    @Test
+    fun addMissingEpisodes_refusesAnOverCountSeason_andLeavesItsFinding() =
+        runTest {
+            // Season 2 holds five locally against TMDB's two; season 1 holds none against three.
+            val showId =
+                insertShow(
+                    externalIdentifiers = listOf(IdentifierProvider.TMDB to "12345"),
+                    seasons = listOf(SeasonQuickFill(seasonNumber = 2, episodeCount = 5)),
+                )
+            val viewModel = readyViewModel(showId, mockBackfillUseCase())
+            viewModel.refreshMetadata()
+            viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
+
+            viewModel.addMissingEpisodes(2)
+            // A real add queued behind it: once season 1's has finished, an unguarded season-2 add
+            // launched first would have finished too and dropped its finding.
+            viewModel.addMissingEpisodes(1)
+
+            val state =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready &&
+                        it.addingSeasonNumbers.isEmpty() &&
+                        it.seasonFindings.none { finding -> finding.seasonNumber == 1 }
+                } as TVShowDetailUiState.Ready
+            assertEquals(
+                listOf(2),
+                state.seasonFindings.map { it.seasonNumber },
+                "the over-count season must stay on screen as the informational row it is",
+            )
+            assertEquals(3, db.episodeDao().getByMediaIdAndSeason(showId, 1).size, "season 1's add still ran")
+            assertEquals(5, db.episodeDao().getByMediaIdAndSeason(showId, 2).size, "season 2 keeps all it held")
+        }
+
+    /**
      * "Add all" takes only the seasons it offers an Add for. An over-count season -- more episodes
      * held than TMDB lists -- has no button of its own, and nothing to create: handing it to the
      * repository would insert nothing, report success, and drop an informational row off the screen.

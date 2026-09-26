@@ -324,7 +324,10 @@ public class TVShowDetailViewModel(
      */
     public fun addMissingEpisodes(seasonNumber: Int) {
         if (isRefreshing.value || seasonNumber in addingSeasonNumbers.value) return
-        val finding = seasonFindings.value.firstOrNull { it.seasonNumber == seasonNumber } ?: return
+        // Under-count only, like addAllMissingEpisodes: an over-count row has no Add button, and
+        // ReconcileMismatchesUseCase refuses the same case rather than calling the repository.
+        val finding =
+            seasonFindings.value.firstOrNull { it.seasonNumber == seasonNumber && it.isUnderCount } ?: return
 
         addingSeasonNumbers.value = addingSeasonNumbers.value + seasonNumber
         viewModelScope.launch {
