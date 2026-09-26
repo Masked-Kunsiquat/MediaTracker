@@ -162,7 +162,12 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
       ├── ui/theme/           <-- MediaTrackerTheme, colour scheme, typography
       ├── ui/TestTags.kt      <-- testTag constants (see §7)
       └── ui/ViewModelFactories.kt   <-- bridges AppContainer to androidx ViewModel factories
+scripts/graphban/             <-- Graphban code-graph loader; package summaries in structure.json
 ```
+
+`scripts/graphban/code_graph.py` re-describes the repository to Graphban (usage in its docstring).
+When you add or repurpose a package, update its entry in `structure.json` in the same commit —
+file-level summaries come from KDoc automatically, but package summaries are hand-written.
 
 **A screen larger than a file is split by region, not by layer.** `BookDetailScreen` reached 3,255
 lines and 45 composables before #81 broke it up, and the seams that worked were the ones a *user*
