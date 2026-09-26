@@ -17,7 +17,9 @@ the point of the mirror is the context written there (why the issue is still ope
 decided, what is left), and a re-sync must never overwrite it.
 
 Status: an open PR referencing `#N` -> review; board "In Progress" -> in_progress; board
-priority Now -> next; otherwise backlog. A mirrored issue that has since closed -> done.
+priority Now -> next; otherwise backlog. A mirrored issue that has since closed is moved to done
+if Graphban allows it; otherwise (no attestation yet, the normal case) it is listed for a human
+to attest with attest.py rather than failing the sync.
 
 Needs the `gh` CLI (with the `project` scope, for the board) and the `graphban` entry in
 .mcp.json, the same as code_graph.py.
@@ -162,13 +164,25 @@ def main():
             if not args.dry_run:
                 mcp.tool("update_item", {"id": have["id"], **patch})
 
+    awaiting = []
     for n, have in sorted(existing.items()):
         if n not in open_numbers and have.get("status") != "done":
             state = gh("issue", "view", str(n), "--json", "state")["state"]
-            if state == "CLOSED":
+            if state != "CLOSED":
+                continue
+            if args.dry_run:
                 print(f"done   #{n} ({have['id']}): closed on GitHub")
-                if not args.dry_run:
-                    mcp.tool("update_item", {"id": have["id"], "status": "done"})
+                continue
+            # Graphban refuses `done` without a gate-scoped attestation, which this script's key must
+            # never hold. A refusal is expected, not fatal: list the item for a human to attest.
+            result = mcp.call("tools/call", {"name": "update_item",
+                                             "arguments": {"id": have["id"], "status": "done"}})
+            if result.get("isError"):
+                awaiting.append(f"#{n} ({have['id']})")
+            else:
+                print(f"done   #{n} ({have['id']}): closed on GitHub")
+    if awaiting:
+        print("closed on GitHub, awaiting attestation (scripts/graphban/attest.py): " + ", ".join(awaiting))
 
 
 if __name__ == "__main__":
