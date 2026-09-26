@@ -47,3 +47,6 @@ keystore.properties
 # Project-scoped MCP server config. `claude mcp add --header` writes credentials into it in
 # plain text, so it stays local rather than riding along on an over-broad `git add`.
 /.mcp.json
+
+# Python bytecode from scripts/
+__pycache__/

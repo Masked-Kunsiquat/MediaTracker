@@ -1,0 +1,919 @@
+{
+  "nodes": [
+    {
+      "path": ".editorconfig",
+      "kind": "config",
+      "name": ".editorconfig",
+      "summary": "ktlint's only configuration: 120-column limit, every disabled rule commented with its reason, Composable-scoped function-naming."
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "kind": "config",
+      "name": "Dependabot",
+      "summary": "Weekly grouped updates for SHA-pinned GitHub Actions."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "kind": "config",
+      "name": "CI workflow",
+      "summary": "GitHub Actions CI. Six required checks matched by job name: Unit tests and debug build, Linting, Secret scan (gitleaks over full history), Changelog check, Room schema check, Compose IME insets. Actions pinned to full commit SHAs. Renaming a job silently blocks every PR."
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "doc",
+      "name": "AGENTS.md",
+      "summary": "Binding architecture and process rules for agents: tech stack, edition-shaped book schema, API rate/quota rules (Open Library, TMDB), coding and dependency standards, directory blueprint, test lanes and the verification command, CI required checks, versioning, release ritual, and the frozen Room schema ledger. Must be updated in the same commit as any change that invalidates it."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "kind": "doc",
+      "name": "CHANGELOG.md",
+      "summary": "Keep a Changelog history; every PR touching shared/ or app/src/main must add to [Unreleased] (CI-enforced). Bundled into the app and rendered by the in-app What's new viewer; `### Internal` sections are hidden from users."
+    },
+    {
+      "path": "README.md",
+      "kind": "doc",
+      "name": "README.md",
+      "summary": "Project introduction for the local-first personal media tracker (books, movies, TV)."
+    },
+    {
+      "path": "ROADMAP.md",
+      "kind": "doc",
+      "name": "ROADMAP.md",
+      "summary": "The why and what of planned work, organised as numbered Tasks and Phases. Ordering and priority live on the GitHub project board instead, which wins when the two disagree."
+    },
+    {
+      "path": "app",
+      "kind": "module",
+      "name": ":app",
+      "lang": "kotlin",
+      "summary": "Android application module: Jetpack Compose screens, navigation, theme, inset helpers and the MainActivity/MediaTrackerApplication entry points. Thin UI over :shared ViewModels via ViewModelFactories. Hosts the Robolectric occlusion lane and Roborazzi screenshot goldens (app/src/test) and the device-only instrumented suite (app/src/androidTest)."
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "kind": "module",
+      "name": ":app build",
+      "summary": "Android app build: version from the catalog, Compose, Robolectric/Roborazzi test deps, seedDebugDevice task, ktlint generated-code filter, changelog asset copy."
+    },
+    {
+      "path": "app/src/androidTest",
+      "kind": "module",
+      "name": "app androidTest (instrumented)",
+      "lang": "kotlin",
+      "summary": "Device-only instrumented Compose tests run by :app:connectedDebugAndroidTest: stateless screen tests with fake callbacks, MainActivity route smoke tests (SettingsNavigationTest), and SampleDataSeedTest. Not in CI; uninstalls the app when done. The only thing that compiles this source set."
+    },
+    {
+      "path": "app/src/main",
+      "kind": "module",
+      "name": "app main",
+      "lang": "kotlin",
+      "summary": "Production source of :app (package com.github.maskedkunisquat.mediatracker): entry points, export file I/O, ui/screens, ui/components, ui/navigation, ui/theme, ui/insets, ui/text, TestTags and ViewModelFactories."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker",
+      "kind": "module",
+      "name": "app root package",
+      "lang": "kotlin",
+      "summary": "MainActivity (composition root, testTagsAsResourceId), MediaTrackerApplication (builds AppContainer, opens Room) and AppRestart."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/export",
+      "kind": "module",
+      "name": "app export",
+      "lang": "kotlin",
+      "summary": "Android file I/O for portability: CSV file reader/writer and .sqlite database file I/O via the system file picker."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "kind": "module",
+      "name": "app ui",
+      "lang": "kotlin",
+      "summary": "TestTags (testTag constants, never string literals) and ViewModelFactories bridging AppContainer to androidx ViewModel factories."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/components",
+      "kind": "module",
+      "name": "ui/components",
+      "lang": "kotlin",
+      "summary": "Composables shared across screens: cover image, detail header, detail progress card and status display."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/insets",
+      "kind": "module",
+      "name": "ui/insets",
+      "lang": "kotlin",
+      "summary": "Window-inset padding helpers (PaddingValues arithmetic) behind the IME/safe-drawing fixes the occlusion lane guards."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/navigation",
+      "kind": "module",
+      "name": "ui/navigation",
+      "lang": "kotlin",
+      "summary": "AppNavigation NavHost and NavRoutes definitions; routes hand stateless screens their real callbacks."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/screens",
+      "kind": "module",
+      "name": "ui/screens",
+      "lang": "kotlin",
+      "summary": "Compose screens: library, add book/movie/TV, book/movie/TV detail, edit book, settings, backup/restore, changelog, logs, about, stats. Screens larger than a file are split by user-visible region (e.g. BookDetailsTab, BookReadingHistoryTab, BookSessionDialogs). Stateless screen composables take state and emit events."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/text",
+      "kind": "module",
+      "name": "ui/text",
+      "lang": "kotlin",
+      "summary": "Numeric input filtering and book unit display formatting."
+    },
+    {
+      "path": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/theme",
+      "kind": "module",
+      "name": "ui/theme",
+      "lang": "kotlin",
+      "summary": "MediaTrackerTheme: colour scheme, typography, dynamic colour toggle (disabled in goldens)."
+    },
+    {
+      "path": "app/src/test",
+      "kind": "module",
+      "name": "app test (Robolectric)",
+      "lang": "kotlin",
+      "summary": "Gated Robolectric lane run by :app:testDebugUnitTest / :app:verifyRoborazziDebug: IME occlusion geometry tests (ui/insets, Occlusion.kt), stateless screen tests, and Roborazzi screenshot goldens (ui/goldens) whose PNGs live in app/src/test/screenshots. Config pinned in robolectric.properties."
+    },
+    {
+      "path": "app/src/test/resources/robolectric.properties",
+      "kind": "config",
+      "name": "robolectric.properties",
+      "summary": "Pins SDK, screen size and a stub Application for the Robolectric lane; the real MediaTrackerApplication opens Room in onCreate and races the test."
+    },
+    {
+      "path": "build.gradle.kts",
+      "kind": "module",
+      "name": "root build",
+      "summary": "Root Gradle build: plugin declarations shared by both modules."
+    },
+    {
+      "path": "docs/sample-data",
+      "kind": "module",
+      "name": "sample data",
+      "summary": "CSV fixture library used to seed devices (seedDebugDevice) and instrumented tests (SampleDataSeedTest) through ImportDataUseCase."
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "kind": "config",
+      "name": "version catalog",
+      "summary": "Gradle version catalog; `[versions] app` is the single source of truth for the app version (versionCode derived as major*10000+minor*100+patch)."
+    },
+    {
+      "path": "settings.gradle.kts",
+      "kind": "module",
+      "name": "settings.gradle.kts",
+      "summary": "Declares the two Gradle modules, :shared and :app."
+    },
+    {
+      "path": "shared",
+      "kind": "module",
+      "name": ":shared",
+      "lang": "kotlin",
+      "summary": "Kotlin Multiplatform module holding all business logic: Room KMP database, Ktor network clients (Open Library, Google Books, TMDB), content-addressed cover storage, feature use cases (books, movies, TV, portability, stats, settings) and the shared ViewModels plus AppContainer manual DI. Targets Android and JVM; the JVM target exists so the data layer can be tested against a real bundled SQLite driver."
+    },
+    {
+      "path": "shared/build.gradle.kts",
+      "kind": "module",
+      "name": ":shared build",
+      "summary": "KMP targets (android, jvm), Room/KSP schema export to shared/schemas, and the ktlint filter that excludes generated KSP sources by absolute path."
+    },
+    {
+      "path": "shared/schemas",
+      "kind": "module",
+      "name": "Room schemas",
+      "summary": "Exported Room schema JSONs v1..v7. Every version shipped in a tag is frozen (CI-enforced); APP_DATABASE_VERSION must match the highest file."
+    },
+    {
+      "path": "shared/src/androidMain",
+      "kind": "module",
+      "name": "shared androidMain",
+      "lang": "kotlin",
+      "summary": "Android actuals for :shared's expect declarations: database factory and file ops, cover/log storage directories, LogBuffer, platform logger (Logcat) and the Android AppContainer constructor."
+    },
+    {
+      "path": "shared/src/androidUnitTest",
+      "kind": "module",
+      "name": "shared androidUnitTest",
+      "lang": "kotlin",
+      "summary": "Android-host unit tests for :shared androidMain actuals (stub android.jar, no Robolectric)."
+    },
+    {
+      "path": "shared/src/commonMain",
+      "kind": "module",
+      "name": "shared commonMain",
+      "lang": "kotlin",
+      "summary": "Platform-independent source set of :shared (package com.hub.media): core/ (database, network, storage, util), features/ (books, changelog, media, movies, tv, portability, settings, stats) and ui/ (ViewModels, UI state, AppContainer)."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "kind": "module",
+      "name": "core/database",
+      "lang": "kotlin",
+      "summary": "Room KMP database: AppDatabase (APP_DATABASE_VERSION=7), Migrations (loggedMigration wrapper), DatabaseFactory expect, MediaRepository, restore recovery, SQLite header sniffing and staged-database validation for .sqlite restore."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/database/converters",
+      "kind": "module",
+      "name": "core/database/converters",
+      "lang": "kotlin",
+      "summary": "Room type converters for enums and other non-primitive column types."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/database/dao",
+      "kind": "module",
+      "name": "core/database/dao",
+      "lang": "kotlin",
+      "summary": "Room DAOs, type-safe and Flow-based: per-table DAOs (media items, book/movie/TV details, episodes, reading sessions, external identifiers, app settings, stats) plus transactional write DAOs (BookWriteDao, MovieWriteDao, TVWriteDao, ImportWriteDao)."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/database/entities",
+      "kind": "module",
+      "name": "core/database/entities",
+      "lang": "kotlin",
+      "summary": "Room entities for the polymorphic media schema: media_items (UUID keys) with child book/movie/TV detail tables, episodes, reading_sessions, watch_logs, external_identifiers, app_settings; plus enums (MediaType, ReadingStatus, WatchStatus, BookFormat, AiringStatus, TrackingMode, IdentifierProvider)."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/network",
+      "kind": "module",
+      "name": "core/network",
+      "lang": "kotlin",
+      "summary": "Ktor client factory (installs the identifying User-Agent Open Library's rate tiers depend on), RequestPacer for per-crawl rate limiting, TMDB credential, date and image-URL helpers."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/storage",
+      "kind": "module",
+      "name": "core/storage",
+      "lang": "kotlin",
+      "summary": "Content-addressed cover storage (SHA-256 of raw bytes, saved as <hash>.jpg, deduplicated) and the persistent log store: LogBuffer, LogEntry codec, file log sink, per-file lock registry."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/core/util",
+      "kind": "module",
+      "name": "core/util",
+      "lang": "kotlin",
+      "summary": "Cross-cutting utilities: Resource/Result wrapper for network and DB calls, UUID IdGenerator, Logger facility (CompositeLogger, PlatformLogger expect), LruCache."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "kind": "module",
+      "name": "features/books",
+      "lang": "kotlin",
+      "summary": "Books feature: ISBN lookup (Open Library primary, Google Books fallback), title/author search, work-to-editions resolution, cover download/probe with Open Library quota limiter, bulk metadata backfill, reading sessions and the reading timer. Edition-shaped schema: work-level fields never go into edition columns."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/books/data",
+      "kind": "module",
+      "name": "books/data",
+      "lang": "kotlin",
+      "summary": "BookRepository and ReadingSessionRepository over the Room DAOs."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/books/domain",
+      "kind": "module",
+      "name": "books/domain",
+      "lang": "kotlin",
+      "summary": "Book use cases: AddBookByIsbn (records edition and OPEN_LIBRARY_WORK keys), BulkBackfill, LogReadingSession, RefetchCover, ResolveWorkToEditions, plus metadata and session validation."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/books/network",
+      "kind": "module",
+      "name": "books/network",
+      "lang": "kotlin",
+      "summary": "Book metadata/search providers: OpenLibraryClient (edition first, authors fall back to the work), OpenLibrarySearchClient, GoogleBooksClient, FallbackBookMetadataProvider, CoverImageDownloader, OpenLibraryIsbnCoverProbe and the shared per-device OpenLibraryCoverRateLimiter quota."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/books/network/dto",
+      "kind": "module",
+      "name": "books/network/dto",
+      "lang": "kotlin",
+      "summary": "kotlinx.serialization DTOs for Open Library (edition, search, work editions) and Google Books responses."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/books/timer",
+      "kind": "module",
+      "name": "books/timer",
+      "lang": "kotlin",
+      "summary": "ReadingTimer: coroutine/Flow-based reading session timer."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/changelog",
+      "kind": "module",
+      "name": "features/changelog",
+      "lang": "kotlin",
+      "summary": "Parses the bundled CHANGELOG.md for the in-app What's new viewer (omitting ### Internal sections) and its inline markup."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/media",
+      "kind": "module",
+      "name": "features/media",
+      "lang": "kotlin",
+      "summary": "Type-agnostic media features shared by every medium: search across providers, delete, metadata validation rules, bulk TMDB backfill and mismatch reconciliation."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/media/data",
+      "kind": "module",
+      "name": "media/data",
+      "lang": "kotlin",
+      "summary": "MediaWithDetails: a media item joined with its type-specific details."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/media/domain",
+      "kind": "module",
+      "name": "media/domain",
+      "lang": "kotlin",
+      "summary": "SearchMediaUseCase, DeleteMediaUseCase, BulkTmdbBackfillUseCase and BackfillRun, ReconcileMismatchesUseCase (acting on season/episode count mismatches), MediaMetadataValidation."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/media/network",
+      "kind": "module",
+      "name": "media/network",
+      "lang": "kotlin",
+      "summary": "MediaSearchProvider abstraction and MediaSearchResult model."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/movies",
+      "kind": "module",
+      "name": "features/movies",
+      "lang": "kotlin",
+      "summary": "Movies: MovieRepository, metadata validation and the TMDB movie mapper."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/movies/data",
+      "kind": "module",
+      "name": "movies/data",
+      "lang": "kotlin",
+      "summary": "MovieRepository and MovieMetadataValidation."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/movies/domain",
+      "kind": "module",
+      "name": "movies/domain",
+      "lang": "kotlin",
+      "summary": "TmdbMovieMapper: TMDB movie DTO to entities."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "kind": "module",
+      "name": "features/portability",
+      "lang": "kotlin",
+      "summary": "Data portability: CSV export/import (library, reading logs, episodes as its own CSV), .sqlite backup and restore, Goodreads import, duplicate policy and import summaries."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/portability/csv",
+      "kind": "module",
+      "name": "portability/csv",
+      "lang": "kotlin",
+      "summary": "CSV reader/parsing utilities, schema versioning, and exporter/importer pairs for library, reading logs and episodes."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/portability/data",
+      "kind": "module",
+      "name": "portability/data",
+      "lang": "kotlin",
+      "summary": "ImportWriteRepository: transactional writes for imports."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/portability/domain",
+      "kind": "module",
+      "name": "portability/domain",
+      "lang": "kotlin",
+      "summary": "ExportDataUseCase, ImportDataUseCase (takes CSV strings, no file picker), DatabaseBackupUseCase, RestoreDatabaseUseCase, DuplicatePolicy, ImportSummary, CsvExportBundle."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/portability/goodreads",
+      "kind": "module",
+      "name": "portability/goodreads",
+      "lang": "kotlin",
+      "summary": "Goodreads export CSV importer and table reader."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/settings/data",
+      "kind": "module",
+      "name": "settings/data",
+      "lang": "kotlin",
+      "summary": "Typed access to the app_settings key-value table: SettingsRepository, provider API keys, log verbosity, week start day, bulk/TMDB backfill state and persisted backfill mismatches."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/stats/data",
+      "kind": "module",
+      "name": "stats/data",
+      "lang": "kotlin",
+      "summary": "StatsRepository: analytics queries and aggregate Flows."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "kind": "module",
+      "name": "features/tv",
+      "lang": "kotlin",
+      "summary": "TV shows: seasons/episodes progression, TMDB client and mapping, per-show episode backfill, poster fetching."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/tv/data",
+      "kind": "module",
+      "name": "tv/data",
+      "lang": "kotlin",
+      "summary": "TVShowRepository and TVMetadataValidation."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/tv/domain",
+      "kind": "module",
+      "name": "tv/domain",
+      "lang": "kotlin",
+      "summary": "BackfillShowEpisodesUseCase (refresh a show from TMDB, reporting season findings), FetchPosterUseCase, TmdbShowMapper."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/tv/network",
+      "kind": "module",
+      "name": "tv/network",
+      "lang": "kotlin",
+      "summary": "TmdbClient for movies and TV. AppContainer keeps the paced instance private (for crawls) and exposes the unpaced one for interactive paths; metadata and images are paced separately."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/features/tv/network/dto",
+      "kind": "module",
+      "name": "tv/network/dto",
+      "lang": "kotlin",
+      "summary": "kotlinx.serialization DTOs for TMDB responses."
+    },
+    {
+      "path": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "kind": "module",
+      "name": "shared ui",
+      "lang": "kotlin",
+      "summary": "Shared ViewModels and UI state contracts for every screen (library, add book/movie/TV, detail screens, edit, settings, backup/restore, backfill and mismatch review, changelog, logs, stats) plus AppContainer, the manual DI root. Screen behaviour belongs here so it is unit-testable off-device."
+    },
+    {
+      "path": "shared/src/commonTest",
+      "kind": "module",
+      "name": "shared commonTest",
+      "lang": "kotlin",
+      "summary": "Pure-Kotlin tests that run on every :shared target. Must not touch Room: testAppDatabase() is deliberately invisible here, so a Room test in this set is a compile error."
+    },
+    {
+      "path": "shared/src/jvmMain",
+      "kind": "module",
+      "name": "shared jvmMain",
+      "lang": "kotlin",
+      "summary": "JVM actuals for :shared's expect declarations (database factory with bundled SQLite driver, file ops, storage dirs, logger). Exists so the data layer runs in :shared:jvmTest on the host."
+    },
+    {
+      "path": "shared/src/jvmTest",
+      "kind": "module",
+      "name": "shared jvmTest",
+      "lang": "kotlin",
+      "summary": "Authoritative data-layer test lane: every Room-touching test (DAOs, repositories, MigrationTest, backup/restore, most ViewModel tests) runs here against a real bundled SQLite driver. Run by :shared:jvmTest, which `./gradlew test` does NOT include."
+    }
+  ],
+  "edges": [
+    {
+      "src": "app",
+      "dst": "shared",
+      "type": "imports"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/navigation",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/screens",
+      "type": "imports"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/screens",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/components",
+      "type": "imports"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/screens",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/network",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/storage",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/network",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/media",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/movies",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "type": "imports"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "type": "imports"
+    },
+    {
+      "src": "app",
+      "dst": "app/build.gradle.kts",
+      "type": "owns"
+    },
+    {
+      "src": "app",
+      "dst": "app/src/androidTest",
+      "type": "owns"
+    },
+    {
+      "src": "app",
+      "dst": "app/src/main",
+      "type": "owns"
+    },
+    {
+      "src": "app",
+      "dst": "app/src/test",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/export",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/components",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/insets",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/navigation",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/screens",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/text",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui",
+      "dst": "app/src/main/java/com/github/maskedkunisquat/mediatracker/ui/theme",
+      "type": "owns"
+    },
+    {
+      "src": "app/src/test",
+      "dst": "app/src/test/resources/robolectric.properties",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/build.gradle.kts",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/schemas",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/src/androidMain",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/src/androidUnitTest",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/src/commonMain",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/src/commonTest",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/src/jvmMain",
+      "type": "owns"
+    },
+    {
+      "src": "shared",
+      "dst": "shared/src/jvmTest",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/network",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/storage",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/util",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/changelog",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/media",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/movies",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/settings/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/stats/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/ui",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database/converters",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database/dao",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/core/database",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/core/database/entities",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books/domain",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books/network",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books/timer",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/books/network",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/books/network/dto",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/media",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/media/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/media",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/media/domain",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/media",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/media/network",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/movies",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/movies/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/movies",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/movies/domain",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/portability/csv",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/portability/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/portability/domain",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/portability",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/portability/goodreads",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/tv/data",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/tv/domain",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/tv",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/tv/network",
+      "type": "owns"
+    },
+    {
+      "src": "shared/src/commonMain/kotlin/com/hub/media/features/tv/network",
+      "dst": "shared/src/commonMain/kotlin/com/hub/media/features/tv/network/dto",
+      "type": "owns"
+    },
+    {
+      "src": ".github/workflows/ci.yml",
+      "dst": "CHANGELOG.md",
+      "type": "references"
+    },
+    {
+      "src": ".github/workflows/ci.yml",
+      "dst": "shared/schemas",
+      "type": "references"
+    },
+    {
+      "src": "AGENTS.md",
+      "dst": ".editorconfig",
+      "type": "references"
+    },
+    {
+      "src": "AGENTS.md",
+      "dst": ".github/workflows/ci.yml",
+      "type": "references"
+    },
+    {
+      "src": "AGENTS.md",
+      "dst": "CHANGELOG.md",
+      "type": "references"
+    },
+    {
+      "src": "AGENTS.md",
+      "dst": "ROADMAP.md",
+      "type": "references"
+    },
+    {
+      "src": "AGENTS.md",
+      "dst": "gradle/libs.versions.toml",
+      "type": "references"
+    },
+    {
+      "src": "AGENTS.md",
+      "dst": "shared/schemas",
+      "type": "references"
+    },
+    {
+      "src": "app/build.gradle.kts",
+      "dst": "CHANGELOG.md",
+      "type": "references"
+    },
+    {
+      "src": "app/build.gradle.kts",
+      "dst": "docs/sample-data",
+      "type": "references"
+    },
+    {
+      "src": "app/build.gradle.kts",
+      "dst": "gradle/libs.versions.toml",
+      "type": "references"
+    },
+    {
+      "src": "settings.gradle.kts",
+      "dst": "app",
+      "type": "references"
+    },
+    {
+      "src": "settings.gradle.kts",
+      "dst": "shared",
+      "type": "references"
+    },
+    {
+      "src": "app/src/main",
+      "dst": "app/src/androidTest",
+      "type": "tested_by"
+    },
+    {
+      "src": "app/src/main",
+      "dst": "app/src/test",
+      "type": "tested_by"
+    },
+    {
+      "src": "shared/src/androidMain",
+      "dst": "shared/src/androidUnitTest",
+      "type": "tested_by"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/commonTest",
+      "type": "tested_by"
+    },
+    {
+      "src": "shared/src/commonMain",
+      "dst": "shared/src/jvmTest",
+      "type": "tested_by"
+    }
+  ]
+}
