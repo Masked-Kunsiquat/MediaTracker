@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- `scripts/graphban/code_graph.py` describes the repository to Graphban as a code graph: the
+  package layer from hand-written summaries in `structure.json`, and every Kotlin file with its
+  KDoc summary, imports and tests. It reads credentials from `.mcp.json`, which is now gitignored
+  because `claude mcp add --header` writes the API key into it in plain text.
+
 ## [0.21.0] - 2026-09-17
 
 Films, shows and books finally look like the same app.
