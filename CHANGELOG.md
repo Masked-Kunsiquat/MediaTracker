@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-27
+
 ### Added
 
 - **A TV show's own screen now offers to create the seasons TMDB knows about.** Refreshing a show
@@ -29,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the project board's priority, kind and blocker. Re-running it updates status and fields but never
   overwrites an item's hand-written description.
 - `scripts/graphban/attest.py` lets a person attest Graphban items by hand with a gate-scoped key,
-  confirming each item before anything is written. The key comes from an environment variable or a
-  hidden prompt, never from `.mcp.json` or the command line.
+  confirming each item before anything is written. The key comes from an environment variable,
+  1Password (`op read`) or a hidden prompt, never from `.mcp.json` or the command line.
 - AGENTS.md now makes Graphban the shared memory for every agent, with private memory stores
   reduced to a pointer, and keeps the two rules that must survive an outage (no merge or release
   without the owner's go-ahead; never attest your own work) in the file itself.
