@@ -37,8 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/graphban/snapshot.py` writes a gitignored, read-only copy of Graphban's lessons and open
   items to `.graphban-snapshot/`, to read from when Graphban is unreachable.
 - Agents now report, at the end of each slice of work, which Graphban lessons caught a problem,
-  missed one or were contradicted. `scripts/graphban/record_outcomes.py` records those tables with
-  the owner's login token, read from 1Password or a hidden prompt, never from a file in the repo.
+  missed one or were contradicted. `scripts/graphban/record_outcomes.py` records those tables as
+  the owner, signing in fresh each run with the email and password from 1Password (login tokens
+  are short-lived, so a stored one goes stale), never from a file in the repo.
 
 ## [0.21.0] - 2026-09-17
 

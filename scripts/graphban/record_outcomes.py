@@ -19,14 +19,16 @@ header row or a "-" outcome) are listed as skipped, never guessed.
 
 The login token (JWT), first match wins:
   1. the GRAPHBAN_JWT environment variable;
-  2. a 1Password reference read with `op read`: --op-ref, else the
-     GRAPHBAN_JWT_REF environment variable, else OP_REF below;
-  3. a hidden prompt.
-There is deliberately no .env file: this repository is public and does not
-gitignore `.env`, so a pasted token would be one `git add` from being
-published. Login tokens expire: if the token is refused (HTTP 401) you are
-prompted once for a fresh one; update the 1Password item if you keep it
-there. The token is never printed, logged or written by this script.
+  2. a fresh sign-in (POST /api/auth/login) with the email and password read
+     from 1Password with `op read` (--op-email / --op-password, else
+     GRAPHBAN_EMAIL_REF / GRAPHBAN_PASSWORD_REF, else OP_EMAIL / OP_PASSWORD below);
+  3. a hidden prompt for a token.
+A token is never stored: access tokens are short-lived (the web UI renews its
+own through /api/auth/refresh), so a saved one goes stale; signing in each run
+does not. There is deliberately no .env file either: this repository is public
+and does not gitignore `.env`. If a token is refused (HTTP 401) you are
+prompted once for a fresh one. Neither the token nor the password is ever
+printed, logged or written by this script.
 
 To find the token: open the Graphban UI, DevTools -> Network, click any /api/
 request, and copy the Authorization header value after "Bearer ".
@@ -60,8 +62,9 @@ ROOT = Path(__file__).resolve().parents[2]
 FALLBACK_URL = "http://10.0.0.27:8080"
 # The lesson lookup requires ?project_id=; the outcome POST does not.
 DEFAULT_PROJECT = "mediatracker"
-# A pointer, not a secret: `op read` needs the owner to unlock 1Password before it yields anything.
-OP_REF = "op://Private/graphban/JWT Token"
+# Pointers, not secrets: `op read` needs the owner to unlock 1Password before it yields anything.
+OP_EMAIL = "op://Private/graphban/username"
+OP_PASSWORD = "op://Private/graphban/password"
 
 KINDS = {
     "catch": "caught", "caught": "caught",
@@ -102,17 +105,21 @@ def call(url: str, token: str, method: str, path: str, body: dict | None = None)
     req = urllib.request.Request(
         url.rstrip("/") + path,
         data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})},
         method=method,
     )
+
+    def scrub(text: str) -> str:
+        # Guarded: with no token (the sign-in call), replace("", ...) would splice *** everywhere.
+        return text.replace(token, "***") if token else text
+
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             return resp.status, json.loads(resp.read().decode() or "null")
     except urllib.error.HTTPError as exc:
-        text = exc.read().decode("utf-8", "replace").replace(token, "***")
-        return exc.code, text
+        return exc.code, scrub(exc.read().decode("utf-8", "replace"))
     except (urllib.error.URLError, OSError) as exc:
-        return 0, str(exc).replace(token, "***")
+        return 0, scrub(str(exc))
 
 
 def existing_outcomes(lesson) -> set[tuple[str, str]]:
@@ -148,29 +155,48 @@ def interactive() -> bool:
 def prompt_token(reason: str) -> str:
     if not interactive():
         return ""
-    return getpass.getpass(f"{reason} Graphban JWT (input hidden): ").strip()
-
-
-def op_token(ref: str) -> str:
-    """Read the token from 1Password. Any failure falls through to the prompt."""
-    if not ref:
+    try:
+        return getpass.getpass(f"{reason} Graphban JWT (input hidden): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        # Windows' hidden prompt raises KeyboardInterrupt on Ctrl+C (and, in some consoles, on a
+        # Ctrl+V paste). Treat it as "no token" rather than dumping a traceback.
+        print()
         return ""
+
+
+def op_read(ref: str, what: str) -> str:
+    """One secret from 1Password, or '' (with the reason) so the caller can fall through."""
     try:
         out = subprocess.run(["op", "read", ref], capture_output=True, text=True)
     except FileNotFoundError:
-        print("1Password CLI (`op`) not found; falling back to a prompt.")
+        print("1Password CLI (`op`) not found.")
         return ""
     if out.returncode != 0 or not out.stdout.strip():
-        print(f"`op read` failed ({out.stderr.strip()[:200] or 'no output'}); falling back to a prompt.")
+        print(f"`op read` for the {what} failed ({out.stderr.strip()[:200] or 'no output'}).")
         return ""
     return out.stdout.strip()
+
+
+def login(url: str, email_ref: str, password_ref: str) -> str:
+    """Sign in with credentials from 1Password and return a fresh access token, or ''."""
+    email = op_read(email_ref, "email")
+    password = op_read(password_ref, "password") if email else ""
+    if not (email and password):
+        return ""
+    status, body = call(url, "", "POST", "/api/auth/login", {"email": email, "password": password})
+    if status == 200 and isinstance(body, dict) and body.get("access_token"):
+        return body["access_token"]
+    # The body can echo the request; never print it with the password in it.
+    print(f"sign-in failed: HTTP {status}: {str(body).replace(password, '***')[:200]}")
+    return ""
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", help="markdown/text file containing outcome table rows")
     ap.add_argument("--apply", action="store_true", help="actually record (default is a dry run)")
-    ap.add_argument("--op-ref", help=f"1Password reference for the login token (default: GRAPHBAN_JWT_REF, else {OP_REF})")
+    ap.add_argument("--op-email", help=f"1Password reference for the Graphban email (default: GRAPHBAN_EMAIL_REF, else {OP_EMAIL})")
+    ap.add_argument("--op-password", help=f"1Password reference for the password (default: GRAPHBAN_PASSWORD_REF, else {OP_PASSWORD})")
     ap.add_argument("--url", help="Graphban base URL (default: from .mcp.json)")
     ap.add_argument("--project", default=DEFAULT_PROJECT, help="project id the lessons belong to (default: %(default)s)")
     args = ap.parse_args(argv)
@@ -188,12 +214,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # A dry run never needs the token: without one it only lists rows, and nothing is read from
-    # 1Password or asked for. With --apply the token is resolved env -> 1Password -> prompt.
+    # 1Password or asked for. With --apply the token is resolved env -> 1Password sign-in -> prompt.
     token, token_source = os.environ.get("GRAPHBAN_JWT", "").strip(), "environment"
     if args.apply and not token:
-        token, token_source = op_token(args.op_ref or os.environ.get("GRAPHBAN_JWT_REF", "").strip() or OP_REF), "1Password"
+        email_ref = args.op_email or os.environ.get("GRAPHBAN_EMAIL_REF", "").strip() or OP_EMAIL
+        password_ref = args.op_password or os.environ.get("GRAPHBAN_PASSWORD_REF", "").strip() or OP_PASSWORD
+        token, token_source = login(url, email_ref, password_ref), "a 1Password sign-in"
     if args.apply and not token:
-        token, token_source = prompt_token("No token from the environment or 1Password."), "prompt"
+        token, token_source = prompt_token("No token from the environment or a 1Password sign-in."), "prompt"
     if args.apply and not token:
         print("error: a JWT is required for --apply", file=sys.stderr)
         return 2
