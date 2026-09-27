@@ -10,6 +10,7 @@ This file serves as the strict architectural and coding guideline for AI agents 
 - **Finished work** moves to `review` with evidence. Only a gate-scoped attestation reaches `done` (see §6's `attest.py`).
 - **Graphban unreachable?** Read `.graphban-snapshot/` (gitignored, refreshed by `python scripts/graphban/snapshot.py`) and say in your summary that you worked from a snapshot. Never write the snapshot back; Graphban is the only place memory is written.
 - **PRDs cannot be deleted**, and closing one is irreversible. Draft a PRD with the owner before `create_prd`, never as a test.
+- **Report memory outcomes when a slice ends** (a PR merged, a review round, a session's work handed back), as author and as reviewer: one row per Graphban lesson you actually consulted, as `| shard id | outcome | reason |`. The outcome is `catch` (it predicted a trap, shaped the work, or prevented a regression), `miss` (a failure it warned about happened because it wasn't applied) or `contradiction` (the code or live system disproved it). Only shards that bore on the work, and never a guessed outcome. Outcomes need the owner's login, so an agent writes the table and the owner records it with `python scripts/graphban/record_outcomes.py <file> --apply`. That is how Graphban learns which lessons earn their place.
 
 **Two rules that must survive any outage, so they live here rather than only in Graphban:**
 - **Never merge a PR, push a tag or publish a release without the owner's explicit go-ahead in that conversation.** A go-ahead for one release covers only that release.
@@ -173,7 +174,7 @@ app/                          <-- Android Jetpack Compose Screens & Entry Point
       ├── ui/theme/           <-- MediaTrackerTheme, colour scheme, typography
       ├── ui/TestTags.kt      <-- testTag constants (see §7)
       └── ui/ViewModelFactories.kt   <-- bridges AppContainer to androidx ViewModel factories
-scripts/graphban/             <-- Graphban: code graph, issue mirror, attestation, offline snapshot
+scripts/graphban/             <-- Graphban: code graph, issue mirror, attestation, outcomes, snapshot
 ```
 
 `scripts/graphban/code_graph.py` re-describes the repository to Graphban (usage in its docstring).
