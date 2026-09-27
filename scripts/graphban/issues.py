@@ -37,6 +37,9 @@ from code_graph import ROOT, Mcp  # noqa: E402
 
 OWNER = "Masked-Kunsiquat"
 BOARD = "12"
+# Graphban's wording for the one refusal a sync expects (its evidence notes call it
+# `attestation_missing`). Matched on the text because the tool result carries no error code.
+ATTESTATION_MISSING = "nothing has attested it"
 MANAGED = re.compile(r"^(gh-\d+|priority-\w+|kind-\w+|label-[\w-]+|not-on-board)$")
 
 
@@ -164,7 +167,7 @@ def main():
             if not args.dry_run:
                 mcp.tool("update_item", {"id": have["id"], **patch})
 
-    awaiting = []
+    awaiting, errors = [], []
     for n, have in sorted(existing.items()):
         if n not in open_numbers and have.get("status") != "done":
             state = gh("issue", "view", str(n), "--json", "state")["state"]
@@ -177,12 +180,18 @@ def main():
             # never hold. A refusal is expected, not fatal: list the item for a human to attest.
             result = mcp.call("tools/call", {"name": "update_item",
                                              "arguments": {"id": have["id"], "status": "done"}})
-            if result.get("isError"):
+            text = (result.get("content") or [{}])[0].get("text", "")
+            if not result.get("isError"):
+                print(f"done   #{n} ({have['id']}): closed on GitHub")
+            elif ATTESTATION_MISSING in text:
                 awaiting.append(f"#{n} ({have['id']})")
             else:
-                print(f"done   #{n} ({have['id']}): closed on GitHub")
+                errors.append(f"#{n} ({have['id']}): {text[:300]}")
     if awaiting:
         print("closed on GitHub, awaiting attestation (scripts/graphban/attest.py): " + ", ".join(awaiting))
+    if errors:
+        # Only the attestation refusal is expected. Anything else is a real failure, not a queue.
+        sys.exit("update_item refused done for another reason:\n  " + "\n  ".join(errors))
 
 
 if __name__ == "__main__":

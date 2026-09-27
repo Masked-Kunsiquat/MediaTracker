@@ -36,6 +36,20 @@ def paged(mcp, tool, args, key="results"):
         offset += len(rows)
 
 
+def write_atomically(path, text):
+    """Write to a sibling temp file, then rename it over `path`, so a crash never leaves half a file.
+
+    Everything is fetched before the first write, so an outage mid-run already leaves the previous
+    snapshot intact; this closes the remaining gap. A full generation-directory switch was
+    considered and not done: nothing reads the snapshot while it is being written, because it is
+    only read when Graphban is down, and then this script cannot run.
+    """
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def main():
     mcp = Mcp()
     lessons = [l for l in paged(mcp, "get_lessons", {}) if l.get("project_id") == PROJECT]
@@ -45,26 +59,28 @@ def main():
                           capture_output=True, text=True).stdout.strip()
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+    lessons_md = f"# Graphban lessons — {PROJECT}\n\nSnapshot {now}. {len(lessons)} published lessons.\n"
+    for l in sorted(lessons, key=lambda l: l["text"]):
+        lessons_md += f"\n## {l['id']}\n\n{l['text'].strip()}\n"
+    items_md = f"# Graphban items — {PROJECT}\n\nSnapshot {now}. {len(details)} items not done.\n"
+    for d in sorted(details, key=lambda d: int(d["id"].split("-")[1])):
+        items_md += f"\n## {d['id']} — {d['title']}\n\n"
+        items_md += f"Status: {d['status']}. Tags: {', '.join(d.get('tags') or []) or 'none'}."
+        if d.get("blocker"):
+            items_md += f" Blocker: {d['blocker']}"
+        items_md += f"\n\n{(d.get('description') or '').strip()}\n"
+    snapshot_md = (f"# Graphban snapshot\n\nTaken {now} at repo HEAD `{head}` from project `{PROJECT}`.\n\n"
+                   "**Read-only fallback.** Use it only when the Graphban MCP server is unreachable, and say in "
+                   "your summary that you worked from a snapshot of this date. Do not edit these files and do "
+                   "not record new lessons here; they wait for Graphban. Refresh with "
+                   "`python scripts/graphban/snapshot.py`.\n\n"
+                   f"- `lessons.md`: {len(lessons)} published lessons\n- `items.md`: {len(details)} open items\n")
+
     os.makedirs(OUT, exist_ok=True)
-    with open(os.path.join(OUT, "lessons.md"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(f"# Graphban lessons — {PROJECT}\n\nSnapshot {now}. {len(lessons)} published lessons.\n")
-        for l in sorted(lessons, key=lambda l: l["text"]):
-            f.write(f"\n## {l['id']}\n\n{l['text'].strip()}\n")
-    with open(os.path.join(OUT, "items.md"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(f"# Graphban items — {PROJECT}\n\nSnapshot {now}. {len(details)} items not done.\n")
-        for d in sorted(details, key=lambda d: int(d["id"].split("-")[1])):
-            f.write(f"\n## {d['id']} — {d['title']}\n\n")
-            f.write(f"Status: {d['status']}. Tags: {', '.join(d.get('tags') or []) or 'none'}.")
-            if d.get("blocker"):
-                f.write(f" Blocker: {d['blocker']}")
-            f.write(f"\n\n{(d.get('description') or '').strip()}\n")
-    with open(os.path.join(OUT, "SNAPSHOT.md"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(f"# Graphban snapshot\n\nTaken {now} at repo HEAD `{head}` from project `{PROJECT}`.\n\n"
-                "**Read-only fallback.** Use it only when the Graphban MCP server is unreachable, and say in "
-                "your summary that you worked from a snapshot of this date. Do not edit these files and do "
-                "not record new lessons here; they wait for Graphban. Refresh with "
-                "`python scripts/graphban/snapshot.py`.\n\n"
-                f"- `lessons.md`: {len(lessons)} published lessons\n- `items.md`: {len(details)} open items\n")
+    # SNAPSHOT.md last: it names the other two, so it should only ever describe files that exist.
+    write_atomically(os.path.join(OUT, "lessons.md"), lessons_md)
+    write_atomically(os.path.join(OUT, "items.md"), items_md)
+    write_atomically(os.path.join(OUT, "SNAPSHOT.md"), snapshot_md)
     print(f"wrote {OUT}: {len(lessons)} lessons, {len(details)} open items")
 
 
