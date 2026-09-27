@@ -20,7 +20,7 @@ header row or a "-" outcome) are listed as skipped, never guessed.
 The login token (JWT), first match wins:
   1. the GRAPHBAN_JWT environment variable;
   2. a 1Password reference read with `op read`: --op-ref, else the
-     GRAPHBAN_JWT_REF environment variable;
+     GRAPHBAN_JWT_REF environment variable, else OP_REF below;
   3. a hidden prompt.
 There is deliberately no .env file: this repository is public and does not
 gitignore `.env`, so a pasted token would be one `git add` from being
@@ -60,6 +60,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FALLBACK_URL = "http://10.0.0.27:8080"
 # The lesson lookup requires ?project_id=; the outcome POST does not.
 DEFAULT_PROJECT = "mediatracker"
+# A pointer, not a secret: `op read` needs the owner to unlock 1Password before it yields anything.
+OP_REF = "op://Private/graphban/JWT Token"
 
 KINDS = {
     "catch": "caught", "caught": "caught",
@@ -168,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", help="markdown/text file containing outcome table rows")
     ap.add_argument("--apply", action="store_true", help="actually record (default is a dry run)")
-    ap.add_argument("--op-ref", help="1Password reference for the login token (else GRAPHBAN_JWT_REF)")
+    ap.add_argument("--op-ref", help=f"1Password reference for the login token (default: GRAPHBAN_JWT_REF, else {OP_REF})")
     ap.add_argument("--url", help="Graphban base URL (default: from .mcp.json)")
     ap.add_argument("--project", default=DEFAULT_PROJECT, help="project id the lessons belong to (default: %(default)s)")
     args = ap.parse_args(argv)
@@ -189,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     # 1Password or asked for. With --apply the token is resolved env -> 1Password -> prompt.
     token, token_source = os.environ.get("GRAPHBAN_JWT", "").strip(), "environment"
     if args.apply and not token:
-        token, token_source = op_token(args.op_ref or os.environ.get("GRAPHBAN_JWT_REF", "").strip()), "1Password"
+        token, token_source = op_token(args.op_ref or os.environ.get("GRAPHBAN_JWT_REF", "").strip() or OP_REF), "1Password"
     if args.apply and not token:
         token, token_source = prompt_token("No token from the environment or 1Password."), "prompt"
     if args.apply and not token:
