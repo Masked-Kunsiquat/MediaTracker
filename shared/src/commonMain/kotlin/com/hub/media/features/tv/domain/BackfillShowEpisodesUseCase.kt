@@ -20,14 +20,26 @@ private const val TAG = "BackfillShowEpisodes"
 /**
  * A season whose local episode count disagrees with the provider's.
  *
- * Reported, never acted on -- see [BackfillShowEpisodesUseCase]. #123 holds the question of what a
- * user should be able to do about one.
+ * Reported by [BackfillShowEpisodesUseCase] itself; acted on by the show's own detail screen (#167),
+ * which offers [TVShowRepository.addMissingEpisodes] for the seasons this can safely grow.
+ *
+ * @property missingEpisodes @property isUnderCount @property isEmptySeason Mirror
+ *   [com.hub.media.features.media.domain.MismatchReviewRow]'s identically-named properties exactly,
+ *   for the same reason: an over-count is real (a user quick-filled more than TMDB lists) and must
+ *   not be offered a destructive "correct it down" action, and an empty season reads as "Add all N"
+ *   rather than "Add N missing" -- see that class's KDoc.
  */
 public data class SeasonCountMismatch(
     public val seasonNumber: Int,
     public val localEpisodes: Int,
     public val providerEpisodes: Int,
-)
+) {
+    public val missingEpisodes: Int get() = (providerEpisodes - localEpisodes).coerceAtLeast(0)
+
+    public val isUnderCount: Boolean get() = providerEpisodes > localEpisodes
+
+    public val isEmptySeason: Boolean get() = localEpisodes == 0
+}
 
 /**
  * What one backfill pass over a show actually did.

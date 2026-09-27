@@ -10,16 +10,18 @@ import kotlin.test.assertTrue
  * Covers [describe] -- the one sentence a user reads after a backfill.
  *
  * Pure, so it lives in `commonTest`. The value here is not the wording but the branching: which
- * clauses appear depends on what happened, and a report that silently omits a disagreement is worse
+ * clauses appear depends on what happened, and a report that silently omits something is worse
  * than one that never ran.
  */
 class EpisodeBackfillReportDescribeTest {
     @Test
-    fun nothingFilled_saysSoOutrightRatherThanSayingNothing() {
-        // A screen that changes in no visible way looks like a button that did not work.
+    fun nothingFilled_describesEpisodeDetailsRatherThanClaimingNothingToAdd() {
+        // #167: "Nothing to add" read as a verdict on the whole show, including seasons the
+        // seasonFindings section can now offer to create. episodesFilled counts episode *detail*
+        // fills, so the zero case says that and nothing broader.
         val text = EpisodeBackfillReport().describe()
 
-        assertEquals("Nothing to add — every episode already has its details.", text)
+        assertEquals("No episode details needed filling in.", text)
     }
 
     @Test
@@ -33,20 +35,21 @@ class EpisodeBackfillReportDescribeTest {
     }
 
     @Test
-    fun aDisagreementNamesBothNumbers() {
-        // A count without the one it disagrees with is not actionable, and #123 exists precisely
-        // because acting on it is a decision this app does not make for the user.
+    fun aMismatchNoLongerAppearsInTheSentence() {
+        // #167: the per-season disagreement moved to TVShowDetailUiState.Ready.seasonFindings, which
+        // stays on screen and can act on it -- restating it in a snackbar that fades would be the
+        // same fact told twice, once actionable and once not.
         val text =
             EpisodeBackfillReport(
                 episodesFilled = 3,
                 mismatches = listOf(SeasonCountMismatch(seasonNumber = 1, localEpisodes = 3, providerEpisodes = 5)),
             ).describe()
 
-        assertEquals("Updated 3 episodes. Season 1: you have 3, TMDB lists 5.", text)
+        assertEquals("Updated 3 episodes.", text)
     }
 
     @Test
-    fun everyDisagreeingSeasonIsNamed() {
+    fun everyMismatchIsExcludedRegardlessOfCount() {
         val text =
             EpisodeBackfillReport(
                 episodesFilled = 0,
@@ -57,8 +60,7 @@ class EpisodeBackfillReportDescribeTest {
                     ),
             ).describe()
 
-        assertTrue(text.contains("Season 1: you have 3, TMDB lists 5."), text)
-        assertTrue(text.contains("Season 2: you have 9, TMDB lists 8."), text)
+        assertEquals("No episode details needed filling in.", text)
     }
 
     @Test

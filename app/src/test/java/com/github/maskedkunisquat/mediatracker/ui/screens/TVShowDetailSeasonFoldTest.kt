@@ -134,6 +134,8 @@ class TVShowDetailSeasonFoldTest {
             onRemoveSeason = {},
             onAbandonedChange = {},
             onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},
