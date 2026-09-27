@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/graphban/attest.py` lets a person attest Graphban items by hand with a gate-scoped key,
   confirming each item before anything is written. The key comes from an environment variable or a
   hidden prompt, never from `.mcp.json` or the command line.
+- AGENTS.md now makes Graphban the shared memory for every agent, with private memory stores
+  reduced to a pointer, and keeps the two rules that must survive an outage (no merge or release
+  without the owner's go-ahead; never attest your own work) in the file itself.
+- `scripts/graphban/snapshot.py` writes a gitignored, read-only copy of Graphban's lessons and open
+  items to `.graphban-snapshot/`, to read from when Graphban is unreachable.
+- Agents now report, at the end of each slice of work, which Graphban lessons caught a problem,
+  missed one or were contradicted. `scripts/graphban/record_outcomes.py` records those tables with
+  the owner's login token, read from 1Password or a hidden prompt, never from a file in the repo.
 
 ## [0.21.0] - 2026-09-17
 
