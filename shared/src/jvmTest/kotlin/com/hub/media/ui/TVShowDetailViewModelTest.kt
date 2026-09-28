@@ -28,6 +28,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -566,22 +567,34 @@ class TVShowDetailViewModelTest {
             viewModel.refreshMetadata()
             viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.seasonFindings.size == 2 }
 
-            // Paused Main, so the loop only enqueues: see the double-tap test below for why.
-            viewModels.installMain(StandardTestDispatcher(testScheduler))
+            // Record every busy set the screen passes through, rather than sampling uiState.value
+            // after the call: that read raced combine -> stateIn and flaked on CI (#180). An
+            // unconfined collector sees each emission, so the history is complete without pausing
+            // Main or swapping dispatchers mid-test.
+            val busySets = mutableListOf<Set<Int>>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.uiState.collect {
+                    (it as? TVShowDetailUiState.Ready)?.let { r ->
+                        busySets +=
+                            r.addingSeasonNumbers
+                    }
+                }
+            }
+
             viewModel.addAllMissingEpisodes()
-            runCurrent()
-
-            assertEquals(
-                setOf(1, 2),
-                addingSeasonNumbersOf(viewModel),
-                "every season in the batch must be busy before the first one is applied",
-            )
-
-            viewModels.installMain(UnconfinedTestDispatcher(testScheduler))
             val state =
                 viewModel.uiState.first {
-                    it is TVShowDetailUiState.Ready && it.seasonFindings.isEmpty()
+                    it is TVShowDetailUiState.Ready && it.seasonFindings.isEmpty() && it.addingSeasonNumbers.isEmpty()
                 } as TVShowDetailUiState.Ready
+
+            // Positive control: the batch really did pass through a busy state.
+            val nonEmpty = busySets.filter { it.isNotEmpty() }
+            assertTrue(nonEmpty.isNotEmpty(), "the batch must mark seasons busy at some point")
+            assertEquals(
+                setOf(1, 2),
+                nonEmpty.first(),
+                "every season in the batch must be busy before the first one is applied",
+            )
             assertTrue(state.addingSeasonNumbers.isEmpty(), "the busy set must be empty once the batch ends")
         }
 

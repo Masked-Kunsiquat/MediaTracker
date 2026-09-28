@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- Tests now pin the prompts in front of a TV season's destructive edits (#83): re-entering a
+  season's current episode count applies at once with no prompt; the shrink prompt counts only the
+  removed episodes that were watched, and takes the zero wording when none were; and Remove season
+  has its own prompt stating the whole season's cost, removing nothing until confirmed. Each test
+  was checked by breaking the behaviour it guards.
+
 ## [0.22.0] - 2026-09-27
 
 ### Added
