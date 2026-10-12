@@ -86,3 +86,33 @@ public fun earlierUnwatched(
         .filter { includeSpecials || it.seasonNumber > 0 }
         .filter { upNextOrder.compare(it, target) < 0 }
         .sortedWith(upNextOrder)
+
+/**
+ * [WatchedWhen.On] for a day chosen in Material's `DatePicker`, which reports the selection as
+ * **UTC-midnight** epoch millis -- so the calendar day is read in UTC, never in the device zone.
+ * Lives here so the app module needs no date library of its own.
+ */
+public fun watchedOnPickedDay(utcMidnightMillis: Long): WatchedWhen =
+    WatchedWhen.On(Instant.fromEpochMilliseconds(utcMidnightMillis).toLocalDateTime(TimeZone.UTC).date)
+
+/**
+ * Whether the picker may offer the day at [utcMidnightMillis]: not after today in [zone]. A watch
+ * cannot be in the future (#131).
+ */
+public fun isPickableDay(
+    utcMidnightMillis: Long,
+    now: Instant =
+        kotlin.time.Clock.System
+            .now(),
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): Boolean =
+    Instant.fromEpochMilliseconds(utcMidnightMillis).toLocalDateTime(TimeZone.UTC).date <=
+        now.toLocalDateTime(zone).date
+
+/** The latest year the picker may show -- this year in [zone]. */
+public fun pickableUpToYear(
+    now: Instant =
+        kotlin.time.Clock.System
+            .now(),
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): Int = now.toLocalDateTime(zone).year
