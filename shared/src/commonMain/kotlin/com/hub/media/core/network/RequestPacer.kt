@@ -81,6 +81,9 @@ public class RequestPacer(
  * together: drop the `UserAgent` plugin and this pacer becomes three times too fast without
  * anything failing to compile.
  *
+ * Until #138 the header carried a URL but no email, so this tier was assumed rather than earned.
+ * It now carries the GitHub no-reply address, in every build -- see [USER_AGENT].
+ *
  * See <https://openlibrary.org/developers/api>.
  */
 public const val OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND: Int = 3
@@ -96,11 +99,11 @@ public const val OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND: Int = 3
  * traffic and the alternative slows down the only request a person is actually waiting on.
  *
  * "Single-request" is the load-bearing word, not "interactive". A user-facing path that issues
- * *several* requests has neither excuse, and one exists:
+ * *several* requests has neither excuse:
  * [com.hub.media.features.books.network.OpenLibrarySearchClient.fetchEditionsForWork] paginates a
- * work's editions in an uncapped loop, so one tap on a much-reprinted classic is a dozen or more
- * back-to-back requests against this same budget. That is #120, filed rather than fixed here --
- * it is a different path with a different owner, not an oversight in the crawl's pacing.
+ * work's editions, so one tap on a much-reprinted classic is a dozen or more requests against this
+ * budget. Since #120 it holds **its own** instance of this pacer -- never the crawl's, for the reason
+ * above -- and its first page still goes out at once, so a work with one page pays nothing.
  */
 public fun openLibraryIdentifiedPacer(
     clock: Clock = Clock.System,

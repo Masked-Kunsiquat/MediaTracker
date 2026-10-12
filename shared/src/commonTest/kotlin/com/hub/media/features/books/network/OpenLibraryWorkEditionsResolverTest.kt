@@ -1,6 +1,8 @@
 package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.network.OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND
+import com.hub.media.core.network.RequestPacer
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.util.Resource
 import io.ktor.client.engine.mock.MockEngine
@@ -13,6 +15,10 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 class OpenLibraryWorkEditionsResolverTest {
     private fun MockRequestHandleScope.jsonResponse(
@@ -78,6 +84,48 @@ class OpenLibraryWorkEditionsResolverTest {
             assertEquals("123456789X", e3.isbn)
             assertEquals("Publisher B", e3.publisher)
         }
+
+    @Test
+    fun fetchEditionsForWork_paginates_pacedAtTheIdentifiedRate_firstPageImmediate() =
+        runTest {
+            // #120: 120 editions is three pages of 50. Each page must be paced to Open Library's
+            // identified rate, but the first goes out at once -- a one-page work pays nothing.
+            val clock = FakeClock(Instant.fromEpochMilliseconds(0))
+            val sleeps = mutableListOf<Duration>()
+            val pacer =
+                RequestPacer(
+                    minInterval = 1.seconds / OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND,
+                    clock = clock,
+                    sleep = {
+                        sleeps += it
+                        clock.now += it
+                    },
+                )
+            val offsets = mutableListOf<String?>()
+            val engine =
+                MockEngine { request ->
+                    offsets += request.url.parameters["offset"]
+                    jsonResponse("""{"size": 120, "entries": [{"key": "/books/OL1M", "title": "E"}]}""")
+                }
+            val client = OpenLibrarySearchClient(createHttpClient(engine), editionPagePacer = pacer)
+
+            val result = client.fetchEditionsForWork("/works/OL1W")
+
+            assertTrue(result is Resource.Success)
+            assertEquals(listOf<String?>("0", "50", "100"), offsets, "every page must still be fetched")
+            val interval = 1.seconds / OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND
+            assertEquals(
+                listOf(interval, interval),
+                sleeps,
+                "no wait before page one, one interval before each later page",
+            )
+        }
+
+    private class FakeClock(
+        var now: Instant,
+    ) : Clock {
+        override fun now(): Instant = now
+    }
 
     @Test
     fun fetchEditionsForWork_emptyEntries_returnsEmptyList() =

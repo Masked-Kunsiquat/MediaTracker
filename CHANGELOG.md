@@ -21,8 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   left, and its library card counts only the regular episodes. Specials stay listed on the show's
   screen and can still be ticked off. A show made up only of specials keeps counting them.
 
+### Changed
+
+- Choosing an edition of a much-reprinted book now loads Open Library's edition list at Open
+  Library's published request rate, so a work with hundreds of editions takes a few seconds rather
+  than firing every page at once (#120). Works with one page of editions are unaffected.
+
 ### Internal
 
+- The app's `User-Agent` now carries the repository's GitHub no-reply address alongside its URL, so
+  it qualifies for Open Library's identified rate of 3 requests per second that its pacing already
+  assumed (#138). AGENTS.md §4 records the rule: that address, never a personal inbox.
 - Tests now pin the prompts in front of a TV season's destructive edits (#83): re-entering a
   season's current episode count applies at once with no prompt; the shrink prompt counts only the
   removed episodes that were watched, and takes the zero wording when none were; and Remove season

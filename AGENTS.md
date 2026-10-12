@@ -87,8 +87,13 @@ So: **update this file in the same commit as the change that invalidates it.** C
   [Open Library's API guidelines](https://openlibrary.org/developers/api) rate-limit **unidentified
   traffic at 1 request/second and identified traffic at 3/second**, so dropping the header
   third-times the budget for every ISBN lookup, cover probe and bulk-backfill crawl at once. The
-  contact in it is the **repository URL, never a personal email** — a `User-Agent` is broadcast to
-  and logged by every host the app contacts. Their guidelines also say to *cache responses whenever
+  contact in it is the **repository URL plus the GitHub no-reply address** that already signs every
+  commit (#138) — Open Library's identified tier asks for an email, and a URL alone left that tier
+  assumed rather than earned. **Never a personal inbox:** a `User-Agent` is broadcast to and logged
+  by every host the app contacts, and the no-reply address is acceptable only because it is already
+  public one click from the URL beside it. `HttpClientFactoryTest` pins exactly that one address.
+  Any user-facing path that issues *several* Open Library requests (the edition picker's paging,
+  #120) holds its own `RequestPacer`, never the crawl's. Their guidelines also say to *cache responses whenever
   possible* and not to *make hundreds of single-book requests*, which is why rate limiting and
   caching live in the client layer rather than being left to callers.
 * **TMDB is three budgets, not one, and a pacer belongs to exactly one crawl.** TMDB disabled its
