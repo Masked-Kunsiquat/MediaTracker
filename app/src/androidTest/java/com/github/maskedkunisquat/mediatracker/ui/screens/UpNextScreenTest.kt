@@ -17,6 +17,7 @@ import org.junit.Test
  * The stateless [UpNextScreen] (#89) with fabricated state and fake callbacks: proves the card and
  * its check button each reach the right callback, and that the empty state renders.
  */
+@OptIn(kotlin.time.ExperimentalTime::class)
 class UpNextScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
@@ -74,14 +75,14 @@ class UpNextScreenTest {
 
         composeRule.onNodeWithContentDescription("Mark Fleabag S1 E4 watched").performClick()
         assertEquals(listOf(fleabag), marked)
-        assertEquals(emptyList<String>(), opened, "the check must not also open the show")
+        assertEquals("the check must not also open the show", emptyList<String>(), opened)
 
         composeRule.onNodeWithText("Fleabag").performClick()
         assertEquals(listOf("show-1"), opened)
     }
 
     @Test
-    fun emptyQueue_saysSo_butNotWhileLoading() {
+    fun emptyQueue_saysSo() {
         setContent(UpNextUiState(items = emptyList(), isLoading = false))
         composeRule.onNodeWithText("Nothing up next", substring = true).assertIsDisplayed()
     }
