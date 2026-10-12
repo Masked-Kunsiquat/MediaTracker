@@ -245,7 +245,7 @@ interface TVWriteDao {
      * not bump the date it was actually watched, and deciding that in SQL rather than by reading the
      * row first means there is no window between the decision and the write for a second tick to
      * land in. It is the single-episode form of the `watchedAt IS NULL` predicate
-     * [markSeasonWatched] uses for the same reason.
+     * [markEpisodesWatchedAt] uses for the same reason.
      *
      * @return `1` if [episodeId] resolved to an existing row, `0` otherwise -- including when the
      *   episode was already watched and `COALESCE` therefore wrote the value it already held.
@@ -430,34 +430,79 @@ interface TVWriteDao {
     @Query("UPDATE episodes SET watchedAt = NULL WHERE id = :episodeId")
     suspend fun clearEpisodeWatched(episodeId: String): Int
 
-    /**
-     * Marks every *unwatched* episode of one season watched, stamping [watchedAt] on each.
-     *
-     * The `watchedAt IS NULL` predicate is the point of this query, not an optimization: without
-     * it, marking a season watched would rewrite the timestamp of every episode already watched,
-     * so ticking the last episode of a season you finished months ago would restamp the whole
-     * season as watched today. That is the same rule
-     * [com.hub.media.features.tv.data.TVShowRepository.setEpisodeWatched] applies per episode --
-     * an already-watched episode keeps the date it was actually watched -- and a bulk action is
-     * not a reason to abandon it.
-     *
-     * @return the number of episode rows that changed, which is *not* the season's size: a season
-     *   already fully watched returns 0 while being a perfectly successful no-op. Callers must not
-     *   read 0 here as "no such season" -- see that repository function for how it tells them apart.
-     */
-    @Query(
-        "UPDATE episodes SET watchedAt = :watchedAt WHERE mediaId = :mediaId AND " +
-            "seasonNumber = :seasonNumber AND watchedAt IS NULL",
-    )
-    suspend fun markSeasonWatched(
+    @Query("SELECT * FROM episodes WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<String>): List<EpisodeEntity>
+
+    @Query("SELECT * FROM episodes WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber")
+    suspend fun episodesInSeason(
         mediaId: String,
         seasonNumber: Int,
+    ): List<EpisodeEntity>
+
+    /**
+     * Marks each episode watched at its own time, in one transaction (#131) -- the only write the
+     * tick prompt uses, whether for one episode, a catch-up or a season. Each row goes through
+     * [markEpisodeWatched], so an episode that is already watched keeps its date: the `COALESCE`
+     * there is what makes a season mark safe over a half-watched season.
+     *
+     * @return How many episodes actually changed.
+     */
+    @Transaction
+    suspend fun markEpisodesWatchedAt(stamps: Map<String, Instant>): Int =
+        stamps.entries.sumOf { (id, at) -> markEpisodeWatchedIfUnwatched(id, at) }
+
+    /**
+     * [markEpisodeWatched]'s guard as a `WHERE` rather than a `COALESCE`, so the returned count is
+     * the number of episodes that actually changed: SQLite counts a `COALESCE` that rewrites a row
+     * to its own value as an update.
+     */
+    @Query("UPDATE episodes SET watchedAt = :watchedAt WHERE id = :episodeId AND watchedAt IS NULL")
+    suspend fun markEpisodeWatchedIfUnwatched(
+        episodeId: String,
         watchedAt: Instant,
     ): Int
 
     /**
+     * Undo's write (#131). **Conditional on `watchedAt IS NULL`**, unlike every other write here: an
+     * episode re-ticked (or re-marked by a season action) before Undo keeps its newer date, and an
+     * episode deleted in the meantime simply matches no row.
+     */
+    @Query("UPDATE episodes SET watchedAt = :watchedAt WHERE id = :episodeId AND watchedAt IS NULL")
+    suspend fun restoreWatchedAt(
+        episodeId: String,
+        watchedAt: Instant,
+    ): Int
+
+    /** [restoreWatchedAt] over every entry of an Undo, in one transaction. */
+    @Transaction
+    suspend fun restoreAll(previous: Map<String, Instant>): Int =
+        previous.entries.sumOf { (id, at) -> restoreWatchedAt(id, at) }
+
+    /**
+     * Clears one episode and returns what it held, read and cleared in one transaction so the value
+     * Undo carries is exactly the value removed (#131). Empty when it was not watched.
+     */
+    @Transaction
+    suspend fun clearEpisodeReturningPrevious(episodeId: String): Map<String, Instant> {
+        val previous = getByIds(listOf(episodeId)).watchedById()
+        clearEpisodeWatched(episodeId)
+        return previous
+    }
+
+    /** [clearEpisodeReturningPrevious] for a whole season: Clear season's Undo restores each date. */
+    @Transaction
+    suspend fun clearSeasonReturningPrevious(
+        mediaId: String,
+        seasonNumber: Int,
+    ): Map<String, Instant> {
+        val previous = episodesInSeason(mediaId, seasonNumber).watchedById()
+        clearSeasonWatched(mediaId, seasonNumber)
+        return previous
+    }
+
+    /**
      * Clears the watched state of every episode of one season. Unconditional, unlike
-     * [markSeasonWatched]: there is no timestamp worth preserving on the way to `null`, and a
+     * [markEpisodesWatchedAt]: there is no timestamp worth preserving on the way to `null`, and a
      * partially-watched season must end up fully unwatched.
      *
      * @return the number of episode rows affected.
@@ -468,3 +513,10 @@ interface TVWriteDao {
         seasonNumber: Int,
     ): Int
 }
+
+private fun List<EpisodeEntity>.watchedById(): Map<String, Instant> =
+    mapNotNull { e ->
+        e.watchedAt?.let {
+            e.id to it
+        }
+    }.toMap()

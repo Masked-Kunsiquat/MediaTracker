@@ -627,7 +627,19 @@ public class TVShowRepository(
                 Resource.Error("Season $seasonNumber of show id=$mediaId has no episodes")
             } else {
                 if (watched) {
-                    db.tvWriteDao().markSeasonWatched(mediaId, seasonNumber, clock.now())
+                    val now = clock.now()
+                    db.tvWriteDao().markEpisodesWatchedAt(
+                        db
+                            .tvWriteDao()
+                            .episodesInSeason(
+                                mediaId,
+                                seasonNumber,
+                            ).filter { it.watchedAt == null }
+                            .associate {
+                                it.id to
+                                    now
+                            },
+                    )
                 } else {
                     db.tvWriteDao().clearSeasonWatched(mediaId, seasonNumber)
                 }
