@@ -2,6 +2,7 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
@@ -19,7 +20,9 @@ import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
 import com.hub.media.features.tv.domain.SeasonCountMismatch
+import com.hub.media.features.tv.domain.WatchedWhen
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -34,9 +37,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -46,6 +51,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Instant
 
 /**
  * [TVShowDetailViewModel] tests against a real in-memory [AppDatabase], mirroring
@@ -63,6 +71,15 @@ class TVShowDetailViewModelTest {
     private lateinit var deleteMediaUseCase: BulkDeleteUseCase
     private lateinit var backfillUseCase: BackfillShowEpisodesUseCase
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var clock: SteppingClock
+    private lateinit var markWatched: MarkEpisodesWatchedUseCase
+
+    private class SteppingClock(
+        var now: Instant,
+    ) : Clock {
+        override fun now(): Instant = now
+    }
+
     private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
 
@@ -72,6 +89,8 @@ class TVShowDetailViewModelTest {
         db = testAppDatabase()
         tvShowRepository = TVShowRepository(db)
         settingsRepository = SettingsRepository(db.appSettingsDao())
+        clock = SteppingClock(Instant.parse("2026-10-12T20:00:00Z"))
+        markWatched = MarkEpisodesWatchedUseCase(db, clock)
         tempDir = runBlocking { createTestTempDir() }
         deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir))
         // Never reached by these tests -- none of them refresh -- but the ViewModel needs one, and a
@@ -123,7 +142,14 @@ class TVShowDetailViewModelTest {
     ): TVShowDetailViewModel {
         val viewModel =
             viewModels.track(
-                TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfill, settingsRepository),
+                TVShowDetailViewModel(
+                    showId,
+                    tvShowRepository,
+                    deleteMediaUseCase,
+                    backfill,
+                    settingsRepository,
+                    markWatched,
+                ),
             )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
         return viewModel
@@ -228,6 +254,8 @@ class TVShowDetailViewModelTest {
             val viewModel = readyViewModel(showId)
 
             viewModel.setEpisodeWatched(episodeId, watched = true)
+            viewModel.uiState.first { (it as? TVShowDetailUiState.Ready)?.pendingTick != null }
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
             viewModel.uiState.first {
                 it is TVShowDetailUiState.Ready && (it as TVShowDetailUiState.Ready).watchedEpisodes == 1
             }
@@ -254,6 +282,8 @@ class TVShowDetailViewModelTest {
 
             val viewModel = readyViewModel(showId)
             viewModel.setSeasonWatched(seasonNumber = 1, watched = true)
+            viewModel.uiState.first { (it as? TVShowDetailUiState.Ready)?.pendingTick != null }
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
 
             viewModel.uiState.first {
                 it is TVShowDetailUiState.Ready && (it as TVShowDetailUiState.Ready).watchedEpisodes == 3
@@ -320,6 +350,7 @@ class TVShowDetailViewModelTest {
                         deleteMediaUseCase,
                         backfillUseCase,
                         settingsRepository,
+                        markWatched,
                     ),
                 )
 
@@ -342,6 +373,7 @@ class TVShowDetailViewModelTest {
                         deleteMediaUseCase,
                         backfillUseCase,
                         settingsRepository,
+                        markWatched,
                     ),
                 )
 
@@ -377,6 +409,7 @@ class TVShowDetailViewModelTest {
                         deleteMediaUseCase,
                         backfillUseCase,
                         settingsRepository,
+                        markWatched,
                     ),
                 )
 
@@ -400,6 +433,7 @@ class TVShowDetailViewModelTest {
                         deleteMediaUseCase,
                         backfillUseCase,
                         settingsRepository,
+                        markWatched,
                     ),
                 )
 
@@ -427,6 +461,7 @@ class TVShowDetailViewModelTest {
                         deleteMediaUseCase,
                         backfillUseCase,
                         settingsRepository,
+                        markWatched,
                     ),
                 )
 
@@ -759,4 +794,173 @@ class TVShowDetailViewModelTest {
             """
         }
     }
+
+    // ---- #131: the dated tick prompt and untick Undo ------------------------------------------
+
+    private suspend fun ready(
+        viewModel: TVShowDetailViewModel,
+        predicate: (TVShowDetailUiState.Ready) -> Boolean,
+    ) = viewModel.uiState.first { it is TVShowDetailUiState.Ready && predicate(it) } as TVShowDetailUiState.Ready
+
+    private suspend fun episodesOf(showId: String) = db.episodeDao().getByMediaIdAndSeason(showId, 1)
+
+    @Test
+    fun tick_opensThePrompt_andWritesNothingUntilConfirmed() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val e1 = episodesOf(showId).first()
+            val viewModel = readyViewModel(showId)
+
+            viewModel.setEpisodeWatched(e1.id, watched = true)
+            val prompting = ready(viewModel) { it.pendingTick != null }
+            assertEquals(listOf(e1.id), prompting.pendingTick!!.targetIds)
+            assertNull(db.episodeDao().getById(e1.id)!!.watchedAt, "the prompt must not write anything yet")
+
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
+            ready(viewModel) { it.pendingTick == null && it.watchedEpisodes == 1 }
+            assertEquals(clock.now, db.episodeDao().getById(e1.id)!!.watchedAt)
+        }
+
+    @Test
+    fun dismiss_writesNothing() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val e1 = episodesOf(showId).single()
+            val viewModel = readyViewModel(showId)
+            viewModel.setEpisodeWatched(e1.id, watched = true)
+            ready(viewModel) { it.pendingTick != null }
+
+            viewModel.dismissTick()
+            ready(viewModel) { it.pendingTick == null }
+            assertNull(db.episodeDao().getById(e1.id)!!.watchedAt)
+        }
+
+    @Test
+    fun catchUp_offersAndMarksTheEarlierEpisodes() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 3)))
+            val (e1, e2, e3) = episodesOf(showId)
+            val viewModel = readyViewModel(showId)
+
+            viewModel.setEpisodeWatched(e3.id, watched = true)
+            val prompting = ready(viewModel) { it.pendingTick != null }
+            assertEquals(listOf(e1.id, e2.id), prompting.pendingTick!!.earlierIds)
+
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = true)
+            ready(viewModel) { it.watchedEpisodes == 3 }
+        }
+
+    @Test
+    fun untick_thenUndo_restoresTheExactTimestamp() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val e1 = episodesOf(showId).single()
+            val t1 = Instant.parse("2024-03-03T20:00:00Z")
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to t1))
+            val viewModel = readyViewModel(showId)
+
+            viewModel.setEpisodeWatched(e1.id, watched = false)
+            val unticked = ready(viewModel) { it.untickEvent != null && it.watchedEpisodes == 0 }
+            assertEquals(mapOf(e1.id to t1), unticked.untickEvent!!.previous)
+
+            viewModel.undo(unticked.untickEvent!!)
+            ready(viewModel) { it.untickEvent == null && it.watchedEpisodes == 1 }
+            assertEquals(t1, db.episodeDao().getById(e1.id)!!.watchedAt)
+        }
+
+    @Test
+    fun undoAfterReTick_keepsTheNewerDate() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val e1 = episodesOf(showId).single()
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to Instant.parse("2024-03-03T20:00:00Z")))
+            val viewModel = readyViewModel(showId)
+
+            viewModel.setEpisodeWatched(e1.id, watched = false)
+            val event = ready(viewModel) { it.untickEvent != null }.untickEvent!!
+            viewModel.setEpisodeWatched(e1.id, watched = true)
+            ready(viewModel) { it.pendingTick != null }
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
+            ready(viewModel) { it.watchedEpisodes == 1 }
+
+            viewModel.undo(event)
+            ready(viewModel) { it.untickEvent == null }
+            assertEquals(clock.now, db.episodeDao().getById(e1.id)!!.watchedAt, "the re-tick must survive the old Undo")
+        }
+
+    @Test
+    fun clearSeason_thenUndo_restoresEachEpisodesOwnDate() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            val d1 = Instant.parse("2024-01-01T20:00:00Z")
+            val d2 = Instant.parse("2024-01-08T20:00:00Z")
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to d1, e2.id to d2))
+            val viewModel = readyViewModel(showId)
+
+            viewModel.setSeasonWatched(1, watched = false)
+            val event = ready(viewModel) { it.untickEvent != null && it.watchedEpisodes == 0 }.untickEvent!!
+            viewModel.undo(event)
+            ready(viewModel) { it.watchedEpisodes == 2 }
+            assertEquals(d1, db.episodeDao().getById(e1.id)!!.watchedAt)
+            assertEquals(d2, db.episodeDao().getById(e2.id)!!.watchedAt)
+        }
+
+    @Test
+    fun seasonTick_countsAndWritesOnlyAiredUnwatchedEpisodes() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val future = EpisodeEntity(newId(), showId, 1, 3, airDate = clock.now + 1.days)
+            db.tvWriteDao().insertEpisodes(listOf(future))
+            val viewModel = readyViewModel(showId)
+
+            val state = ready(viewModel) { it.seasons.isNotEmpty() && it.totalEpisodes == 3 }
+            assertEquals(2, state.seasons.single().markableCount)
+
+            viewModel.setSeasonWatched(1, watched = true)
+            val prompting = ready(viewModel) { it.pendingTick != null }
+            assertEquals(2, prompting.pendingTick!!.targetIds.size)
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
+            ready(viewModel) { it.watchedEpisodes == 2 }
+            assertNull(db.episodeDao().getById(future.id)!!.watchedAt, "an unaired episode is never season-marked")
+        }
+
+    @Test
+    fun doubleConfirm_writesOnce() =
+        runTest {
+            // Two episodes, so the second confirm is distinguishable: the first confirm writes E2
+            // alone; a second one that slipped through would also write E1 via catch-up.
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            val viewModel = readyViewModel(showId)
+            viewModel.setEpisodeWatched(e2.id, watched = true)
+            ready(viewModel) { it.pendingTick?.earlierIds == listOf(e1.id) }
+
+            // Hold both confirms pending so the second genuinely races the first.
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = true)
+            runCurrent()
+            advanceUntilIdle()
+
+            assertNotNull(db.episodeDao().getById(e2.id)!!.watchedAt)
+            assertNull(db.episodeDao().getById(e1.id)!!.watchedAt, "only the first confirm may write")
+        }
+
+    @Test
+    fun failedWrite_surfacesAnError_andMarksNothing() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val e1 = episodesOf(showId).single()
+            val viewModel = readyViewModel(showId)
+            viewModel.setEpisodeWatched(e1.id, watched = true)
+            ready(viewModel) { it.pendingTick != null }
+
+            // A quick-filled episode has no air date, so OnAirDate cannot resolve: the use case
+            // refuses before writing anything.
+            viewModel.confirmTick(WatchedWhen.OnAirDate, includeEarlier = false)
+            val failed = ready(viewModel) { it.errorMessage != null }
+            assertNull(failed.pendingTick)
+            assertNull(db.episodeDao().getById(e1.id)!!.watchedAt)
+        }
 }

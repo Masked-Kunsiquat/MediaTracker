@@ -421,6 +421,7 @@ class TVShowDetailViewModelFactory(
                 deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 backfillUseCase = appContainer.backfillShowEpisodesUseCase,
                 settingsRepository = appContainer.settingsRepository,
+                markEpisodesWatched = appContainer.markEpisodesWatchedUseCase,
             )
         },
     )

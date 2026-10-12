@@ -10,16 +10,20 @@ import com.hub.media.core.util.Resource
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.observeIncludeSpecials
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
+import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
 import com.hub.media.features.tv.domain.SeasonCountMismatch
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
@@ -34,6 +38,8 @@ public data class SeasonGroup(
     val seasonNumber: Int,
     val episodes: List<EpisodeEntity>,
     val watchedCount: Int,
+    /** Unwatched, aired episodes -- what "Mark season watched" would write (#131). 0 hides it. */
+    val markableCount: Int = 0,
 )
 
 /** State of the TV show detail screen (ROADMAP Task 13 Phase C). */
@@ -93,6 +99,10 @@ public sealed class TVShowDetailUiState {
         val seasonFindings: List<SeasonCountMismatch> = emptyList(),
         /** Season numbers currently being created from [seasonFindings] -- see [TVShowDetailViewModel.addMissingEpisodes]. */
         val addingSeasonNumbers: Set<Int> = emptySet(),
+        /** The open "Mark … watched?" prompt, if any (#131). */
+        val pendingTick: PendingTick? = null,
+        /** The latest untick, offered back as Undo (#131). */
+        val untickEvent: UntickEvent? = null,
     ) : TVShowDetailUiState()
 }
 
@@ -114,8 +124,16 @@ public class TVShowDetailViewModel(
     private val deleteMediaUseCase: BulkDeleteUseCase,
     private val backfillUseCase: BackfillShowEpisodesUseCase,
     private val settingsRepository: SettingsRepository,
+    private val markEpisodesWatched: MarkEpisodesWatchedUseCase,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
+
+    /** Backs [TVShowDetailUiState.Ready.pendingTick]. */
+    private val pendingTick = MutableStateFlow<PendingTick?>(null)
+
+    /** Backs [TVShowDetailUiState.Ready.untickEvent]. */
+    private val untickEvent = MutableStateFlow<UntickEvent?>(null)
+    private var untickSeq = 0L
     private val isRefreshing = MutableStateFlow(false)
 
     /** Backs [TVShowDetailUiState.Ready.seasonFindings] -- see that property's KDoc. */
@@ -163,6 +181,7 @@ public class TVShowDetailViewModel(
                                     seasonNumber = seasonNumber,
                                     episodes = seasonEpisodes,
                                     watchedCount = seasonEpisodes.count { it.watchedAt != null },
+                                    markableCount = markableIn(seasonEpisodes, markEpisodesWatched.now()).size,
                                 )
                             }
                     TVShowDetailUiState.Ready(
@@ -180,7 +199,8 @@ public class TVShowDetailViewModel(
             seasonFindings,
             addingSeasonNumbers,
             settingsRepository.observeIncludeSpecials(),
-        ) { base, findings, adding, includeSpecials ->
+            combine(pendingTick, untickEvent, ::Pair),
+        ) { base, findings, adding, includeSpecials, (tick, untick) ->
             if (base is TVShowDetailUiState.Ready) {
                 // The overall counts follow the include-specials setting (#88) through the same
                 // rule the library uses, so this screen and the library card cannot disagree.
@@ -192,6 +212,8 @@ public class TVShowDetailViewModel(
                 base.copy(
                     seasonFindings = findings,
                     addingSeasonNumbers = adding,
+                    pendingTick = tick,
+                    untickEvent = untick,
                     watchedEpisodes = counted.watchedEpisodes,
                     totalEpisodes = counted.totalEpisodes,
                 )
@@ -204,30 +226,110 @@ public class TVShowDetailViewModel(
             initialValue = TVShowDetailUiState.Loading,
         )
 
-    /** Ticks or unticks one episode. Errors surface on [TVShowDetailUiState.Ready.errorMessage]. */
+    /**
+     * A tap on an episode's checkbox (#131). Ticking opens the "Mark … watched?" prompt and writes
+     * nothing until [confirmTick]; unticking clears at once and offers Undo with the exact old date.
+     */
     public fun setEpisodeWatched(
         episodeId: String,
         watched: Boolean,
     ) {
         viewModelScope.launch {
-            val result = tvShowRepository.setEpisodeWatched(episodeId, watched)
-            if (result is Resource.Error) errorMessage.value = result.message
+            val episodes = tvShowRepository.observeEpisodes(showId).first()
+            val target = episodes.firstOrNull { it.id == episodeId } ?: return@launch
+            if (watched) {
+                pendingTick.value =
+                    buildPendingTick(
+                        target,
+                        episodes,
+                        settingsRepository.getIncludeSpecials(),
+                        markEpisodesWatched.now(),
+                    )
+            } else {
+                when (val result = tvShowRepository.untickEpisode(episodeId)) {
+                    is Resource.Success ->
+                        if (result.data.isNotEmpty()) {
+                            untickEvent.value =
+                                UntickEvent(
+                                    ++untickSeq,
+                                    result.data,
+                                    target.title,
+                                    target.episodeNumber,
+                                    target.seasonNumber,
+                                    isSeason = false,
+                                )
+                        }
+                    is Resource.Error -> errorMessage.value = result.message
+                }
+            }
         }
     }
 
     /**
-     * Bulk-marks (or clears) a whole season. Marking watched leaves an already-watched episode's
-     * timestamp alone — see [TVShowRepository.setSeasonWatched]'s KDoc — this call does nothing to
-     * undo that; it only forwards the request.
+     * Season-level counterpart of [setEpisodeWatched]: marking opens the prompt over the season's
+     * unwatched, aired episodes (nothing happens when there are none); clearing is immediate with an
+     * Undo that restores each episode's own date.
      */
     public fun setSeasonWatched(
         seasonNumber: Int,
         watched: Boolean,
     ) {
         viewModelScope.launch {
-            val result = tvShowRepository.setSeasonWatched(showId, seasonNumber, watched)
+            if (watched) {
+                val seasonEpisodes =
+                    tvShowRepository.observeEpisodes(showId).first().filter {
+                        it.seasonNumber ==
+                            seasonNumber
+                    }
+                pendingTick.value =
+                    buildSeasonTick(seasonNumber, seasonEpisodes, markEpisodesWatched.now()) ?: return@launch
+            } else {
+                when (val result = tvShowRepository.clearSeason(showId, seasonNumber)) {
+                    is Resource.Success ->
+                        if (result.data.isNotEmpty()) {
+                            untickEvent.value =
+                                UntickEvent(++untickSeq, result.data, null, 0, seasonNumber, isSeason = true)
+                        }
+                    is Resource.Error -> errorMessage.value = result.message
+                }
+            }
+        }
+    }
+
+    /**
+     * Writes the open prompt with the chosen date. The prompt is cleared **before** the write is
+     * launched, so a second confirm finds nothing pending and writes nothing (#131).
+     */
+    public fun confirmTick(
+        watchedWhen: WatchedWhen,
+        includeEarlier: Boolean,
+    ) {
+        val tick = pendingTick.value ?: return
+        pendingTick.value = null
+        viewModelScope.launch {
+            val ids = tick.targetIds + if (includeEarlier) tick.earlierIds else emptyList()
+            val result = markEpisodesWatched.execute(ids, watchedWhen, targetIsExplicit = !tick.isSeason)
             if (result is Resource.Error) errorMessage.value = result.message
         }
+    }
+
+    /** Closes the prompt without writing. */
+    public fun dismissTick() {
+        pendingTick.value = null
+    }
+
+    /** Restores [event]'s dates; an episode re-ticked since keeps its newer date. */
+    public fun undo(event: UntickEvent) {
+        consumeUntick(event.id)
+        viewModelScope.launch {
+            val result = tvShowRepository.restoreWatched(event.previous)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    /** Acknowledges the Undo snackbar for [id] once it has gone. */
+    public fun consumeUntick(id: Long) {
+        if (untickEvent.value?.id == id) untickEvent.value = null
     }
 
     /**
