@@ -64,6 +64,7 @@ class LibraryViewModelFactory(
             LibraryViewModel(
                 mediaRepository = appContainer.mediaRepository,
                 deleteMediaUseCase = appContainer.deleteMediaUseCase,
+                settingsRepository = appContainer.settingsRepository,
             )
         },
     )
@@ -409,6 +410,7 @@ class TVShowDetailViewModelFactory(
                 tvShowRepository = appContainer.tvShowRepository,
                 deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 backfillUseCase = appContainer.backfillShowEpisodesUseCase,
+                settingsRepository = appContainer.settingsRepository,
             )
         },
     )

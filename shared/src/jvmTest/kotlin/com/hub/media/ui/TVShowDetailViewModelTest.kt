@@ -14,6 +14,8 @@ import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaUseCase
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
@@ -60,6 +62,7 @@ class TVShowDetailViewModelTest {
     private lateinit var tvShowRepository: TVShowRepository
     private lateinit var deleteMediaUseCase: BulkDeleteUseCase
     private lateinit var backfillUseCase: BackfillShowEpisodesUseCase
+    private lateinit var settingsRepository: SettingsRepository
     private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
 
@@ -68,6 +71,7 @@ class TVShowDetailViewModelTest {
         viewModels.installMain()
         db = testAppDatabase()
         tvShowRepository = TVShowRepository(db)
+        settingsRepository = SettingsRepository(db.appSettingsDao())
         tempDir = runBlocking { createTestTempDir() }
         deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir))
         // Never reached by these tests -- none of them refresh -- but the ViewModel needs one, and a
@@ -119,7 +123,7 @@ class TVShowDetailViewModelTest {
     ): TVShowDetailViewModel {
         val viewModel =
             viewModels.track(
-                TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfill),
+                TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfill, settingsRepository),
             )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
         return viewModel
@@ -181,6 +185,34 @@ class TVShowDetailViewModelTest {
             assertEquals(1, state.watchedEpisodes)
             assertEquals(5, state.totalEpisodes)
             assertEquals(false, state.isAbandoned)
+        }
+
+    @Test
+    fun overallCounts_followTheIncludeSpecialsSetting_whileSeasonZeroStaysListed() =
+        runTest {
+            val showId =
+                insertShow(
+                    seasons = listOf(SeasonQuickFill(0, episodeCount = 1), SeasonQuickFill(1, episodeCount = 2)),
+                )
+            for (episode in db.episodeDao().getByMediaIdAndSeason(showId, 1)) {
+                tvShowRepository.setEpisodeWatched(episode.id, watched = true)
+            }
+            val viewModel = readyViewModel(showId)
+
+            val included =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.watchedEpisodes == 2
+                } as TVShowDetailUiState.Ready
+            assertEquals(3, included.totalEpisodes)
+
+            settingsRepository.setIncludeSpecials(false)
+
+            val excluded =
+                viewModel.uiState.first {
+                    it is TVShowDetailUiState.Ready && it.totalEpisodes == 2
+                } as TVShowDetailUiState.Ready
+            assertEquals(2, excluded.watchedEpisodes)
+            assertEquals(listOf(0, 1), excluded.seasons.map { it.seasonNumber }, "specials stay on screen")
         }
 
     @Test
@@ -282,7 +314,13 @@ class TVShowDetailViewModelTest {
         runTest {
             val viewModel =
                 viewModels.track(
-                    TVShowDetailViewModel(newId(), tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                    TVShowDetailViewModel(
+                        newId(),
+                        tvShowRepository,
+                        deleteMediaUseCase,
+                        backfillUseCase,
+                        settingsRepository,
+                    ),
                 )
 
             val state = viewModel.uiState.first { it !is TVShowDetailUiState.Loading }
@@ -298,7 +336,13 @@ class TVShowDetailViewModelTest {
             val bookId = insertBook()
             val viewModel =
                 viewModels.track(
-                    TVShowDetailViewModel(bookId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                    TVShowDetailViewModel(
+                        bookId,
+                        tvShowRepository,
+                        deleteMediaUseCase,
+                        backfillUseCase,
+                        settingsRepository,
+                    ),
                 )
 
             val state = viewModel.uiState.first { it !is TVShowDetailUiState.Loading }
@@ -327,7 +371,13 @@ class TVShowDetailViewModelTest {
             val showId = insertShow(seasons = listOf(SeasonQuickFill(1, 3)))
             val viewModel =
                 viewModels.track(
-                    TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                    TVShowDetailViewModel(
+                        showId,
+                        tvShowRepository,
+                        deleteMediaUseCase,
+                        backfillUseCase,
+                        settingsRepository,
+                    ),
                 )
 
             val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready }
@@ -344,7 +394,13 @@ class TVShowDetailViewModelTest {
                 )
             val viewModel =
                 viewModels.track(
-                    TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                    TVShowDetailViewModel(
+                        showId,
+                        tvShowRepository,
+                        deleteMediaUseCase,
+                        backfillUseCase,
+                        settingsRepository,
+                    ),
                 )
 
             val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready && it.canRefreshMetadata }
@@ -365,7 +421,13 @@ class TVShowDetailViewModelTest {
                 )
             val viewModel =
                 viewModels.track(
-                    TVShowDetailViewModel(showId, tvShowRepository, deleteMediaUseCase, backfillUseCase),
+                    TVShowDetailViewModel(
+                        showId,
+                        tvShowRepository,
+                        deleteMediaUseCase,
+                        backfillUseCase,
+                        settingsRepository,
+                    ),
                 )
 
             val state = viewModel.uiState.first { it is TVShowDetailUiState.Ready }

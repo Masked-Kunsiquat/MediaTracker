@@ -1,6 +1,7 @@
 package com.hub.media.features.tv.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
@@ -1605,6 +1606,34 @@ class TVShowRepositoryTest {
             val updatedRow = updated.first { it.mediaId == mediaId }
             assertEquals(3, updatedRow.totalEpisodes, "ticking an episode must not change the total")
             assertEquals(1, updatedRow.watchedEpisodes)
+        }
+
+    @Test
+    fun episodeDaoObserveProgress_countsSpecialsSeparately() =
+        runTest {
+            // #88: season 0 is the only marker of a special, and the main pair must exclude it
+            // while the all-episodes pair keeps it.
+            val addResult =
+                repo.addShow(
+                    title = "Severance",
+                    seasons = listOf(SeasonQuickFill(0, episodeCount = 1), SeasonQuickFill(1, episodeCount = 2)),
+                )
+            assertIs<Resource.Success<String>>(addResult)
+            val mediaId = addResult.data
+            for (episode in db.episodeDao().getByMediaIdAndSeason(mediaId, 1)) {
+                repo.setEpisodeWatched(episode.id, watched = true)
+            }
+
+            val row =
+                db
+                    .episodeDao()
+                    .observeProgress()
+                    .first { rows -> rows.any { it.mediaId == mediaId && it.watchedEpisodes == 2 } }
+                    .first { it.mediaId == mediaId }
+            assertEquals(
+                TVProgressCounts(mediaId, totalEpisodes = 3, watchedEpisodes = 2, totalMain = 2, watchedMain = 2),
+                row,
+            )
         }
 
     @Test

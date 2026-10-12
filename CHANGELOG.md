@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A new **Include specials** setting under Settings → TV (#88). It is on by default, which is how
+  shows have always been counted. Turn it off and specials (season 0) stop counting toward a
+  show's progress: a show with every regular episode watched reads as finished even with specials
+  left, and its library card counts only the regular episodes. Specials stay listed on the show's
+  screen and can still be ticked off. A show made up only of specials keeps counting them.
+
 ### Internal
 
 - Tests now pin the prompts in front of a TV season's destructive edits (#83): re-entering a

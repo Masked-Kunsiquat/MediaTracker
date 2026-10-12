@@ -99,6 +99,18 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun includeSpecials_defaultsOn_andSetterFlipsItReactively() =
+        runTest {
+            val viewModel = newViewModel()
+            assertTrue(viewModel.uiState.value.includeSpecials)
+
+            viewModel.setIncludeSpecials(false)
+
+            val updated = viewModel.uiState.first { !it.includeSpecials }
+            assertFalse(updated.includeSpecials)
+        }
+
+    @Test
     fun setWeekStartDay_updatesUiStateReactively() =
         runTest {
             val viewModel = newViewModel()

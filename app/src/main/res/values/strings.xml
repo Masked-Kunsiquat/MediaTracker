@@ -210,6 +210,9 @@
     <string name="settings_week_start_day_description">Controls the boundaries of \"This week\" on the Stats screen.</string>
     <string name="settings_week_start_day_monday">Monday</string>
     <string name="settings_week_start_day_sunday">Sunday</string>
+    <string name="settings_section_tv">TV</string>
+    <string name="settings_include_specials_label">Include specials</string>
+    <string name="settings_include_specials_description">Count specials (season 0) toward a show\'s progress and whether it\'s finished.</string>
 
     <!-- SettingsScreen: Google Books API key -->
     <string name="settings_section_book_lookups">Book lookups</string>
