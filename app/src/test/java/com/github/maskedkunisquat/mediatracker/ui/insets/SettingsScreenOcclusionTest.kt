@@ -55,6 +55,7 @@ class SettingsScreenOcclusionTest {
         SettingsScreen(
             uiState = SettingsUiState(),
             onWeekStartDayChange = {},
+            onIncludeSpecialsChange = {},
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},

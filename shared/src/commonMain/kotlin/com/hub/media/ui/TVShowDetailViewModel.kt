@@ -2,12 +2,15 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.observeIncludeSpecials
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
@@ -110,6 +113,7 @@ public class TVShowDetailViewModel(
     private val tvShowRepository: TVShowRepository,
     private val deleteMediaUseCase: BulkDeleteUseCase,
     private val backfillUseCase: BackfillShowEpisodesUseCase,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
     private val isRefreshing = MutableStateFlow(false)
@@ -175,9 +179,22 @@ public class TVShowDetailViewModel(
             },
             seasonFindings,
             addingSeasonNumbers,
-        ) { base, findings, adding ->
+            settingsRepository.observeIncludeSpecials(),
+        ) { base, findings, adding, includeSpecials ->
             if (base is TVShowDetailUiState.Ready) {
-                base.copy(seasonFindings = findings, addingSeasonNumbers = adding)
+                // The overall counts follow the include-specials setting (#88) through the same
+                // rule the library uses, so this screen and the library card cannot disagree.
+                // Per-season groups are untouched: season 0 is still listed and still tickable.
+                val counted =
+                    TVProgressCounts
+                        .of(showId, base.seasons.flatMap { it.episodes })
+                        .counted(includeSpecials)
+                base.copy(
+                    seasonFindings = findings,
+                    addingSeasonNumbers = adding,
+                    watchedEpisodes = counted.watchedEpisodes,
+                    totalEpisodes = counted.totalEpisodes,
+                )
             } else {
                 base
             }

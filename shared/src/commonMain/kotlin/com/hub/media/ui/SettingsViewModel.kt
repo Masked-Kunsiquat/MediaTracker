@@ -9,10 +9,12 @@ import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.clearGoogleBooksApiKey
 import com.hub.media.features.settings.data.clearTmdbCredential
 import com.hub.media.features.settings.data.observeGoogleBooksApiKey
+import com.hub.media.features.settings.data.observeIncludeSpecials
 import com.hub.media.features.settings.data.observeLogVerbosity
 import com.hub.media.features.settings.data.observeTmdbCredential
 import com.hub.media.features.settings.data.observeWeekStartDay
 import com.hub.media.features.settings.data.setGoogleBooksApiKey
+import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setTmdbCredential
 import com.hub.media.features.settings.data.setWeekStartDay
@@ -67,12 +69,14 @@ public class SettingsViewModel(
             // Same mapping-to-presence rule, same reason: the credential itself must never reach
             // uiState. See SettingsUiState.tmdbCredentialSet.
             settingsRepository.observeTmdbCredential().map { it != null },
-        ) { weekStartDay, logVerbosity, apiKeySet, tmdbSet ->
+            settingsRepository.observeIncludeSpecials(),
+        ) { weekStartDay, logVerbosity, apiKeySet, tmdbSet, includeSpecials ->
             SettingsUiState(
                 weekStartDay = weekStartDay,
                 logVerbosity = logVerbosity,
                 googleBooksApiKeySet = apiKeySet,
                 tmdbCredentialSet = tmdbSet,
+                includeSpecials = includeSpecials,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -89,6 +93,16 @@ public class SettingsViewModel(
     public fun setWeekStartDay(value: WeekStartDay) {
         viewModelScope.launch {
             settingsRepository.setWeekStartDay(value)
+        }
+    }
+
+    /**
+     * Persists [value] as the include-specials preference (#88). Fire-and-forget, exactly like
+     * [setWeekStartDay] -- [uiState], the library and every open show screen reflect it reactively.
+     */
+    public fun setIncludeSpecials(value: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setIncludeSpecials(value)
         }
     }
 

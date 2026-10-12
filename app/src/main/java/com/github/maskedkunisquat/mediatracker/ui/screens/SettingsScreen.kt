@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -30,11 +32,14 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
@@ -132,6 +137,8 @@ import com.hub.media.ui.SettingsViewModel
  *   share a progress type either.
  * @param onStartTmdbBackfillClick Called when that pass's start/resume button is tapped.
  * @param onCancelTmdbBackfillClick Called when that pass's cancel button is tapped.
+ * @param onIncludeSpecialsChange Called with the new include-specials value (#88), wired to
+ *   [SettingsViewModel.setIncludeSpecials].
  * @param onNavigateBack Called when the back icon is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,6 +146,7 @@ import com.hub.media.ui.SettingsViewModel
 fun SettingsScreen(
     uiState: SettingsUiState,
     onWeekStartDayChange: (WeekStartDay) -> Unit,
+    onIncludeSpecialsChange: (Boolean) -> Unit,
     onLogVerbosityChange: (LogLevel) -> Unit,
     onGoogleBooksApiKeySave: (String) -> Unit,
     onGoogleBooksApiKeyClear: () -> Unit,
@@ -211,6 +219,14 @@ fun SettingsScreen(
                         WeekStartDaySetting(
                             selected = uiState.weekStartDay,
                             onSelectedChange = onWeekStartDayChange,
+                        )
+                    }
+                }
+                item {
+                    SettingsSection(title = stringResource(R.string.settings_section_tv)) {
+                        IncludeSpecialsSetting(
+                            checked = uiState.includeSpecials,
+                            onCheckedChange = onIncludeSpecialsChange,
                         )
                     }
                 }
@@ -363,6 +379,38 @@ private fun WeekStartDaySetting(
                 )
             }
         }
+    }
+}
+
+/**
+ * The include-specials setting row (#88): whether season 0 counts toward a show's progress and
+ * completion. The whole row is the toggle target, not just the [Switch], so the label is part of a
+ * single accessible control rather than a separate node beside it.
+ */
+@Composable
+private fun IncludeSpecialsSetting(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(
+                text = stringResource(R.string.settings_include_specials_label),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = stringResource(R.string.settings_include_specials_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

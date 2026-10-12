@@ -29,6 +29,7 @@ private fun SettingsScreenMondayPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onIncludeSpecialsChange = {},
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
@@ -73,6 +74,7 @@ private fun SettingsScreenSundayPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.SUNDAY),
             onWeekStartDayChange = {},
+            onIncludeSpecialsChange = {},
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
@@ -117,6 +119,7 @@ private fun SettingsScreenExportingPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onIncludeSpecialsChange = {},
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
@@ -161,6 +164,7 @@ private fun SettingsScreenBackingUpPreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onIncludeSpecialsChange = {},
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},
@@ -205,6 +209,7 @@ private fun SettingsScreenValidatingRestorePreview() {
         SettingsScreen(
             uiState = SettingsUiState(weekStartDay = WeekStartDay.MONDAY),
             onWeekStartDayChange = {},
+            onIncludeSpecialsChange = {},
             onLogVerbosityChange = {},
             onGoogleBooksApiKeySave = {},
             onGoogleBooksApiKeyClear = {},

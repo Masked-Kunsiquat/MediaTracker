@@ -18,6 +18,8 @@ import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaSummary
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +49,7 @@ class LibraryViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var repository: BookRepository
     private lateinit var mediaRepository: MediaRepository
+    private lateinit var settingsRepository: SettingsRepository
     private lateinit var viewModel: LibraryViewModel
     private lateinit var tempDir: String
     private val viewModels = ViewModelRegistry()
@@ -60,6 +63,7 @@ class LibraryViewModelTest {
         db = testAppDatabase()
         repository = BookRepository(db)
         mediaRepository = MediaRepository(db)
+        settingsRepository = SettingsRepository(db.appSettingsDao())
         // A real storage directory rather than a fake: the bulk delete's cover cleanup is
         // exercised properly in DeleteMediaUseCaseTest, but wiring the real thing here means these
         // tests fail if the two ever stop fitting together.
@@ -69,6 +73,7 @@ class LibraryViewModelTest {
                 LibraryViewModel(
                     mediaRepository = mediaRepository,
                     deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
+                    settingsRepository = settingsRepository,
                 ),
             )
     }
@@ -92,6 +97,31 @@ class LibraryViewModelTest {
         )
         assertTrue(viewModel.uiState.value.isEmpty)
     }
+
+    @Test
+    fun tvProgress_followsTheIncludeSpecialsSetting() =
+        runTest {
+            // The Severance shape from docs/sample-data: every regular episode watched, one special not.
+            val tv = TVShowRepository(db)
+            val added =
+                tv.addShow(
+                    title = "Severance",
+                    seasons = listOf(SeasonQuickFill(0, episodeCount = 1), SeasonQuickFill(1, episodeCount = 3)),
+                )
+            assertIs<Resource.Success<String>>(added)
+            val showId = added.data
+            for (episode in db.episodeDao().getByMediaIdAndSeason(showId, 1)) {
+                tv.setEpisodeWatched(episode.id, watched = true)
+            }
+
+            val included = viewModel.uiState.first { it.tvProgress[showId]?.watchedEpisodes == 3 }
+            assertEquals(4, included.tvProgress.getValue(showId).totalEpisodes)
+
+            settingsRepository.setIncludeSpecials(false)
+
+            val excluded = viewModel.uiState.first { it.tvProgress[showId]?.totalEpisodes == 3 }
+            assertEquals(3, excluded.tvProgress.getValue(showId).watchedEpisodes)
+        }
 
     @Test
     fun uiState_emitsInsertedBookAndClearsIsEmpty() =
@@ -178,7 +208,7 @@ class LibraryViewModelTest {
 
     /** Rebuilds the ViewModel with a delete that always fails, tracked for teardown like the rest. */
     private fun useFailingDelete(message: String = "Database unavailable") {
-        viewModel = viewModels.track(LibraryViewModel(mediaRepository, FailingBulkDelete(message)))
+        viewModel = viewModels.track(LibraryViewModel(mediaRepository, FailingBulkDelete(message), settingsRepository))
     }
 
     /** Records the ids it was handed, so a test can assert on the request rather than the outcome. */
@@ -194,7 +224,7 @@ class LibraryViewModelTest {
     /** Rebuilds the ViewModel with a recording delete and returns the recorder. */
     private fun useRecordingDelete(): RecordingBulkDelete =
         RecordingBulkDelete().also {
-            viewModel = viewModels.track(LibraryViewModel(mediaRepository, it))
+            viewModel = viewModels.track(LibraryViewModel(mediaRepository, it, settingsRepository))
         }
 
     /**

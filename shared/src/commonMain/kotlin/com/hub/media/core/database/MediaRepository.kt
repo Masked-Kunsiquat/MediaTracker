@@ -1,6 +1,6 @@
 package com.hub.media.core.database
 
-import com.hub.media.core.database.dao.TVProgressRow
+import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
@@ -48,8 +48,11 @@ public class MediaRepository(
      * underlying query groups by `mediaId`. [com.hub.media.ui.LibraryStatusFilter.ofShow] treats
      * that absence as "not started"; anything else reading this must decide the same question
      * deliberately rather than assume a key exists.
+     *
+     * Raw counts, both with and without specials: the caller picks a pair with
+     * [TVProgressCounts.counted] under the include-specials setting (#88).
      */
-    public fun observeTVProgressByMediaId(): Flow<Map<String, TVProgressRow>> =
+    public fun observeTVProgressByMediaId(): Flow<Map<String, TVProgressCounts>> =
         db.episodeDao().observeProgress().map { rows -> rows.associateBy { it.mediaId } }
 
     /**

@@ -178,6 +178,7 @@ fun SettingsScreenRoute(
     SettingsScreen(
         uiState = uiState,
         onWeekStartDayChange = viewModel::setWeekStartDay,
+        onIncludeSpecialsChange = viewModel::setIncludeSpecials,
         onLogVerbosityChange = viewModel::setLogVerbosity,
         onGoogleBooksApiKeySave = { key ->
             coroutineScope.launch {

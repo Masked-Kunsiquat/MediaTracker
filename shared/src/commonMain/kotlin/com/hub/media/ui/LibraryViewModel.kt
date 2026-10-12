@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.domain.BulkDeleteUseCase
+import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.observeIncludeSpecials
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,10 +25,13 @@ import kotlin.time.Duration.Companion.seconds
  *   operations. Deliberately not a `BookRepository`: the library list is polymorphic per Issue #67,
  *   so it must not depend on book-specific data access.
  * @param deleteMediaUseCase Bulk delete with reference-aware cover cleanup.
+ * @param settingsRepository Source of the include-specials setting (#88), which decides which of a
+ *   show's episode counts the library displays and filters by.
  */
 public class LibraryViewModel(
     private val mediaRepository: MediaRepository,
     private val deleteMediaUseCase: BulkDeleteUseCase,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
     private val statusFilter = MutableStateFlow<LibraryStatusFilter?>(null)
     private val searchQuery = MutableStateFlow("")
@@ -40,12 +45,18 @@ public class LibraryViewModel(
      * Combined here rather than as a sixth source below only because `combine` has no arity that
      * wide; the two always arrive together as far as the UI is concerned, and a show's chip is
      * wrong if it is placed before its episode counts land.
+     *
+     * The include-specials setting (#88) picks which pair of counts each show is shown and filtered
+     * by. Flipping it re-selects from counts already in hand; the episode query does not re-run.
      */
     private val mediaWithProgress =
         combine(
             mediaRepository.observeAllMediaWithDetails(),
             mediaRepository.observeTVProgressByMediaId(),
-        ) { media, progress -> media to progress }
+            settingsRepository.observeIncludeSpecials(),
+        ) { media, progress, includeSpecials ->
+            media to progress.mapValues { (_, counts) -> counts.counted(includeSpecials) }
+        }
 
     public val uiState: StateFlow<LibraryUiState> =
         combine(

@@ -46,10 +46,15 @@ import com.hub.media.features.settings.data.WeekStartDay
  *   reason to treat `false` as an error state. Manual entry works with no credential, which is the
  *   offline-first guarantee in AGENTS.md §1, and every restored backup starts here because the
  *   credential is scrubbed out of backups by design.
+ * @property includeSpecials Whether specials (season 0) count toward a show's progress and
+ *   completion (#88). Defaults to `true` here and in
+ *   [com.hub.media.features.settings.data.observeIncludeSpecials], for the same first-composition
+ *   reason [weekStartDay] gives.
  */
 public data class SettingsUiState(
     val weekStartDay: WeekStartDay = WeekStartDay.MONDAY,
     val logVerbosity: LogLevel = DEFAULT_LOG_VERBOSITY,
     val googleBooksApiKeySet: Boolean = false,
     val tmdbCredentialSet: Boolean = false,
+    val includeSpecials: Boolean = true,
 )

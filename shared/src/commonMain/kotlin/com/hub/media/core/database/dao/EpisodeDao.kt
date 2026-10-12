@@ -113,20 +113,82 @@ interface EpisodeDao {
      *
      * This is the query form of the rule [com.hub.media.core.database.entities.TVDetailsEntity]'s
      * KDoc states: there is no stored progress counter, so "episodes watched" is always derived by
-     * counting [EpisodeEntity.watchedAt] `IS NOT NULL` rows. [TVProgressRow] is a plain projection
+     * counting [EpisodeEntity.watchedAt] `IS NOT NULL` rows. [TVProgressCounts] is a plain projection
      * (no `@Entity`) matched to this query's column aliases by constructor parameter name -- it is
      * not a table.
+     *
+     * Both pairs of counts -- with and without specials -- come from the one `GROUP BY`, so flipping
+     * the include-specials setting (#88) selects a pair rather than re-running a query. See
+     * [TVProgressCounts.counted].
      */
     @Query(
         "SELECT mediaId, COUNT(*) AS totalEpisodes, " +
-            "SUM(CASE WHEN watchedAt IS NOT NULL THEN 1 ELSE 0 END) AS watchedEpisodes " +
+            "SUM(CASE WHEN watchedAt IS NOT NULL THEN 1 ELSE 0 END) AS watchedEpisodes, " +
+            "SUM(CASE WHEN seasonNumber > 0 THEN 1 ELSE 0 END) AS totalMain, " +
+            "SUM(CASE WHEN seasonNumber > 0 AND watchedAt IS NOT NULL THEN 1 ELSE 0 END) AS watchedMain " +
             "FROM episodes GROUP BY mediaId",
     )
-    fun observeProgress(): Flow<List<TVProgressRow>>
+    fun observeProgress(): Flow<List<TVProgressCounts>>
 }
 
 /**
- * Derived (never stored) per-show episode progress -- see [EpisodeDao.observeProgress].
+ * Raw per-show episode counts, with and without specials -- see [EpisodeDao.observeProgress].
+ *
+ * **Season 0 is the only marker of a special.** There is no `isSpecial` flag: `seasonNumber > 0`
+ * *is* the definition of a regular episode, here and everywhere else. Do not add a second notion.
+ *
+ * @property totalEpisodes @property watchedEpisodes Every episode row for [mediaId], specials included.
+ * @property totalMain @property watchedMain The same, restricted to `seasonNumber > 0`.
+ */
+public data class TVProgressCounts(
+    val mediaId: String,
+    val totalEpisodes: Int,
+    val watchedEpisodes: Int,
+    val totalMain: Int,
+    val watchedMain: Int,
+) {
+    /**
+     * The counts the app displays and places a show by, under the include-specials setting (#88).
+     *
+     * Every consumer -- the library card's "x / y episodes", the library status filter and the show
+     * screen's status chip -- goes through here, so a show can never read "19 / 20 episodes --
+     * Finished": the count and the status are always computed from the same pair.
+     *
+     * A show with **only** specials falls back to counting all of them when specials are excluded.
+     * Otherwise its main pair is `0 / 0`, which [com.hub.media.ui.LibraryStatusFilter.ofShow] reads as
+     * not started, so the setting would make the show permanently uncountable.
+     */
+    public fun counted(includeSpecials: Boolean): TVProgressRow =
+        if (includeSpecials || totalMain == 0) {
+            TVProgressRow(mediaId, totalEpisodes, watchedEpisodes)
+        } else {
+            TVProgressRow(mediaId, totalMain, watchedMain)
+        }
+
+    public companion object {
+        /**
+         * The same counts [EpisodeDao.observeProgress] produces, built from a show's episode list
+         * for a screen that already holds one (the show detail screen) rather than a second query.
+         */
+        public fun of(
+            mediaId: String,
+            episodes: List<EpisodeEntity>,
+        ): TVProgressCounts {
+            val main = episodes.filter { it.seasonNumber > 0 }
+            return TVProgressCounts(
+                mediaId = mediaId,
+                totalEpisodes = episodes.size,
+                watchedEpisodes = episodes.count { it.watchedAt != null },
+                totalMain = main.size,
+                watchedMain = main.count { it.watchedAt != null },
+            )
+        }
+    }
+}
+
+/**
+ * Derived (never stored) per-show episode progress, after the include-specials setting has chosen
+ * which counts apply -- see [TVProgressCounts.counted].
  *
  * @property totalEpisodes Every episode row that exists for [mediaId], watched or not.
  * @property watchedEpisodes The subset of those with a non-null [EpisodeEntity.watchedAt].
