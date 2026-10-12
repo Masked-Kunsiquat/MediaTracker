@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import com.hub.media.core.database.entities.EpisodeEntity
 import kotlinx.coroutines.flow.Flow
+import kotlin.time.Instant
 
 /**
  * Reads [EpisodeEntity] (ROADMAP Task 13 Phase C). Read-only for the same reason
@@ -129,7 +130,77 @@ interface EpisodeDao {
             "FROM episodes GROUP BY mediaId",
     )
     fun observeProgress(): Flow<List<TVProgressCounts>>
+
+    /**
+     * The "Up next" queue (#89): for every show the user has started, the next episode to watch.
+     * One row per show, most recently watched show first.
+     *
+     * ### Which episode is "next"
+     * The lowest unwatched episode that has aired and is allowed, where:
+     * - **aired** means `airDate` is null or not after [nowMillis]. A quick-filled episode has no
+     *   air date and counts as aired; a TMDB episode dated in the future does not, so a show the
+     *   user is up to date on drops out until its next episode airs.
+     * - **allowed** means a regular episode (`seasonNumber > 0`), or a special when [includeSpecials]
+     *   is on (#88).
+     *
+     * Specials sort **after** every regular season (`seasonNumber = 0` sorts last), so a special is
+     * offered only once the regular episodes are done. In strict season order an unwatched special
+     * would sit at the front of the queue and block it -- the owner decided against that.
+     *
+     * ### Which shows appear
+     * Only shows with at least one watched episode (started), and never an abandoned one. A show
+     * nobody has started belongs in the library, not in a queue of things in progress.
+     *
+     * [nowMillis] is a parameter rather than SQL's own clock so tests control time.
+     */
+    @Query(
+        """
+        SELECT m.id AS mediaId, m.title AS showTitle, m.coverImageHash AS coverImageHash,
+               e.id AS episodeId, e.seasonNumber AS seasonNumber, e.episodeNumber AS episodeNumber,
+               e.title AS episodeTitle,
+               (SELECT MAX(w.watchedAt) FROM episodes w WHERE w.mediaId = m.id) AS lastWatchedAt,
+               (SELECT COUNT(*) FROM episodes r
+                 WHERE r.mediaId = m.id AND r.watchedAt IS NULL
+                   AND (r.airDate IS NULL OR r.airDate <= :nowMillis)
+                   AND (r.seasonNumber > 0 OR :includeSpecials)) AS remaining
+        FROM media_items m
+        JOIN tv_details t ON t.mediaId = m.id
+        JOIN episodes e ON e.id = (
+            SELECT n.id FROM episodes n
+             WHERE n.mediaId = m.id AND n.watchedAt IS NULL
+               AND (n.airDate IS NULL OR n.airDate <= :nowMillis)
+               AND (n.seasonNumber > 0 OR :includeSpecials)
+             ORDER BY (n.seasonNumber = 0), n.seasonNumber, n.episodeNumber
+             LIMIT 1)
+        WHERE t.status != 'ABANDONED'
+          AND EXISTS (SELECT 1 FROM episodes s WHERE s.mediaId = m.id AND s.watchedAt IS NOT NULL)
+        ORDER BY lastWatchedAt DESC, m.title COLLATE NOCASE ASC
+        """,
+    )
+    fun observeUpNext(
+        nowMillis: Long,
+        includeSpecials: Boolean,
+    ): Flow<List<UpNextRow>>
 }
+
+/**
+ * One show's next episode in the "Up next" queue -- see [EpisodeDao.observeUpNext]. A projection,
+ * not a table.
+ *
+ * @property episodeTitle `null` for a quick-filled episode; the screen falls back to "Episode N".
+ * @property remaining Unwatched, aired, allowed episodes left in the show, this one included.
+ */
+public data class UpNextRow(
+    val mediaId: String,
+    val showTitle: String,
+    val coverImageHash: String?,
+    val episodeId: String,
+    val seasonNumber: Int,
+    val episodeNumber: Int,
+    val episodeTitle: String?,
+    val lastWatchedAt: Instant?,
+    val remaining: Int,
+)
 
 /**
  * Raw per-show episode counts, with and without specials -- see [EpisodeDao.observeProgress].

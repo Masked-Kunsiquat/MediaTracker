@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Up next** (#89): a new screen, opened from the play icon in the library's top bar, listing the
+  next episode of every show you have started, most recently watched first. Tap the check to mark
+  it watched and the show moves on to its following episode; Undo puts it back. Tap the card to
+  open the show. Abandoned shows and shows you have not started stay out of it, and an episode that
+  has not aired yet is not offered, so a show you are caught up on drops off until its next episode
+  airs. Specials come after a show's regular episodes, and only while Include specials is on.
 - A new **Include specials** setting under Settings → TV (#88). It is on by default, which is how
   shows have always been counted. Turn it off and specials (season 0) stop counting toward a
   show's progress: a show with every regular episode watched reads as finished even with specials

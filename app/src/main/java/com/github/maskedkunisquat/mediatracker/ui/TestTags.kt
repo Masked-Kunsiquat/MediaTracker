@@ -95,4 +95,9 @@ object TestTags {
         /** The findings list. Tagged under the scrolling-container rule above, not as a control. */
         const val LIST = "mismatchReview:list"
     }
+
+    object UpNext {
+        /** The queue. Tagged under the scrolling-container rule above, not as a control. */
+        const val LIST = "upNext:list"
+    }
 }

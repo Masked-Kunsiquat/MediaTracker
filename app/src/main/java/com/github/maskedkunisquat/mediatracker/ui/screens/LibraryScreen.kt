@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -98,6 +99,7 @@ import kotlin.time.Instant
  * @param onNavigateToMediaDetail Callback invoked with a media item's id when its card is tapped.
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
  * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase B).
+ * @param onNavigateToUpNext Callback to navigate to the Up next queue (#89).
  */
 @Composable
 fun LibraryScreenRoute(
@@ -109,6 +111,7 @@ fun LibraryScreenRoute(
     onNavigateToMediaDetail: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToUpNext: () -> Unit,
 ) {
     val viewModel: LibraryViewModel =
         viewModel(
@@ -125,6 +128,7 @@ fun LibraryScreenRoute(
         onMediaClick = onNavigateToMediaDetail,
         onNavigateToStats = onNavigateToStats,
         onNavigateToSettings = onNavigateToSettings,
+        onNavigateToUpNext = onNavigateToUpNext,
         onStatusFilterChange = viewModel::setStatusFilter,
         onSearchQueryChange = viewModel::setSearchQuery,
         onToggleSelection = viewModel::toggleSelection,
@@ -149,6 +153,7 @@ fun LibraryScreenRoute(
  *   to Book Detail regardless of type (ROADMAP Task 13 Phase B).
  * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped.
  * @param onNavigateToSettings Called when the TopAppBar's settings icon is tapped.
+ * @param onNavigateToUpNext Called when the TopAppBar's Up next icon is tapped (#89).
  * @param onStatusFilterChange Called with the newly selected filter (`null` for "All").
  * @param onSearchQueryChange Called with the new search text — filters [uiState.filteredMedia].
  */
@@ -163,6 +168,7 @@ fun LibraryScreen(
     onMediaClick: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToUpNext: () -> Unit,
     onStatusFilterChange: (LibraryStatusFilter?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onToggleSelection: (String) -> Unit = {},
@@ -204,6 +210,12 @@ fun LibraryScreen(
             CenterAlignedTopAppBar(
                 title = { Text("Library") },
                 actions = {
+                    IconButton(onClick = onNavigateToUpNext) {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = stringResource(R.string.up_next_content_description),
+                        )
+                    }
                     IconButton(onClick = onNavigateToStats) {
                         Icon(
                             imageVector = Icons.Filled.Info,
@@ -721,6 +733,7 @@ private fun LibraryScreenPreview() {
             onMediaClick = { _, _ -> },
             onNavigateToStats = {},
             onNavigateToSettings = {},
+            onNavigateToUpNext = {},
             onStatusFilterChange = {},
             onSearchQueryChange = {},
         )

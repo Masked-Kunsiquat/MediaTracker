@@ -1,6 +1,7 @@
 package com.hub.media.features.tv.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.UpNextRow
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
@@ -199,6 +200,14 @@ public class TVShowRepository(
 
     /** Observes one show's episodes, ordered by season then episode number. */
     public fun observeEpisodes(mediaId: String): Flow<List<EpisodeEntity>> = db.episodeDao().observeByMediaId(mediaId)
+
+    /**
+     * The "Up next" queue (#89) -- see [com.hub.media.core.database.dao.EpisodeDao.observeUpNext]
+     * for what is next and which shows appear. "Now" is read from this repository's clock once per
+     * subscription, which is what keeps the future-episode cut-off testable.
+     */
+    public fun observeUpNext(includeSpecials: Boolean): Flow<List<UpNextRow>> =
+        db.episodeDao().observeUpNext(clock.now().toEpochMilliseconds(), includeSpecials)
 
     /**
      * Adds a show, its details, its quick-filled episodes, and any provider mappings in one

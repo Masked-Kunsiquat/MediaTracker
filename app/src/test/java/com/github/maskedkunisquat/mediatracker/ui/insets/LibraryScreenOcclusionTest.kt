@@ -74,6 +74,7 @@ class LibraryScreenOcclusionTest {
             onMediaClick = { _, _ -> },
             onNavigateToStats = {},
             onNavigateToSettings = {},
+            onNavigateToUpNext = {},
             onStatusFilterChange = {},
             onSearchQueryChange = {},
         )

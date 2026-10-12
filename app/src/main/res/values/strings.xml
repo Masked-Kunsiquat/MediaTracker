@@ -211,6 +211,18 @@
     <string name="settings_week_start_day_monday">Monday</string>
     <string name="settings_week_start_day_sunday">Sunday</string>
     <string name="settings_section_tv">TV</string>
+    <string name="up_next_title">Up next</string>
+    <string name="up_next_content_description">Up next</string>
+    <string name="up_next_empty">Nothing up next. Start a show and its next episode shows up here.</string>
+    <string name="up_next_episode_format">S%1$d · E%2$d · %3$s</string>
+    <string name="up_next_untitled_format">Episode %1$d</string>
+    <string name="up_next_mark_watched_format">Mark %1$s S%2$d E%3$d watched</string>
+    <string name="up_next_marked_format">Marked %1$s S%2$d E%3$d watched</string>
+    <string name="up_next_undo">Undo</string>
+    <plurals name="up_next_remaining">
+        <item quantity="one">%d left</item>
+        <item quantity="other">%d left</item>
+    </plurals>
     <string name="settings_include_specials_label">Include specials</string>
     <string name="settings_include_specials_description">Count specials (season 0) toward a show\'s progress and whether it\'s finished.</string>
 
