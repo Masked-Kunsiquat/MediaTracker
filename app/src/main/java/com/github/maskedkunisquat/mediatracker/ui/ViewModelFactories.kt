@@ -272,7 +272,13 @@ class UpNextViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<UpNextViewModel>(
         UpNextViewModel::class.java,
-        { UpNextViewModel(appContainer.tvShowRepository, appContainer.settingsRepository) },
+        {
+            UpNextViewModel(
+                appContainer.tvShowRepository,
+                appContainer.settingsRepository,
+                appContainer.markEpisodesWatchedUseCase,
+            )
+        },
     )
 
 class MismatchReviewViewModelFactory(

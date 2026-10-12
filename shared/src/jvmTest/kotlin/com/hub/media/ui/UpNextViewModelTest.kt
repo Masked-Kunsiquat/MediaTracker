@@ -7,6 +7,8 @@ import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -17,7 +19,6 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 
 /** [UpNextViewModel] (#89) against a real in-memory database. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -55,14 +56,13 @@ class UpNextViewModelTest {
         return added.data
     }
 
-    private fun newViewModel() = viewModels.track(UpNextViewModel(tv, settings))
+    private fun newViewModel() = viewModels.track(UpNextViewModel(tv, settings, MarkEpisodesWatchedUseCase(db)))
 
     @Test
-    fun markWatched_advancesTheShow_andUndoPutsItBack() =
+    fun requestThenConfirm_advancesTheShow_andDismissWritesNothing() =
         runTest {
             val showId = startedShow(regular = 3)
             val viewModel = newViewModel()
-
             val offered =
                 viewModel.uiState
                     .first { it.items.any { row -> row.episodeNumber == 2 } }
@@ -70,18 +70,17 @@ class UpNextViewModelTest {
                     .single()
             assertEquals(showId, offered.mediaId)
 
-            viewModel.markWatched(offered)
-            val advanced =
-                viewModel.uiState.first {
-                    it.items.singleOrNull()?.episodeNumber == 3 &&
-                        it.markedEvent != null
-                }
-            val event = assertNotNull(advanced.markedEvent)
-            assertEquals(offered, event.row)
+            viewModel.requestTick(offered)
+            val prompting = viewModel.uiState.first { it.pendingTick != null }
+            assertEquals(listOf(offered.episodeId), prompting.pendingTick!!.targetIds)
+            viewModel.dismissTick()
+            viewModel.uiState.first { it.pendingTick == null }
+            assertEquals(null, db.episodeDao().getById(offered.episodeId)!!.watchedAt, "dismiss writes nothing")
 
-            viewModel.undo(event)
-            val restored = viewModel.uiState.first { it.items.singleOrNull()?.episodeNumber == 2 }
-            assertEquals(null, restored.markedEvent, "undo acknowledges the event it reversed")
+            viewModel.requestTick(offered)
+            viewModel.uiState.first { it.pendingTick != null }
+            viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
+            viewModel.uiState.first { it.pendingTick == null && it.items.singleOrNull()?.episodeNumber == 3 }
         }
 
     @Test
