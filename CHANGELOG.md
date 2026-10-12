@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Ticking an episode now asks when you watched it** (#131): Now, On air date (when the episode
+  has one), or Pick a date. You can also mark the earlier unwatched episodes at the same time.
+  Marking a whole season asks the same, counts only the episodes it will mark, and skips episodes
+  that haven't aired. Unticking is instant and offers Undo, which puts back the exact date you had,
+  and Clear season can be undone the same way. Up next's check uses the same prompt.
 - Choosing an edition of a much-reprinted book now loads Open Library's edition list at Open
   Library's published request rate, so a work with hundreds of editions takes a few seconds rather
   than firing every page at once (#120). Works with one page of editions are unaffected.

@@ -159,6 +159,8 @@ class TVShowDetailScreenGoldenTest {
             onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
             onNavigateBack = {},
         )
     }
@@ -193,6 +195,8 @@ class TVShowDetailScreenGoldenTest {
             onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
             onNavigateBack = {},
         )
     }
@@ -240,6 +244,8 @@ class TVShowDetailScreenGoldenTest {
             onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
             onNavigateBack = {},
         )
     }

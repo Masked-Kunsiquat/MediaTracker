@@ -42,6 +42,7 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.UpNextViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.UpNextRow
 import com.hub.media.core.database.entities.MediaType
@@ -71,6 +72,11 @@ fun UpNextScreenRoute(
             snackbarHostState.showSnackbar(error)
             viewModel.consumeError()
         }
+    }
+
+    // The same dated prompt the show screen uses (#131).
+    uiState.pendingTick?.let { tick ->
+        MarkWatchedDialog(tick = tick, onConfirm = viewModel::confirmTick, onDismiss = viewModel::dismissTick)
     }
 
     UpNextScreen(

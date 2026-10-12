@@ -116,6 +116,8 @@ class TVShowDetailRefreshActionTest {
                 onAddAllMissingEpisodes = {},
                 onDelete = {},
                 onErrorShown = {},
+                onUndoUntick = {},
+                onUntickShown = {},
                 onNavigateBack = {},
             )
         }

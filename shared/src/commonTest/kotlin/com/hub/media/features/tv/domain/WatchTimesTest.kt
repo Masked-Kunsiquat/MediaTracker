@@ -92,4 +92,17 @@ class WatchTimesTest {
             },
         )
     }
+
+    @Test
+    fun pickedDay_isReadInUtc_andFutureDaysAreNotPickable() {
+        // Material's DatePicker hands back UTC-midnight millis for the chosen day.
+        val feb16 = Instant.parse("2024-02-16T00:00:00Z").toEpochMilliseconds()
+        assertEquals(WatchedWhen.On(LocalDate(2024, 2, 16)), watchedOnPickedDay(feb16))
+
+        val today = Instant.parse("2026-10-12T00:00:00Z").toEpochMilliseconds()
+        val tomorrow = Instant.parse("2026-10-13T00:00:00Z").toEpochMilliseconds()
+        assertEquals(true, isPickableDay(today, now, la))
+        assertEquals(false, isPickableDay(tomorrow, now, la))
+        assertEquals(2026, pickableUpToYear(now, la))
+    }
 }

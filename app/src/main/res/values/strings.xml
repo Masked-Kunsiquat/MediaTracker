@@ -217,7 +217,6 @@
     <string name="up_next_episode_format">S%1$d · E%2$d · %3$s</string>
     <string name="up_next_untitled_format">Episode %1$d</string>
     <string name="up_next_mark_watched_format">Mark %1$s S%2$d E%3$d watched</string>
-    <string name="up_next_marked_format">Marked %1$s S%2$d E%3$d watched</string>
     <string name="up_next_undo">Undo</string>
     <string name="mark_watched_title_episode">Mark \"%1$s\" watched?</string>
     <string name="mark_watched_title_season">Mark the %1$d unwatched episodes of Season %2$d watched?</string>

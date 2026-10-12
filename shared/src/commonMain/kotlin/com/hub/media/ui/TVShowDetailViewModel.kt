@@ -38,8 +38,12 @@ public data class SeasonGroup(
     val seasonNumber: Int,
     val episodes: List<EpisodeEntity>,
     val watchedCount: Int,
-    /** Unwatched, aired episodes -- what "Mark season watched" would write (#131). 0 hides it. */
-    val markableCount: Int = 0,
+    /**
+     * Unwatched, aired episodes -- what "Mark season watched" would write (#131); 0 hides that
+     * control. Defaults to every unwatched episode, which is exact for quick-filled seasons (no air
+     * dates); the ViewModel always passes the aired count.
+     */
+    val markableCount: Int = episodes.count { it.watchedAt == null },
 )
 
 /** State of the TV show detail screen (ROADMAP Task 13 Phase C). */
