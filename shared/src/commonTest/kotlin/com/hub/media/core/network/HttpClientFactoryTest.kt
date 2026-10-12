@@ -47,10 +47,11 @@ class HttpClientFactoryTest {
     }
 
     @Test
-    fun userAgent_doesNotLeakAPersonalEmailAddress() {
-        // The contact is deliberately a repository URL. A User-Agent is broadcast to every host the
-        // app talks to and logged by all of them, so this asserts the privacy decision rather than
-        // leaving it to a comment nobody re-reads.
-        assertTrue('@' !in USER_AGENT, "User-Agent should carry no email address: $USER_AGENT")
+    fun userAgent_carriesOnlyTheGitHubNoReplyAddress() {
+        // #138: Open Library's identified tier asks for an email, so one is present -- but only the
+        // no-reply address that already signs every commit. A User-Agent is broadcast to every host
+        // the app talks to, so this asserts the privacy decision rather than leaving it to a comment.
+        val addresses = Regex("""[^\s;()]+@[^\s;()]+""").findAll(USER_AGENT).map { it.value }.toList()
+        assertEquals(listOf("130736043+Masked-Kunsiquat@users.noreply.github.com"), addresses)
     }
 }

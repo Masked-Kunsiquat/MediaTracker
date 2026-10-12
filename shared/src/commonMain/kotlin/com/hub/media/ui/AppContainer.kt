@@ -337,8 +337,8 @@ public class AppContainer(
      * [coverRateLimiter] one line above is the point: a quota is per-IP so every caller has to share
      * one tracker, which only this file can arrange, while a pacer must be exclusive to the crawl --
      * the single-request paths ([addBookByIsbnUseCase]/[refetchCoverUseCase]) are meant to stay
-     * unpaced, and [resolveWorkToEditionsUseCase] is unpaced today but should not be (#120, and it
-     * would want its own pacer, not this one). Making it an argument here would invite
+     * unpaced, and [resolveWorkToEditionsUseCase]'s edition paging holds its own pacer inside
+     * [com.hub.media.features.books.network.OpenLibrarySearchClient] (#120), not this one. Making it an argument here would invite
      * exactly the sharing that would be wrong, so
      * [com.hub.media.features.books.domain.createDefaultBulkBackfillUseCase] defaults it privately.
      */

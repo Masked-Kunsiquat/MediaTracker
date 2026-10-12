@@ -24,16 +24,25 @@ private const val SOCKET_TIMEOUT_MILLIS = 15_000L
  * existed every request this app made — including Task 14's bulk backfill crawl, which issues
  * hundreds — sat in the 1 req/s bucket.
  *
- * The contact is the **repository URL, deliberately not a personal email address**: the guidelines
- * want a channel to reach the operator, GitHub issues is one, and a `User-Agent` is broadcast to
- * every host the app talks to and logged by each of them. Putting the maintainer's personal inbox
- * in there would leak it far more widely than the policy requires. Swap it for an address if Open
- * Library ever objects to a URL.
+ * ### The contact: the repository URL *and* the GitHub no-reply address (#138)
+ * Open Library's wording is "a `User-Agent` header **and email**". A URL alone left it unverified
+ * whether this app was in the identified tier at all, while [OPEN_LIBRARY_IDENTIFIED_REQUESTS_PER_SECOND]
+ * paced as though it were -- possibly three times the anonymous ceiling. Adding the address makes the
+ * claim true in every build, with one header and one interval rather than a debug/release split.
+ *
+ * It is the **no-reply address that already signs every commit in the repository**, never a
+ * personal inbox. That distinction is the whole privacy argument: a `User-Agent` is broadcast to and
+ * logged by every host the app contacts, but this address is already one click from the repository
+ * URL beside it, so it discloses nothing new. It is not a credential either -- it authorises nothing,
+ * and Open Library limits by IP -- which is why it may sit in a shipped binary where the TMDB key may
+ * not. [com.hub.media.core.network.HttpClientFactoryTest] pins both halves.
  *
  * No version number, on purpose: it would duplicate `[versions] app` in `gradle/libs.versions.toml`
  * with nothing to keep the copy honest, and the identification policy does not ask for one.
  */
-public const val USER_AGENT: String = "MediaTracker (+https://github.com/Masked-Kunsiquat/MediaTracker)"
+public const val USER_AGENT: String =
+    "MediaTracker (+https://github.com/Masked-Kunsiquat/MediaTracker; " +
+        "130736043+Masked-Kunsiquat@users.noreply.github.com)"
 
 /**
  * The [Json] instance used for all Ktor content negotiation.

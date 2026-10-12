@@ -2,6 +2,8 @@ package com.hub.media.features.books.network
 
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.network.RequestPacer
+import com.hub.media.core.network.openLibraryIdentifiedPacer
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -101,6 +103,14 @@ private const val TAG_EDITION = "OpenLibraryEditionResolver"
 public class OpenLibrarySearchClient(
     private val client: HttpClient,
     private val logger: Logger = AppLogger,
+    /**
+     * Paces [fetchEditionsForWork]'s page loop to Open Library's identified rate (#120). This
+     * client's own instance, never the bulk crawl's: a pacer shared with a crawl lands the crawl's
+     * sleeps on a tap someone is waiting on (#42). Only the paging uses it -- the single-request
+     * lookups on this client stay unpaced, as [com.hub.media.core.network.openLibraryIdentifiedPacer]
+     * explains.
+     */
+    private val editionPagePacer: RequestPacer = openLibraryIdentifiedPacer(),
 ) : BookSearchProvider {
     override suspend fun resolveEditionToIsbn(editionKey: String): Resource<String?> {
         val trimmed = editionKey.trim()
@@ -152,6 +162,9 @@ public class OpenLibrarySearchClient(
             val limit = 50
 
             do {
+                // The first page goes out at once (RequestPacer never makes a first call wait), so
+                // a work with one page of editions -- most of them -- pays no latency at all.
+                editionPagePacer.acquire()
                 val response =
                     client.get("$OPEN_LIBRARY_BASE_URL$trimmed/editions.json") {
                         parameter("limit", limit)
