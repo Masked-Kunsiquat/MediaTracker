@@ -64,6 +64,7 @@ class LibrarySelectionTest {
                     onMediaClick = onMediaClick,
                     onNavigateToStats = {},
                     onNavigateToSettings = {},
+                    onNavigateToUpNext = {},
                     onStatusFilterChange = {},
                     onSearchQueryChange = {},
                     onToggleSelection = onToggleSelection,

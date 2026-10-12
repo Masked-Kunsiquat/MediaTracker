@@ -24,6 +24,7 @@ import com.hub.media.ui.SettingsViewModel
 import com.hub.media.ui.StatsViewModel
 import com.hub.media.ui.TVShowDetailViewModel
 import com.hub.media.ui.TVShowSearchViewModel
+import com.hub.media.ui.UpNextViewModel
 
 /**
  * Base [ViewModelProvider.Factory] shared by every factory in this file.
@@ -265,6 +266,15 @@ class TmdbBackfillViewModelFactory(
  * at its call site: [MismatchReviewViewModel] is its own class rather than a second instance of a
  * generic one, so `ViewModelProvider` can tell it apart on its own.
  */
+
+/** Factory for [UpNextViewModel] (#89). */
+class UpNextViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<UpNextViewModel>(
+        UpNextViewModel::class.java,
+        { UpNextViewModel(appContainer.tvShowRepository, appContainer.settingsRepository) },
+    )
+
 class MismatchReviewViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<MismatchReviewViewModel>(

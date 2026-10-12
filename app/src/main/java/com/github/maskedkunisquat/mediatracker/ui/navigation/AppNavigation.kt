@@ -24,6 +24,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.SettingsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowSearchScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.UpNextScreenRoute
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
 
@@ -82,6 +83,9 @@ fun AppNavigation(
                 },
                 onNavigateToSettings = {
                     navController.navigate(Route.Settings.route)
+                },
+                onNavigateToUpNext = {
+                    navController.navigate(Route.UpNext.route)
                 },
             )
         }
@@ -298,6 +302,17 @@ fun AppNavigation(
         composable(Route.About.route) {
             AboutScreen(
                 versionName = BuildConfig.VERSION_NAME,
+                onNavigateBack = {
+                    navController.navigateUp()
+                },
+            )
+        }
+
+        composable(Route.UpNext.route) {
+            UpNextScreenRoute(
+                appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
+                onOpenShow = { showId -> navController.navigate(Route.TVShowDetail.createRoute(showId)) },
                 onNavigateBack = {
                     navController.navigateUp()
                 },

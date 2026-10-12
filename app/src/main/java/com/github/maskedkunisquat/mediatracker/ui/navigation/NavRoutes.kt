@@ -205,4 +205,9 @@ sealed interface Route {
     data object MismatchReview : Route {
         override val route: String = "mismatch-review"
     }
+
+    /** "Up next" (#89): the next episode of every started show, opened from the library's top bar. */
+    data object UpNext : Route {
+        override val route: String = "up-next"
+    }
 }
