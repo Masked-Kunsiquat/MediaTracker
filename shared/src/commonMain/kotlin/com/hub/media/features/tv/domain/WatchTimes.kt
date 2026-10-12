@@ -48,8 +48,14 @@ public fun resolveWatchedAt(
     val day =
         when (watchedWhen) {
             WatchedWhen.Now -> return now
+            // The air *day* (read in UTC, as stored) must not be after today *locally*. Comparing
+            // instants instead would offer an episode dated tomorrow on the evening before it,
+            // west of UTC -- and the clamp would then store the day before its air date.
             WatchedWhen.OnAirDate ->
-                airDate?.takeIf { it <= now }?.toLocalDateTime(TimeZone.UTC)?.date ?: return null
+                airDate
+                    ?.toLocalDateTime(TimeZone.UTC)
+                    ?.date
+                    ?.takeIf { it <= now.toLocalDateTime(zone).date } ?: return null
             is WatchedWhen.On -> watchedWhen.date
         }
     return minOf(LocalDateTime(day, LocalTime(12, 0)).toInstant(zone), now)

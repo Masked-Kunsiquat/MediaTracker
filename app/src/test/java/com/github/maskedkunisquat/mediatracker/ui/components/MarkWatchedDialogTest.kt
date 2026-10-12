@@ -117,4 +117,10 @@ class MarkWatchedDialogTest {
             button(label).assertIsDisplayed()
         }
     }
+
+    @Test
+    fun seasonTick_withOneEpisode_isSingular() {
+        show(tick(isSeason = true).copy(targetIds = listOf("only")))
+        composeRule.onNodeWithText("Mark the 1 unwatched episode of Season 1 watched?").assertIsDisplayed()
+    }
 }

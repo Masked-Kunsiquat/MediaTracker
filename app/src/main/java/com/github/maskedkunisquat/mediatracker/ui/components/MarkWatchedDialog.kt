@@ -95,7 +95,12 @@ fun MarkWatchedDialog(
         title = {
             Text(
                 if (tick.isSeason) {
-                    stringResource(R.string.mark_watched_title_season, tick.targetIds.size, tick.seasonNumber)
+                    pluralStringResource(
+                        R.plurals.mark_watched_title_season,
+                        tick.targetIds.size,
+                        tick.targetIds.size,
+                        tick.seasonNumber,
+                    )
                 } else {
                     stringResource(
                         R.string.mark_watched_title_episode,

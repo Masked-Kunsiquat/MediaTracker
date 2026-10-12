@@ -55,7 +55,8 @@ public data class UntickEvent(
 private fun hasPastAirDate(
     e: EpisodeEntity,
     now: Instant,
-): Boolean = resolveWatchedAt(WatchedWhen.OnAirDate, e.airDate, now, TimeZone.UTC) != null
+    zone: TimeZone,
+): Boolean = resolveWatchedAt(WatchedWhen.OnAirDate, e.airDate, now, zone) != null
 
 /**
  * The prompt for ticking [target] by hand. Catch-up is offered only when the target itself is aired
@@ -67,10 +68,11 @@ internal fun buildPendingTick(
     episodes: List<EpisodeEntity>,
     includeSpecials: Boolean,
     now: Instant,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
 ): PendingTick {
     val counted = isAired(target.airDate, now) && (includeSpecials || target.seasonNumber > 0)
     val earlier = if (counted) earlierUnwatched(episodes, target, includeSpecials, now) else emptyList()
-    val targetDated = hasPastAirDate(target, now)
+    val targetDated = hasPastAirDate(target, now, zone)
     return PendingTick(
         title = target.title,
         seasonNumber = target.seasonNumber,
@@ -79,8 +81,10 @@ internal fun buildPendingTick(
         targetIds = listOf(target.id),
         earlierIds = earlier.map { it.id },
         airDateAvailable = targetDated,
-        airDateAvailableWithEarlier = targetDated && earlier.all { hasPastAirDate(it, now) },
-        initialPickMillis = target.airDate?.toEpochMilliseconds(),
+        airDateAvailableWithEarlier = targetDated && earlier.all { hasPastAirDate(it, now, zone) },
+        // Only a day the picker can actually select: preselecting a future, disabled day would
+        // let "Mark watched" confirm it and silently store now instead.
+        initialPickMillis = target.airDate?.takeIf { targetDated }?.toEpochMilliseconds(),
     )
 }
 
@@ -89,10 +93,11 @@ internal fun buildSeasonTick(
     seasonNumber: Int,
     seasonEpisodes: List<EpisodeEntity>,
     now: Instant,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
 ): PendingTick? {
     val markable = markableIn(seasonEpisodes, now)
     if (markable.isEmpty()) return null
-    val dated = markable.all { hasPastAirDate(it, now) }
+    val dated = markable.all { hasPastAirDate(it, now, zone) }
     return PendingTick(
         title = null,
         seasonNumber = seasonNumber,

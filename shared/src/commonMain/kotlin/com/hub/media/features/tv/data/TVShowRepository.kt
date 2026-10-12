@@ -662,14 +662,6 @@ public class TVShowRepository(
         }
 
     /**
-     * Corrects an existing show's metadata across both tables in one transaction, the same way
-     * [com.hub.media.features.movies.data.MovieRepository.updateMovieMetadata] does -- a failure
-     * partway through can never leave the two tables individually valid but mutually inconsistent.
-     *
-     * @return [Resource.Error] if [mediaId] does not exist or a validation rule is violated.
-     */
-
-    /**
      * Unticks one episode and returns what it held, so the caller can offer Undo (#131). The read
      * and the clear are one transaction, so the timestamp handed back is exactly the one removed.
      *
@@ -720,6 +712,13 @@ public class TVShowRepository(
             Resource.Error("Failed to undo: ${e.message ?: "Unknown error"}", cause = e)
         }
 
+    /**
+     * Corrects an existing show's metadata across both tables in one transaction, the same way
+     * [com.hub.media.features.movies.data.MovieRepository.updateMovieMetadata] does -- a failure
+     * partway through can never leave the two tables individually valid but mutually inconsistent.
+     *
+     * @return [Resource.Error] if [mediaId] does not exist or a validation rule is violated.
+     */
     public suspend fun updateShowMetadata(
         mediaId: String,
         title: String,

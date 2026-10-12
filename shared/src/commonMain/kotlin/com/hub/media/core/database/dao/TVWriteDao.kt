@@ -442,8 +442,8 @@ interface TVWriteDao {
     /**
      * Marks each episode watched at its own time, in one transaction (#131) -- the only write the
      * tick prompt uses, whether for one episode, a catch-up or a season. Each row goes through
-     * [markEpisodeWatched], so an episode that is already watched keeps its date: the `COALESCE`
-     * there is what makes a season mark safe over a half-watched season.
+     * [markEpisodeWatchedIfUnwatched], whose `watchedAt IS NULL` guard keeps an already-watched
+     * episode's date -- what makes a season mark safe over a half-watched season.
      *
      * @return How many episodes actually changed.
      */
