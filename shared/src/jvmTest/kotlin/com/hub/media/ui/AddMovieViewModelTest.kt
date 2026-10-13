@@ -5,15 +5,19 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Instant
 
 /**
  * [AddMovieViewModel]'s double-tap guard, against a real in-memory [AppDatabase] — that class takes
@@ -105,5 +109,21 @@ class AddMovieViewModelTest {
             viewModel.uiState.first { it is AddMovieUiState.Saved }
 
             assertEquals(2, movieCount(), "after a reset the form must be usable again")
+        }
+
+    @Test
+    fun save_watchedOnPickedDay_storesThatViewing() =
+        runTest {
+            val vm = viewModels.track(AddMovieViewModel(MovieRepository(db, zone = TimeZone.UTC)))
+            vm.save("Heat", null, null, null, WatchStatus.WATCHED, WatchedWhen.On(LocalDate(2024, 3, 3)))
+            val id = (vm.uiState.first { it is AddMovieUiState.Saved } as AddMovieUiState.Saved).mediaId
+            assertEquals(
+                listOf(Instant.parse("2024-03-03T12:00:00Z")),
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .map { it.watchedAt },
+            )
         }
 }

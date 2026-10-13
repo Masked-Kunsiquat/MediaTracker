@@ -5,11 +5,14 @@ import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -17,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * [EditMovieViewModel] tests against a real in-memory [AppDatabase], mirroring
@@ -155,6 +159,8 @@ class EditMovieViewModelTest {
             viewModel.onTitleChange("Interstellar")
             viewModel.onRuntimeChange("170")
             viewModel.onStatusChange(WatchStatus.WATCHED)
+            // Choosing Watched asks when (#192); the status changes once that is answered.
+            viewModel.confirmWatched(WatchedWhen.Now)
             viewModel.save()
 
             viewModel.uiState.first { it is EditMovieUiState.Editing && it.saved }
@@ -163,5 +169,66 @@ class EditMovieViewModelTest {
             val details = db.movieDetailsDao().getByMediaId(movieId)
             assertEquals(170, details?.runtimeMinutes)
             assertEquals(WatchStatus.WATCHED, details?.status)
+        }
+
+    // ---- Asking when (#192) ------------------------------------------------------------------
+
+    private suspend fun utcEditing(status: WatchStatus): Pair<String, EditMovieViewModel> {
+        val repo = MovieRepository(db, zone = TimeZone.UTC)
+        val id = (repo.addMovie(title = "Heat", status = status) as Resource.Success).data
+        val vm = viewModels.track(EditMovieViewModel(id, repo))
+        vm.uiState.first { it is EditMovieUiState.Editing }
+        return id to vm
+    }
+
+    @Test
+    fun choosingWatched_prompts_andSavePassesTheDay() =
+        runTest {
+            val (id, vm) = utcEditing(WatchStatus.WATCHLIST)
+            vm.onStatusChange(WatchStatus.WATCHED)
+            val prompted = vm.uiState.first { (it as? EditMovieUiState.Editing)?.pendingWatched == true }
+            assertEquals(
+                WatchStatus.WATCHLIST,
+                (prompted as EditMovieUiState.Editing).status,
+                "not chosen until confirmed",
+            )
+            vm.confirmWatched(WatchedWhen.On(LocalDate(2024, 3, 3)))
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.status == WatchStatus.WATCHED }
+            vm.save()
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.saved == true }
+            assertEquals(Instant.parse("2024-03-03T12:00:00Z"), db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
+        }
+
+    @Test
+    fun dismissingThePrompt_leavesTheStatus() =
+        runTest {
+            val (_, vm) = utcEditing(WatchStatus.WATCHLIST)
+            vm.onStatusChange(WatchStatus.WATCHED)
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.pendingWatched == true }
+            vm.dismissWatched()
+            val s = vm.uiState.first { (it as? EditMovieUiState.Editing)?.pendingWatched == false }
+            assertEquals(WatchStatus.WATCHLIST, (s as EditMovieUiState.Editing).status)
+        }
+
+    @Test
+    fun alreadyWatched_reselectingWatched_doesNotPrompt() =
+        runTest {
+            val (id, vm) = utcEditing(WatchStatus.WATCHED)
+            vm.onStatusChange(WatchStatus.WATCHING)
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.status == WatchStatus.WATCHING }
+            vm.onStatusChange(WatchStatus.WATCHED)
+            val s = vm.uiState.first { (it as? EditMovieUiState.Editing)?.status == WatchStatus.WATCHED }
+            assertEquals(false, (s as EditMovieUiState.Editing).pendingWatched)
+            vm.save()
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.saved == true }
+            assertEquals(
+                1,
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .size,
+                "a re-save adds no viewing",
+            )
         }
 }
