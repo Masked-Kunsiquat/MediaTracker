@@ -43,6 +43,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditMovieViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
@@ -70,6 +71,15 @@ fun EditMovieScreenRoute(
     }
     LaunchedEffect(uiState) {
         if (uiState is EditMovieUiState.NotFound) onNavigateBack()
+    }
+
+    // Choosing Watched asks when (#192); the form's status only changes once this is answered.
+    (uiState as? EditMovieUiState.Editing)?.takeIf { it.pendingWatched }?.let { form ->
+        FilmWatchedDialog(
+            title = stringResource(R.string.film_watched_title, form.title),
+            onConfirm = viewModel::confirmWatched,
+            onDismiss = viewModel::dismissWatched,
+        )
     }
 
     EditMovieScreen(

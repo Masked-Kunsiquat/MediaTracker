@@ -17,6 +17,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.features.tv.domain.WatchedWhen
 import com.hub.media.ui.AddMovieUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -59,7 +60,7 @@ class AddMovieScreenTest {
 
     private fun setContent(
         uiState: AddMovieUiState = AddMovieUiState.Idle,
-        onSave: (String, Int?, Int?, Double?, WatchStatus) -> Unit = { _, _, _, _, _ -> },
+        onSave: (String, Int?, Int?, Double?, WatchStatus, WatchedWhen?) -> Unit = { _, _, _, _, _, _ -> },
         onErrorShown: () -> Unit = {},
     ) {
         composeRule.setContent {
@@ -99,7 +100,7 @@ class AddMovieScreenTest {
         var capturedRuntime: Int? = -1
         var capturedPrice: Double? = -1.0
         setContent(
-            onSave = { _, year, runtime, price, _ ->
+            onSave = { _, year, runtime, price, _, _ ->
                 capturedYear = year
                 capturedRuntime = runtime
                 capturedPrice = price
@@ -124,7 +125,7 @@ class AddMovieScreenTest {
         var capturedRuntime: Int? = null
         var capturedPrice: Double? = null
         setContent(
-            onSave = { title, year, runtime, price, _ ->
+            onSave = { title, year, runtime, price, _, _ ->
                 capturedTitle = title
                 capturedYear = year
                 capturedRuntime = runtime
@@ -149,7 +150,7 @@ class AddMovieScreenTest {
     @Test
     fun selectingAStatusChip_changesTheStatusPassedToOnSave() {
         var capturedStatus: WatchStatus? = null
-        setContent(onSave = { _, _, _, _, status -> capturedStatus = status })
+        setContent(onSave = { _, _, _, _, status, _ -> capturedStatus = status })
 
         typeIntoField(R.string.add_movie_field_title, "Oppenheimer")
 
@@ -184,7 +185,7 @@ class AddMovieScreenTest {
     @Test
     fun aNumberTooLargeToParse_blocksSavingRatherThanBeingSentAsUnknown() {
         var saves = 0
-        setContent(onSave = { _, _, _, _, _ -> saves++ })
+        setContent(onSave = { _, _, _, _, _, _ -> saves++ })
 
         typeIntoField(R.string.add_movie_field_title, "Dune")
         // Digits only, so the input filter lets it through, but it does not fit in an Int. The

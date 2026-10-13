@@ -19,8 +19,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -44,8 +46,11 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
+import com.github.maskedkunisquat.mediatracker.ui.components.WatchedDatePickerDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.MovieDetailUiState
@@ -66,6 +71,84 @@ fun MovieDetailScreenRoute(
     val viewModel: MovieDetailViewModel =
         viewModel(factory = MovieDetailViewModelFactory(appContainer, movieId))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val ready = uiState as? MovieDetailUiState.Ready
+    val snackbarHostState = remember { SnackbarHostState() }
+    val undoLabel = stringResource(R.string.up_next_undo)
+
+    // Watch history (#192). Viewing deletes merge into one Undo; leaving Watched offers its own.
+    val viewingDeletedMessage = stringResource(R.string.viewing_deleted_snackbar)
+    val viewingUndo = ready?.viewingUndo
+    LaunchedEffect(viewingUndo?.id) {
+        if (viewingUndo != null) {
+            val result =
+                snackbarHostState.showSnackbar(
+                    viewingDeletedMessage,
+                    undoLabel,
+                    duration = SnackbarDuration.Short,
+                )
+            if (result ==
+                SnackbarResult.ActionPerformed
+            ) {
+                viewModel.undoViewing()
+            } else {
+                viewModel.consumeViewingUndo(viewingUndo.id)
+            }
+        }
+    }
+    val statusUndo = ready?.statusUndo
+    val movedMessage =
+        statusUndo?.let {
+            stringResource(
+                R.string.film_status_moved_snackbar,
+                it.current.displayLabel(),
+            )
+        }
+    LaunchedEffect(statusUndo?.id) {
+        if (statusUndo != null && movedMessage != null) {
+            val result = snackbarHostState.showSnackbar(movedMessage, undoLabel, duration = SnackbarDuration.Short)
+            if (result ==
+                SnackbarResult.ActionPerformed
+            ) {
+                viewModel.undoStatus()
+            } else {
+                viewModel.consumeStatusUndo(statusUndo.id)
+            }
+        }
+    }
+
+    val title =
+        ready
+            ?.movie
+            ?.item
+            ?.title
+            .orEmpty()
+    if (ready?.pendingWatched == true) {
+        FilmWatchedDialog(
+            title = stringResource(R.string.film_watched_title, title),
+            onConfirm = viewModel::confirmWatched,
+            onDismiss = viewModel::dismissWatched,
+        )
+    }
+    if (ready?.pendingWatchedAgain == true) {
+        FilmWatchedDialog(
+            title = stringResource(R.string.film_watched_again_title, title),
+            onConfirm = viewModel::confirmWatchedAgain,
+            onDismiss = viewModel::dismissWatchedAgain,
+        )
+    }
+    // By id, and saveable: the picker survives rotation, and a viewing deleted meanwhile closes it.
+    var editingViewingId by rememberSaveable { mutableStateOf<String?>(null) }
+    ready?.viewings?.firstOrNull { it.id == editingViewingId }?.let { log ->
+        WatchedDatePickerDialog(
+            initialPickMillis = localDateToUtcMidnightMillis(instantToLocalDateTime(log.watchedAt).toLocalDate()),
+            confirmLabel = stringResource(R.string.film_watched_pick_confirm),
+            onPicked = {
+                viewModel.editViewingDate(log, it)
+                editingViewingId = null
+            },
+            onDismiss = { editingViewingId = null },
+        )
+    }
 
     MovieDetailScreen(
         uiState = uiState,
@@ -75,6 +158,10 @@ fun MovieDetailScreenRoute(
         onErrorShown = viewModel::consumeError,
         onNavigateBack = onNavigateBack,
         onNavigateToEditMovie = onNavigateToEditMovie,
+        onWatchedAgain = viewModel::requestWatchedAgain,
+        onEditViewing = { editingViewingId = it.id },
+        onDeleteViewing = viewModel::deleteViewing,
+        snackbarHostState = snackbarHostState,
     )
 }
 
@@ -92,8 +179,11 @@ fun MovieDetailScreen(
     onErrorShown: () -> Unit,
     onNavigateBack: () -> Unit,
     onNavigateToEditMovie: () -> Unit = {},
+    onWatchedAgain: () -> Unit,
+    onEditViewing: (WatchLogEntity) -> Unit,
+    onDeleteViewing: (WatchLogEntity) -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
-    val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
 
     val errorMessage = (uiState as? MovieDetailUiState.Ready)?.errorMessage
@@ -228,6 +318,13 @@ fun MovieDetailScreen(
                         DetailStatusChip(movieStatusControl(details?.status, onStatusChange))
                     }
                     DetailSynopsis(text = movie.item.synopsis)
+                    MovieHistorySection(
+                        viewings = uiState.viewings,
+                        isWatched = details?.status == WatchStatus.WATCHED,
+                        onWatchedAgain = onWatchedAgain,
+                        onEditViewing = onEditViewing,
+                        onDeleteViewing = onDeleteViewing,
+                    )
                 }
             }
         }

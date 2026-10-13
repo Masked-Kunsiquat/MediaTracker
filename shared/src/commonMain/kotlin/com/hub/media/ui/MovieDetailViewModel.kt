@@ -202,9 +202,12 @@ public class MovieDetailViewModel(
         }
     }
 
-    /** The snackbar timed out: the deletes stand. */
-    public fun consumeViewingUndo() {
-        viewingUndo.value = null
+    /**
+     * The snackbar for [id] timed out: the deletes stand. Keyed, so an older snackbar cannot clear
+     * a newer merged Undo.
+     */
+    public fun consumeViewingUndo(id: Long) {
+        if (viewingUndo.value?.id == id) viewingUndo.value = null
     }
 
     public fun undoStatus() {
@@ -216,8 +219,8 @@ public class MovieDetailViewModel(
         }
     }
 
-    public fun consumeStatusUndo() {
-        statusUndo.value = null
+    public fun consumeStatusUndo(id: Long) {
+        if (statusUndo.value?.id == id) statusUndo.value = null
     }
 
     public fun editViewingDate(
