@@ -42,6 +42,7 @@ import com.hub.media.features.settings.data.getTmdbCredential
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
+import com.hub.media.features.tv.domain.EnsureViewingsUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
 import com.hub.media.features.tv.domain.RecordRewatchUseCase
@@ -135,6 +136,9 @@ public class AppContainer(
 
     /** "Watched again" (#90) -- see [RecordRewatchUseCase]. */
     public val recordRewatchUseCase: RecordRewatchUseCase = RecordRewatchUseCase(database)
+
+    /** The startup viewing backfill (#90) -- launched by the Android Application on start. */
+    public val ensureViewingsUseCase: EnsureViewingsUseCase = EnsureViewingsUseCase(database)
 
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
