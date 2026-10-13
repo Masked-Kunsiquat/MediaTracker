@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Watch history** (#90): tap an episode to see every time you watched it. Mark it **Watched
+  again** -- it asks when, like any tick -- and edit or delete any viewing, with Undo. An episode
+  you have watched more than once says so on its row ("Watched 2×"). Viewings are included in the
+  CSV export as a new `watch_logs_export.csv` and restored on import, and re-importing the same
+  export never duplicates them.
+
+### Changed
+
+- Unticking an episode now also removes its viewings; Undo puts them all back.
+
+### Internal
+
+- CSV schema v6 adds `watch_logs_export.csv`; existing files are unchanged, so v5 exports still
+  import. Every watched-state write now keeps an episode's `watchedAt` equal to its latest viewing,
+  and a startup backfill gives older watched episodes their one viewing.
+
 ## [0.23.0] - 2026-10-13
 
 ### Added
