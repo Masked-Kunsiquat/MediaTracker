@@ -65,7 +65,8 @@ class TVShowDetailScreenGoldenTest {
     fun tvShowDetail() {
         composeRule.captureGolden(
             name = "tv-show-detail",
-            alsoAssert = { assertTextIsShown("Chernobyl", "Season 1") },
+            // The air dates are read in UTC: the 2019 date must not show as May 12 anywhere.
+            alsoAssert = { assertTextIsShown("Chernobyl", "Season 1", "May 13, 2019", "Airs Jan 1, 2099") },
         ) { Fixture() }
     }
 
@@ -283,6 +284,14 @@ class TVShowDetailScreenGoldenTest {
         mediaId = showId,
         seasonNumber = 1,
         episodeNumber = episodeNumber,
+        // Two fixed air dates, so the row's date line is in the picture: one past, and one far
+        // enough ahead that "Airs ..." stays true for as long as this golden lives.
+        airDate =
+            when (episodeNumber) {
+                2 -> Instant.parse("2019-05-13T00:00:00Z")
+                5 -> Instant.parse("2099-01-01T00:00:00Z")
+                else -> null
+            },
         watchedAt =
             if (episodeNumber <= WATCHED_COUNT) {
                 Instant.fromEpochMilliseconds(1_700_000_000_000L)
