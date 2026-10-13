@@ -347,13 +347,20 @@ interface MovieWriteDao {
         return true
     }
 
-    /** Undo for leaving Watched: the status comes back and, unlike [changeStatus], adds no viewing. */
+    /**
+     * Undo for leaving Watched: the status comes back and, unlike [changeStatus], adds no viewing.
+     * Only while the film is still at [expectedCurrent] -- a status chosen since wins -- and never
+     * back to Watched once no viewing is left, which would be a Watched film with no date.
+     */
     @Transaction
     suspend fun restoreFilmStatus(
         mediaId: String,
         status: WatchStatus,
+        expectedCurrent: WatchStatus,
     ): Boolean {
-        if (setStatus(mediaId, status) == 0) return false
+        if (statusOf(mediaId) != expectedCurrent) return false
+        if (status == WatchStatus.WATCHED && filmViewingCount(mediaId) == 0) return false
+        setStatus(mediaId, status)
         recomputeFilmWatchedAt(mediaId)
         return true
     }

@@ -284,16 +284,20 @@ public class MovieRepository(
             Resource.Success(Unit)
         }
 
-    /** Undo for leaving Watched: puts [status] back without recording a new viewing. */
+    /**
+     * Undo for leaving Watched: puts [status] back without recording a new viewing, provided the film
+     * is still at [expectedCurrent] and, for Watched, still has a viewing.
+     */
     public suspend fun restoreStatus(
         mediaId: String,
         status: WatchStatus,
+        expectedCurrent: WatchStatus,
     ): Resource<Unit> =
         write("restore status of movie id=$mediaId") {
-            if (db.movieWriteDao().restoreFilmStatus(mediaId, status)) {
+            if (db.movieWriteDao().restoreFilmStatus(mediaId, status, expectedCurrent)) {
                 Resource.Success(Unit)
             } else {
-                Resource.Error("Movie with id=$mediaId not found")
+                Resource.Error("Couldn't undo: the film changed since")
             }
         }
 

@@ -214,7 +214,7 @@ public class MovieDetailViewModel(
         val undo = statusUndo.value ?: return
         statusUndo.value = null
         viewModelScope.launch {
-            val result = movieRepository.restoreStatus(movieId, undo.previous)
+            val result = movieRepository.restoreStatus(movieId, undo.previous, expectedCurrent = undo.current)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }

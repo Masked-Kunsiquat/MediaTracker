@@ -919,7 +919,9 @@ class MovieRepositoryTest {
             assertIs<Resource.Error>(repo.addViewing("nope", WatchedWhen.Now))
             assertIs<Resource.Error>(repo.deleteViewing("nope"))
             assertIs<Resource.Error>(repo.editViewingDate("nope", WatchedWhen.Now))
-            assertIs<Resource.Error>(repo.restoreStatus("nope", WatchStatus.WATCHED))
+            assertIs<Resource.Error>(
+                repo.restoreStatus("nope", WatchStatus.WATCHED, expectedCurrent = WatchStatus.WATCHING),
+            )
             assertIs<Resource.Error>(repo.updateWatchStatus("nope", WatchStatus.WATCHED))
         }
 }

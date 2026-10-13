@@ -147,7 +147,7 @@ class FilmWatchHistoryDaoTest {
         runTest {
             val id = film(WatchStatus.WATCHED)
             dao.changeStatus(id, WatchStatus.WATCHING, t2)
-            assertTrue(dao.restoreFilmStatus(id, WatchStatus.WATCHED))
+            assertTrue(dao.restoreFilmStatus(id, WatchStatus.WATCHED, expectedCurrent = WatchStatus.WATCHING))
             assertEquals(listOf(t1), viewings(id).map { it.watchedAt })
             assertEquals(t1, details(id).watchedAt)
         }
@@ -184,5 +184,27 @@ class FilmWatchHistoryDaoTest {
                     .size,
             )
             assertEquals(emptyList(), viewings(showId))
+        }
+
+    @Test
+    fun restoreFilmStatus_toWatchedWithNoViewingsLeft_isRefused() =
+        runTest {
+            // Review finding: leave Watched, delete the only viewing, then Undo the status change.
+            val id = film(WatchStatus.WATCHED)
+            dao.changeStatus(id, WatchStatus.WATCHING, t2)
+            dao.deleteFilmViewing(viewings(id).single().id)
+            assertFalse(dao.restoreFilmStatus(id, WatchStatus.WATCHED, expectedCurrent = WatchStatus.WATCHING))
+            assertEquals(WatchStatus.WATCHING, details(id).status)
+            assertInvariant(id)
+        }
+
+    @Test
+    fun restoreFilmStatus_afterALaterChoice_isRefused() =
+        runTest {
+            val id = film(WatchStatus.WATCHED)
+            dao.changeStatus(id, WatchStatus.WATCHING, t2)
+            dao.changeStatus(id, WatchStatus.WATCHLIST, t2)
+            assertFalse(dao.restoreFilmStatus(id, WatchStatus.WATCHED, expectedCurrent = WatchStatus.WATCHING))
+            assertEquals(WatchStatus.WATCHLIST, details(id).status)
         }
 }
