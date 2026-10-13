@@ -8,14 +8,10 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,9 +25,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import com.hub.media.features.tv.domain.WatchedWhen
-import com.hub.media.features.tv.domain.isPickableDay
-import com.hub.media.features.tv.domain.pickableUpToYear
-import com.hub.media.features.tv.domain.watchedOnPickedDay
 import com.hub.media.ui.PendingTick
 
 /**
@@ -44,7 +37,7 @@ import com.hub.media.ui.PendingTick
  * - "On air date" is shown only when it can be honoured for what would be written, so ticking the
  *   catch-up box can hide it ([PendingTick.airDateAvailableWithEarlier]).
  * - The date picker disables future days and opens on the episode's air date when there is one.
- *   Material's picker works in UTC-midnight millis; [watchedOnPickedDay] reads the day back in UTC,
+ *   The picker itself is [WatchedDatePickerDialog], shared with the episode sheet's Edit date (#90);
  *   and turning it into a stored time is [com.hub.media.features.tv.domain.resolveWatchedAt]'s job.
  *   All date arithmetic lives in `:shared`, so this module needs no date library.
  */
@@ -60,33 +53,12 @@ fun MarkWatchedDialog(
     val airDateShown = if (includeEarlier) tick.airDateAvailableWithEarlier else tick.airDateAvailable
 
     if (picking) {
-        val maxYear = pickableUpToYear()
-        val state =
-            rememberDatePickerState(
-                initialSelectedDateMillis = tick.initialPickMillis,
-                selectableDates =
-                    object : SelectableDates {
-                        override fun isSelectableDate(utcTimeMillis: Long): Boolean = isPickableDay(utcTimeMillis)
-
-                        override fun isSelectableYear(year: Int): Boolean = year <= maxYear
-                    },
-            )
-        DatePickerDialog(
-            onDismissRequest = { picking = false },
-            confirmButton = {
-                TextButton(
-                    enabled = state.selectedDateMillis != null,
-                    onClick = {
-                        state.selectedDateMillis?.let { millis ->
-                            onConfirm(watchedOnPickedDay(millis), includeEarlier)
-                        }
-                    },
-                ) { Text(stringResource(R.string.mark_watched_pick_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { picking = false }) { Text(stringResource(R.string.cancel_button)) }
-            },
-        ) { DatePicker(state = state) }
+        WatchedDatePickerDialog(
+            initialPickMillis = tick.initialPickMillis,
+            confirmLabel = stringResource(R.string.mark_watched_pick_confirm),
+            onPicked = { picked -> onConfirm(picked, includeEarlier) },
+            onDismiss = { picking = false },
+        )
         return
     }
 
