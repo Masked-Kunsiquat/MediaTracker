@@ -43,14 +43,23 @@ class WatchLogImportExportTest {
         target.close()
     }
 
-    private fun exporter(db: AppDatabase) = ExportDataUseCase(MediaRepository(db), BookRepository(db), ReadingSessionRepository(db))
+    private fun exporter(db: AppDatabase) =
+        ExportDataUseCase(MediaRepository(db), BookRepository(db), ReadingSessionRepository(db))
 
     private fun importer(db: AppDatabase) =
-        ImportDataUseCase(MediaRepository(db), BookRepository(db), ReadingSessionRepository(db), ImportWriteRepository(db))
+        ImportDataUseCase(
+            MediaRepository(db),
+            BookRepository(db),
+            ReadingSessionRepository(db),
+            ImportWriteRepository(db),
+        )
 
     /** A show with two episodes: E1 watched at [t1] and re-watched at [t2], E2 watched at [t1]. */
     private suspend fun seedSource(): List<EpisodeEntity> {
-        val r = TVShowRepository(source).addShow(title = "Fleabag", seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+        val r =
+            TVShowRepository(
+                source,
+            ).addShow(title = "Fleabag", seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
         assertIs<Resource.Success<String>>(r)
         val (e1, e2) = source.episodeDao().getByMediaIdAndSeason(r.data, 1)
         source.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to t1, e2.id to t1))
@@ -117,7 +126,12 @@ class WatchLogImportExportTest {
             importer(target).execute(bundle.libraryCsv, null, null, DuplicatePolicy.SKIP)
             val mediaId = sourceEpisodes.first().mediaId
             TVShowRepository(target).setSeasonLength(mediaId, 1, 2)
-            val targetIds = target.episodeDao().getByMediaIdAndSeason(mediaId, 1).map { it.id }.toSet()
+            val targetIds =
+                target
+                    .episodeDao()
+                    .getByMediaIdAndSeason(mediaId, 1)
+                    .map { it.id }
+                    .toSet()
             assertEquals(emptySet(), targetIds intersect sourceEpisodes.map { it.id }.toSet(), "ids must differ")
 
             assertIs<Resource.Success<*>>(import(target, bundle))
@@ -142,11 +156,23 @@ class WatchLogImportExportTest {
             val (e1, _) = seedSource()
             import(target, export(source))
             // Source loses E1's re-watch; a REPLACE import must drop it in target too.
-            val rewatch = source.watchLogDao().observeForEpisode(e1.id).first().first { it.watchedAt == t2 }
+            val rewatch =
+                source
+                    .watchLogDao()
+                    .observeForEpisode(e1.id)
+                    .first()
+                    .first { it.watchedAt == t2 }
             source.tvWriteDao().deleteViewing(rewatch.id)
 
             import(target, export(source), DuplicatePolicy.REPLACE)
-            assertEquals(listOf(t1), target.watchLogDao().observeForEpisode(e1.id).first().map { it.watchedAt })
+            assertEquals(
+                listOf(t1),
+                target
+                    .watchLogDao()
+                    .observeForEpisode(e1.id)
+                    .first()
+                    .map { it.watchedAt },
+            )
             assertInvariantEverywhere(target)
         }
 

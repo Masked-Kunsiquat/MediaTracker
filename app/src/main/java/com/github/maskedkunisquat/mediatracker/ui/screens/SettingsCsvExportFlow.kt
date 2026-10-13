@@ -49,7 +49,8 @@ internal fun CsvExportFlow(
     // rather than three independent ExportDataUseCase runs.
     var pendingBundle by remember { mutableStateOf<CsvExportBundle?>(null) }
 
-    val episodesLauncher =
+    // The fourth and last file (#90): every viewing, so a re-watch history survives an export.
+    val watchLogsLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/csv"),
         ) { uri ->
@@ -64,10 +65,34 @@ internal fun CsvExportFlow(
                         bundle == null -> exportFailureMessage
                         withContext(
                             Dispatchers.IO,
-                        ) { writeCsvToUri(context, uri, bundle.episodesCsv) } -> exportSuccessMessage
+                        ) { writeCsvToUri(context, uri, bundle.watchLogsCsv) } -> exportSuccessMessage
                         else -> exportFailureMessage
                     }
                 snackbarHostState.showSnackbar(message)
+            }
+        }
+
+    val episodesLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/csv"),
+        ) { uri ->
+            val bundle = pendingBundle
+            if (uri == null || bundle == null) {
+                pendingBundle = null
+                exportViewModel.reset()
+                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
+            } else {
+                // Off the main thread -- see watchLogsLauncher above.
+                coroutineScope.launch {
+                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.episodesCsv) }) {
+                        // Third file written; prompt for the fourth so all four come from one snapshot.
+                        watchLogsLauncher.launch("watch_logs_export.csv")
+                    } else {
+                        pendingBundle = null
+                        exportViewModel.reset()
+                        snackbarHostState.showSnackbar(exportFailureMessage)
+                    }
+                }
             }
         }
 
@@ -81,7 +106,7 @@ internal fun CsvExportFlow(
                 exportViewModel.reset()
                 coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
             } else {
-                // Off the main thread -- see episodesLauncher above.
+                // Off the main thread -- see watchLogsLauncher above.
                 coroutineScope.launch {
                     if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.readingLogsCsv) }) {
                         // Second file written; immediately prompt for the third file's destination so
@@ -106,7 +131,7 @@ internal fun CsvExportFlow(
                 exportViewModel.reset()
                 coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
             } else {
-                // Off the main thread -- see episodesLauncher above.
+                // Off the main thread -- see watchLogsLauncher above.
                 coroutineScope.launch {
                     if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
                         // First file written; immediately prompt for the second file's destination so

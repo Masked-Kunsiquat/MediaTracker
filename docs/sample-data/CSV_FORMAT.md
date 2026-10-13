@@ -162,6 +162,29 @@ rejected rather than silently attached: `episodes.mediaId` alone doesn't constra
 show, so without this check the episode would insert cleanly against the wrong item and simply
 never be shown by anything — worse than a rejection, because nothing would report it.
 
+## File 4 — `watch_logs_export.csv`
+
+Added in CSV schema **v6** (#90). One row per **viewing** of an episode, so a re-watch history
+survives an export. **Optional on import**, like `episodes_export.csv`; a v5 export without it
+imports unchanged.
+
+| # | Column | Required | Notes |
+|---|---|---|---|
+| 0 | `csv_schema_version` | yes | `6` |
+| 1 | `log_id` | yes | The viewing's id. Kept when free; a clashing id is replaced by a new one |
+| 2 | `media_id` | yes | The show |
+| 3 | `episode_id` | yes | The episode. Matched like `episodes_export.csv` rows: by id, else by show + season + episode when ids did not round-trip. Blank means a film viewing, which is not imported yet (rejected with a reason) |
+| 4 | `watched_at` | yes | ISO-8601 UTC |
+| 5 | `duration_seconds` | no | Unused for now; leave empty |
+
+On import:
+- **A viewing already present is skipped**: same episode, same `watched_at`. Re-importing an
+  export creates nothing.
+- **Under REPLACE**, an episode the import replaced has its stored viewings replaced by this file's
+  viewings for it.
+- **Every episode the import touched ends up with `watched_at` equal to its latest viewing.** An
+  episode marked watched in `episodes_export.csv` with no viewings here gets one at that date.
+
 ## Validation — what gets a row rejected
 
 Rejected rows are skipped and reported; they do not fail the import. But a generated file full of
