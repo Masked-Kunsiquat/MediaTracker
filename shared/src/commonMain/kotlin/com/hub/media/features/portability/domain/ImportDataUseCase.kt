@@ -581,7 +581,8 @@ public class ImportDataUseCase(
                                 ImportRejection(
                                     ImportRowSource.WATCH_LOG,
                                     rowNumber,
-                                    "episode_id '${row.episodeId}' is not a known episode of media_id '${row.mediaId}' (not already in your " +
+                                    "episode_id '${row.episodeId}' is not a known episode of " +
+                                        "media_id '${row.mediaId}' (not already in your " +
                                         "library, and not present in the episodes file being imported) -- " +
                                         "viewing skipped",
                                 )
