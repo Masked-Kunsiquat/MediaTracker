@@ -95,8 +95,13 @@ package com.hub.media.features.portability.csv
  * so `episodes_export.csv` is read back too. Those paragraphs are left standing as the record of
  * why the columns were written early -- the reasoning was sound and is reused verbatim above for
  * this bump's own four columns.
+ *
+ * **v6 (#90)** adds a fourth file, `watch_logs_export.csv` ([WatchLogCsvExporter]): one row per
+ * viewing, so a re-watch history survives an export rather than only a `.sqlite` backup. **No
+ * existing file's header changes**, so a v5 library, reading-log or episodes file imports as-is with
+ * no legacy adapter, and the new file is optional on import exactly as `episodes_export.csv` is.
  */
-public const val CSV_SCHEMA_VERSION: Int = 5
+public const val CSV_SCHEMA_VERSION: Int = 6
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

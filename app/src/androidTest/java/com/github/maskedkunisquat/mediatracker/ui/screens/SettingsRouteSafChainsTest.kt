@@ -180,7 +180,7 @@ class SettingsRouteSafChainsTest {
 
     // ---- export --------------------------------------------------------------------------------------
 
-    private fun runExportHappyPath(): Triple<File, File, File> {
+    private fun runExportHappyPath(): List<File> {
         scrollToAndClick(string(R.string.settings_export_button))
         awaitLaunchCount(1)
         val libraryFile = File(workDir, "library_export.csv")
@@ -194,15 +194,18 @@ class SettingsRouteSafChainsTest {
         val episodesFile = File(workDir, "episodes_export.csv")
         answerLatestLaunch(Uri.fromFile(episodesFile))
 
+        // The fourth file (#90): every viewing.
+        awaitLaunchCount(4)
+        val watchLogsFile = File(workDir, "watch_logs_export.csv")
+        answerLatestLaunch(Uri.fromFile(watchLogsFile))
+
         awaitTextVisible(string(R.string.export_success_message))
-        return Triple(libraryFile, readingLogsFile, episodesFile)
+        return listOf(libraryFile, readingLogsFile, episodesFile, watchLogsFile)
     }
 
     @Test
-    fun export_happyPath_writesThreeNonEmptyFilesInOrder() {
-        val (library, readingLogs, episodes) = runExportHappyPath()
-
-        listOf(library, readingLogs, episodes).forEach { file ->
+    fun export_happyPath_writesFourNonEmptyFilesInOrder() {
+        runExportHappyPath().forEach { file ->
             assertTrue("${file.name} was not written", file.exists() && file.length() > 0)
             // Each exporter emits at least a header line -- see LibraryCsvExporter/
             // ReadingLogCsvExporter/EpisodeCsvExporter.
@@ -211,7 +214,7 @@ class SettingsRouteSafChainsTest {
 
         val inputs = registry.launches.map { it.input }
         assertEquals(
-            listOf("library_export.csv", "reading_logs_export.csv", "episodes_export.csv"),
+            listOf("library_export.csv", "reading_logs_export.csv", "episodes_export.csv", "watch_logs_export.csv"),
             inputs,
         )
     }
@@ -321,12 +324,16 @@ class SettingsRouteSafChainsTest {
         awaitLaunchCount(3)
         answerLatestLaunch(null)
 
+        // The watch-logs pick (#90) is optional too: cancelling it still runs the import.
+        awaitLaunchCount(4)
+        answerLatestLaunch(null)
+
         awaitTextVisible(string(R.string.import_summary_title))
         composeRule.onNodeWithText(string(R.string.ok_button)).performClick()
     }
 
     @Test
-    fun import_happyPath_allThreePicked_showsSummary() {
+    fun import_happyPath_allFourPicked_showsSummary() {
         val bundle = currentExportBundle()
 
         scrollToAndClick(string(R.string.settings_import_button))
@@ -338,6 +345,9 @@ class SettingsRouteSafChainsTest {
 
         awaitLaunchCount(3)
         answerLatestLaunch(sourceUri("episodes_export.csv", bundle.episodesCsv))
+
+        awaitLaunchCount(4)
+        answerLatestLaunch(sourceUri("watch_logs_export.csv", bundle.watchLogsCsv))
 
         awaitTextVisible(string(R.string.import_summary_title))
         composeRule.onNodeWithText(string(R.string.ok_button)).performClick()

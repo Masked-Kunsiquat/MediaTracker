@@ -143,7 +143,7 @@ class ReconcileMismatchesUseCaseTest {
             val row = useCase.review().single()
             assertIs<Resource.Success<*>>(shows.setSeasonLength(mediaId, seasonNumber = 1, episodeCount = 8))
             val watched = db.episodeDao().getByMediaId(mediaId).first { it.episodeNumber == 7 }
-            db.tvWriteDao().markEpisodeWatched(watched.id, Instant.parse("2020-01-01T00:00:00Z"))
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(watched.id to Instant.parse("2020-01-01T00:00:00Z")))
 
             val result = useCase.addMissingEpisodes(row)
 
@@ -162,7 +162,7 @@ class ReconcileMismatchesUseCaseTest {
         runTest {
             val mediaId = showWith(2)
             val before = db.episodeDao().getByMediaId(mediaId).associate { it.episodeNumber to it.id }
-            db.tvWriteDao().markEpisodeWatched(before.getValue(1), Instant.parse("2020-01-01T00:00:00Z"))
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(before.getValue(1) to Instant.parse("2020-01-01T00:00:00Z")))
             record(mediaId, local = 2, provider = 5)
 
             useCase.addMissingEpisodes(useCase.review().single())

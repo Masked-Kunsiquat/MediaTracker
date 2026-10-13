@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.features.tv.domain.WatchedWhen
 import com.hub.media.features.tv.domain.earlierUnwatched
 import com.hub.media.features.tv.domain.isAired
@@ -39,14 +40,14 @@ public data class PendingTick(
  * while another's Undo is still on offer is **merged** into it ([mergeUntick]), so a second quick
  * untick never costs the first its way back.
  *
- * @property previous `episodeId -> watchedAt` exactly as cleared; Undo restores each only if that
- *   episode is still unwatched.
+ * @property previous The viewings exactly as removed (#90); Undo restores an episode's viewings
+ *   only if it still exists, is unwatched and has none.
  * @property label The episode's title (or `null` for "Episode N"); for a season, `null` with
  *   [seasonNumber] set.
  */
 public data class UntickEvent(
     val id: Long,
-    val previous: Map<String, Instant>,
+    val previous: List<WatchLogEntity>,
     val label: String?,
     val episodeNumber: Int,
     val seasonNumber: Int,
@@ -57,8 +58,8 @@ public data class UntickEvent(
 
 /**
  * Folds [next] into a still-pending [pending] Undo, so both sets of dates come back together. A
- * newer date for the same episode cannot occur (an episode must be ticked again before it can be
- * unticked again), so the union is exact.
+ * re-tick in between would make the earlier episode's restore a no-op anyway, so concatenating the
+ * two lists is exact.
  */
 internal fun mergeUntick(
     pending: UntickEvent?,
@@ -129,3 +130,19 @@ internal fun markableIn(
     seasonEpisodes: List<EpisodeEntity>,
     now: Instant,
 ): List<EpisodeEntity> = seasonEpisodes.filter { it.watchedAt == null && isAired(it.airDate, now) }
+
+/** The episode sheet's subject (#90): the episode and its viewings, newest first. */
+public data class OpenEpisode(
+    val episode: EpisodeEntity,
+    val viewings: List<WatchLogEntity>,
+)
+
+/**
+ * Just-deleted viewings, offered back as one Undo (#90). A delete made while another's Undo is on
+ * offer is merged into it, as an untick is ([mergeUntick]), so a second quick delete never costs
+ * the first its way back.
+ */
+public data class ViewingUndo(
+    val id: Long,
+    val logs: List<WatchLogEntity>,
+)

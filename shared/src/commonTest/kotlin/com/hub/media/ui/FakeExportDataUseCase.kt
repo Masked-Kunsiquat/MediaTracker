@@ -18,6 +18,7 @@ internal class FakeExportDataUseCase(
                 libraryCsv = "csv_schema_version\r\n",
                 readingLogsCsv = "csv_schema_version\r\n",
                 episodesCsv = "csv_schema_version\r\n",
+                watchLogsCsv = "",
             ),
         ),
 ) : ExportUseCase {

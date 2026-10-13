@@ -13,6 +13,9 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.util.newId
+import kotlin.time.Instant
 
 /**
  * The details row accompanying one imported [MediaItemEntity] -- exactly one of the three
@@ -190,6 +193,9 @@ public interface ImportWriteDao {
         sessionUpdates: List<ReadingSessionEntity>,
         episodeInserts: List<EpisodeEntity>,
         episodeUpdates: List<EpisodeEntity>,
+        viewingDeletesForEpisodes: Collection<String> = emptyList(),
+        viewingInserts: List<WatchLogEntity> = emptyList(),
+        touchedEpisodeIds: Collection<String> = emptyList(),
     ) {
         for (insert in mediaInserts) {
             insertMediaItem(insert.mediaItem)
@@ -245,5 +251,44 @@ public interface ImportWriteDao {
                     "been deleted after this import's duplicate-resolution snapshot was read"
             }
         }
+        // Viewings (#90), last, so they see the episode rows this import just wrote. REPLACE drops an
+        // episode's stored viewings before the file's go in; then every episode this import touched
+        // is normalised so `watchedAt` is its latest viewing. An episode whose `watchedAt` has no
+        // viewing at that instant (the file marked it watched but gave no matching viewing) first
+        // gets that viewing, so the recompute can never move its date backwards.
+        viewingDeletesForEpisodes.forEach { deleteViewingsForEpisode(it) }
+        viewingInserts.forEach { insertViewing(it) }
+        for (episodeId in touchedEpisodeIds) {
+            val episode = episodeById(episodeId) ?: continue
+            val at = episode.watchedAt
+            if (at != null && viewingCountAt(episodeId, at) == 0) {
+                insertViewing(
+                    WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = episodeId, watchedAt = at),
+                )
+            }
+            recomputeEpisodeWatchedAt(episodeId)
+        }
     }
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    public suspend fun insertViewing(log: WatchLogEntity)
+
+    @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
+    public suspend fun deleteViewingsForEpisode(episodeId: String): Int
+
+    @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId AND watchedAt = :watchedAt")
+    public suspend fun viewingCountAt(
+        episodeId: String,
+        watchedAt: Instant,
+    ): Int
+
+    @Query("SELECT * FROM episodes WHERE id = :episodeId")
+    public suspend fun episodeById(episodeId: String): EpisodeEntity?
+
+    /** The same rule as [TVWriteDao.recomputeWatchedAt]: `watchedAt` is the latest viewing. */
+    @Query(
+        "UPDATE episodes SET watchedAt = (SELECT MAX(watchedAt) FROM watch_logs WHERE episodeId = :episodeId) " +
+            "WHERE id = :episodeId",
+    )
+    public suspend fun recomputeEpisodeWatchedAt(episodeId: String): Int
 }

@@ -10,7 +10,9 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
 /**
@@ -239,19 +241,6 @@ interface TVWriteDao {
     }
 
     /**
-     * The per-episode watched tick, scoped by episode id.
-     *
-     * `COALESCE` is what preserves an existing timestamp: re-ticking an already-watched episode must
-     * not bump the date it was actually watched, and deciding that in SQL rather than by reading the
-     * row first means there is no window between the decision and the write for a second tick to
-     * land in. It is the single-episode form of the `watchedAt IS NULL` predicate
-     * [markEpisodesWatchedAt] uses for the same reason.
-     *
-     * @return `1` if [episodeId] resolved to an existing row, `0` otherwise -- including when the
-     *   episode was already watched and `COALESCE` therefore wrote the value it already held.
-     */
-
-    /**
      * Fills a show's own provider metadata **onto columns that are still null**, scoped to `TV_SHOW`
      * rows — the show-level counterpart of [fillEpisodeMetadata], obeying the identical rule for the
      * identical reason: every column is wrapped in `COALESCE(column, :value)`, so a value already
@@ -415,20 +404,11 @@ interface TVWriteDao {
         return matched
     }
 
-    @Query("UPDATE episodes SET watchedAt = COALESCE(watchedAt, :watchedAt) WHERE id = :episodeId")
-    suspend fun markEpisodeWatched(
-        episodeId: String,
-        watchedAt: Instant,
-    ): Int
-
-    /**
-     * Clears one episode's watched state. Unconditional, unlike [markEpisodeWatched]: there is no
-     * timestamp worth preserving on the way to `null`.
-     *
-     * @return `1` if [episodeId] resolved to an existing row, `0` otherwise.
-     */
-    @Query("UPDATE episodes SET watchedAt = NULL WHERE id = :episodeId")
-    suspend fun clearEpisodeWatched(episodeId: String): Int
+    // ---- Watched state and viewings (#90) --------------------------------------------------------
+    //
+    // Viewings are the truth: every method below leaves `episodes.watchedAt` equal to the episode's
+    // latest `watch_logs` row, or `null` when it has none, inside its own transaction. Nothing else
+    // in the app writes `watchedAt` -- see docs/superpowers/specs/2026-10-13-watch-history-design.md.
 
     @Query("SELECT * FROM episodes WHERE id IN (:ids)")
     suspend fun getByIds(ids: List<String>): List<EpisodeEntity>
@@ -439,22 +419,37 @@ interface TVWriteDao {
         seasonNumber: Int,
     ): List<EpisodeEntity>
 
-    /**
-     * Marks each episode watched at its own time, in one transaction (#131) -- the only write the
-     * tick prompt uses, whether for one episode, a catch-up or a season. Each row goes through
-     * [markEpisodeWatchedIfUnwatched], whose `watchedAt IS NULL` guard keeps an already-watched
-     * episode's date -- what makes a season mark safe over a half-watched season.
-     *
-     * @return How many episodes actually changed.
-     */
-    @Transaction
-    suspend fun markEpisodesWatchedAt(stamps: Map<String, Instant>): Int =
-        stamps.entries.sumOf { (id, at) -> markEpisodeWatchedIfUnwatched(id, at) }
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertViewing(log: WatchLogEntity)
+
+    @Query("SELECT * FROM watch_logs WHERE episodeId = :episodeId")
+    suspend fun viewingsFor(episodeId: String): List<WatchLogEntity>
+
+    @Query("SELECT * FROM watch_logs WHERE id = :logId")
+    suspend fun viewingById(logId: String): WatchLogEntity?
+
+    @Query("DELETE FROM watch_logs WHERE id = :logId")
+    suspend fun deleteViewingRow(logId: String): Int
+
+    @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
+    suspend fun deleteViewingsFor(episodeId: String): Int
+
+    @Query("UPDATE watch_logs SET watchedAt = :at WHERE id = :logId")
+    suspend fun setViewingDate(
+        logId: String,
+        at: Instant,
+    ): Int
+
+    /** Re-derives `watchedAt` from the episode's viewings: their latest date, or `null` with none. */
+    @Query(
+        "UPDATE episodes SET watchedAt = (SELECT MAX(watchedAt) FROM watch_logs WHERE episodeId = :episodeId) " +
+            "WHERE id = :episodeId",
+    )
+    suspend fun recomputeWatchedAt(episodeId: String): Int
 
     /**
-     * [markEpisodeWatched]'s guard as a `WHERE` rather than a `COALESCE`, so the returned count is
-     * the number of episodes that actually changed: SQLite counts a `COALESCE` that rewrites a row
-     * to its own value as an update.
+     * Sets `watchedAt` only on a still-unwatched episode, so the count is the number that actually
+     * changed -- SQLite counts a `COALESCE` that rewrites a row to its own value as an update.
      */
     @Query("UPDATE episodes SET watchedAt = :watchedAt WHERE id = :episodeId AND watchedAt IS NULL")
     suspend fun markEpisodeWatchedIfUnwatched(
@@ -462,61 +457,148 @@ interface TVWriteDao {
         watchedAt: Instant,
     ): Int
 
+    @Query("UPDATE episodes SET watchedAt = NULL WHERE id = :episodeId")
+    suspend fun clearWatchedAtRow(episodeId: String): Int
+
     /**
-     * Undo's write (#131). **Conditional on `watchedAt IS NULL`**, unlike every other write here: an
-     * episode re-ticked (or re-marked by a season action) before Undo keeps its newer date, and an
-     * episode deleted in the meantime simply matches no row.
+     * Marks each episode watched at its own time (#131), and records that viewing (#90). Only rows
+     * the `watchedAt IS NULL` guard actually changed get a viewing: an already-watched episode keeps
+     * its date and gains nothing -- what makes a season mark safe over a half-watched season.
+     *
+     * @return How many episodes actually changed.
      */
-    @Query("UPDATE episodes SET watchedAt = :watchedAt WHERE id = :episodeId AND watchedAt IS NULL")
-    suspend fun restoreWatchedAt(
+    @Transaction
+    suspend fun markEpisodesWatchedAt(stamps: Map<String, Instant>): Int {
+        var changed = 0
+        for ((id, at) in stamps) {
+            if (markEpisodeWatchedIfUnwatched(id, at) == 1) {
+                val episode = getByIds(listOf(id)).single()
+                insertViewing(WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = id, watchedAt = at))
+                changed++
+            }
+        }
+        return changed
+    }
+
+    /**
+     * "Watched again" (#90): one more viewing. `watchedAt` becomes the latest viewing, so a
+     * back-dated rewatch adds history without moving it.
+     *
+     * @return `false` when the episode no longer exists.
+     */
+    @Transaction
+    suspend fun addViewing(
         episodeId: String,
-        watchedAt: Instant,
-    ): Int
-
-    /** [restoreWatchedAt] over every entry of an Undo, in one transaction. */
-    @Transaction
-    suspend fun restoreAll(previous: Map<String, Instant>): Int =
-        previous.entries.sumOf { (id, at) -> restoreWatchedAt(id, at) }
+        at: Instant,
+    ): Boolean {
+        val episode = getByIds(listOf(episodeId)).singleOrNull() ?: return false
+        insertViewing(WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = episodeId, watchedAt = at))
+        recomputeWatchedAt(episodeId)
+        return true
+    }
 
     /**
-     * Clears one episode and returns what it held, read and cleared in one transaction so the value
-     * Undo carries is exactly the value removed (#131). Empty when it was not watched.
+     * Deletes one viewing and returns it, for Undo. Deleting the last one un-ticks the episode,
+     * because `watchedAt` is recomputed from what remains.
      */
     @Transaction
-    suspend fun clearEpisodeReturningPrevious(episodeId: String): Map<String, Instant> {
-        val previous = getByIds(listOf(episodeId)).watchedById()
-        clearEpisodeWatched(episodeId)
+    suspend fun deleteViewing(logId: String): WatchLogEntity? {
+        val log = viewingById(logId) ?: return null
+        deleteViewingRow(logId)
+        log.episodeId?.let { recomputeWatchedAt(it) }
+        return log
+    }
+
+    /** Corrects one viewing's date (#90) -- how an already-watched date is fixed. */
+    @Transaction
+    suspend fun updateViewingDate(
+        logId: String,
+        at: Instant,
+    ): Boolean {
+        val log = viewingById(logId) ?: return false
+        setViewingDate(logId, at)
+        log.episodeId?.let { recomputeWatchedAt(it) }
+        return true
+    }
+
+    /**
+     * Undo for [deleteViewing]. Only when the episode still exists -- re-inserting a viewing for a
+     * deleted episode would violate `watch_logs`' composite foreign key -- and that viewing is not
+     * already back.
+     */
+    @Transaction
+    suspend fun restoreViewing(log: WatchLogEntity): Boolean {
+        val episodeId = log.episodeId ?: return false
+        if (getByIds(listOf(episodeId)).isEmpty() || viewingById(log.id) != null) return false
+        insertViewing(log)
+        recomputeWatchedAt(episodeId)
+        return true
+    }
+
+    /**
+     * Unticks one episode: removes its viewings and clears `watchedAt`, returning the viewings so
+     * Undo can put back exactly what was removed. Empty when it was not watched.
+     */
+    @Transaction
+    suspend fun clearEpisodeReturningPrevious(episodeId: String): List<WatchLogEntity> {
+        val previous = viewingsFor(episodeId)
+        deleteViewingsFor(episodeId)
+        clearWatchedAtRow(episodeId)
         return previous
     }
 
-    /** [clearEpisodeReturningPrevious] for a whole season: Clear season's Undo restores each date. */
+    /** [clearEpisodeReturningPrevious] for a whole season: Clear season's Undo restores each one. */
     @Transaction
     suspend fun clearSeasonReturningPrevious(
         mediaId: String,
         seasonNumber: Int,
-    ): Map<String, Instant> {
-        val previous = episodesInSeason(mediaId, seasonNumber).watchedById()
-        clearSeasonWatched(mediaId, seasonNumber)
-        return previous
-    }
+    ): List<WatchLogEntity> = episodesInSeason(mediaId, seasonNumber).flatMap { clearEpisodeReturningPrevious(it.id) }
 
     /**
-     * Clears the watched state of every episode of one season. Unconditional, unlike
-     * [markEpisodesWatchedAt]: there is no timestamp worth preserving on the way to `null`, and a
-     * partially-watched season must end up fully unwatched.
+     * Undo for an untick or Clear season. Per episode, only if it **still exists** (a season shrink
+     * may have deleted it -- re-inserting would violate the foreign key), is **unwatched** and has
+     * **no viewings** (a re-tick or rewatch made since wins).
      *
-     * @return the number of episode rows affected.
+     * @return How many episodes were restored.
      */
-    @Query("UPDATE episodes SET watchedAt = NULL WHERE mediaId = :mediaId AND seasonNumber = :seasonNumber")
-    suspend fun clearSeasonWatched(
-        mediaId: String,
-        seasonNumber: Int,
-    ): Int
-}
-
-private fun List<EpisodeEntity>.watchedById(): Map<String, Instant> =
-    mapNotNull { e ->
-        e.watchedAt?.let {
-            e.id to it
+    @Transaction
+    suspend fun restoreAll(previous: List<WatchLogEntity>): Int {
+        var restored = 0
+        for ((episodeId, logs) in previous.filter { it.episodeId != null }.groupBy { it.episodeId!! }) {
+            val episode = getByIds(listOf(episodeId)).singleOrNull() ?: continue
+            if (episode.watchedAt != null || viewingsFor(episodeId).isNotEmpty()) continue
+            logs.forEach { insertViewing(it) }
+            recomputeWatchedAt(episodeId)
+            restored++
         }
-    }.toMap()
+        return restored
+    }
+
+    @Query(
+        "SELECT * FROM episodes WHERE watchedAt IS NOT NULL AND NOT EXISTS " +
+            "(SELECT 1 FROM watch_logs WHERE watch_logs.episodeId = episodes.id)",
+    )
+    suspend fun watchedWithoutViewings(): List<EpisodeEntity>
+
+    /**
+     * The startup backfill (#90): one viewing, at `watchedAt`, for every watched episode that has
+     * none. Idempotent by its own filter, and one transaction, so it serialises against a concurrent
+     * tick. A read-then-insert rather than `INSERT ... SELECT` because SQLite cannot mint this app's
+     * UUID ids.
+     *
+     * @return How many viewings it created.
+     */
+    @Transaction
+    suspend fun ensureViewingsForWatchedEpisodes(): Int =
+        watchedWithoutViewings()
+            .onEach { episode ->
+                insertViewing(
+                    WatchLogEntity(
+                        id = newId(),
+                        mediaId = episode.mediaId,
+                        episodeId = episode.id,
+                        watchedAt = checkNotNull(episode.watchedAt),
+                    ),
+                )
+            }.size
+}

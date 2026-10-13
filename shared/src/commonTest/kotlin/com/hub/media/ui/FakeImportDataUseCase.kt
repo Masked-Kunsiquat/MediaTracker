@@ -71,6 +71,7 @@ internal class FakeImportDataUseCase(
         readingLogsCsv: String?,
         episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
+        watchLogsCsv: String?,
     ): Resource<ImportSummary> {
         callCount++
         lastArgs = ExecuteArgs(libraryCsv, readingLogsCsv, episodesCsv, duplicatePolicy)

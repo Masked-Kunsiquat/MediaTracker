@@ -216,6 +216,19 @@
     <string name="up_next_empty">Nothing up next. Start a show and its next episode shows up here.</string>
     <string name="up_next_episode_format">S%1$d · E%2$d · %3$s</string>
     <string name="up_next_untitled_format">Episode %1$d</string>
+    <string name="up_next_episode_code_format">S%1$d · E%2$d</string>
+    <string name="episode_sheet_not_watched">Not watched yet</string>
+    <string name="episode_sheet_mark_watched">Mark watched</string>
+    <string name="episode_sheet_viewings_title">Viewings</string>
+    <string name="episode_sheet_watched_again">Watched again</string>
+    <string name="episode_sheet_edit_date_cd">Edit date of the viewing on %1$s</string>
+    <string name="episode_sheet_delete_viewing_cd">Delete the viewing on %1$s</string>
+    <string name="mark_watched_title_again">Watched \"%1$s\" again?</string>
+    <string name="viewing_deleted_snackbar">Viewing removed</string>
+    <plurals name="episode_watched_times">
+        <item quantity="one">Watched once</item>
+        <item quantity="other">Watched %d×</item>
+    </plurals>
     <string name="up_next_mark_watched_format">Mark %1$s S%2$d E%3$d watched</string>
     <string name="up_next_undo">Undo</string>
     <string name="mark_watched_title_episode">Mark \"%1$s\" watched?</string>

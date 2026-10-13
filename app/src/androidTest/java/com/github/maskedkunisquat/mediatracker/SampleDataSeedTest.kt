@@ -77,6 +77,7 @@ class SampleDataSeedTest {
                     readingLogsCsv = asset("reading_logs_sample.csv"),
                     episodesCsv = asset("episodes_sample.csv"),
                     duplicatePolicy = DuplicatePolicy.SKIP,
+                    watchLogsCsv = asset("watch_logs_sample.csv"),
                 )
 
             val summary =

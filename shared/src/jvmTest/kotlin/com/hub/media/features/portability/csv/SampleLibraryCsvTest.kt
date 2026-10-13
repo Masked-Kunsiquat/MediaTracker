@@ -69,6 +69,39 @@ class SampleLibraryCsvTest {
         }
     }
 
+    /**
+     * The viewings fixture (#90): every row parses, references a real episode of the episode
+     * fixture, and it still holds a re-watched episode -- the case that puts "Watched 2×" on a
+     * device. Each viewing's latest date must equal that episode's own `watched_at`, or seeding
+     * would quietly move it.
+     */
+    @Test
+    fun sampleWatchLogs_parse_referenceRealEpisodes_andKeepARewatch() {
+        val table =
+            CsvTableReader.read(sampleFile("watch_logs_sample.csv").readText(), WatchLogCsvExporter.HEADER)
+        val viewings =
+            assertIs<CsvTableResult.Success>(
+                table,
+                "the viewings fixture must read as a valid CSV table",
+            ).rows.mapIndexed {
+                i,
+                row,
+                ->
+                assertIs<WatchLogRowParseResult.Parsed>(WatchLogCsvImporter.parseRow(row), "viewings row ${i + 2}").row
+            }
+        val episodes = parsedEpisodes().associateBy { it.episodeId }
+        assertTrue(viewings.all { it.episodeId in episodes }, "viewings reference unknown episodes")
+        val rewatched = viewings.groupBy { it.episodeId }.filterValues { it.size >= 2 }
+        assertTrue(rewatched.isNotEmpty(), "the fixture must keep a re-watched episode")
+        for ((episodeId, logs) in viewings.groupBy { it.episodeId }) {
+            assertEquals(
+                episodes.getValue(episodeId).watchedAt,
+                logs.maxOf { it.watchedAt },
+                "latest viewing of $episodeId",
+            )
+        }
+    }
+
     @Test
     fun sampleEpisodes_everyRowParsesThroughTheRealImporter() {
         assertTrue(parsedEpisodes().isNotEmpty(), "the fixture must contain episodes")

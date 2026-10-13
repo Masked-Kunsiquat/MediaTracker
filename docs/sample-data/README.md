@@ -1,6 +1,6 @@
 # Sample data
 
-`library_sample.csv`, `reading_logs_sample.csv` and `episodes_sample.csv` are development fixtures
+`library_sample.csv`, `reading_logs_sample.csv`, `episodes_sample.csv` and `watch_logs_sample.csv` are development fixtures
 for the debug build, which starts with an empty library (debug installs under its own
 `applicationId` — see ROADMAP Task 16).
 

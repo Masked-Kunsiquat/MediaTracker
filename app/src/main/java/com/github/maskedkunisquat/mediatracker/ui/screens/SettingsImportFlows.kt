@@ -68,26 +68,48 @@ internal fun rememberCsvImportLauncher(
     // that bug took at the UI layer. The order matches the export chain's.
     var pendingLibraryCsvForImport by remember { mutableStateOf<String?>(null) }
     var pendingReadingLogsCsvForImport by remember { mutableStateOf<String?>(null) }
+    var pendingEpisodesCsvForImport by remember { mutableStateOf<String?>(null) }
 
-    val episodesImportLauncher =
+    // The fourth and last pick (#90): viewings, optional like the two before it, so Cancel here
+    // still imports whatever was gathered.
+    val watchLogsImportLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
         ) { uri ->
             val libraryCsv = pendingLibraryCsvForImport
             val readingLogsCsv = pendingReadingLogsCsvForImport
+            val episodesCsv = pendingEpisodesCsvForImport
             pendingLibraryCsvForImport = null
             pendingReadingLogsCsvForImport = null
+            pendingEpisodesCsvForImport = null
+            coroutineScope.launch {
+                val watchLogsCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
+                if (uri != null && watchLogsCsv == null) {
+                    snackbarHostState.showSnackbar(importFailureMessage)
+                    return@launch
+                }
+                importViewModel.importData(libraryCsv, readingLogsCsv, episodesCsv, duplicatePolicy, watchLogsCsv)
+            }
+        }
+
+    val episodesImportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
             // Off the main thread -- see the launchers below; an episodes export of a large TV
-            // library is easily the biggest of the three files.
+            // library is easily the biggest of the files.
             coroutineScope.launch {
                 val episodesCsv = uri?.let { withContext(Dispatchers.IO) { readCsvFromUri(context, it) } }
                 // Same split as readingLogsImportLauncher: a cancelled picker is a legitimate
                 // "no episodes file" import, a failed read of a file the user *did* pick is not.
                 if (uri != null && episodesCsv == null) {
+                    pendingLibraryCsvForImport = null
+                    pendingReadingLogsCsvForImport = null
                     snackbarHostState.showSnackbar(importFailureMessage)
                     return@launch
                 }
-                importViewModel.importData(libraryCsv, readingLogsCsv, episodesCsv, duplicatePolicy)
+                pendingEpisodesCsvForImport = episodesCsv
+                watchLogsImportLauncher.launch(arrayOf("text/*"))
             }
         }
 

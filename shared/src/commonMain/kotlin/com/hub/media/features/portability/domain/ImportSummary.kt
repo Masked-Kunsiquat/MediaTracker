@@ -11,6 +11,9 @@ public enum class ImportRowSource {
     MEDIA,
     SESSION,
     EPISODE,
+
+    /** A `watch_logs_export.csv` row (#90). */
+    WATCH_LOG,
 }
 
 /**
@@ -95,4 +98,8 @@ public data class ImportSummary(
      * result" rule this phase's brief applies to rejected rows applies here too.
      */
     public val notes: List<String> = emptyList(),
+    /** Viewings imported from `watch_logs_export.csv` (#90). */
+    public val viewingsImported: Int = 0,
+    /** Viewings already present (same episode and moment) and therefore not imported again. */
+    public val viewingsSkipped: Int = 0,
 )

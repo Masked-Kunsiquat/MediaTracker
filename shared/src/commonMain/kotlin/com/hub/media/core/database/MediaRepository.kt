@@ -4,6 +4,7 @@ import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -63,6 +64,9 @@ public class MediaRepository(
      * [com.hub.media.features.tv.data.TVShowRepository.observeEpisodes].
      */
     public fun observeAllEpisodes(): Flow<List<EpisodeEntity>> = db.episodeDao().observeAll()
+
+    /** Every viewing (#90), for `watch_logs_export.csv` and the import's duplicate check. */
+    public fun observeAllViewings(): Flow<List<WatchLogEntity>> = db.watchLogDao().observeAll()
 
     /**
      * Observes every media item together with its details as a reactive stream.

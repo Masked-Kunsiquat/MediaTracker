@@ -35,6 +35,7 @@ public class ImportViewModel(
      * @param readingLogsCsv `reading_logs_export.csv` text, or `null` if the user didn't provide
      *   one.
      * @param episodesCsv `episodes_export.csv` text, or `null` if the user didn't provide one.
+     * @param watchLogsCsv `watch_logs_export.csv` text (#90), or `null` if the user didn't provide one.
      * @param duplicatePolicy The user's chosen [DuplicatePolicy] for this import.
      */
     public fun importData(
@@ -42,6 +43,7 @@ public class ImportViewModel(
         readingLogsCsv: String?,
         episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
+        watchLogsCsv: String? = null,
     ) {
         if (_uiState.value is ImportUiState.Loading) return
 
@@ -50,7 +52,13 @@ public class ImportViewModel(
             _uiState.value =
                 when (
                     val result =
-                        importDataUseCase.execute(libraryCsv, readingLogsCsv, episodesCsv, duplicatePolicy)
+                        importDataUseCase.execute(
+                            libraryCsv,
+                            readingLogsCsv,
+                            episodesCsv,
+                            duplicatePolicy,
+                            watchLogsCsv,
+                        )
                 ) {
                     is Resource.Success -> ImportUiState.Success(result.data)
                     is Resource.Error -> ImportUiState.Error(result.message)

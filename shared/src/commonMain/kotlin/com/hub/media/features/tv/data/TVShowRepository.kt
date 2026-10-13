@@ -9,6 +9,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -19,6 +20,7 @@ import com.hub.media.core.util.warn
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -594,11 +596,18 @@ public class TVShowRepository(
         watched: Boolean,
     ): Resource<Unit> =
         try {
+            // Existence is checked directly: the viewing-aware write (#90) reports 0 for an episode
+            // that is already watched, which is a success here, not "not found".
             val rows =
-                if (watched) {
-                    db.tvWriteDao().markEpisodeWatched(episodeId, clock.now())
+                if (db.episodeDao().getById(episodeId) == null) {
+                    0
                 } else {
-                    db.tvWriteDao().clearEpisodeWatched(episodeId)
+                    if (watched) {
+                        db.tvWriteDao().markEpisodesWatchedAt(mapOf(episodeId to clock.now()))
+                    } else {
+                        db.tvWriteDao().clearEpisodeReturningPrevious(episodeId)
+                    }
+                    1
                 }
             if (rows == 0) Resource.Error("Episode with id=$episodeId not found") else Resource.Success(Unit)
         } catch (e: CancellationException) {
@@ -650,7 +659,7 @@ public class TVShowRepository(
                             },
                     )
                 } else {
-                    db.tvWriteDao().clearSeasonWatched(mediaId, seasonNumber)
+                    db.tvWriteDao().clearSeasonReturningPrevious(mediaId, seasonNumber)
                 }
                 Resource.Success(Unit)
             }
@@ -668,7 +677,7 @@ public class TVShowRepository(
      * @return The cleared `episodeId -> watchedAt`, empty when the episode was not watched;
      *   [Resource.Error] if the episode does not exist.
      */
-    public suspend fun untickEpisode(episodeId: String): Resource<Map<String, Instant>> =
+    public suspend fun untickEpisode(episodeId: String): Resource<List<WatchLogEntity>> =
         try {
             if (db.episodeDao().getById(episodeId) == null) {
                 Resource.Error("Episode with id=$episodeId not found")
@@ -686,7 +695,7 @@ public class TVShowRepository(
     public suspend fun clearSeason(
         mediaId: String,
         seasonNumber: Int,
-    ): Resource<Map<String, Instant>> =
+    ): Resource<List<WatchLogEntity>> =
         try {
             Resource.Success(db.tvWriteDao().clearSeasonReturningPrevious(mediaId, seasonNumber))
         } catch (e: CancellationException) {
@@ -702,7 +711,7 @@ public class TVShowRepository(
      *
      * @return How many episodes were restored.
      */
-    public suspend fun restoreWatched(previous: Map<String, Instant>): Resource<Int> =
+    public suspend fun restoreWatched(previous: List<WatchLogEntity>): Resource<Int> =
         try {
             Resource.Success(db.tvWriteDao().restoreAll(previous))
         } catch (e: CancellationException) {
@@ -719,6 +728,42 @@ public class TVShowRepository(
      *
      * @return [Resource.Error] if [mediaId] does not exist or a validation rule is violated.
      */
+
+    /** One episode's viewings, newest first (#90) -- the episode sheet's history. */
+    public fun observeViewings(episodeId: String): Flow<List<WatchLogEntity>> =
+        db.watchLogDao().observeForEpisode(episodeId)
+
+    /** Viewings per episode of one show (#90), for the "Watched N×" label. Absent means none. */
+    public fun observeViewingCounts(mediaId: String): Flow<Map<String, Int>> =
+        db.watchLogDao().observeViewingCounts(mediaId).map { rows -> rows.associate { it.episodeId to it.viewings } }
+
+    /** Deletes one viewing (#90) and returns it for Undo; `null` when it was already gone. */
+    public suspend fun deleteViewing(logId: String): Resource<WatchLogEntity?> =
+        guarded("delete viewing $logId") { db.tvWriteDao().deleteViewing(logId) }
+
+    /** Undo for [deleteViewing] -- skipped when the episode has been deleted since. */
+    public suspend fun restoreViewing(log: WatchLogEntity): Resource<Boolean> =
+        guarded("restore viewing ${log.id}") { db.tvWriteDao().restoreViewing(log) }
+
+    /** Corrects one viewing's date (#90). */
+    public suspend fun editViewingDate(
+        logId: String,
+        at: Instant,
+    ): Resource<Boolean> = guarded("edit viewing $logId") { db.tvWriteDao().updateViewingDate(logId, at) }
+
+    private suspend fun <T> guarded(
+        what: String,
+        block: suspend () -> T,
+    ): Resource<T> =
+        try {
+            Resource.Success(block())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to $what" }
+            Resource.Error("Failed to update viewing: ${e.message ?: "Unknown error"}", cause = e)
+        }
+
     public suspend fun updateShowMetadata(
         mediaId: String,
         title: String,

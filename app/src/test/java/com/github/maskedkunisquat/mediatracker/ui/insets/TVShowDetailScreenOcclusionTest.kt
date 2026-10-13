@@ -112,6 +112,7 @@ class TVShowDetailScreenOcclusionTest {
             onErrorShown = {},
             onUndoUntick = {},
             onUntickShown = {},
+            onEpisodeOpen = {},
             onNavigateBack = {},
         )
     }

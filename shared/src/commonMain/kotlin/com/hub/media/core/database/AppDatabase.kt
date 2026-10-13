@@ -19,6 +19,7 @@ import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
 import com.hub.media.core.database.dao.TVDetailsDao
 import com.hub.media.core.database.dao.TVWriteDao
+import com.hub.media.core.database.dao.WatchLogDao
 import com.hub.media.core.database.entities.AppSettingEntity
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.EpisodeEntity
@@ -128,6 +129,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun episodeDao(): EpisodeDao
 
     abstract fun tvWriteDao(): TVWriteDao
+
+    abstract fun watchLogDao(): WatchLogDao
 }
 
 /**
