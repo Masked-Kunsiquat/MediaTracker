@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -8,6 +10,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.WatchLogEntity
@@ -95,5 +98,38 @@ class EpisodeSheetContentTest {
         composeRule.onAllNodesWithContentDescription("Delete the viewing", substring = true)[2].performClick()
         assertEquals(listOf("v2"), edited)
         assertEquals(listOf("v1"), deleted)
+    }
+
+    /**
+     * The viewing Undo must show *inside* the sheet: a snackbar on the screen behind a
+     * ModalBottomSheet is drawn under the sheet's window, so the Undo would be invisible exactly
+     * when it is needed. Found on a device; this pins that the content hosts it.
+     */
+    @Test
+    fun hostsItsOwnSnackbar_soTheViewingUndoIsVisible() {
+        val host = SnackbarHostState()
+        composeRule.setContent {
+            MediaTrackerTheme(dynamicColor = false) {
+                EpisodeSheetContent(
+                    episode = episode,
+                    viewings = viewings,
+                    onTick = {},
+                    onWatchedAgain = {},
+                    onEditViewing = {},
+                    onDeleteViewing = {},
+                    snackbarHostState = host,
+                )
+                LaunchedEffect(Unit) { host.showSnackbar("Viewing removed", "Undo") }
+            }
+        }
+        composeRule.onNodeWithText("Viewing removed").assertIsDisplayed()
+    }
+
+    /** A heavily re-watched episode must still reach Watched again: the sheet scrolls. */
+    @Test
+    fun manyViewings_watchedAgainIsReachableByScrolling() {
+        val many = (1..20).map { viewing("v$it", "20${10 + it}-01-01T12:00:00Z") }
+        show(many)
+        composeRule.onNode(hasText("Watched again") and hasClickAction()).performScrollTo().assertIsDisplayed()
     }
 }

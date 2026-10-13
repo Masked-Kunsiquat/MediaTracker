@@ -170,8 +170,6 @@ class TVShowDetailScreenGoldenTest {
             onUndoUntick = {},
             onUntickShown = {},
             onEpisodeOpen = {},
-            onUndoViewing = {},
-            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }
@@ -211,8 +209,6 @@ class TVShowDetailScreenGoldenTest {
             onUndoUntick = {},
             onUntickShown = {},
             onEpisodeOpen = {},
-            onUndoViewing = {},
-            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }
@@ -265,8 +261,6 @@ class TVShowDetailScreenGoldenTest {
             onUndoUntick = {},
             onUntickShown = {},
             onEpisodeOpen = {},
-            onUndoViewing = {},
-            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }

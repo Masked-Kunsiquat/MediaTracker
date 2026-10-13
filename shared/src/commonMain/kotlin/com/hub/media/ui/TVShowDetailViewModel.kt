@@ -444,7 +444,10 @@ public class TVShowDetailViewModel(
     public fun deleteViewing(logId: String) {
         viewModelScope.launch {
             when (val result = tvShowRepository.deleteViewing(logId)) {
-                is Resource.Success -> result.data?.let { viewingUndo.value = ViewingUndo(++viewingUndoSeq, it) }
+                is Resource.Success ->
+                    result.data?.let { log ->
+                        viewingUndo.value = ViewingUndo(++viewingUndoSeq, viewingUndo.value?.logs.orEmpty() + log)
+                    }
                 is Resource.Error -> errorMessage.value = result.message
             }
         }
@@ -454,8 +457,10 @@ public class TVShowDetailViewModel(
     public fun undoViewing(undo: ViewingUndo) {
         consumeViewingUndo(undo.id)
         viewModelScope.launch {
-            val result = tvShowRepository.restoreViewing(undo.log)
-            if (result is Resource.Error) errorMessage.value = result.message
+            for (log in undo.logs) {
+                val result = tvShowRepository.restoreViewing(log)
+                if (result is Resource.Error) errorMessage.value = result.message
+            }
         }
     }
 

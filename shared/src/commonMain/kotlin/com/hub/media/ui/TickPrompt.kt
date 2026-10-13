@@ -137,8 +137,12 @@ public data class OpenEpisode(
     val viewings: List<WatchLogEntity>,
 )
 
-/** A just-deleted viewing, offered back as Undo (#90). Only the latest is live. */
+/**
+ * Just-deleted viewings, offered back as one Undo (#90). A delete made while another's Undo is on
+ * offer is merged into it, as an untick is ([mergeUntick]), so a second quick delete never costs
+ * the first its way back.
+ */
 public data class ViewingUndo(
     val id: Long,
-    val log: WatchLogEntity,
+    val logs: List<WatchLogEntity>,
 )

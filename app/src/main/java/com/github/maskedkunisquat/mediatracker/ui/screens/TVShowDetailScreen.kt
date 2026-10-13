@@ -90,7 +90,6 @@ import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import com.hub.media.ui.TVShowDetailViewModel
 import com.hub.media.ui.UntickEvent
-import com.hub.media.ui.ViewingUndo
 import com.hub.media.ui.filterIntegerInput
 import com.hub.media.ui.parseRequiredInt
 import kotlin.time.ExperimentalTime
@@ -113,6 +112,23 @@ fun TVShowDetailScreenRoute(
 
     val ready = uiState as? TVShowDetailUiState.Ready
     var editingViewing by remember { mutableStateOf<WatchLogEntity?>(null) }
+    val sheetSnackbar = remember { SnackbarHostState() }
+    val viewingDeletedMessage = stringResource(R.string.viewing_deleted_snackbar)
+    val undoLabel = stringResource(R.string.up_next_undo)
+    // Viewing Undo (#90): shown inside the sheet, where the delete happened -- see EpisodeSheetContent.
+    val viewingUndo = ready?.viewingUndo
+    LaunchedEffect(viewingUndo?.id) {
+        if (viewingUndo != null) {
+            val result = sheetSnackbar.showSnackbar(viewingDeletedMessage, undoLabel, duration = SnackbarDuration.Short)
+            if (result ==
+                SnackbarResult.ActionPerformed
+            ) {
+                viewModel.undoViewing(viewingUndo)
+            } else {
+                viewModel.consumeViewingUndo(viewingUndo.id)
+            }
+        }
+    }
 
     // The episode sheet (#90). Composed before the dialogs below so they open above it.
     ready?.openEpisode?.let { open ->
@@ -124,6 +140,7 @@ fun TVShowDetailScreenRoute(
                 onWatchedAgain = viewModel::requestRewatch,
                 onEditViewing = { editingViewing = it },
                 onDeleteViewing = { viewModel.deleteViewing(it.id) },
+                snackbarHostState = sheetSnackbar,
             )
         }
     }
@@ -175,8 +192,6 @@ fun TVShowDetailScreenRoute(
         onUndoUntick = viewModel::undo,
         onUntickShown = viewModel::consumeUntick,
         onEpisodeOpen = viewModel::openEpisode,
-        onUndoViewing = viewModel::undoViewing,
-        onViewingUndoShown = viewModel::consumeViewingUndo,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -204,8 +219,6 @@ fun TVShowDetailScreen(
     onUndoUntick: (UntickEvent) -> Unit,
     onUntickShown: (Long) -> Unit,
     onEpisodeOpen: (String) -> Unit,
-    onUndoViewing: (ViewingUndo) -> Unit,
-    onViewingUndoShown: (Long) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -253,27 +266,6 @@ fun TVShowDetailScreen(
         if (untick != null && untickMessage != null) {
             val result = snackbarHostState.showSnackbar(untickMessage, undoLabel, duration = SnackbarDuration.Short)
             if (result == SnackbarResult.ActionPerformed) onUndoUntick(untick) else onUntickShown(untick.id)
-        }
-    }
-
-    // Viewing Undo (#90), the same shape as the untick Undo above.
-    val viewingUndo = (uiState as? TVShowDetailUiState.Ready)?.viewingUndo
-    val viewingDeletedMessage = stringResource(R.string.viewing_deleted_snackbar)
-    LaunchedEffect(viewingUndo?.id) {
-        if (viewingUndo != null) {
-            val result =
-                snackbarHostState.showSnackbar(
-                    viewingDeletedMessage,
-                    undoLabel,
-                    duration = SnackbarDuration.Short,
-                )
-            if (result ==
-                SnackbarResult.ActionPerformed
-            ) {
-                onUndoViewing(viewingUndo)
-            } else {
-                onViewingUndoShown(viewingUndo.id)
-            }
         }
     }
 

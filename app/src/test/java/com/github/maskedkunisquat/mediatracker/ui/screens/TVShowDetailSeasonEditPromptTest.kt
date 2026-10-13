@@ -131,8 +131,6 @@ class TVShowDetailSeasonEditPromptTest {
                 onUndoUntick = {},
                 onUntickShown = {},
                 onEpisodeOpen = {},
-                onUndoViewing = {},
-                onViewingUndoShown = {},
                 onNavigateBack = {},
             )
         }

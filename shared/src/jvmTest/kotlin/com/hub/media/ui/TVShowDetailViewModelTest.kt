@@ -1117,4 +1117,23 @@ class TVShowDetailViewModelTest {
             }
             assertEquals(Instant.parse("2024-01-01T20:00:00Z"), db.episodeDao().getById(e1)!!.watchedAt)
         }
+
+    @Test
+    fun twoQuickViewingDeletes_shareOneUndo_thatRestoresBoth() =
+        runTest {
+            val (showId, e1) = watchedOnce(Instant.parse("2024-01-01T20:00:00Z"))
+            db.tvWriteDao().addViewing(e1, Instant.parse("2025-01-01T20:00:00Z"))
+            db.tvWriteDao().addViewing(e1, Instant.parse("2026-01-01T20:00:00Z"))
+            val viewModel = readyViewModel(showId)
+            viewModel.openEpisode(e1)
+            val (a, b, _) = ready(viewModel) { it.openEpisode?.viewings?.size == 3 }.openEpisode!!.viewings
+
+            viewModel.deleteViewing(a.id)
+            ready(viewModel) { it.openEpisode?.viewings?.size == 2 && it.viewingUndo != null }
+            viewModel.deleteViewing(b.id)
+            val merged = ready(viewModel) { it.openEpisode?.viewings?.size == 1 && it.viewingUndo?.logs?.size == 2 }
+
+            viewModel.undoViewing(merged.viewingUndo!!)
+            ready(viewModel) { it.openEpisode?.viewings?.size == 3 }
+        }
 }
