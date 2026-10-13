@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Episodes are ticked with big check-circles** in place of small checkboxes, in the spirit of TV
+  Time: filled when watched, an outline when not. Each episode row shows its number large, its
+  title, and its air date ("Airs Mar 5" for one still to come). Each season has its own
+  check-circle and a progress bar, and its title takes the accent colour. Up next's check is the
+  same circle.
 - **Ticking an episode now asks when you watched it** (#131): Now, On air date (when the episode
   has one), or Pick a date. You can also mark the earlier unwatched episodes at the same time.
   Marking a whole season asks the same, counts only the episodes it will mark, and skips episodes

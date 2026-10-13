@@ -25,13 +25,13 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,6 +72,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
+import com.github.maskedkunisquat.mediatracker.ui.components.WatchedCircle
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.AiringStatus
@@ -757,89 +757,101 @@ private fun SeasonHeader(
             season.seasonNumber,
         )
 
-    Row(
-        // The whole header toggles, not just the chevron: it is the largest target on the row and
-        // the one a thumb reaches for. The trailing controls keep their own click handling, so
-        // marking a season watched still does that rather than folding it.
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggleExpanded)
-                .padding(top = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // weight(fill = false) lets the header shrink instead of shoving the trailing controls off
-        // the right edge. Without it a two-digit episode count ("8 / 10") is wide enough to push
-        // the overflow IconButton past the container, where it is clipped -- taking its content
-        // description with it -- and overlaps the watched button, so taps aimed at the season menu
-        // mark the whole season watched instead.
-        Text(
-            text =
-                stringResource(
-                    R.string.tv_show_detail_season_header,
-                    season.seasonNumber,
-                    season.watchedCount,
-                    total,
-                ),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f, fill = false),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = toggleDescription,
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(
+            // The whole header toggles, not just the chevron: it is the largest target on the row and
+            // the one a thumb reaches for. The trailing controls keep their own click handling, so
+            // marking a season watched still does that rather than folding it.
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpanded),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // weight(fill = false) lets the header shrink instead of shoving the trailing controls off
+            // the right edge. Without it a two-digit episode count ("8 / 10") is wide enough to push
+            // the overflow IconButton past the container, where it is clipped -- taking its content
+            // description with it -- and overlaps the watched button, so taps aimed at the season menu
+            // mark the whole season watched instead.
+            Text(
+                text =
+                    stringResource(
+                        R.string.tv_show_detail_season_header,
+                        season.seasonNumber,
+                        season.watchedCount,
+                        total,
+                    ),
+                style = MaterialTheme.typography.titleMedium,
+                // The season is the section's anchor, so it takes the accent colour -- TV Time's orange,
+                // here the theme's primary so dynamic colour still applies.
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f, fill = false),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            // Shrinks and ellipsizes like the header text, so the chevron (#130) and the overflow
-            // button keep their width. Without it, font scale 1.1 on a narrow row squeezed the
-            // overflow button to zero again (#163).
-            // Hidden when nothing could be marked: every unwatched episode is still unaired (#131).
-            if (allWatched || season.markableCount > 0) {
-                TextButton(
-                    onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) },
-                    modifier = Modifier.weight(1f, fill = false),
-                ) {
-                    Text(
-                        if (allWatched) {
-                            stringResource(R.string.tv_show_detail_clear_season)
-                        } else {
-                            stringResource(R.string.tv_show_detail_mark_season_watched)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = toggleDescription,
+                )
+                // Shrinks and ellipsizes like the header text, so the chevron (#130) and the overflow
+                // button keep their width. Without it, font scale 1.1 on a narrow row squeezed the
+                // overflow button to zero again (#163).
+                // Hidden when nothing could be marked: every unwatched episode is still unaired (#131).
+                // Hidden when nothing could be marked: every unwatched episode is still unaired (#131).
+                // A fixed 48dp circle rather than a text button, so it can no longer squeeze the
+                // overflow menu out of the row at a large font scale (#163).
+                if (allWatched || season.markableCount > 0) {
+                    WatchedCircle(
+                        checked = allWatched,
+                        onCheckedChange = { onSeasonWatchedChange(season.seasonNumber, it) },
                         contentDescription =
                             stringResource(
-                                R.string.tv_show_detail_season_menu_content_description,
-                                season.seasonNumber,
+                                if (allWatched) {
+                                    R.string.tv_show_detail_clear_season
+                                } else {
+                                    R.string.tv_show_detail_mark_season_watched
+                                },
                             ),
                     )
                 }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.tv_show_detail_change_episode_count)) },
-                        onClick = {
-                            showMenu = false
-                            onEditSeasonLength()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.tv_show_detail_remove_season)) },
-                        onClick = {
-                            showMenu = false
-                            onRemoveSeason()
-                        },
-                    )
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription =
+                                stringResource(
+                                    R.string.tv_show_detail_season_menu_content_description,
+                                    season.seasonNumber,
+                                ),
+                        )
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.tv_show_detail_change_episode_count)) },
+                            onClick = {
+                                showMenu = false
+                                onEditSeasonLength()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.tv_show_detail_remove_season)) },
+                            onClick = {
+                                showMenu = false
+                                onRemoveSeason()
+                            },
+                        )
+                    }
                 }
             }
+        }
+        if (total > 0) {
+            LinearProgressIndicator(
+                progress = { season.watchedCount.toFloat() / total },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                drawStopIndicator = {},
+            )
         }
     }
 }
@@ -861,46 +873,60 @@ private fun EpisodeRow(
         stringResource(R.string.tv_show_detail_episode_content_description, seasonNumber, episode.episodeNumber)
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Checkbox(
-            checked = watched,
-            onCheckedChange = { onWatchedChange(episode.id, it) },
-            modifier = Modifier.semantics { contentDescription = checkboxDescription },
-        )
-        // The number is always drawn, beside the title rather than instead of it.
-        //
-        // It used to appear only as a *fallback* for an episode with no title, which was invisible
-        // while nothing filled titles in: every quick-filled row read "Episode 1", "Episode 2". Once
-        // add-by-search started supplying real titles the numbers vanished, and a long season became
-        // an unnumbered wall of names -- a 458-episode show gives you nothing to scan for when you
-        // are looking for the one you just watched.
-        //
-        // Fixed width so the titles line up into a column instead of stepping right as the numbers
-        // gain digits; end-aligned so 9 and 458 share a right edge like any other number list.
         Text(
             text = stringResource(R.string.tv_show_detail_episode_number_prefix, episode.episodeNumber),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Start,
             maxLines = 1,
             modifier = Modifier.widthIn(min = EPISODE_NUMBER_COLUMN_WIDTH),
         )
-        // Nothing is drawn when there is no title. The old fallback read "Episode 1", which the
-        // number now says on its own -- and a placeholder word would be worse than the number alone
-        // rather than merely redundant: a quick-filled season has no titles at all, so it would
-        // repeat the same word down every row of the screen while carrying no information.
-        episode.title?.let { title ->
-            Text(
-                text = title,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Column(modifier = Modifier.weight(1f)) {
+            episode.title?.let { title ->
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            episode.airDate?.let { airDate ->
+                val millis = airDate.toEpochMilliseconds()
+                val day = formatAirDay(millis)
+                Text(
+                    text =
+                        if (millis > System.currentTimeMillis()) {
+                            stringResource(R.string.tv_show_detail_episode_airs, day)
+                        } else {
+                            day
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+        WatchedCircle(
+            checked = watched,
+            onCheckedChange = { onWatchedChange(episode.id, it) },
+            contentDescription = checkboxDescription,
+        )
     }
 }
+
+/**
+ * An air date for display. TMDB air dates are stored as midnight UTC (`TmdbDates.toInstantOrNull`),
+ * so the calendar day is read in UTC -- in the device zone it would show the day before anywhere
+ * west of UTC.
+ */
+private fun formatAirDay(utcMidnightMillis: Long): String =
+    java.time.Instant
+        .ofEpochMilli(utcMidnightMillis)
+        .atZone(java.time.ZoneOffset.UTC)
+        .toLocalDate()
+        .format(DATE_ONLY_FORMATTER)
 
 /**
  * Width of the episode-number column, whose contents are **start**-aligned.
@@ -922,7 +948,7 @@ private fun EpisodeRow(
  * its title right, which a fixed width does not do. With a minimum it does: 1..999 share a column
  * and align, and a longer number widens its own row instead of losing a digit.
  */
-private val EPISODE_NUMBER_COLUMN_WIDTH = 28.dp
+private val EPISODE_NUMBER_COLUMN_WIDTH = 40.dp
 
 /**
  * A two-field dialog for setting a season's length -- shared by the "Add season" button (opened
