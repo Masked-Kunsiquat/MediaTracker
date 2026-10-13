@@ -2,11 +2,13 @@ package com.hub.media.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,17 +31,50 @@ public sealed class MovieDetailUiState {
      */
     public data object NotFound : MovieDetailUiState()
 
+    /**
+     * @property viewings The film's watch history (#192), newest first.
+     * @property pendingWatched Becoming Watched is waiting on the "when?" prompt.
+     * @property pendingWatchedAgain "Watched again" is waiting on the same prompt.
+     * @property viewingUndo The viewings just deleted, for the snackbar's Undo.
+     * @property statusUndo The status just left Watched, for the snackbar's Undo.
+     */
     public data class Ready(
         val movie: MediaWithDetails.Movie,
         val errorMessage: String? = null,
+        val viewings: List<WatchLogEntity> = emptyList(),
+        val pendingWatched: Boolean = false,
+        val pendingWatchedAgain: Boolean = false,
+        val viewingUndo: FilmViewingUndo? = null,
+        val statusUndo: StatusUndo? = null,
     ) : MovieDetailUiState()
 }
+
+/**
+ * Viewings deleted in a row, merged into one Undo the way an episode's are (#90). [statusBefore] is
+ * the status before the *first* delete, so undoing a run that emptied the history puts Watched back.
+ */
+public data class FilmViewingUndo(
+    val id: Long,
+    val logs: List<WatchLogEntity>,
+    val statusBefore: WatchStatus,
+)
+
+/** A status change away from Watched, offered back by the snackbar ("Moved to Watching", Undo). */
+public data class StatusUndo(
+    val id: Long,
+    val previous: WatchStatus,
+    val current: WatchStatus,
+)
 
 /**
  * Drives the movie detail screen (ROADMAP Task 13 Phase B) — the movie counterpart of
  * [BookDetailViewModel], and deliberately the same shape, including routing deletion through
  * [BulkDeleteUseCase] so a movie's poster gets the same reference-aware cleanup a book's cover
  * does.
+ *
+ * Since #192 it also owns the film's watch history: becoming Watched asks when (the route shows the
+ * prompt while [MovieDetailUiState.Ready.pendingWatched] is set), and leaving Watched keeps the
+ * viewings and offers Undo.
  */
 public class MovieDetailViewModel(
     private val movieId: String,
@@ -47,16 +82,40 @@ public class MovieDetailViewModel(
     private val deleteMediaUseCase: BulkDeleteUseCase,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
+    private val pendingWatched = MutableStateFlow(false)
+    private val pendingWatchedAgain = MutableStateFlow(false)
+    private val viewingUndo = MutableStateFlow<FilmViewingUndo?>(null)
+    private val statusUndo = MutableStateFlow<StatusUndo?>(null)
+    private var undoSeq = 0L
+
+    private data class Overlay(
+        val pendingWatched: Boolean,
+        val pendingWatchedAgain: Boolean,
+        val viewingUndo: FilmViewingUndo?,
+        val statusUndo: StatusUndo?,
+    )
+
+    private val overlay = combine(pendingWatched, pendingWatchedAgain, viewingUndo, statusUndo, ::Overlay)
 
     public val uiState: StateFlow<MovieDetailUiState> =
         combine(
             movieRepository.observeMovieDetail(movieId),
+            movieRepository.observeViewings(movieId),
             errorMessage,
-        ) { movie, error ->
+            overlay,
+        ) { movie, viewings, error, o ->
             if (movie == null) {
                 MovieDetailUiState.NotFound
             } else {
-                MovieDetailUiState.Ready(movie = movie, errorMessage = error)
+                MovieDetailUiState.Ready(
+                    movie = movie,
+                    errorMessage = error,
+                    viewings = viewings,
+                    pendingWatched = o.pendingWatched,
+                    pendingWatchedAgain = o.pendingWatchedAgain,
+                    viewingUndo = o.viewingUndo,
+                    statusUndo = o.statusUndo,
+                )
             }
         }.stateIn(
             scope = viewModelScope,
@@ -66,16 +125,107 @@ public class MovieDetailViewModel(
 
     /**
      * Quick status change without a full edit round-trip, mirroring
-     * [BookDetailViewModel.updateStatus].
+     * [BookDetailViewModel.updateStatus]. Becoming Watched asks when first ([confirmWatched]); any
+     * other change is written straight away, and leaving Watched offers [undoStatus].
      *
      * Writes only the status, via [MovieRepository.updateWatchStatus] — it deliberately does not
      * re-send the movie's other fields, since none of them are what the user just changed. See that
      * function's KDoc for what re-sending them cost.
      */
-    public fun updateStatus(status: WatchStatus) {
-        if (uiState.value !is MovieDetailUiState.Ready) return
+    public fun requestStatus(status: WatchStatus) {
+        val ready = uiState.value as? MovieDetailUiState.Ready ?: return
+        if (status == WatchStatus.WATCHED && ready.movie.details?.status != WatchStatus.WATCHED) {
+            pendingWatched.value = true
+            return
+        }
         viewModelScope.launch {
-            val result = movieRepository.updateWatchStatus(mediaId = movieId, status = status)
+            when (val result = movieRepository.updateWatchStatus(mediaId = movieId, status = status)) {
+                is Resource.Error -> errorMessage.value = result.message
+                is Resource.Success ->
+                    if (result.data == WatchStatus.WATCHED && status != WatchStatus.WATCHED) {
+                        statusUndo.value = StatusUndo(++undoSeq, previous = result.data, current = status)
+                    }
+            }
+        }
+    }
+
+    public fun confirmWatched(watchedWhen: WatchedWhen) {
+        // Cleared before the launch, so a recomposition cannot show the prompt a second time.
+        pendingWatched.value = false
+        viewModelScope.launch {
+            val result = movieRepository.updateWatchStatus(movieId, WatchStatus.WATCHED, watchedWhen)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    public fun dismissWatched() {
+        pendingWatched.value = false
+    }
+
+    public fun requestWatchedAgain() {
+        pendingWatchedAgain.value = true
+    }
+
+    public fun confirmWatchedAgain(watchedWhen: WatchedWhen) {
+        pendingWatchedAgain.value = false
+        viewModelScope.launch {
+            val result = movieRepository.addViewing(movieId, watchedWhen)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    public fun dismissWatchedAgain() {
+        pendingWatchedAgain.value = false
+    }
+
+    /** Deletes one viewing; deletes in a row merge into one Undo. */
+    public fun deleteViewing(log: WatchLogEntity) {
+        viewModelScope.launch {
+            when (val result = movieRepository.deleteViewing(log.id)) {
+                is Resource.Error -> errorMessage.value = result.message
+                is Resource.Success -> {
+                    val deletion = result.data
+                    viewingUndo.value =
+                        viewingUndo.value?.let { it.copy(id = ++undoSeq, logs = it.logs + deletion.log) }
+                            ?: FilmViewingUndo(++undoSeq, listOf(deletion.log), deletion.statusBefore)
+                }
+            }
+        }
+    }
+
+    public fun undoViewing() {
+        val undo = viewingUndo.value ?: return
+        viewingUndo.value = null
+        viewModelScope.launch {
+            val result = movieRepository.restoreViewings(undo.logs, undo.statusBefore)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    /** The snackbar timed out: the deletes stand. */
+    public fun consumeViewingUndo() {
+        viewingUndo.value = null
+    }
+
+    public fun undoStatus() {
+        val undo = statusUndo.value ?: return
+        statusUndo.value = null
+        viewModelScope.launch {
+            val result = movieRepository.restoreStatus(movieId, undo.previous)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    public fun consumeStatusUndo() {
+        statusUndo.value = null
+    }
+
+    public fun editViewingDate(
+        log: WatchLogEntity,
+        watchedWhen: WatchedWhen,
+    ) {
+        viewModelScope.launch {
+            val result = movieRepository.editViewingDate(log.id, watchedWhen)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }

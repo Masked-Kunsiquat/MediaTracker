@@ -70,7 +70,7 @@ fun MovieDetailScreenRoute(
     MovieDetailScreen(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
-        onStatusChange = viewModel::updateStatus,
+        onStatusChange = viewModel::requestStatus,
         onDelete = viewModel::deleteMovie,
         onErrorShown = viewModel::consumeError,
         onNavigateBack = onNavigateBack,
