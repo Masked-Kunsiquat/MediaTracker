@@ -6,7 +6,8 @@ import kotlin.time.Instant
 public data class ParsedWatchLogRow(
     public val logId: String,
     public val mediaId: String,
-    public val episodeId: String,
+    /** `null` for a film viewing (#192): the file leaves `episode_id` blank. */
+    public val episodeId: String?,
     public val watchedAt: Instant,
     public val durationSeconds: Long?,
 )
@@ -38,8 +39,7 @@ public object WatchLogCsvImporter {
         ParsedWatchLogRow(
             logId = row[COL_LOG_ID].ifBlank { reject("log_id is required") },
             mediaId = row[COL_MEDIA_ID].ifBlank { reject("media_id is required") },
-            // Films are #90's follow-up: a film viewing is reported rather than silently dropped.
-            episodeId = row[COL_EPISODE_ID].ifBlank { reject("film viewings are not imported yet") },
+            episodeId = row[COL_EPISODE_ID].ifBlank { null },
             watchedAt = parseRequiredInstant(row[COL_WATCHED_AT], "watched_at"),
             durationSeconds = parseOptionalLong(row[COL_DURATION_SECONDS], "duration_seconds"),
         )

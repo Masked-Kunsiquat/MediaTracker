@@ -46,6 +46,8 @@ public class ImportWriteRepository(
         viewingDeletesForEpisodes: Collection<String> = emptyList(),
         viewingInserts: List<WatchLogEntity> = emptyList(),
         touchedEpisodeIds: Collection<String> = emptyList(),
+        filmViewingDeletes: Collection<String> = emptyList(),
+        touchedFilmIds: Collection<String> = emptyList(),
     ): Resource<Unit> =
         try {
             db.importWriteDao().importAtomically(
@@ -58,6 +60,8 @@ public class ImportWriteRepository(
                 viewingDeletesForEpisodes,
                 viewingInserts,
                 touchedEpisodeIds,
+                filmViewingDeletes,
+                touchedFilmIds,
             )
             Resource.Success(Unit)
         } catch (e: CancellationException) {
