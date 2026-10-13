@@ -796,10 +796,6 @@ private fun SeasonHeader(
                     imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                     contentDescription = toggleDescription,
                 )
-                // Shrinks and ellipsizes like the header text, so the chevron (#130) and the overflow
-                // button keep their width. Without it, font scale 1.1 on a narrow row squeezed the
-                // overflow button to zero again (#163).
-                // Hidden when nothing could be marked: every unwatched episode is still unaired (#131).
                 // Hidden when nothing could be marked: every unwatched episode is still unaired (#131).
                 // A fixed 48dp circle rather than a text button, so it can no longer squeeze the
                 // overflow menu out of the row at a large font scale (#163).
