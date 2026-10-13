@@ -897,10 +897,10 @@ private fun EpisodeRow(
             episode.airDate?.let { airDate ->
                 val millis = airDate.toEpochMilliseconds()
                 val day = formatAirDay(millis)
+                // Day against today *locally*, the same rule On air date uses (#131): comparing
+                // instants would drop "Airs" on the evening before, west of UTC.
                 Text(
                     text =
-                        // Day against today *locally*, the same rule On air date uses (#131): comparing
-                        // instants would drop "Airs" on the evening before, west of UTC.
                         if (!isPickableDay(millis)) {
                             stringResource(R.string.tv_show_detail_episode_airs, day)
                         } else {
