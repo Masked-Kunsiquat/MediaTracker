@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +42,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.UpNextViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
 import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
+import com.github.maskedkunisquat.mediatracker.ui.components.WatchedCircle
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.UpNextRow
 import com.hub.media.core.database.entities.MediaType
@@ -189,18 +189,19 @@ private fun UpNextCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onMarkWatched) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription =
-                        stringResource(
-                            R.string.up_next_mark_watched_format,
-                            row.showTitle,
-                            row.seasonNumber,
-                            row.episodeNumber,
-                        ),
-                )
-            }
+            // The same check-circle the show screen ticks with; never shown ticked here, because a
+            // ticked episode has already left the queue.
+            WatchedCircle(
+                checked = false,
+                onCheckedChange = { onMarkWatched() },
+                contentDescription =
+                    stringResource(
+                        R.string.up_next_mark_watched_format,
+                        row.showTitle,
+                        row.seasonNumber,
+                        row.episodeNumber,
+                    ),
+            )
         }
     }
 }
