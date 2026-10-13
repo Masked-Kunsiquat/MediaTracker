@@ -16,4 +16,6 @@ public data class CsvExportBundle(
     val libraryCsv: String,
     val readingLogsCsv: String,
     val episodesCsv: String,
+    /** `watch_logs_export.csv` (#90, CSV schema v6): one row per viewing. */
+    val watchLogsCsv: String,
 )

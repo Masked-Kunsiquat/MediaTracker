@@ -5,6 +5,7 @@ import com.hub.media.core.database.dao.ImportMediaInsert
 import com.hub.media.core.database.dao.ImportMediaUpdate
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -42,6 +43,9 @@ public class ImportWriteRepository(
         sessionUpdates: List<ReadingSessionEntity>,
         episodeInserts: List<EpisodeEntity> = emptyList(),
         episodeUpdates: List<EpisodeEntity> = emptyList(),
+        viewingDeletesForEpisodes: Collection<String> = emptyList(),
+        viewingInserts: List<WatchLogEntity> = emptyList(),
+        touchedEpisodeIds: Collection<String> = emptyList(),
     ): Resource<Unit> =
         try {
             db.importWriteDao().importAtomically(
@@ -51,6 +55,9 @@ public class ImportWriteRepository(
                 sessionUpdates,
                 episodeInserts,
                 episodeUpdates,
+                viewingDeletesForEpisodes,
+                viewingInserts,
+                touchedEpisodeIds,
             )
             Resource.Success(Unit)
         } catch (e: CancellationException) {

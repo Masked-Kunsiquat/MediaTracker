@@ -11,6 +11,7 @@ import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.portability.csv.EpisodeCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
+import com.hub.media.features.portability.csv.WatchLogCsvExporter
 import kotlinx.coroutines.flow.first
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -101,6 +102,7 @@ public class ExportDataUseCase(
             // items, so episodes follow the same accessor rather than adding a second repository
             // dependency to this class just for one whole-table read.
             val episodes = mediaRepository.observeAllEpisodes().first()
+            val viewings = mediaRepository.observeAllViewings().first()
 
             // NOT one database snapshot. The four reads above are four separate queries, so a write
             // landing between them can put the files slightly out of step with each other -- a show
@@ -125,6 +127,7 @@ public class ExportDataUseCase(
                     libraryCsv = LibraryCsvExporter.export(media, identifiersByMediaId),
                     readingLogsCsv = ReadingLogCsvExporter.export(sessions),
                     episodesCsv = EpisodeCsvExporter.export(episodes),
+                    watchLogsCsv = WatchLogCsvExporter.export(viewings),
                 )
             logger.info(TAG) {
                 "Export completed: ${media.size} item(s), ${sessions.size} session(s), " +

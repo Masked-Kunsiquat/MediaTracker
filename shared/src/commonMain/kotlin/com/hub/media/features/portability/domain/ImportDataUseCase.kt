@@ -12,12 +12,14 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.info
+import com.hub.media.core.util.newId
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
@@ -37,6 +39,9 @@ import com.hub.media.features.portability.csv.ParsedSessionRow
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvImporter
 import com.hub.media.features.portability.csv.SessionRowParseResult
+import com.hub.media.features.portability.csv.WatchLogCsvExporter
+import com.hub.media.features.portability.csv.WatchLogCsvImporter
+import com.hub.media.features.portability.csv.WatchLogRowParseResult
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import com.hub.media.features.portability.goodreads.GoodreadsCsvTableReader
@@ -51,6 +56,7 @@ public interface ImportUseCase {
         readingLogsCsv: String?,
         episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
+        watchLogsCsv: String? = null,
     ): Resource<ImportSummary>
 
     public suspend fun executeGoodreads(
@@ -275,8 +281,9 @@ public class ImportDataUseCase(
         readingLogsCsv: String?,
         episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
+        watchLogsCsv: String?,
     ): Resource<ImportSummary> {
-        if (libraryCsv == null && readingLogsCsv == null && episodesCsv == null) {
+        if (libraryCsv == null && readingLogsCsv == null && episodesCsv == null && watchLogsCsv == null) {
             return refuse("Nothing to import -- no file was selected.")
         }
 
@@ -332,6 +339,16 @@ public class ImportDataUseCase(
                         )
                 ) {
                     is CsvTableResult.Failure -> return refuse("episodes_export.csv: ${table.message}")
+                    is CsvTableResult.Success -> table.rows
+                }
+            } else {
+                emptyList()
+            }
+
+        val watchLogDataRows =
+            if (watchLogsCsv != null) {
+                when (val table = CsvTableReader.read(watchLogsCsv, WatchLogCsvExporter.HEADER)) {
+                    is CsvTableResult.Failure -> return refuse("watch_logs_export.csv: ${table.message}")
                     is CsvTableResult.Success -> table.rows
                 }
             } else {
@@ -428,6 +445,7 @@ public class ImportDataUseCase(
             var episodesSkipped = 0
             var episodesMerged = 0
             var episodesReplaced = 0
+            val replacedEpisodeIds = mutableSetOf<String>()
 
             episodeDataRows.forEachIndexed { index, rawRow ->
                 val rowNumber = index + 2
@@ -491,6 +509,7 @@ public class ImportDataUseCase(
                                             DuplicatePolicy.REPLACE -> {
                                                 val update = replacedEpisode(existing, row, resolvedMediaId)
                                                 episodeUpdates += update
+                                                replacedEpisodeIds += update.id
                                                 episodesReplaced++
                                                 update
                                             }
@@ -517,6 +536,82 @@ public class ImportDataUseCase(
                 }
             }
 
+            // ---- Viewings (#90) ------------------------------------------------------------------
+            // Each row resolves through the same id/slot map the episode pass just built, so a viewing
+            // of a slot-matched episode lands on the library's own row rather than tripping the
+            // composite foreign key. Duplicates (same episode and moment) are skipped here rather than
+            // by a unique index -- #153 rejected one, since date-only precision can make two genuine
+            // viewings collide. Under REPLACE, an episode this import replaced has its stored viewings
+            // dropped in favour of the file's, so the dedup set for it starts empty.
+            val existingViewings = mediaRepository.observeAllViewings().first()
+            val seenViewings =
+                existingViewings
+                    .groupBy { it.episodeId }
+                    .mapValuesTo(mutableMapOf()) { (_, logs) -> logs.mapTo(mutableSetOf()) { it.watchedAt } }
+            val takenViewingIds = existingViewings.mapTo(mutableSetOf()) { it.id }
+            val viewingReplaceEpisodeIds = mutableSetOf<String>()
+            val viewingInserts = mutableListOf<WatchLogEntity>()
+            var viewingsImported = 0
+            var viewingsSkipped = 0
+
+            watchLogDataRows.forEachIndexed { index, rawRow ->
+                val rowNumber = index + 2
+                when (val parsed = WatchLogCsvImporter.parseRow(rawRow)) {
+                    is WatchLogRowParseResult.Rejected ->
+                        rejections += ImportRejection(ImportRowSource.WATCH_LOG, rowNumber, parsed.reason)
+
+                    is WatchLogRowParseResult.Parsed -> {
+                        val row = parsed.row
+                        val episode = existingEpisodesById[row.episodeId]
+                        if (episode == null) {
+                            rejections +=
+                                ImportRejection(
+                                    ImportRowSource.WATCH_LOG,
+                                    rowNumber,
+                                    "episode_id '${row.episodeId}' is not a known episode (not already in your " +
+                                        "library, and not present in the episodes file being imported) -- " +
+                                        "viewing skipped",
+                                )
+                        } else {
+                            if (episode.id in replacedEpisodeIds && viewingReplaceEpisodeIds.add(episode.id)) {
+                                seenViewings[episode.id] = mutableSetOf()
+                                existingViewings.filter { it.episodeId == episode.id }.forEach {
+                                    takenViewingIds -=
+                                        it.id
+                                }
+                            }
+                            if (!seenViewings.getOrPut(episode.id) { mutableSetOf() }.add(row.watchedAt)) {
+                                viewingsSkipped++
+                            } else {
+                                val id =
+                                    if (takenViewingIds.add(row.logId)) {
+                                        row.logId
+                                    } else {
+                                        newId().also {
+                                            takenViewingIds +=
+                                                it
+                                        }
+                                    }
+                                viewingInserts +=
+                                    WatchLogEntity(
+                                        id = id,
+                                        mediaId = episode.mediaId,
+                                        episodeId = episode.id,
+                                        watchedAt = row.watchedAt,
+                                        durationSeconds = row.durationSeconds,
+                                    )
+                                viewingsImported++
+                            }
+                        }
+                    }
+                }
+            }
+            val touchedEpisodeIds =
+                (
+                    episodeInserts.map { it.id } + episodeUpdates.map { it.id } +
+                        viewingInserts.mapNotNull { it.episodeId }
+                ).toSet()
+
             val writeResult =
                 importWriteRepository.importAtomically(
                     mediaInserts = mediaResolution.inserts,
@@ -525,6 +620,9 @@ public class ImportDataUseCase(
                     sessionUpdates = sessionUpdates,
                     episodeInserts = episodeInserts,
                     episodeUpdates = episodeUpdates,
+                    viewingDeletesForEpisodes = viewingReplaceEpisodeIds,
+                    viewingInserts = viewingInserts,
+                    touchedEpisodeIds = touchedEpisodeIds,
                 )
             if (writeResult is Resource.Error) return writeResult
 
@@ -532,7 +630,7 @@ public class ImportDataUseCase(
                 "CSV import completed: ${mediaResolution.imported} imported, " +
                     "${mediaResolution.skipped} skipped, ${mediaResolution.merged} merged, " +
                     "${mediaResolution.replaced} replaced, $sessionsImported session(s) imported, " +
-                    "$episodesImported episode(s) imported"
+                    "$episodesImported episode(s) imported, $viewingsImported viewing(s) imported"
             }
             logRejectionSummary("CSV import", rejections)
             Resource.Success(
