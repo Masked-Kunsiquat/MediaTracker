@@ -128,6 +128,8 @@ class TVShowDetailSeasonEditPromptTest {
                 onAddAllMissingEpisodes = {},
                 onDelete = {},
                 onErrorShown = {},
+                onUndoUntick = {},
+                onUntickShown = {},
                 onNavigateBack = {},
             )
         }

@@ -194,6 +194,8 @@ class TVShowDetailScreenTest {
                                 onAbandonedChange = onAbandonedChange,
                                 onDelete = onDelete,
                                 onErrorShown = onErrorShown,
+                                onUndoUntick = {},
+                                onUntickShown = {},
                                 onNavigateBack = onNavigateBack,
                                 onRefreshMetadata = onRefreshMetadata,
                                 onAddMissingEpisodes = onAddMissingEpisodes,

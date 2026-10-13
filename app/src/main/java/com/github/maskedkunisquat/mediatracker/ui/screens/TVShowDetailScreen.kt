@@ -36,8 +36,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -70,6 +72,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailProgressCard
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.AiringStatus
@@ -82,6 +85,7 @@ import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import com.hub.media.ui.TVShowDetailViewModel
+import com.hub.media.ui.UntickEvent
 import com.hub.media.ui.filterIntegerInput
 import com.hub.media.ui.parseRequiredInt
 import kotlin.time.ExperimentalTime
@@ -101,6 +105,12 @@ fun TVShowDetailScreenRoute(
         viewModel(factory = TVShowDetailViewModelFactory(appContainer, showId))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    // The dated tick prompt (#131). Rendered by the route rather than the stateless screen, so the
+    // screen's contract -- and every test that drives it -- is unchanged by it.
+    (uiState as? TVShowDetailUiState.Ready)?.pendingTick?.let { tick ->
+        MarkWatchedDialog(tick = tick, onConfirm = viewModel::confirmTick, onDismiss = viewModel::dismissTick)
+    }
+
     TVShowDetailScreen(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
@@ -114,6 +124,8 @@ fun TVShowDetailScreenRoute(
         onAddAllMissingEpisodes = viewModel::addAllMissingEpisodes,
         onDelete = viewModel::deleteShow,
         onErrorShown = viewModel::consumeError,
+        onUndoUntick = viewModel::undo,
+        onUntickShown = viewModel::consumeUntick,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -138,6 +150,8 @@ fun TVShowDetailScreen(
     onAddAllMissingEpisodes: () -> Unit,
     onDelete: () -> Unit,
     onErrorShown: () -> Unit,
+    onUndoUntick: (UntickEvent) -> Unit,
+    onUntickShown: (Long) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -161,6 +175,32 @@ fun TVShowDetailScreen(
     var pendingShrinkSeasonNumber by rememberSaveable { mutableStateOf<Int?>(null) }
     var pendingShrinkNewCount by rememberSaveable { mutableStateOf<Int?>(null) }
     var pendingRemoveSeasonNumber by rememberSaveable { mutableStateOf<Int?>(null) }
+
+    // Untick Undo (#131): the screen owns the snackbar host, so it shows the event and reports back.
+    // Keyed on the event's id: a newer untick is merged into the pending one by the ViewModel and
+    // arrives with a new id, so this snackbar is replaced by one offering to undo both.
+    val untick = (uiState as? TVShowDetailUiState.Ready)?.untickEvent
+    val untickMessage =
+        untick?.let {
+            if (it.merged) {
+                pluralStringResource(R.plurals.mark_watched_untick_many, it.previous.size, it.previous.size)
+            } else if (it.isSeason) {
+                stringResource(R.string.mark_watched_untick_season_snackbar, it.seasonNumber)
+            } else {
+                stringResource(
+                    R.string.mark_watched_untick_snackbar,
+                    it.label?.takeIf { label -> label.isNotBlank() }
+                        ?: stringResource(R.string.up_next_untitled_format, it.episodeNumber),
+                )
+            }
+        }
+    val undoLabel = stringResource(R.string.up_next_undo)
+    LaunchedEffect(untick?.id) {
+        if (untick != null && untickMessage != null) {
+            val result = snackbarHostState.showSnackbar(untickMessage, undoLabel, duration = SnackbarDuration.Short)
+            if (result == SnackbarResult.ActionPerformed) onUndoUntick(untick) else onUntickShown(untick.id)
+        }
+    }
 
     val errorMessage = (uiState as? TVShowDetailUiState.Ready)?.errorMessage
     LaunchedEffect(errorMessage) {
@@ -755,19 +795,22 @@ private fun SeasonHeader(
             // Shrinks and ellipsizes like the header text, so the chevron (#130) and the overflow
             // button keep their width. Without it, font scale 1.1 on a narrow row squeezed the
             // overflow button to zero again (#163).
-            TextButton(
-                onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) },
-                modifier = Modifier.weight(1f, fill = false),
-            ) {
-                Text(
-                    if (allWatched) {
-                        stringResource(R.string.tv_show_detail_clear_season)
-                    } else {
-                        stringResource(R.string.tv_show_detail_mark_season_watched)
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            // Hidden when nothing could be marked: every unwatched episode is still unaired (#131).
+            if (allWatched || season.markableCount > 0) {
+                TextButton(
+                    onClick = { onSeasonWatchedChange(season.seasonNumber, !allWatched) },
+                    modifier = Modifier.weight(1f, fill = false),
+                ) {
+                    Text(
+                        if (allWatched) {
+                            stringResource(R.string.tv_show_detail_clear_season)
+                        } else {
+                            stringResource(R.string.tv_show_detail_mark_season_watched)
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {

@@ -582,9 +582,14 @@ public class TVShowRepository(
      * else. `clock.now()` is passed unconditionally and simply ignored by the database when the
      * episode already carries a date.
      *
+     * **Test set-up only since #131.** Production ticks go through
+     * [com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase] (which asks *when*) and unticks
+     * through [untickEpisode] (which offers Undo). `internal` so it stays out of the app module; the
+     * jvmTest suites use it to arrange watched state.
+     *
      * @return [Resource.Error] if [episodeId] does not resolve to an existing episode.
      */
-    public suspend fun setEpisodeWatched(
+    internal suspend fun setEpisodeWatched(
         episodeId: String,
         watched: Boolean,
     ): Resource<Unit> =
@@ -610,14 +615,18 @@ public class TVShowRepository(
      *
      * Marking watched leaves already-watched episodes alone rather than restamping them, so a
      * season you finished months ago does not become "watched today" because you ticked its last
-     * episode; see [com.hub.media.core.database.dao.TVWriteDao.markSeasonWatched]. That means the
+     * episode; see [com.hub.media.core.database.dao.TVWriteDao.markEpisodesWatchedAt]. That means the
      * affected-row count cannot distinguish "already fully watched" (0 rows, a success) from "no
      * such season" (0 rows, an error), so the season's existence is established by reading it
      * first rather than inferred from the count.
      *
+     * **Test set-up only since #131**, for the same reason as [setEpisodeWatched]: the app marks a
+     * season through [com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase] and clears one
+     * through [clearSeason].
+     *
      * @return [Resource.Error] if that season of that show has no episodes at all.
      */
-    public suspend fun setSeasonWatched(
+    internal suspend fun setSeasonWatched(
         mediaId: String,
         seasonNumber: Int,
         watched: Boolean,
@@ -627,7 +636,19 @@ public class TVShowRepository(
                 Resource.Error("Season $seasonNumber of show id=$mediaId has no episodes")
             } else {
                 if (watched) {
-                    db.tvWriteDao().markSeasonWatched(mediaId, seasonNumber, clock.now())
+                    val now = clock.now()
+                    db.tvWriteDao().markEpisodesWatchedAt(
+                        db
+                            .tvWriteDao()
+                            .episodesInSeason(
+                                mediaId,
+                                seasonNumber,
+                            ).filter { it.watchedAt == null }
+                            .associate {
+                                it.id to
+                                    now
+                            },
+                    )
                 } else {
                     db.tvWriteDao().clearSeasonWatched(mediaId, seasonNumber)
                 }
@@ -638,6 +659,57 @@ public class TVShowRepository(
         } catch (e: Exception) {
             logger.error(TAG, e) { "Failed to bulk-update season $seasonNumber for show: id=$mediaId" }
             Resource.Error("Failed to update season: ${e.message ?: "Unknown error"}", cause = e)
+        }
+
+    /**
+     * Unticks one episode and returns what it held, so the caller can offer Undo (#131). The read
+     * and the clear are one transaction, so the timestamp handed back is exactly the one removed.
+     *
+     * @return The cleared `episodeId -> watchedAt`, empty when the episode was not watched;
+     *   [Resource.Error] if the episode does not exist.
+     */
+    public suspend fun untickEpisode(episodeId: String): Resource<Map<String, Instant>> =
+        try {
+            if (db.episodeDao().getById(episodeId) == null) {
+                Resource.Error("Episode with id=$episodeId not found")
+            } else {
+                Resource.Success(db.tvWriteDao().clearEpisodeReturningPrevious(episodeId))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to untick episode: id=$episodeId" }
+            Resource.Error("Failed to update episode: ${e.message ?: "Unknown error"}", cause = e)
+        }
+
+    /** [untickEpisode] for a whole season -- Clear season's Undo restores each episode's own date. */
+    public suspend fun clearSeason(
+        mediaId: String,
+        seasonNumber: Int,
+    ): Resource<Map<String, Instant>> =
+        try {
+            Resource.Success(db.tvWriteDao().clearSeasonReturningPrevious(mediaId, seasonNumber))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to clear season $seasonNumber for show: id=$mediaId" }
+            Resource.Error("Failed to update season: ${e.message ?: "Unknown error"}", cause = e)
+        }
+
+    /**
+     * Undo for [untickEpisode] / [clearSeason]. Each episode is restored only if it is still unwatched,
+     * so a re-tick made before Undo keeps its newer date (#131).
+     *
+     * @return How many episodes were restored.
+     */
+    public suspend fun restoreWatched(previous: Map<String, Instant>): Resource<Int> =
+        try {
+            Resource.Success(db.tvWriteDao().restoreAll(previous))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to restore ${previous.size} watched date(s)" }
+            Resource.Error("Failed to undo: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /**

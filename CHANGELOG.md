@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Up next** (#89): a new screen, opened from the play icon in the library's top bar, listing the
   next episode of every show you have started, most recently watched first. Tap the check to mark
-  it watched and the show moves on to its following episode; Undo puts it back. Tap the card to
-  open the show. Abandoned shows and shows you have not started stay out of it, and an episode that
+  it watched -- it asks when, like any tick -- and the show moves on to its following episode. Tap
+  the card to open the show. Abandoned shows and shows you have not started stay out of it, and an episode that
   has not aired yet is not offered, so a show you are caught up on drops off until its next episode
   airs. Specials come after a show's regular episodes, and only while Include specials is on.
 - A new **Include specials** setting under Settings → TV (#88). It is on by default, which is how
@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Ticking an episode now asks when you watched it** (#131): Now, On air date (when the episode
+  has one), or Pick a date. You can also mark the earlier unwatched episodes at the same time.
+  Marking a whole season asks the same, counts only the episodes it will mark, and skips episodes
+  that haven't aired. Unticking is instant and offers Undo, which puts back the exact date you had,
+  and Clear season can be undone the same way. Up next's check uses the same prompt.
 - Choosing an edition of a much-reprinted book now loads Open Library's edition list at Open
   Library's published request rate, so a work with hundreds of editions takes a few seconds rather
   than firing every page at once (#120). Works with one page of editions are unaffected.

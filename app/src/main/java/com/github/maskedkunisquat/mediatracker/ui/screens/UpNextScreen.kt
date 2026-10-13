@@ -22,10 +22,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,17 +42,17 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.UpNextViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.CoverImage
+import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.UpNextRow
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
-import com.hub.media.ui.MarkedWatchedEvent
 import com.hub.media.ui.UpNextUiState
 import com.hub.media.ui.UpNextViewModel
 
 /**
  * Route for the "Up next" screen (#89): wires [UpNextViewModel] to the stateless [UpNextScreen],
- * and owns the snackbar that turns a [MarkedWatchedEvent] into an Undo.
+ * and owns the error snackbar.
  */
 @Composable
 fun UpNextScreenRoute(
@@ -68,18 +66,6 @@ fun UpNextScreenRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val event = uiState.markedEvent
-    val message =
-        event?.let {
-            stringResource(R.string.up_next_marked_format, it.row.showTitle, it.row.seasonNumber, it.row.episodeNumber)
-        }
-    val undoLabel = stringResource(R.string.up_next_undo)
-    LaunchedEffect(event?.id) {
-        if (event != null && message != null) {
-            val result = snackbarHostState.showSnackbar(message, undoLabel, duration = SnackbarDuration.Short)
-            if (result == SnackbarResult.ActionPerformed) viewModel.undo(event) else viewModel.consumeMarked(event.id)
-        }
-    }
     val error = uiState.errorMessage
     LaunchedEffect(error) {
         if (error != null) {
@@ -88,12 +74,17 @@ fun UpNextScreenRoute(
         }
     }
 
+    // The same dated prompt the show screen uses (#131).
+    uiState.pendingTick?.let { tick ->
+        MarkWatchedDialog(tick = tick, onConfirm = viewModel::confirmTick, onDismiss = viewModel::dismissTick)
+    }
+
     UpNextScreen(
         uiState = uiState,
         coverStorageDir = coverStorageDir,
         snackbarHostState = snackbarHostState,
         onOpenShow = onOpenShow,
-        onMarkWatched = viewModel::markWatched,
+        onMarkWatched = viewModel::requestTick,
         onNavigateBack = onNavigateBack,
     )
 }

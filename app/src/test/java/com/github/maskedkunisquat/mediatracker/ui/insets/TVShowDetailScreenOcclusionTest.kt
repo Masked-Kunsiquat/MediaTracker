@@ -110,6 +110,8 @@ class TVShowDetailScreenOcclusionTest {
             onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
             onNavigateBack = {},
         )
     }

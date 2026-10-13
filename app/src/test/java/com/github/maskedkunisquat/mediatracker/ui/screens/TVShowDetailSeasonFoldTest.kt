@@ -138,6 +138,8 @@ class TVShowDetailSeasonFoldTest {
             onAddAllMissingEpisodes = {},
             onDelete = {},
             onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
             onNavigateBack = {},
         )
     }

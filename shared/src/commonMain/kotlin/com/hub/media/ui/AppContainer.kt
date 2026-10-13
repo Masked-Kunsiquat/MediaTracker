@@ -43,6 +43,7 @@ import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
+import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
@@ -127,6 +128,9 @@ public class AppContainer(
 
     /** TV show data operations (ROADMAP Task 13 Phase C). */
     public val tvShowRepository: TVShowRepository = TVShowRepository(database)
+
+    /** The single path every episode tick takes (#131) -- see [MarkEpisodesWatchedUseCase]. */
+    public val markEpisodesWatchedUseCase: MarkEpisodesWatchedUseCase = MarkEpisodesWatchedUseCase(database)
 
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
