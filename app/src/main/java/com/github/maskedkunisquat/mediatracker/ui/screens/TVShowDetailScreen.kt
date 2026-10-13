@@ -920,7 +920,7 @@ private fun EpisodeRow(
  * so the calendar day is read in UTC -- in the device zone it would show the day before anywhere
  * west of UTC.
  */
-private fun formatAirDay(utcMidnightMillis: Long): String =
+internal fun formatAirDay(utcMidnightMillis: Long): String =
     java.time.Instant
         .ofEpochMilli(utcMidnightMillis)
         .atZone(java.time.ZoneOffset.UTC)
