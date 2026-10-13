@@ -37,7 +37,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -941,7 +940,9 @@ class TVShowDetailViewModelTest {
             viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
             viewModel.confirmTick(WatchedWhen.Now, includeEarlier = true)
             runCurrent()
-            advanceUntilIdle()
+            // Room writes on its own executor, outside this scheduler, so "idle" says nothing about
+            // the write having landed: await the state it produces instead (AGENTS.md §7).
+            ready(viewModel) { it.watchedEpisodes == 1 }
 
             assertNotNull(db.episodeDao().getById(e2.id)!!.watchedAt)
             assertNull(db.episodeDao().getById(e1.id)!!.watchedAt, "only the first confirm may write")
