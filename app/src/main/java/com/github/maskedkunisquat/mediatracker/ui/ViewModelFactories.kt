@@ -428,6 +428,7 @@ class TVShowDetailViewModelFactory(
                 backfillUseCase = appContainer.backfillShowEpisodesUseCase,
                 settingsRepository = appContainer.settingsRepository,
                 markEpisodesWatched = appContainer.markEpisodesWatchedUseCase,
+                recordRewatch = appContainer.recordRewatchUseCase,
             )
         },
     )

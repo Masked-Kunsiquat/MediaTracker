@@ -130,3 +130,15 @@ internal fun markableIn(
     seasonEpisodes: List<EpisodeEntity>,
     now: Instant,
 ): List<EpisodeEntity> = seasonEpisodes.filter { it.watchedAt == null && isAired(it.airDate, now) }
+
+/** The episode sheet's subject (#90): the episode and its viewings, newest first. */
+public data class OpenEpisode(
+    val episode: EpisodeEntity,
+    val viewings: List<WatchLogEntity>,
+)
+
+/** A just-deleted viewing, offered back as Undo (#90). Only the latest is live. */
+public data class ViewingUndo(
+    val id: Long,
+    val log: WatchLogEntity,
+)

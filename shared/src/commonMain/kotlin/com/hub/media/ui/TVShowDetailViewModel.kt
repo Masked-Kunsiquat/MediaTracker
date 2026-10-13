@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.data.MediaWithDetails
@@ -16,16 +17,23 @@ import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
+import com.hub.media.features.tv.domain.RecordRewatchUseCase
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.features.tv.domain.WatchedWhen
+import com.hub.media.features.tv.domain.resolveWatchedAt
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -107,6 +115,14 @@ public sealed class TVShowDetailUiState {
         val pendingTick: PendingTick? = null,
         /** The latest untick, offered back as Undo (#131). */
         val untickEvent: UntickEvent? = null,
+        /** The episode sheet's subject (#90), with its viewings newest first. */
+        val openEpisode: OpenEpisode? = null,
+        /** The open "Watched again?" prompt (#90). */
+        val pendingRewatch: PendingTick? = null,
+        /** A just-deleted viewing, offered back as Undo (#90). */
+        val viewingUndo: ViewingUndo? = null,
+        /** Viewings per episode (#90), for the "Watched N×" row label; absent means none. */
+        val viewingCounts: Map<String, Int> = emptyMap(),
     ) : TVShowDetailUiState()
 }
 
@@ -122,6 +138,7 @@ public sealed class TVShowDetailUiState {
  * fresh from [TVShowRepository.observeEpisodes] on every emission rather than read from a stored
  * field. See that state's KDoc.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 public class TVShowDetailViewModel(
     private val showId: String,
     private val tvShowRepository: TVShowRepository,
@@ -129,6 +146,7 @@ public class TVShowDetailViewModel(
     private val backfillUseCase: BackfillShowEpisodesUseCase,
     private val settingsRepository: SettingsRepository,
     private val markEpisodesWatched: MarkEpisodesWatchedUseCase,
+    private val recordRewatch: RecordRewatchUseCase,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
 
@@ -138,6 +156,41 @@ public class TVShowDetailViewModel(
     /** Backs [TVShowDetailUiState.Ready.untickEvent]. */
     private val untickEvent = MutableStateFlow<UntickEvent?>(null)
     private var untickSeq = 0L
+
+    /** Backs [TVShowDetailUiState.Ready.openEpisode]: which episode's sheet is open (#90). */
+    private val openEpisodeId = MutableStateFlow<String?>(null)
+
+    /** Backs [TVShowDetailUiState.Ready.pendingRewatch]. */
+    private val pendingRewatch = MutableStateFlow<PendingTick?>(null)
+
+    /** Backs [TVShowDetailUiState.Ready.viewingUndo]. */
+    private val viewingUndo = MutableStateFlow<ViewingUndo?>(null)
+    private var viewingUndoSeq = 0L
+
+    /** The open episode's viewings, re-read as they change; `null` while no sheet is open. */
+    private val openViewings: Flow<Pair<String, List<WatchLogEntity>>?> =
+        openEpisodeId.flatMapLatest { id ->
+            if (id == null) flowOf(null) else tvShowRepository.observeViewings(id).map { id to it }
+        }
+
+    /** Everything layered over the base state, gathered so the outer `combine` stays within five sources. */
+    private data class Overlay(
+        val tick: PendingTick?,
+        val untick: UntickEvent?,
+        val rewatch: PendingTick?,
+        val viewingUndo: ViewingUndo?,
+        val open: Pair<String, List<WatchLogEntity>>?,
+        val counts: Map<String, Int>,
+    )
+
+    private val overlay: Flow<Overlay> =
+        combine(
+            pendingTick,
+            untickEvent,
+            pendingRewatch,
+            viewingUndo,
+            combine(openViewings, tvShowRepository.observeViewingCounts(showId), ::Pair),
+        ) { tick, untick, rewatch, undo, (open, counts) -> Overlay(tick, untick, rewatch, undo, open, counts) }
     private val isRefreshing = MutableStateFlow(false)
 
     /** Backs [TVShowDetailUiState.Ready.seasonFindings] -- see that property's KDoc. */
@@ -203,8 +256,8 @@ public class TVShowDetailViewModel(
             seasonFindings,
             addingSeasonNumbers,
             settingsRepository.observeIncludeSpecials(),
-            combine(pendingTick, untickEvent, ::Pair),
-        ) { base, findings, adding, includeSpecials, (tick, untick) ->
+            overlay,
+        ) { base, findings, adding, includeSpecials, extra ->
             if (base is TVShowDetailUiState.Ready) {
                 // The overall counts follow the include-specials setting (#88) through the same
                 // rule the library uses, so this screen and the library card cannot disagree.
@@ -216,8 +269,17 @@ public class TVShowDetailViewModel(
                 base.copy(
                     seasonFindings = findings,
                     addingSeasonNumbers = adding,
-                    pendingTick = tick,
-                    untickEvent = untick,
+                    pendingTick = extra.tick,
+                    untickEvent = extra.untick,
+                    pendingRewatch = extra.rewatch,
+                    viewingUndo = extra.viewingUndo,
+                    viewingCounts = extra.counts,
+                    openEpisode =
+                        extra.open?.let { (id, viewings) ->
+                            base.seasons
+                                .firstNotNullOfOrNull { season -> season.episodes.firstOrNull { it.id == id } }
+                                ?.let { OpenEpisode(it, viewings) }
+                        },
                     watchedEpisodes = counted.watchedEpisodes,
                     totalEpisodes = counted.totalEpisodes,
                 )
@@ -338,6 +400,91 @@ public class TVShowDetailViewModel(
     }
 
     /** Acknowledges the Undo snackbar for [id] once it has gone. */
+    // ---- #90: the episode sheet ----------------------------------------------------------------
+
+    /** Opens [episodeId]'s sheet: its viewings, Watched again, edit and delete. */
+    public fun openEpisode(episodeId: String) {
+        openEpisodeId.value = episodeId
+    }
+
+    public fun closeEpisode() {
+        openEpisodeId.value = null
+    }
+
+    /** Opens the "Watched again?" prompt for the open episode -- #131's prompt, with no catch-up. */
+    public fun requestRewatch() {
+        val id = openEpisodeId.value ?: return
+        viewModelScope.launch {
+            val target = tvShowRepository.observeEpisodes(showId).first().firstOrNull { it.id == id } ?: return@launch
+            pendingRewatch.value =
+                buildPendingTick(
+                    target,
+                    episodes = emptyList(),
+                    includeSpecials = true,
+                    now = markEpisodesWatched.now(),
+                )
+        }
+    }
+
+    /** Records the rewatch. Cleared before launching, so a second confirm writes nothing. */
+    public fun confirmRewatch(watchedWhen: WatchedWhen) {
+        val tick = pendingRewatch.value ?: return
+        pendingRewatch.value = null
+        viewModelScope.launch {
+            val result = recordRewatch.execute(tick.targetIds.single(), watchedWhen)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    public fun dismissRewatch() {
+        pendingRewatch.value = null
+    }
+
+    /** Deletes one viewing and offers it back. Deleting the last one un-ticks the episode. */
+    public fun deleteViewing(logId: String) {
+        viewModelScope.launch {
+            when (val result = tvShowRepository.deleteViewing(logId)) {
+                is Resource.Success -> result.data?.let { viewingUndo.value = ViewingUndo(++viewingUndoSeq, it) }
+                is Resource.Error -> errorMessage.value = result.message
+            }
+        }
+    }
+
+    /** Puts a deleted viewing back -- skipped if its episode has been deleted since. */
+    public fun undoViewing(undo: ViewingUndo) {
+        consumeViewingUndo(undo.id)
+        viewModelScope.launch {
+            val result = tvShowRepository.restoreViewing(undo.log)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    public fun consumeViewingUndo(id: Long) {
+        if (viewingUndo.value?.id == id) viewingUndo.value = null
+    }
+
+    /**
+     * Corrects one viewing's date (#90): the picked day as noon local, clamped to now -- the same
+     * rule as #131's "Pick a date", via [resolveWatchedAt].
+     */
+    public fun editViewingDate(
+        logId: String,
+        watchedWhen: WatchedWhen,
+    ) {
+        viewModelScope.launch {
+            val at =
+                resolveWatchedAt(
+                    watchedWhen,
+                    airDate = null,
+                    now = markEpisodesWatched.now(),
+                    zone = TimeZone.currentSystemDefault(),
+                )
+                    ?: return@launch
+            val result = tvShowRepository.editViewingDate(logId, at)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
     public fun consumeUntick(id: Long) {
         if (untickEvent.value?.id == id) untickEvent.value = null
     }

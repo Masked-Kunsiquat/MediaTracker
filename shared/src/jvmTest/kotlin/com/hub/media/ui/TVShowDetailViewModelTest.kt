@@ -21,6 +21,7 @@ import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
+import com.hub.media.features.tv.domain.RecordRewatchUseCase
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.features.tv.domain.WatchedWhen
 import com.hub.media.features.tv.network.TmdbClient
@@ -41,6 +42,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.datetime.LocalDate
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -72,6 +74,7 @@ class TVShowDetailViewModelTest {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var clock: SteppingClock
     private lateinit var markWatched: MarkEpisodesWatchedUseCase
+    private lateinit var recordRewatch: RecordRewatchUseCase
 
     private class SteppingClock(
         var now: Instant,
@@ -90,6 +93,7 @@ class TVShowDetailViewModelTest {
         settingsRepository = SettingsRepository(db.appSettingsDao())
         clock = SteppingClock(Instant.parse("2026-10-12T20:00:00Z"))
         markWatched = MarkEpisodesWatchedUseCase(db, clock)
+        recordRewatch = RecordRewatchUseCase(db, clock)
         tempDir = runBlocking { createTestTempDir() }
         deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir))
         // Never reached by these tests -- none of them refresh -- but the ViewModel needs one, and a
@@ -148,6 +152,7 @@ class TVShowDetailViewModelTest {
                     backfill,
                     settingsRepository,
                     markWatched,
+                    recordRewatch,
                 ),
             )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
@@ -350,6 +355,7 @@ class TVShowDetailViewModelTest {
                         backfillUseCase,
                         settingsRepository,
                         markWatched,
+                        recordRewatch,
                     ),
                 )
 
@@ -373,6 +379,7 @@ class TVShowDetailViewModelTest {
                         backfillUseCase,
                         settingsRepository,
                         markWatched,
+                        recordRewatch,
                     ),
                 )
 
@@ -409,6 +416,7 @@ class TVShowDetailViewModelTest {
                         backfillUseCase,
                         settingsRepository,
                         markWatched,
+                        recordRewatch,
                     ),
                 )
 
@@ -433,6 +441,7 @@ class TVShowDetailViewModelTest {
                         backfillUseCase,
                         settingsRepository,
                         markWatched,
+                        recordRewatch,
                     ),
                 )
 
@@ -461,6 +470,7 @@ class TVShowDetailViewModelTest {
                         backfillUseCase,
                         settingsRepository,
                         markWatched,
+                        recordRewatch,
                     ),
                 )
 
@@ -989,5 +999,122 @@ class TVShowDetailViewModelTest {
             ready(viewModel) { it.watchedEpisodes == 2 }
             assertEquals(d1, db.episodeDao().getById(e1.id)!!.watchedAt)
             assertEquals(d2, db.episodeDao().getById(e2.id)!!.watchedAt)
+        }
+
+    // ---- #90: the episode sheet -- viewings, Watched again, edit and delete ----------------------
+
+    private suspend fun watchedOnce(at: Instant): Pair<String, String> {
+        val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+        val e1 = episodesOf(showId).single()
+        db.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to at))
+        return showId to e1.id
+    }
+
+    @Test
+    fun openEpisode_exposesItsViewings_andCloseClearsIt() =
+        runTest {
+            val (showId, e1) = watchedOnce(Instant.parse("2024-01-01T20:00:00Z"))
+            val viewModel = readyViewModel(showId)
+
+            viewModel.openEpisode(e1)
+            val open = ready(viewModel) { it.openEpisode?.viewings?.size == 1 }.openEpisode!!
+            assertEquals(e1, open.episode.id)
+
+            viewModel.closeEpisode()
+            ready(viewModel) { it.openEpisode == null }
+        }
+
+    @Test
+    fun watchedAgain_addsAViewing() =
+        runTest {
+            val (showId, e1) = watchedOnce(Instant.parse("2024-01-01T20:00:00Z"))
+            val viewModel = readyViewModel(showId)
+            viewModel.openEpisode(e1)
+            ready(viewModel) { it.openEpisode?.viewings?.size == 1 }
+
+            viewModel.requestRewatch()
+            val prompting = ready(viewModel) { it.pendingRewatch != null }
+            assertEquals(emptyList(), prompting.pendingRewatch!!.earlierIds, "a rewatch offers no catch-up")
+            viewModel.confirmRewatch(WatchedWhen.Now)
+            ready(viewModel) { it.pendingRewatch == null && it.openEpisode?.viewings?.size == 2 }
+            assertEquals(clock.now, db.episodeDao().getById(e1)!!.watchedAt)
+        }
+
+    @Test
+    fun doubleConfirmRewatch_writesOnce() =
+        runTest {
+            val (showId, e1) = watchedOnce(Instant.parse("2024-01-01T20:00:00Z"))
+            val viewModel = readyViewModel(showId)
+            viewModel.openEpisode(e1)
+            ready(viewModel) { it.openEpisode?.viewings?.size == 1 }
+            viewModel.requestRewatch()
+            ready(viewModel) { it.pendingRewatch != null }
+
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            viewModel.confirmRewatch(WatchedWhen.Now)
+            viewModel.confirmRewatch(WatchedWhen.Now)
+            runCurrent()
+            ready(viewModel) { it.openEpisode?.viewings?.size == 2 }
+            assertEquals(
+                2,
+                db
+                    .watchLogDao()
+                    .observeForEpisode(e1)
+                    .first()
+                    .size,
+                "only the first confirm may write",
+            )
+        }
+
+    @Test
+    fun deleteLastViewing_unticks_andUndoRestores() =
+        runTest {
+            val t1 = Instant.parse("2024-01-01T20:00:00Z")
+            val (showId, e1) = watchedOnce(t1)
+            val viewModel = readyViewModel(showId)
+            viewModel.openEpisode(e1)
+            val only = ready(viewModel) { it.openEpisode?.viewings?.size == 1 }.openEpisode!!.viewings.single()
+
+            viewModel.deleteViewing(only.id)
+            val deleted = ready(viewModel) { it.viewingUndo != null && it.watchedEpisodes == 0 }
+            viewModel.undoViewing(deleted.viewingUndo!!)
+            ready(viewModel) { it.viewingUndo == null && it.watchedEpisodes == 1 }
+            assertEquals(t1, db.episodeDao().getById(e1)!!.watchedAt)
+        }
+
+    @Test
+    fun deleteMiddleViewing_undo_restoresIt() =
+        runTest {
+            val (showId, e1) = watchedOnce(Instant.parse("2024-01-01T20:00:00Z"))
+            db.tvWriteDao().addViewing(e1, Instant.parse("2025-01-01T20:00:00Z"))
+            db.tvWriteDao().addViewing(e1, Instant.parse("2026-01-01T20:00:00Z"))
+            val viewModel = readyViewModel(showId)
+            viewModel.openEpisode(e1)
+            val viewings = ready(viewModel) { it.openEpisode?.viewings?.size == 3 }.openEpisode!!.viewings
+            val middle = viewings[1]
+
+            viewModel.deleteViewing(middle.id)
+            val deleted = ready(viewModel) { it.openEpisode?.viewings?.size == 2 && it.viewingUndo != null }
+            viewModel.undoViewing(deleted.viewingUndo!!)
+            ready(viewModel) { it.openEpisode?.viewings?.size == 3 }
+        }
+
+    @Test
+    fun editViewingDate_recomputesWatchedAt() =
+        runTest {
+            val (showId, e1) = watchedOnce(Instant.parse("2026-01-01T20:00:00Z"))
+            db.tvWriteDao().addViewing(e1, Instant.parse("2024-01-01T20:00:00Z"))
+            val viewModel = readyViewModel(showId)
+            viewModel.openEpisode(e1)
+            val latest = ready(viewModel) { it.openEpisode?.viewings?.size == 2 }.openEpisode!!.viewings.first()
+
+            viewModel.editViewingDate(latest.id, WatchedWhen.On(LocalDate(2023, 6, 1)))
+            ready(viewModel) {
+                it.openEpisode
+                    ?.viewings
+                    ?.first()
+                    ?.watchedAt == Instant.parse("2024-01-01T20:00:00Z")
+            }
+            assertEquals(Instant.parse("2024-01-01T20:00:00Z"), db.episodeDao().getById(e1)!!.watchedAt)
         }
 }
