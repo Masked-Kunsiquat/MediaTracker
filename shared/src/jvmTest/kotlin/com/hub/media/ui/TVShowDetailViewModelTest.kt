@@ -860,7 +860,10 @@ class TVShowDetailViewModelTest {
 
             viewModel.setEpisodeWatched(e1.id, watched = false)
             val unticked = ready(viewModel) { it.untickEvent != null && it.watchedEpisodes == 0 }
-            assertEquals(mapOf(e1.id to t1), unticked.untickEvent!!.previous)
+            assertEquals(
+                mapOf(e1.id to t1),
+                unticked.untickEvent!!.previous.associate { it.episodeId!! to it.watchedAt },
+            )
 
             viewModel.undo(unticked.untickEvent!!)
             ready(viewModel) { it.untickEvent == null && it.watchedEpisodes == 1 }
@@ -980,7 +983,7 @@ class TVShowDetailViewModelTest {
             ready(viewModel) { it.untickEvent != null && it.watchedEpisodes == 1 }
             viewModel.setEpisodeWatched(e2.id, watched = false)
             val merged = ready(viewModel) { it.untickEvent?.previous?.size == 2 }.untickEvent!!
-            assertEquals(mapOf(e1.id to d1, e2.id to d2), merged.previous)
+            assertEquals(mapOf(e1.id to d1, e2.id to d2), merged.previous.associate { it.episodeId!! to it.watchedAt })
 
             viewModel.undo(merged)
             ready(viewModel) { it.watchedEpisodes == 2 }

@@ -326,7 +326,7 @@ class BulkTmdbBackfillUseCaseTest {
             val mediaId = quickFilledShow()
             val episode = db.episodeDao().getByMediaId(mediaId).first { it.episodeNumber == 1 }
             val watchedAt = Instant.parse("2020-01-01T00:00:00Z")
-            db.tvWriteDao().markEpisodeWatched(episode.id, watchedAt)
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(episode.id to watchedAt))
             shows.updateWatchStatus(mediaId, WatchStatus.ABANDONED)
 
             useCase().execute()

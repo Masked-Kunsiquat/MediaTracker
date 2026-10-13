@@ -51,7 +51,7 @@ class UntickRestoreTest {
             db.tvWriteDao().markEpisodesWatchedAt(mapOf(id to t1))
 
             val previous = db.tvWriteDao().clearEpisodeReturningPrevious(id)
-            assertEquals(mapOf(id to t1), previous)
+            assertEquals(mapOf(id to t1), previous.associate { it.episodeId!! to it.watchedAt })
             assertNull(db.episodeDao().getById(id)!!.watchedAt)
 
             assertEquals(1, db.tvWriteDao().restoreAll(previous))
@@ -88,7 +88,7 @@ class UntickRestoreTest {
             db.tvWriteDao().markEpisodesWatchedAt(mapOf(a.id to t1))
 
             val previous = db.tvWriteDao().clearSeasonReturningPrevious(showId, 1)
-            assertEquals(mapOf(a.id to t1), previous)
+            assertEquals(mapOf(a.id to t1), previous.associate { it.episodeId!! to it.watchedAt })
 
             db.tvWriteDao().restoreAll(previous)
             assertEquals(t1, db.episodeDao().getById(a.id)!!.watchedAt)
