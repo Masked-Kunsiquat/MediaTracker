@@ -80,6 +80,7 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.tv.domain.SeasonCountMismatch
+import com.hub.media.features.tv.domain.isPickableDay
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.LibraryStatusFilter
 import com.hub.media.ui.SeasonGroup
@@ -898,7 +899,9 @@ private fun EpisodeRow(
                 val day = formatAirDay(millis)
                 Text(
                     text =
-                        if (millis > System.currentTimeMillis()) {
+                        // Day against today *locally*, the same rule On air date uses (#131): comparing
+                        // instants would drop "Airs" on the evening before, west of UTC.
+                        if (!isPickableDay(millis)) {
                             stringResource(R.string.tv_show_detail_episode_airs, day)
                         } else {
                             day
