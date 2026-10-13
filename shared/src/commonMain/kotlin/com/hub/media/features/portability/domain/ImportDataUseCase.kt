@@ -549,7 +549,15 @@ public class ImportDataUseCase(
                     .groupBy { it.episodeId }
                     .mapValuesTo(mutableMapOf()) { (_, logs) -> logs.mapTo(mutableSetOf()) { it.watchedAt } }
             val takenViewingIds = existingViewings.mapTo(mutableSetOf()) { it.id }
-            val viewingReplaceEpisodeIds = mutableSetOf<String>()
+            // REPLACE means the file wins, for viewings too: every episode this import replaced drops its
+            // stored viewings, whether or not the watch-log file mentions it. Normalisation then
+            // rebuilds it from the file's viewings, or from its `watched_at` alone, or leaves it
+            // unwatched. (Keeping old viewings would let them overwrite the file's `watched_at`.)
+            val viewingReplaceEpisodeIds = replacedEpisodeIds.toMutableSet()
+            for (episodeId in viewingReplaceEpisodeIds) {
+                seenViewings[episodeId] = mutableSetOf()
+                existingViewings.filter { it.episodeId == episodeId }.forEach { takenViewingIds -= it.id }
+            }
             val viewingInserts = mutableListOf<WatchLogEntity>()
             var viewingsImported = 0
             var viewingsSkipped = 0
@@ -573,13 +581,6 @@ public class ImportDataUseCase(
                                         "viewing skipped",
                                 )
                         } else {
-                            if (episode.id in replacedEpisodeIds && viewingReplaceEpisodeIds.add(episode.id)) {
-                                seenViewings[episode.id] = mutableSetOf()
-                                existingViewings.filter { it.episodeId == episode.id }.forEach {
-                                    takenViewingIds -=
-                                        it.id
-                                }
-                            }
                             if (!seenViewings.getOrPut(episode.id) { mutableSetOf() }.add(row.watchedAt)) {
                                 viewingsSkipped++
                             } else {

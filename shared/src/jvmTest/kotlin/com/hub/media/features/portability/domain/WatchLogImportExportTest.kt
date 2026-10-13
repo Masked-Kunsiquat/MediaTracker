@@ -184,4 +184,47 @@ class WatchLogImportExportTest {
             assertIs<Resource.Success<*>>(result)
             assertEquals(2, MediaRepository(target).observeAllEpisodes().first().count { it.watchedAt != null })
         }
+
+    @Test
+    fun replace_withTheFileSayingUnwatched_unticksTheEpisode() =
+        runTest {
+            val (e1, _) = seedSource()
+            import(target, export(source))
+            source.tvWriteDao().clearEpisodeReturningPrevious(e1.id)
+
+            import(target, export(source), DuplicatePolicy.REPLACE)
+            assertEquals(
+                null,
+                target.episodeDao().getById(e1.id)!!.watchedAt,
+                "REPLACE: the file's blank watched_at wins",
+            )
+            assertEquals(emptyList(), target.watchLogDao().observeForEpisode(e1.id).first())
+            assertInvariantEverywhere(target)
+        }
+
+    @Test
+    fun replace_withoutAWatchLogsFile_theFilesDateWins() =
+        runTest {
+            val (_, e2) = seedSource()
+            import(target, export(source))
+            val only =
+                source
+                    .watchLogDao()
+                    .observeForEpisode(e2.id)
+                    .first()
+                    .single()
+            source.tvWriteDao().updateViewingDate(only.id, t2)
+
+            import(target, export(source), DuplicatePolicy.REPLACE, withWatchLogs = false)
+            assertEquals(t2, target.episodeDao().getById(e2.id)!!.watchedAt)
+            assertEquals(
+                listOf(t2),
+                target
+                    .watchLogDao()
+                    .observeForEpisode(e2.id)
+                    .first()
+                    .map { it.watchedAt },
+            )
+            assertInvariantEverywhere(target)
+        }
 }

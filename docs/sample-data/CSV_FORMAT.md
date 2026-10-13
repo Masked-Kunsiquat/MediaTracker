@@ -180,8 +180,10 @@ imports unchanged.
 On import:
 - **A viewing already present is skipped**: same episode, same `watched_at`. Re-importing an
   export creates nothing.
-- **Under REPLACE**, an episode the import replaced has its stored viewings replaced by this file's
-  viewings for it.
+- **Under REPLACE the file wins.** Every episode the import replaced loses its stored viewings and
+  takes this file's viewings for it -- or, if this file has none for it (or is not supplied), a
+  single viewing at its `watched_at`, or none if that is blank. A REPLACE import of an older
+  export therefore replaces a re-watch history rather than merging it.
 - **Every episode the import touched ends up with `watched_at` equal to its latest viewing.** An
   episode marked watched in `episodes_export.csv` with no viewings here gets one at that date.
 
