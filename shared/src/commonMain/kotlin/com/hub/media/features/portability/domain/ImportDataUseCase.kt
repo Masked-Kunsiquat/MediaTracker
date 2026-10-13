@@ -570,13 +570,18 @@ public class ImportDataUseCase(
 
                     is WatchLogRowParseResult.Parsed -> {
                         val row = parsed.row
-                        val episode = existingEpisodesById[row.episodeId]
+                        // The row's show must own the episode it names: resolved the same way the episode
+                        // pass resolves media ids, so a hand-edited or corrupted file cannot attach a viewing
+                        // to another show's episode (the FK would not catch it -- the episode's own mediaId
+                        // is what gets written).
+                        val resolvedMediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
+                        val episode = existingEpisodesById[row.episodeId]?.takeIf { it.mediaId == resolvedMediaId }
                         if (episode == null) {
                             rejections +=
                                 ImportRejection(
                                     ImportRowSource.WATCH_LOG,
                                     rowNumber,
-                                    "episode_id '${row.episodeId}' is not a known episode (not already in your " +
+                                    "episode_id '${row.episodeId}' is not a known episode of media_id '${row.mediaId}' (not already in your " +
                                         "library, and not present in the episodes file being imported) -- " +
                                         "viewing skipped",
                                 )
@@ -651,6 +656,8 @@ public class ImportDataUseCase(
                     episodesReplaced = episodesReplaced,
                     rejections = rejections,
                     notes = mediaResolution.reviewNotes,
+                    viewingsImported = viewingsImported,
+                    viewingsSkipped = viewingsSkipped,
                 ),
             )
         } catch (e: CancellationException) {

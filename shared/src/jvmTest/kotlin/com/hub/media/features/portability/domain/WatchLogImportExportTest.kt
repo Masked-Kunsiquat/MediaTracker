@@ -227,4 +227,33 @@ class WatchLogImportExportTest {
             )
             assertInvariantEverywhere(target)
         }
+
+    @Test
+    fun summary_reportsViewingsImportedAndSkipped() =
+        runTest {
+            seedSource()
+            val bundle = export(source)
+            val first = assertIs<Resource.Success<ImportSummary>>(import(target, bundle)).data
+            assertEquals(3, first.viewingsImported)
+            val again = assertIs<Resource.Success<ImportSummary>>(import(target, bundle)).data
+            assertEquals(0, again.viewingsImported)
+            assertEquals(3, again.viewingsSkipped)
+        }
+
+    @Test
+    fun aViewingWhoseMediaIdDisagreesWithItsEpisode_isRejected() =
+        runTest {
+            val (e1, _) = seedSource()
+            val bundle = export(source)
+            // Point E1's viewings at a show that does not own E1.
+            val tampered = bundle.watchLogsCsv.replace(e1.mediaId + "," + e1.id, "not-this-show," + e1.id)
+            assertEquals(true, tampered != bundle.watchLogsCsv, "positive control: the tamper took")
+
+            val summary =
+                assertIs<Resource.Success<ImportSummary>>(
+                    import(target, bundle.copy(watchLogsCsv = tampered)),
+                ).data
+            assertEquals(1, summary.viewingsImported, "only E2's untampered viewing is accepted")
+            assertEquals(2, summary.rejections.count { it.source == ImportRowSource.WATCH_LOG })
+        }
 }
