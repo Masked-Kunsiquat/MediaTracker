@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CSV schema v6 adds `watch_logs_export.csv`; existing files are unchanged, so v5 exports still
   import. Every watched-state write now keeps an episode's `watchedAt` equal to its latest viewing,
   and a startup backfill gives older watched episodes their one viewing.
+- Two `TVShowDetailViewModelTest` add-missing-episodes tests no longer flake on CI: they record
+  emitted states into a thread-safe list instead of sampling `uiState.value` mid-flight.
 
 ## [0.23.0] - 2026-10-13
 
