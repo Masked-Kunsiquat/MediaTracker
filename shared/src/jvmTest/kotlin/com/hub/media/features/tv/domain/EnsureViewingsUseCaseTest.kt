@@ -2,9 +2,11 @@ package com.hub.media.features.tv.domain
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
+import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.flow.first
@@ -78,5 +80,21 @@ class EnsureViewingsUseCaseTest {
             assertEquals(Resource.Success(0), EnsureViewingsUseCase(db).execute())
             assertEquals(0, viewings(unwatched).size)
             assertEquals(1, viewings(logged).size)
+        }
+
+    @Test
+    fun backfillsWatchedFilms_too() =
+        runTest {
+            val id = (MovieRepository(db).addMovie(title = "Heat") as Resource.Success).data
+            db.movieWriteDao().updateWatchStatusFields(id, WatchStatus.WATCHED, Instant.parse("2024-03-03T12:00:00Z"))
+            assertEquals(1, (EnsureViewingsUseCase(db).execute() as Resource.Success).data)
+            assertEquals(
+                1,
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .size,
+            )
         }
 }

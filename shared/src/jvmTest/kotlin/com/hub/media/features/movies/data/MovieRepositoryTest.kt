@@ -11,8 +11,11 @@ import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -653,7 +656,7 @@ class MovieRepositoryTest {
             val mediaId = addResult.data
 
             val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
-            assertIs<Resource.Success<Unit>>(result)
+            assertIs<Resource.Success<WatchStatus>>(result)
 
             val item = db.mediaItemDao().getById(mediaId)
             assertEquals("Heat", item?.title, "a status change must not rewrite the title")
@@ -681,7 +684,7 @@ class MovieRepositoryTest {
             assertTrue(firstWatchedAt != null)
 
             val result = repoWithClock.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
-            assertIs<Resource.Success<Unit>>(result)
+            assertIs<Resource.Success<WatchStatus>>(result)
 
             assertEquals(
                 firstWatchedAt,
@@ -699,7 +702,7 @@ class MovieRepositoryTest {
             assertTrue(db.movieDetailsDao().getByMediaId(mediaId)?.watchedAt != null)
 
             val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.ABANDONED)
-            assertIs<Resource.Success<Unit>>(result)
+            assertIs<Resource.Success<WatchStatus>>(result)
 
             val details = db.movieDetailsDao().getByMediaId(mediaId)
             assertEquals(WatchStatus.ABANDONED, details?.status)
@@ -730,7 +733,7 @@ class MovieRepositoryTest {
             )
 
             val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
-            assertIs<Resource.Success<Unit>>(result)
+            assertIs<Resource.Success<WatchStatus>>(result)
             assertEquals(WatchStatus.WATCHED, db.movieDetailsDao().getByMediaId(mediaId)?.status)
         }
 
@@ -794,5 +797,129 @@ class MovieRepositoryTest {
             assertEquals(1, allMovies.size)
             assertEquals("A Real Movie", allMovies.single().item.title)
             assertTrue(allMovies.none { it.item.id == bookResult.data })
+        }
+
+    // ---- Film watch history (#192) ---------------------------------------------------------
+
+    private val historyNow = Instant.parse("2026-06-01T18:00:00Z")
+
+    private fun historyRepo() =
+        MovieRepository(
+            db,
+            object : Clock {
+                override fun now(): Instant = historyNow
+            },
+            zone = TimeZone.UTC,
+        )
+
+    @Test
+    fun addMovie_watched_pickedDay_storesNoonViewing() =
+        runTest {
+            val r = historyRepo()
+            val id =
+                (
+                    r.addMovie(
+                        title = "Heat",
+                        status = WatchStatus.WATCHED,
+                        watchedWhen = WatchedWhen.On(LocalDate(2024, 3, 3)),
+                    ) as Resource.Success
+                ).data
+            val noon = Instant.parse("2024-03-03T12:00:00Z")
+            assertEquals(
+                listOf(noon),
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .map { it.watchedAt },
+            )
+            assertEquals(noon, db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
+        }
+
+    @Test
+    fun addMovie_watched_noWhen_meansNow() =
+        runTest {
+            val id = (historyRepo().addMovie(title = "Heat", status = WatchStatus.WATCHED) as Resource.Success).data
+            assertEquals(historyNow, db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
+            assertEquals(
+                1,
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .size,
+            )
+        }
+
+    @Test
+    fun updateMetadata_reSaveWatched_addsNoViewing() =
+        runTest {
+            val r = historyRepo()
+            val id = (r.addMovie(title = "Heat", status = WatchStatus.WATCHED) as Resource.Success).data
+            r.updateMovieMetadata(
+                id,
+                title = "Heat (1995)",
+                status = WatchStatus.WATCHED,
+                watchedWhen = WatchedWhen.On(LocalDate(2020, 1, 1)),
+            )
+            assertEquals(
+                listOf(historyNow),
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .map { it.watchedAt },
+            )
+            assertEquals(historyNow, db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
+        }
+
+    @Test
+    fun updateMetadata_intoWatched_recordsThePickedDay() =
+        runTest {
+            val r = historyRepo()
+            val id = (r.addMovie(title = "Heat") as Resource.Success).data
+            r.updateMovieMetadata(
+                id,
+                title = "Heat",
+                status = WatchStatus.WATCHED,
+                watchedWhen = WatchedWhen.On(LocalDate(2020, 1, 1)),
+            )
+            assertEquals(Instant.parse("2020-01-01T12:00:00Z"), db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
+        }
+
+    @Test
+    fun updateWatchStatus_returnsPreviousStatus() =
+        runTest {
+            val id = (repo.addMovie(title = "Heat") as Resource.Success).data
+            assertEquals(
+                WatchStatus.WATCHLIST,
+                (repo.updateWatchStatus(id, WatchStatus.WATCHED) as Resource.Success).data,
+            )
+        }
+
+    @Test
+    fun editViewingDate_storesNoonOfThePickedDay() =
+        runTest {
+            val r = historyRepo()
+            val id = (r.addMovie(title = "Heat", status = WatchStatus.WATCHED) as Resource.Success).data
+            val log =
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .single()
+            // Today, and noon is before historyNow (18:00), so nothing is clamped.
+            assertIs<Resource.Success<Unit>>(r.editViewingDate(log.id, WatchedWhen.On(LocalDate(2026, 6, 1))))
+            assertEquals(Instant.parse("2026-06-01T12:00:00Z"), db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
+        }
+
+    @Test
+    fun historyApi_onUnknownIds_reportsErrors() =
+        runTest {
+            assertIs<Resource.Error>(repo.addViewing("nope", WatchedWhen.Now))
+            assertIs<Resource.Error>(repo.deleteViewing("nope"))
+            assertIs<Resource.Error>(repo.editViewingDate("nope", WatchedWhen.Now))
+            assertIs<Resource.Error>(repo.restoreStatus("nope", WatchStatus.WATCHED))
+            assertIs<Resource.Error>(repo.updateWatchStatus("nope", WatchStatus.WATCHED))
         }
 }

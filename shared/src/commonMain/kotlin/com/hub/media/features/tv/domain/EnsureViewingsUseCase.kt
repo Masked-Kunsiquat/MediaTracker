@@ -23,8 +23,9 @@ public class EnsureViewingsUseCase(
     /** @return How many viewings were created; 0 once everything has one. */
     public suspend fun execute(): Resource<Int> =
         try {
-            val created = db.tvWriteDao().ensureViewingsForWatchedEpisodes()
-            if (created > 0) logger.info(TAG) { "Backfilled $created viewing(s) for watched episodes" }
+            val created =
+                db.tvWriteDao().ensureViewingsForWatchedEpisodes() + db.movieWriteDao().ensureViewingsForWatchedFilms()
+            if (created > 0) logger.info(TAG) { "Backfilled $created viewing(s) for watched episodes and films" }
             Resource.Success(created)
         } catch (e: CancellationException) {
             throw e
