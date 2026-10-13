@@ -63,6 +63,17 @@ single list below and reordering is a one-line edit there.
    and where a synopsis belongs now that only shows can hold one
    ([#133](https://github.com/Masked-Kunsiquat/MediaTracker/issues/133)). Episode stills are not
    downloaded, by decision — see `EpisodeEntity.stillImageHash`.
+   **Follow-ups from [#80](https://github.com/Masked-Kunsiquat/MediaTracker/issues/80)'s TV Time
+   comparison shipped in `v0.23.0`:** an *Include specials* setting
+   ([#88](https://github.com/Masked-Kunsiquat/MediaTracker/issues/88)), the Up next queue
+   ([#89](https://github.com/Masked-Kunsiquat/MediaTracker/issues/89)), and ticks that ask *when*
+   with an exact-date Undo on untick
+   ([#131](https://github.com/Masked-Kunsiquat/MediaTracker/issues/131), part A of
+   [#153](https://github.com/Masked-Kunsiquat/MediaTracker/issues/153)), restyled as TV Time-style
+   check-circles. **Next is part B, [#90](https://github.com/Masked-Kunsiquat/MediaTracker/issues/90)**:
+   "Rewatched" as its own action writing `watch_logs`, per-episode viewing history, and correcting
+   an already-watched date. The untick-means-what question it was waiting on is settled: unticking
+   is a correction and never deletes a viewing. #122 is unblocked by #88 and small now.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
