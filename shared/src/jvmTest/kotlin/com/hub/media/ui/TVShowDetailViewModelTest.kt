@@ -963,4 +963,27 @@ class TVShowDetailViewModelTest {
             assertNull(failed.pendingTick)
             assertNull(db.episodeDao().getById(e1.id)!!.watchedAt)
         }
+
+    @Test
+    fun twoQuickUnticks_shareOneUndo_thatRestoresBoth() =
+        runTest {
+            // A second untick while the first's snackbar is up must not cost the first its Undo.
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            val d1 = Instant.parse("2024-01-01T20:00:00Z")
+            val d2 = Instant.parse("2024-01-08T20:00:00Z")
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to d1, e2.id to d2))
+            val viewModel = readyViewModel(showId)
+
+            viewModel.setEpisodeWatched(e1.id, watched = false)
+            ready(viewModel) { it.untickEvent != null && it.watchedEpisodes == 1 }
+            viewModel.setEpisodeWatched(e2.id, watched = false)
+            val merged = ready(viewModel) { it.untickEvent?.previous?.size == 2 }.untickEvent!!
+            assertEquals(mapOf(e1.id to d1, e2.id to d2), merged.previous)
+
+            viewModel.undo(merged)
+            ready(viewModel) { it.watchedEpisodes == 2 }
+            assertEquals(d1, db.episodeDao().getById(e1.id)!!.watchedAt)
+            assertEquals(d2, db.episodeDao().getById(e2.id)!!.watchedAt)
+        }
 }

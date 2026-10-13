@@ -233,6 +233,10 @@
     <string name="mark_watched_pick_confirm">Mark watched</string>
     <string name="mark_watched_untick_snackbar">Unmarked \"%1$s\"</string>
     <string name="mark_watched_untick_season_snackbar">Cleared Season %1$d</string>
+    <plurals name="mark_watched_untick_many">
+        <item quantity="one">Unmarked %d episode</item>
+        <item quantity="other">Unmarked %d episodes</item>
+    </plurals>
     <plurals name="up_next_remaining">
         <item quantity="one">%d left</item>
         <item quantity="other">%d left</item>

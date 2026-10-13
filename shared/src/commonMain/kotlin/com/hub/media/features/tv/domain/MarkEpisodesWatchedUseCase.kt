@@ -42,7 +42,13 @@ public class MarkEpisodesWatchedUseCase(
     ): Resource<Int> =
         try {
             val now = clock.now()
-            val byId = db.tvWriteDao().getByIds(episodeIds).associateBy { it.id }
+            // Chunked under SQLite's historical 999-variable limit: a catch-up across a long-running
+            // daily show can name hundreds of episodes in one request.
+            val byId =
+                episodeIds
+                    .chunked(MAX_IDS_PER_QUERY)
+                    .flatMap { db.tvWriteDao().getByIds(it) }
+                    .associateBy { it.id }
             val wanted =
                 episodeIds.withIndex().mapNotNull { (index, id) ->
                     byId[id]?.takeIf { e ->
@@ -65,5 +71,6 @@ public class MarkEpisodesWatchedUseCase(
 
     private companion object {
         const val TAG = "MarkEpisodesWatched"
+        const val MAX_IDS_PER_QUERY = 900
     }
 }

@@ -254,13 +254,16 @@ public class TVShowDetailViewModel(
                     is Resource.Success ->
                         if (result.data.isNotEmpty()) {
                             untickEvent.value =
-                                UntickEvent(
-                                    ++untickSeq,
-                                    result.data,
-                                    target.title,
-                                    target.episodeNumber,
-                                    target.seasonNumber,
-                                    isSeason = false,
+                                mergeUntick(
+                                    untickEvent.value,
+                                    UntickEvent(
+                                        ++untickSeq,
+                                        result.data,
+                                        target.title,
+                                        target.episodeNumber,
+                                        target.seasonNumber,
+                                        isSeason = false,
+                                    ),
                                 )
                         }
                     is Resource.Error -> errorMessage.value = result.message
@@ -292,7 +295,10 @@ public class TVShowDetailViewModel(
                     is Resource.Success ->
                         if (result.data.isNotEmpty()) {
                             untickEvent.value =
-                                UntickEvent(++untickSeq, result.data, null, 0, seasonNumber, isSeason = true)
+                                mergeUntick(
+                                    untickEvent.value,
+                                    UntickEvent(++untickSeq, result.data, null, 0, seasonNumber, isSeason = true),
+                                )
                         }
                     is Resource.Error -> errorMessage.value = result.message
                 }

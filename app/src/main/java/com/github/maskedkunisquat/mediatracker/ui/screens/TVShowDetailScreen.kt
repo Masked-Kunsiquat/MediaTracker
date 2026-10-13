@@ -177,11 +177,14 @@ fun TVShowDetailScreen(
     var pendingRemoveSeasonNumber by rememberSaveable { mutableStateOf<Int?>(null) }
 
     // Untick Undo (#131): the screen owns the snackbar host, so it shows the event and reports back.
-    // Keyed on the event's id, so a newer untick cancels this effect and dismisses the older snackbar.
+    // Keyed on the event's id: a newer untick is merged into the pending one by the ViewModel and
+    // arrives with a new id, so this snackbar is replaced by one offering to undo both.
     val untick = (uiState as? TVShowDetailUiState.Ready)?.untickEvent
     val untickMessage =
         untick?.let {
-            if (it.isSeason) {
+            if (it.merged) {
+                pluralStringResource(R.plurals.mark_watched_untick_many, it.previous.size, it.previous.size)
+            } else if (it.isSeason) {
                 stringResource(R.string.mark_watched_untick_season_snackbar, it.seasonNumber)
             } else {
                 stringResource(

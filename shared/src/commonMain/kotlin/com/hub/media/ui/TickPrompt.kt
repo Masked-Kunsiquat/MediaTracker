@@ -35,8 +35,9 @@ public data class PendingTick(
 )
 
 /**
- * A just-cleared watch state, offered back as Undo (#131). Only the latest is live: a newer untick
- * replaces it, and its snackbar is dismissed.
+ * A just-cleared watch state, offered back as Undo (#131). There is only ever one: an untick made
+ * while another's Undo is still on offer is **merged** into it ([mergeUntick]), so a second quick
+ * untick never costs the first its way back.
  *
  * @property previous `episodeId -> watchedAt` exactly as cleared; Undo restores each only if that
  *   episode is still unwatched.
@@ -50,7 +51,19 @@ public data class UntickEvent(
     val episodeNumber: Int,
     val seasonNumber: Int,
     val isSeason: Boolean,
+    /** True once two or more unticks share this Undo; the UI then says "Unmarked N episodes". */
+    val merged: Boolean = false,
 )
+
+/**
+ * Folds [next] into a still-pending [pending] Undo, so both sets of dates come back together. A
+ * newer date for the same episode cannot occur (an episode must be ticked again before it can be
+ * unticked again), so the union is exact.
+ */
+internal fun mergeUntick(
+    pending: UntickEvent?,
+    next: UntickEvent,
+): UntickEvent = if (pending == null) next else next.copy(previous = pending.previous + next.previous, merged = true)
 
 private fun hasPastAirDate(
     e: EpisodeEntity,
