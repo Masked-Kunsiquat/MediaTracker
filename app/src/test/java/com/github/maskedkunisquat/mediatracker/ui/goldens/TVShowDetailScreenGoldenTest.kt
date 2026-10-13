@@ -66,7 +66,14 @@ class TVShowDetailScreenGoldenTest {
         composeRule.captureGolden(
             name = "tv-show-detail",
             // The air dates are read in UTC: the 2019 date must not show as May 12 anywhere.
-            alsoAssert = { assertTextIsShown("Chernobyl", "Season 1", "May 13, 2019", "Airs Jan 1, 2099") },
+            alsoAssert = {
+                assertTextIsShown(
+                    "Chernobyl",
+                    "Season 1",
+                    "May 13, 2019 · Watched 3×",
+                    "Airs Jan 1, 2099",
+                )
+            },
         ) { Fixture() }
     }
 
@@ -162,6 +169,9 @@ class TVShowDetailScreenGoldenTest {
             onErrorShown = {},
             onUndoUntick = {},
             onUntickShown = {},
+            onEpisodeOpen = {},
+            onUndoViewing = {},
+            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }
@@ -185,6 +195,8 @@ class TVShowDetailScreenGoldenTest {
                     watchedEpisodes = WATCHED_COUNT,
                     totalEpisodes = EPISODE_COUNT,
                     isAbandoned = false,
+                    // Episode 2 was watched three times (#90): its row reads "May 13, 2019 · Watched 3×".
+                    viewingCounts = mapOf(episodes[1].id to 3),
                 ),
             onEpisodeWatchedChange = { _, _ -> },
             onSeasonWatchedChange = { _, _ -> },
@@ -198,6 +210,9 @@ class TVShowDetailScreenGoldenTest {
             onErrorShown = {},
             onUndoUntick = {},
             onUntickShown = {},
+            onEpisodeOpen = {},
+            onUndoViewing = {},
+            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }
@@ -234,6 +249,8 @@ class TVShowDetailScreenGoldenTest {
                     watchedEpisodes = WATCHED_COUNT,
                     totalEpisodes = EPISODE_COUNT,
                     isAbandoned = false,
+                    // Episode 2 was watched three times (#90): its row reads "May 13, 2019 · Watched 3×".
+                    viewingCounts = mapOf(episodes[1].id to 3),
                 ),
             onEpisodeWatchedChange = { _, _ -> },
             onSeasonWatchedChange = { _, _ -> },
@@ -247,6 +264,9 @@ class TVShowDetailScreenGoldenTest {
             onErrorShown = {},
             onUndoUntick = {},
             onUntickShown = {},
+            onEpisodeOpen = {},
+            onUndoViewing = {},
+            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }

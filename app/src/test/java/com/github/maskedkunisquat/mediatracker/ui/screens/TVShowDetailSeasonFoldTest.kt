@@ -140,6 +140,9 @@ class TVShowDetailSeasonFoldTest {
             onErrorShown = {},
             onUndoUntick = {},
             onUntickShown = {},
+            onEpisodeOpen = {},
+            onUndoViewing = {},
+            onViewingUndoShown = {},
             onNavigateBack = {},
         )
     }

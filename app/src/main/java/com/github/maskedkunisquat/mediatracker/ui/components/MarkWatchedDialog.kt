@@ -47,6 +47,7 @@ fun MarkWatchedDialog(
     tick: PendingTick,
     onConfirm: (WatchedWhen, Boolean) -> Unit,
     onDismiss: () -> Unit,
+    titleOverride: String? = null,
 ) {
     var includeEarlier by rememberSaveable { mutableStateOf(false) }
     var picking by rememberSaveable { mutableStateOf(false) }
@@ -66,7 +67,7 @@ fun MarkWatchedDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                if (tick.isSeason) {
+                titleOverride ?: if (tick.isSeason) {
                     pluralStringResource(
                         R.plurals.mark_watched_title_season,
                         tick.targetIds.size,

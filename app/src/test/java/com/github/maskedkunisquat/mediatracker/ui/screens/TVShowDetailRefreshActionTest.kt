@@ -118,6 +118,9 @@ class TVShowDetailRefreshActionTest {
                 onErrorShown = {},
                 onUndoUntick = {},
                 onUntickShown = {},
+                onEpisodeOpen = {},
+                onUndoViewing = {},
+                onViewingUndoShown = {},
                 onNavigateBack = {},
             )
         }

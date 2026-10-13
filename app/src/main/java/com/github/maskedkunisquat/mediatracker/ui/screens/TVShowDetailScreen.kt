@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -73,11 +74,13 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedCircle
+import com.github.maskedkunisquat.mediatracker.ui.components.WatchedDatePickerDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.features.tv.domain.isPickableDay
@@ -87,6 +90,7 @@ import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
 import com.hub.media.ui.TVShowDetailViewModel
 import com.hub.media.ui.UntickEvent
+import com.hub.media.ui.ViewingUndo
 import com.hub.media.ui.filterIntegerInput
 import com.hub.media.ui.parseRequiredInt
 import kotlin.time.ExperimentalTime
@@ -95,6 +99,7 @@ import kotlin.time.Instant
 /**
  * Route wrapper: owns the [TVShowDetailViewModel] and leaves the screen once the show is gone.
  */
+@OptIn(ExperimentalMaterial3Api::class, kotlin.time.ExperimentalTime::class)
 @Composable
 fun TVShowDetailScreenRoute(
     appContainer: AppContainer,
@@ -106,9 +111,51 @@ fun TVShowDetailScreenRoute(
         viewModel(factory = TVShowDetailViewModelFactory(appContainer, showId))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    val ready = uiState as? TVShowDetailUiState.Ready
+    var editingViewing by remember { mutableStateOf<WatchLogEntity?>(null) }
+
+    // The episode sheet (#90). Composed before the dialogs below so they open above it.
+    ready?.openEpisode?.let { open ->
+        ModalBottomSheet(onDismissRequest = viewModel::closeEpisode) {
+            EpisodeSheetContent(
+                episode = open.episode,
+                viewings = open.viewings,
+                onTick = { viewModel.setEpisodeWatched(open.episode.id, true) },
+                onWatchedAgain = viewModel::requestRewatch,
+                onEditViewing = { editingViewing = it },
+                onDeleteViewing = { viewModel.deleteViewing(it.id) },
+            )
+        }
+    }
+    ready?.pendingRewatch?.let { tick ->
+        MarkWatchedDialog(
+            tick = tick,
+            onConfirm = { watchedWhen, _ -> viewModel.confirmRewatch(watchedWhen) },
+            onDismiss = viewModel::dismissRewatch,
+            titleOverride =
+                stringResource(
+                    R.string.mark_watched_title_again,
+                    tick.title?.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.up_next_untitled_format, tick.episodeNumber),
+                ),
+        )
+    }
+    // Edit date opens on the viewing's own day: its local date, as the picker's UTC-midnight millis.
+    editingViewing?.let { viewing ->
+        WatchedDatePickerDialog(
+            initialPickMillis = localDateToUtcMidnightMillis(instantToLocalDateTime(viewing.watchedAt).toLocalDate()),
+            confirmLabel = stringResource(R.string.save_button),
+            onPicked = { picked ->
+                viewModel.editViewingDate(viewing.id, picked)
+                editingViewing = null
+            },
+            onDismiss = { editingViewing = null },
+        )
+    }
+
     // The dated tick prompt (#131). Rendered by the route rather than the stateless screen, so the
     // screen's contract -- and every test that drives it -- is unchanged by it.
-    (uiState as? TVShowDetailUiState.Ready)?.pendingTick?.let { tick ->
+    ready?.pendingTick?.let { tick ->
         MarkWatchedDialog(tick = tick, onConfirm = viewModel::confirmTick, onDismiss = viewModel::dismissTick)
     }
 
@@ -127,6 +174,9 @@ fun TVShowDetailScreenRoute(
         onErrorShown = viewModel::consumeError,
         onUndoUntick = viewModel::undo,
         onUntickShown = viewModel::consumeUntick,
+        onEpisodeOpen = viewModel::openEpisode,
+        onUndoViewing = viewModel::undoViewing,
+        onViewingUndoShown = viewModel::consumeViewingUndo,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -153,6 +203,9 @@ fun TVShowDetailScreen(
     onErrorShown: () -> Unit,
     onUndoUntick: (UntickEvent) -> Unit,
     onUntickShown: (Long) -> Unit,
+    onEpisodeOpen: (String) -> Unit,
+    onUndoViewing: (ViewingUndo) -> Unit,
+    onViewingUndoShown: (Long) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -200,6 +253,27 @@ fun TVShowDetailScreen(
         if (untick != null && untickMessage != null) {
             val result = snackbarHostState.showSnackbar(untickMessage, undoLabel, duration = SnackbarDuration.Short)
             if (result == SnackbarResult.ActionPerformed) onUndoUntick(untick) else onUntickShown(untick.id)
+        }
+    }
+
+    // Viewing Undo (#90), the same shape as the untick Undo above.
+    val viewingUndo = (uiState as? TVShowDetailUiState.Ready)?.viewingUndo
+    val viewingDeletedMessage = stringResource(R.string.viewing_deleted_snackbar)
+    LaunchedEffect(viewingUndo?.id) {
+        if (viewingUndo != null) {
+            val result =
+                snackbarHostState.showSnackbar(
+                    viewingDeletedMessage,
+                    undoLabel,
+                    duration = SnackbarDuration.Short,
+                )
+            if (result ==
+                SnackbarResult.ActionPerformed
+            ) {
+                onUndoViewing(viewingUndo)
+            } else {
+                onViewingUndoShown(viewingUndo.id)
+            }
         }
     }
 
@@ -588,7 +662,9 @@ fun TVShowDetailScreen(
                                     EpisodeRow(
                                         episode = episode,
                                         seasonNumber = season.seasonNumber,
+                                        viewings = uiState.viewingCounts[episode.id] ?: 0,
                                         onWatchedChange = onEpisodeWatchedChange,
+                                        onOpen = onEpisodeOpen,
                                     )
                                 }
                             }
@@ -863,14 +939,22 @@ private fun SeasonHeader(
 private fun EpisodeRow(
     episode: EpisodeEntity,
     seasonNumber: Int,
+    viewings: Int,
     onWatchedChange: (String, Boolean) -> Unit,
+    onOpen: (String) -> Unit,
 ) {
     val watched = episode.watchedAt != null
     val checkboxDescription =
         stringResource(R.string.tv_show_detail_episode_content_description, seasonNumber, episode.episodeNumber)
 
+    // The whole row opens the episode sheet (#90) -- a quick-filled episode has no title or date to
+    // tap, so the text alone would be no target at all. The circle keeps its own toggle.
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable { onOpen(episode.id) }
+                .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -890,18 +974,20 @@ private fun EpisodeRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            episode.airDate?.let { airDate ->
-                val millis = airDate.toEpochMilliseconds()
-                val day = formatAirDay(millis)
-                // Day against today *locally*, the same rule On air date uses (#131): comparing
-                // instants would drop "Airs" on the evening before, west of UTC.
+            val airLine =
+                episode.airDate?.let { airDate ->
+                    val millis = airDate.toEpochMilliseconds()
+                    val day = formatAirDay(millis)
+                    // Day against today *locally*, the same rule On air date uses (#131): comparing
+                    // instants would drop "Airs" on the evening before, west of UTC.
+                    if (!isPickableDay(millis)) stringResource(R.string.tv_show_detail_episode_airs, day) else day
+                }
+            // Only a re-watch earns the label (#90): one viewing is what the filled circle already says.
+            val viewingsLine =
+                if (viewings >= 2) pluralStringResource(R.plurals.episode_watched_times, viewings, viewings) else null
+            listOfNotNull(airLine, viewingsLine).takeIf { it.isNotEmpty() }?.let { parts ->
                 Text(
-                    text =
-                        if (!isPickableDay(millis)) {
-                            stringResource(R.string.tv_show_detail_episode_airs, day)
-                        } else {
-                            day
-                        },
+                    text = parts.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

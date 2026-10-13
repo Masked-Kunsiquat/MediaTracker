@@ -130,6 +130,9 @@ class TVShowDetailSeasonEditPromptTest {
                 onErrorShown = {},
                 onUndoUntick = {},
                 onUntickShown = {},
+                onEpisodeOpen = {},
+                onUndoViewing = {},
+                onViewingUndoShown = {},
                 onNavigateBack = {},
             )
         }
