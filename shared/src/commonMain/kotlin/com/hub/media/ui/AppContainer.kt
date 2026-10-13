@@ -44,6 +44,7 @@ import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
+import com.hub.media.features.tv.domain.RecordRewatchUseCase
 import com.hub.media.features.tv.network.TmdbClient
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
@@ -131,6 +132,9 @@ public class AppContainer(
 
     /** The single path every episode tick takes (#131) -- see [MarkEpisodesWatchedUseCase]. */
     public val markEpisodesWatchedUseCase: MarkEpisodesWatchedUseCase = MarkEpisodesWatchedUseCase(database)
+
+    /** "Watched again" (#90) -- see [RecordRewatchUseCase]. */
+    public val recordRewatchUseCase: RecordRewatchUseCase = RecordRewatchUseCase(database)
 
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.
