@@ -131,3 +131,62 @@ unchanged. The checklist is a cached view of the logs.
 - Stats that count viewings, such as "hours watched" or "re-watched the most". This data makes
   them possible; building them is Task 11.
 - Durations: `durationSeconds` stays null.
+
+## Review revisions (2026-10-13)
+
+An independent review found no blockers. Where this section disagrees with the text above, this
+section wins.
+
+1. **Undo restores only episodes that still exist.** Re-inserting viewings for an episode deleted
+   since the untick (by a season shrink or removal) would violate `watch_logs`' composite foreign
+   key and crash the Undo. Per episode, in one transaction, the restore checks three things: the
+   episode exists, its `watchedAt IS NULL`, and it has no viewings. If any check fails it skips
+   that episode. Tested with Undo after a shrink.
+2. **Deleting any viewing offers Undo**, not only deleting the last. That restore checks that the
+   episode exists and no viewing with that id exists, inserts the viewing, then recomputes
+   `watchedAt`.
+3. **CSV import keeps the invariant.**
+   - `watch_logs_export.csv` is **optional**, like `episodes_export.csv`, and `importAtomically`
+     and its caller gain it as a fourth input.
+   - Its `media_id` and `episode_id` are **remapped through the importer's existing episode
+     resolution** (by id, then by slot), so a slot-matched episode's viewings attach to the
+     library's row.
+   - By duplicate policy:
+     - **REPLACE:** a replaced episode's viewings are replaced by the file's viewings for it.
+     - **MERGE / SKIP:** viewings are unioned, skipping any with the same `episode_id` and
+       `watched_at`.
+   - A final normalisation step inside the same transaction runs for every episode the import
+     touched: `watchedAt` = max of its viewings, and a watched episode with no viewings gets one.
+4. **No path bypasses the invariant.**
+   - `markEpisodeWatched`, `clearEpisodeWatched`, `clearSeasonWatched` and `restoreWatchedAt` are
+     deleted or folded into the viewing-aware transactions.
+   - The test-only `TVShowRepository.setEpisodeWatched` / `setSeasonWatched` helpers route through
+     those transactions, so test setup can't create a `watchedAt` without a viewing.
+5. **The backfill** is one `INSERT … SELECT … WHERE watchedAt IS NOT NULL AND NOT EXISTS
+   (viewing)`. Each viewing gets a generated id; if SQL can't generate it, a Kotlin read-then-
+   insert inside one `@Transaction` does the same.
+   - It runs in one transaction, so SQLite serialises it against a concurrent tick or untick.
+   - It is launched from `MediaTrackerApplication`'s existing scope.
+   - A restore ends in a process restart, so restored older backups are covered too.
+6. **The tick writes a viewing only when the per-row write returns 1**
+   (`markEpisodeWatchedIfUnwatched`). The viewing gets a generated id (`core/util`) and the same
+   `Instant`.
+7. **The date picker is extracted** into a shared `WatchedDatePickerDialog`, which `MarkWatchedDialog`
+   and **Edit date** both use.
+   - **Edit date** offers the picker only. It opens on the viewing's own date and stores noon
+     local on the chosen day, clamped to now, matching `On(date)`.
+   - **Watched again** reuses `MarkWatchedDialog` with a rewatch title and no catch-up.
+8. **Test lanes.**
+   - The sheet is a stateless content composable. Robolectric tests and the golden target that
+     content, never the `ModalBottomSheet` window or the picker.
+   - The picker flow stays in androidTest.
+9. **CSV schema version 6.** `CSV_SCHEMA_VERSION` goes to 6, with a "v6" paragraph in
+   `CsvSchemaVersion.kt`.
+   - Existing files' headers are unchanged, so a v5 file imports with no adapter.
+   - Tests asserting the version are updated.
+   - `CsvExportBundle` and `ExportDataUseCase` gain `watchLogsCsv`.
+   - `docs/sample-data/README.md` and `CSV_FORMAT.md` document the file, and the sample-data seed
+     test passes it through `ImportDataUseCase`.
+10. **Supersession.** #90's and #153's earlier text says unticking never deletes a viewing. The
+    owner's decision here replaces that, and it is recorded on #90. `WatchLogEntity`'s KDoc is
+    updated in the same commit to describe `watchedAt` as the latest viewing.
