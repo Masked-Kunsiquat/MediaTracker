@@ -37,12 +37,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -677,15 +679,10 @@ class TVShowDetailViewModelTest {
             // after the call: that read raced combine -> stateIn and flaked on CI (#180). An
             // unconfined collector sees each emission, so the history is complete without pausing
             // Main or swapping dispatchers mid-test.
-            val busySets = mutableListOf<Set<Int>>()
-            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-                viewModel.uiState.collect {
-                    (it as? TVShowDetailUiState.Ready)?.let { r ->
-                        busySets +=
-                            r.addingSeasonNumbers
-                    }
-                }
-            }
+            // Copy-on-write: Room's flows emit from their own threads, so the unconfined collector
+            // appends on those threads while the assertions below iterate. A plain list threw
+            // ConcurrentModificationException on CI.
+            val busySets = recordBusySets(viewModel)
 
             viewModel.addAllMissingEpisodes()
             val state =
@@ -720,26 +717,19 @@ class TVShowDetailViewModelTest {
             // make "call this twice while the first is in flight" a race the test could not actually
             // guarantee. Installed only now, after reaching Ready and refreshing under the default
             // dispatcher those steps already rely on elsewhere in this file.
+            val busySets = recordBusySets(viewModel)
             viewModels.installMain(StandardTestDispatcher(testScheduler))
 
             viewModel.addMissingEpisodes(seasonNumber = 1)
-            // addingSeasonNumbers.value is set synchronously before the launch, but it only reaches
-            // the *public* uiState once combine()'s own collecting coroutine (dispatched via Main)
-            // runs -- see AGENTS.md §7 on never reading .value straight after an action. runCurrent()
-            // drains exactly that virtual-scheduler work; the repository call itself needs a real
-            // dispatch (Room's query context) that runCurrent() cannot cross, so the launch is left
-            // genuinely pending here rather than completed.
-            runCurrent()
-            assertEquals(setOf(1), addingSeasonNumbersOf(viewModel))
-
-            // The second tap, while the first is still pending on that real dispatch.
+            // The second tap, before the first one's launch has even been dispatched: the busy set
+            // is written synchronously, ahead of the launch, so the guard must already see it. No
+            // runCurrent() and uiState.value read in between -- that read raced combine -> stateIn
+            // whenever a Room emission was mid-flight on its own thread, and flaked on CI.
+            // Limit, verified by deleting the guard: the test still passes, because the repository's
+            // add is idempotent (it grows the season *to* a count in one transaction), so an unguarded
+            // second tap is a redundant write with no visible effect. What this pins is the busy-set
+            // contract and the single, complete application -- not the guard's saved work.
             viewModel.addMissingEpisodes(seasonNumber = 1)
-            runCurrent()
-            assertEquals(
-                setOf(1),
-                addingSeasonNumbersOf(viewModel),
-                "a second tap on a season already being added must not grow the busy set",
-            )
 
             // Back to the eager dispatcher for the wait below. The pending launch finishes on Room's
             // own context, which virtual time cannot advance: left on StandardTestDispatcher the
@@ -751,6 +741,12 @@ class TVShowDetailViewModelTest {
                     it is TVShowDetailUiState.Ready && it.seasonFindings.none { f -> f.seasonNumber == 1 }
                 } as TVShowDetailUiState.Ready
             assertTrue(state.addingSeasonNumbers.isEmpty())
+            val nonEmpty = busySets.filter { it.isNotEmpty() }
+            assertTrue(nonEmpty.isNotEmpty(), "positive control: season 1 must have been busy")
+            assertTrue(
+                nonEmpty.all { it == setOf(1) },
+                "a second tap on a season already being added must not grow the busy set: $nonEmpty",
+            )
             assertEquals(
                 3,
                 db.episodeDao().getByMediaIdAndSeason(showId, 1).size,
@@ -759,8 +755,22 @@ class TVShowDetailViewModelTest {
         }
 
     /** [TVShowDetailUiState.Ready.addingSeasonNumbers] as it stands right now, with no dispatch. */
-    private fun addingSeasonNumbersOf(viewModel: TVShowDetailViewModel): Set<Int> =
-        (viewModel.uiState.value as TVShowDetailUiState.Ready).addingSeasonNumbers
+
+    /**
+     * Every busy set the screen passes through, recorded by an unconfined collector so no emission
+     * is sampled away. Copy-on-write because the collector runs on whichever thread emits.
+     */
+    private fun TestScope.recordBusySets(viewModel: TVShowDetailViewModel): List<Set<Int>> {
+        val busySets = CopyOnWriteArrayList<Set<Int>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect {
+                (it as? TVShowDetailUiState.Ready)?.let { r ->
+                    busySets += r.addingSeasonNumbers
+                }
+            }
+        }
+        return busySets
+    }
 
     private companion object {
         /**
