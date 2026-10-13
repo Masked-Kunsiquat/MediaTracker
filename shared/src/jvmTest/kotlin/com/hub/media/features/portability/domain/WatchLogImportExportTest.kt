@@ -256,4 +256,28 @@ class WatchLogImportExportTest {
             assertEquals(1, summary.viewingsImported, "only E2's untampered viewing is accepted")
             assertEquals(2, summary.rejections.count { it.source == ImportRowSource.WATCH_LOG })
         }
+
+    @Test
+    fun anEpisodeWhoseDateHasNoViewingInTheFile_keepsThatDate() =
+        runTest {
+            val (e1, _) = seedSource()
+            val bundle = export(source)
+            // The episodes file says E1 was last watched at t2; drop that viewing from the viewings file.
+            val lines = bundle.watchLogsCsv.lines()
+            val trimmed = lines.filterNot { e1.id in it && "2025" in it }.joinToString("\n")
+            assertEquals(lines.size - 1, trimmed.lines().size, "positive control: exactly one row dropped")
+
+            import(target, bundle.copy(watchLogsCsv = trimmed))
+            assertEquals(t2, target.episodeDao().getById(e1.id)!!.watchedAt)
+            assertEquals(
+                setOf(t1, t2),
+                target
+                    .watchLogDao()
+                    .observeForEpisode(e1.id)
+                    .first()
+                    .map { it.watchedAt }
+                    .toSet(),
+            )
+            assertInvariantEverywhere(target)
+        }
 }

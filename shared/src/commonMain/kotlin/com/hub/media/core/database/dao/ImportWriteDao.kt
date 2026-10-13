@@ -15,6 +15,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.util.newId
+import kotlin.time.Instant
 
 /**
  * The details row accompanying one imported [MediaItemEntity] -- exactly one of the three
@@ -252,20 +253,20 @@ public interface ImportWriteDao {
         }
         // Viewings (#90), last, so they see the episode rows this import just wrote. REPLACE drops an
         // episode's stored viewings before the file's go in; then every episode this import touched
-        // is normalised so `watchedAt` is its latest viewing -- or, for an episode the file marked
-        // watched but gave no viewings, gets the one viewing that makes that true.
+        // is normalised so `watchedAt` is its latest viewing. An episode whose `watchedAt` has no
+        // viewing at that instant (the file marked it watched but gave no matching viewing) first
+        // gets that viewing, so the recompute can never move its date backwards.
         viewingDeletesForEpisodes.forEach { deleteViewingsForEpisode(it) }
         viewingInserts.forEach { insertViewing(it) }
         for (episodeId in touchedEpisodeIds) {
-            if (viewingCount(episodeId) > 0) {
-                recomputeEpisodeWatchedAt(episodeId)
-            } else {
-                val episode = episodeById(episodeId) ?: continue
-                val at = episode.watchedAt ?: continue
+            val episode = episodeById(episodeId) ?: continue
+            val at = episode.watchedAt
+            if (at != null && viewingCountAt(episodeId, at) == 0) {
                 insertViewing(
                     WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = episodeId, watchedAt = at),
                 )
             }
+            recomputeEpisodeWatchedAt(episodeId)
         }
     }
 
@@ -275,8 +276,11 @@ public interface ImportWriteDao {
     @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
     public suspend fun deleteViewingsForEpisode(episodeId: String): Int
 
-    @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId")
-    public suspend fun viewingCount(episodeId: String): Int
+    @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId AND watchedAt = :watchedAt")
+    public suspend fun viewingCountAt(
+        episodeId: String,
+        watchedAt: Instant,
+    ): Int
 
     @Query("SELECT * FROM episodes WHERE id = :episodeId")
     public suspend fun episodeById(episodeId: String): EpisodeEntity?
