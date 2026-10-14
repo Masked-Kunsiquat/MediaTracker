@@ -197,6 +197,18 @@ class ExportArchiveTest {
     }
 
     @Test
+    fun manyFoldersOfWantedEntries_cannotExceedTheTotalCap() {
+        // Security review (#199): every entry is under the per-entry cap, but thousands of folders each
+        // holding a wanted name would all be inflated and kept. The total is capped too.
+        val manyFolders = (1..50).map { "f$it/" + ExportArchive.LIBRARY to ByteArray(500) }
+        val zip = zipEntries(manyFolders)
+        assertEquals(
+            ArchiveReadResult.Refused(ExportArchive.UNREADABLE),
+            ExportArchive.decode(zip, maxEntryBytes = 1_000, maxTotalBytes = 10_000),
+        )
+    }
+
+    @Test
     fun unknownManifestFields_areIgnored() {
         val json =
             """{"format":"media-tracker-export","formatVersion":1,"appVersion":"9","exportedAt":"x",""" +

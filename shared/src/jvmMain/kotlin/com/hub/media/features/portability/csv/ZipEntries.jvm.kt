@@ -23,13 +23,18 @@ internal actual fun unzipEntries(
     bytes: ByteArray,
     wanted: Set<String>?,
     maxEntryBytes: Long,
+    maxTotalBytes: Long,
 ): Map<String, ByteArray> {
     val result = linkedMapOf<String, ByteArray>()
+    var total = 0L
     ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
         generateSequence { zip.nextEntry }.forEach { entry ->
             // Skipped entries are never inflated: closing them only advances the stream.
             if (!entry.isDirectory && (wanted == null || entry.name.isWanted(wanted))) {
-                result[entry.name] = zip.readCapped(maxEntryBytes)
+                val data = zip.readCapped(maxEntryBytes)
+                total += data.size
+                if (total > maxTotalBytes) throw ZipException("Archive larger than $maxTotalBytes bytes")
+                result[entry.name] = data
             }
         }
     }

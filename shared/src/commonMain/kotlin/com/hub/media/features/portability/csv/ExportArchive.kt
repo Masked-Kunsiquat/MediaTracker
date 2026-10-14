@@ -73,10 +73,11 @@ public object ExportArchive {
     public fun decode(
         bytes: ByteArray,
         maxEntryBytes: Long = MAX_ENTRY_BYTES,
+        maxTotalBytes: Long = MAX_TOTAL_BYTES,
     ): ArchiveReadResult {
         val entries =
             try {
-                unzipEntries(bytes, wanted = ENTRIES, maxEntryBytes = maxEntryBytes)
+                unzipEntries(bytes, wanted = ENTRIES, maxEntryBytes = maxEntryBytes, maxTotalBytes = maxTotalBytes)
             } catch (e: Exception) {
                 return ArchiveReadResult.Refused(UNREADABLE)
             }
