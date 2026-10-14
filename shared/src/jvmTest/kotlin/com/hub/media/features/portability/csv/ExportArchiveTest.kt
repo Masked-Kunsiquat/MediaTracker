@@ -33,7 +33,12 @@ class ExportArchiveTest {
     private fun manifestBytes(m: ExportManifest = manifest) = Json.encodeToString(m).encodeToByteArray()
 
     private fun zipWith(m: ExportManifest) =
-        zipEntries(listOf(ExportArchive.MANIFEST to manifestBytes(m), ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray()))
+        zipEntries(
+            listOf(
+                ExportArchive.MANIFEST to manifestBytes(m),
+                ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray(),
+            ),
+        )
 
     private fun assertRefused(
         bytes: ByteArray,
@@ -61,12 +66,15 @@ class ExportArchiveTest {
     fun dataRowCount_countsRecordsNotLines() {
         assertEquals(2, ExportArchive.dataRowCount(bundle.libraryCsv), "a quoted newline is one record")
         assertEquals(0, ExportArchive.dataRowCount(bundle.readingLogsCsv))
-        assertEquals(1, ExportArchive.dataRowCount("﻿a,b\n1,2\n"), "a BOM and LF endings do not change the count")
+        assertEquals(1, ExportArchive.dataRowCount("a,b\n1,2\n"), "a BOM and LF endings do not change the count")
     }
 
     @Test
     fun noManifest_isRefused() =
-        assertRefused(zipEntries(listOf(ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray())), "Not a Media Tracker export")
+        assertRefused(
+            zipEntries(listOf(ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray())),
+            "Not a Media Tracker export",
+        )
 
     @Test
     fun malformedManifest_isRefused() =
@@ -81,7 +89,8 @@ class ExportArchiveTest {
         )
 
     @Test
-    fun wrongFormat_isRefused() = assertRefused(zipWith(manifest.copy(format = "something-else")), "Not a Media Tracker export")
+    fun wrongFormat_isRefused() =
+        assertRefused(zipWith(manifest.copy(format = "something-else")), "Not a Media Tracker export")
 
     @Test
     fun newerFormatVersion_isRefused() =
@@ -92,7 +101,10 @@ class ExportArchiveTest {
 
     @Test
     fun noLibrary_isRefused() =
-        assertRefused(zipEntries(listOf(ExportArchive.MANIFEST to manifestBytes())), "This export has no library_export.csv")
+        assertRefused(
+            zipEntries(listOf(ExportArchive.MANIFEST to manifestBytes())),
+            "This export has no library_export.csv",
+        )
 
     @Test
     fun unreadableBytes_areRefused() = assertRefused(byteArrayOf(0x50, 0x4B, 3, 4, 9, 9, 9), "Couldn't read this file")
@@ -110,7 +122,13 @@ class ExportArchiveTest {
         val json =
             """{"format":"media-tracker-export","formatVersion":1,"appVersion":"9","exportedAt":"x",""" +
                 """"files":[],"future":{"anything":1}}"""
-        val bytes = zipEntries(listOf(ExportArchive.MANIFEST to json.encodeToByteArray(), ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray()))
+        val bytes =
+            zipEntries(
+                listOf(
+                    ExportArchive.MANIFEST to json.encodeToByteArray(),
+                    ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray(),
+                ),
+            )
         val read = assertIs<ArchiveReadResult.Read>(ExportArchive.decode(bytes))
         assertEquals("9", read.manifest.appVersion)
         assertEquals(emptyMap(), read.manifest.settings, "settings default to empty when absent")

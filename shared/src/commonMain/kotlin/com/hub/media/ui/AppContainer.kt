@@ -33,6 +33,7 @@ import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultDatabaseBackupUseCase
 import com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase
+import com.hub.media.features.portability.domain.ExportArchiveUseCase
 import com.hub.media.features.portability.domain.ExportDataUseCase
 import com.hub.media.features.portability.domain.ImportDataUseCase
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
@@ -442,6 +443,9 @@ public class AppContainer(
             readingSessionRepository = readingSessionRepository,
             importWriteRepository = importWriteRepository,
         )
+
+    /** The one-file export (#196): the CSVs above plus a manifest, as one zip. */
+    public val exportArchiveUseCase: ExportArchiveUseCase = ExportArchiveUseCase(exportDataUseCase, settingsRepository)
 
     /**
      * Whole-database `.sqlite` backup workflow (ROADMAP Task 8 Phase C), consumed by
