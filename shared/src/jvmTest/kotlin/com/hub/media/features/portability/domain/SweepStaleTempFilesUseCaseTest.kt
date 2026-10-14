@@ -40,7 +40,7 @@ class SweepStaleTempFilesUseCaseTest {
             val staleRestore = touch(cache, "restore-incoming-1760390000000.tmp")
             val unrelatedCache = touch(cache, "cover-cache.tmp")
 
-            val removed = SweepStaleTempFilesUseCase(dbFile.path, cache.path).execute()
+            val removed = SweepStaleTempFilesUseCase(dbFile.path, cache.path).execute(startedAtMillis = Long.MAX_VALUE)
 
             assertEquals(2, removed)
             assertFalse(staleBackup.exists())
@@ -56,6 +56,37 @@ class SweepStaleTempFilesUseCaseTest {
     fun missingDirectories_removeNothing() =
         runTest {
             val gone = File(root, "nope")
-            assertEquals(0, SweepStaleTempFilesUseCase(File(gone, "media_tracker.db").path, gone.path).execute())
+            assertEquals(
+                0,
+                SweepStaleTempFilesUseCase(
+                    File(gone, "media_tracker.db").path,
+                    gone.path,
+                ).execute(startedAtMillis = Long.MAX_VALUE),
+            )
+        }
+
+    @Test
+    fun filesCreatedSinceTheProcessStarted_belongToAnActiveFlow_andAreKept() =
+        runTest {
+            // CodeRabbit (#198): the sweep runs asynchronously at launch, so a backup started at once
+            // could stage its snapshot before the sweep lists the directory.
+            val startedAt = 1_000_000_000_000L
+            val leftover =
+                touch(databases, "media_tracker.db.backup-old.tmp").apply {
+                    setLastModified(
+                        startedAt - 60_000,
+                    )
+                }
+            val active =
+                touch(
+                    databases,
+                    "media_tracker.db.backup-new.tmp",
+                ).apply { setLastModified(startedAt + 1_000) }
+            val activeRestore = touch(cache, "restore-incoming-2.tmp").apply { setLastModified(startedAt + 1_000) }
+
+            assertEquals(1, SweepStaleTempFilesUseCase(dbFile.path, cache.path).execute(startedAtMillis = startedAt))
+            assertFalse(leftover.exists(), "positive control: a file from before this process is removed")
+            assertTrue(active.exists())
+            assertTrue(activeRestore.exists())
         }
 }

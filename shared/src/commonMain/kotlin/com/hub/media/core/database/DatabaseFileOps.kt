@@ -108,13 +108,14 @@ internal expect suspend fun readFileTailBytes(
 internal expect suspend fun deleteFileIfExists(path: String): Boolean
 
 /**
- * Deletes every file directly in [dirPath] whose name satisfies [matches] (#162's startup sweep).
+ * Deletes every file directly in [dirPath] that [matches] accepts, given its name and its
+ * last-modified time in epoch millis (#162's startup sweep).
  *
  * @return How many were removed; 0 when the directory does not exist.
  */
 internal expect suspend fun deleteFilesMatching(
     dirPath: String,
-    matches: (name: String) -> Boolean,
+    matches: (name: String, lastModifiedMillis: Long) -> Boolean,
 ): Int
 
 /**

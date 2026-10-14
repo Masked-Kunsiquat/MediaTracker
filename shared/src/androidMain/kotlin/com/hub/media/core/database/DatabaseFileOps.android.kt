@@ -149,8 +149,8 @@ internal actual suspend fun renameFile(
 
 internal actual suspend fun deleteFilesMatching(
     dirPath: String,
-    matches: (name: String) -> Boolean,
+    matches: (name: String, lastModifiedMillis: Long) -> Boolean,
 ): Int =
     withContext(Dispatchers.IO) {
-        File(dirPath).listFiles()?.count { it.isFile && matches(it.name) && it.delete() } ?: 0
+        File(dirPath).listFiles()?.count { it.isFile && matches(it.name, it.lastModified()) && it.delete() } ?: 0
     }
