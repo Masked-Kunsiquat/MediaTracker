@@ -4,10 +4,12 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
+import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
@@ -18,6 +20,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
@@ -279,5 +283,118 @@ class WatchLogImportExportTest {
                     .toSet(),
             )
             assertInvariantEverywhere(target)
+        }
+
+    // ---- Film viewings (#192) ------------------------------------------------------------------
+
+    private fun clockAt(at: Instant) =
+        object : Clock {
+            override fun now(): Instant = at
+        }
+
+    /** "Heat": watched at [t1], then watched again at [t2]. */
+    private suspend fun seedFilm(): String {
+        val id =
+            (
+                MovieRepository(source, clockAt(t1)).addMovie(
+                    title = "Heat",
+                    status = WatchStatus.WATCHED,
+                ) as Resource.Success
+            ).data
+        source.movieWriteDao().addFilmViewing(id, t2)
+        return id
+    }
+
+    private suspend fun filmViewings(
+        db: AppDatabase,
+        id: String,
+    ) = db
+        .watchLogDao()
+        .observeForFilm(id)
+        .first()
+        .map { it.watchedAt }
+
+    private suspend fun assertFilmInvariant(
+        db: AppDatabase,
+        id: String,
+    ) {
+        val d = db.movieDetailsDao().getByMediaId(id)!!
+        val expected = if (d.status == WatchStatus.WATCHED) filmViewings(db, id).maxOrNull() else null
+        assertEquals(expected, d.watchedAt)
+    }
+
+    @Test
+    fun filmViewings_roundTrip() =
+        runTest {
+            val film = seedFilm()
+            import(target, export(source))
+            assertEquals(listOf(t2, t1), filmViewings(target, film))
+            assertEquals(t2, target.movieDetailsDao().getByMediaId(film)!!.watchedAt)
+            assertFilmInvariant(target, film)
+        }
+
+    @Test
+    fun filmViewings_reimport_createsNothing() =
+        runTest {
+            seedFilm()
+            val bundle = export(source)
+            import(target, bundle)
+            val again = assertIs<Resource.Success<ImportSummary>>(import(target, bundle)).data
+            assertEquals(0, again.viewingsImported)
+            assertEquals(2, again.viewingsSkipped)
+        }
+
+    @Test
+    fun twoFilmsWithSameDate_bothImported() =
+        runTest {
+            val heat = seedFilm()
+            val ronin =
+                (
+                    MovieRepository(source, clockAt(t1)).addMovie(
+                        title = "Ronin",
+                        status = WatchStatus.WATCHED,
+                    ) as Resource.Success
+                ).data
+            import(target, export(source))
+            assertEquals(listOf(t1), filmViewings(target, ronin))
+            assertEquals(listOf(t2, t1), filmViewings(target, heat))
+        }
+
+    @Test
+    fun filmViewing_pointingAtAShow_isRejected() =
+        runTest {
+            val (e1, _) = seedSource()
+            val film = seedFilm()
+            val bundle = export(source)
+            val tampered = bundle.watchLogsCsv.replace("$film,,", "${e1.mediaId},,")
+            assertNotEquals(bundle.watchLogsCsv, tampered, "positive control: the tamper took")
+            val summary =
+                assertIs<Resource.Success<ImportSummary>>(import(target, bundle.copy(watchLogsCsv = tampered))).data
+            assertEquals(2, summary.rejections.count { it.source == ImportRowSource.WATCH_LOG })
+            assertEquals(emptyList(), filmViewings(target, e1.mediaId))
+        }
+
+    @Test
+    fun replace_filmFileWins() =
+        runTest {
+            val film = seedFilm()
+            import(target, export(source))
+            target.movieWriteDao().addFilmViewing(film, Instant.parse("2025-06-01T12:00:00Z"))
+            import(target, export(source), DuplicatePolicy.REPLACE)
+            assertEquals(listOf(t2, t1), filmViewings(target, film))
+            assertFilmInvariant(target, film)
+        }
+
+    @Test
+    fun film_watchedAtWithoutMatchingViewing_keepsItsDate() =
+        runTest {
+            val film = seedFilm()
+            val bundle = export(source)
+            val lines = bundle.watchLogsCsv.lines()
+            val trimmed = lines.filterNot { film in it && "2025" in it }.joinToString("\n")
+            assertEquals(lines.size - 1, trimmed.lines().size, "positive control: exactly one row dropped")
+            import(target, bundle.copy(watchLogsCsv = trimmed))
+            assertEquals(t2, target.movieDetailsDao().getByMediaId(film)!!.watchedAt)
+            assertFilmInvariant(target, film)
         }
 }

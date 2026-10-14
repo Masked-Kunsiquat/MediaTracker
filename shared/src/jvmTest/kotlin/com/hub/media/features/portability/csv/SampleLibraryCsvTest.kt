@@ -1,10 +1,12 @@
 package com.hub.media.features.portability.csv
 
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.WatchStatus
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -90,15 +92,29 @@ class SampleLibraryCsvTest {
                 assertIs<WatchLogRowParseResult.Parsed>(WatchLogCsvImporter.parseRow(row), "viewings row ${i + 2}").row
             }
         val episodes = parsedEpisodes().associateBy { it.episodeId }
-        assertTrue(viewings.all { it.episodeId in episodes }, "viewings reference unknown episodes")
-        val rewatched = viewings.groupBy { it.episodeId }.filterValues { it.size >= 2 }
+        val episodeViewings = viewings.filter { it.episodeId != null }
+        assertTrue(episodeViewings.all { it.episodeId in episodes }, "viewings reference unknown episodes")
+        val rewatched = episodeViewings.groupBy { it.episodeId }.filterValues { it.size >= 2 }
         assertTrue(rewatched.isNotEmpty(), "the fixture must keep a re-watched episode")
-        for ((episodeId, logs) in viewings.groupBy { it.episodeId }) {
+        for ((episodeId, logs) in episodeViewings.groupBy { it.episodeId!! }) {
             assertEquals(
                 episodes.getValue(episodeId).watchedAt,
                 logs.maxOf { it.watchedAt },
                 "latest viewing of $episodeId",
             )
+        }
+
+        // Film viewings (#192): blank episode_id, a Watched film, and the latest is its watched_at.
+        val films =
+            parsedRows()
+                .filter { it.details is ParsedRowDetails.Movie }
+                .associate { it.mediaId to it.details as ParsedRowDetails.Movie }
+        val filmViewings = viewings.filter { it.episodeId == null }.groupBy { it.mediaId }
+        assertTrue(filmViewings.values.any { it.size >= 2 }, "the fixture must keep a re-watched film")
+        for ((mediaId, logs) in filmViewings) {
+            val film = assertNotNull(films[mediaId], "film viewing references unknown film $mediaId")
+            assertEquals(WatchStatus.WATCHED, film.status, "film $mediaId has viewings, so it is Watched")
+            assertEquals(film.watchedAt, logs.maxOf { it.watchedAt }, "latest viewing of film $mediaId")
         }
     }
 

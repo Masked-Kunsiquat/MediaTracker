@@ -577,7 +577,7 @@ public class TVShowRepository(
      * and clearing to `null` when false.
      *
      * Re-ticking an already-watched episode must not bump its timestamp, mirroring
-     * [com.hub.media.features.movies.data.MovieRepository.resolveWatchedAt]'s rule. That decision is
+     * [com.hub.media.core.database.dao.MovieWriteDao.changeStatus]'s rule. That decision is
      * made in SQL (`COALESCE`, see [com.hub.media.core.database.dao.TVWriteDao.markEpisodeWatched])
      * rather than by reading the row and deciding here: reading first would leave a window between
      * the read and the write for a second tick to land in, and the read is not needed for anything

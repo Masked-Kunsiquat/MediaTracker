@@ -91,6 +91,9 @@ class MovieDetailScreenTest {
                     onDelete = onDelete,
                     onErrorShown = onErrorShown,
                     onNavigateBack = onNavigateBack,
+                    onWatchedAgain = {},
+                    onEditViewing = {},
+                    onDeleteViewing = {},
                     onNavigateToEditMovie = onNavigateToEditMovie,
                 )
             }

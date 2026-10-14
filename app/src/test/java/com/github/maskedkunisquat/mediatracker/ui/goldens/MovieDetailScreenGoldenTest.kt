@@ -8,6 +8,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.MovieDetailScreen
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.MovieDetailUiState
@@ -42,7 +43,7 @@ class MovieDetailScreenGoldenTest {
     fun filmDetail() {
         composeRule.captureGolden(
             name = "film-detail",
-            alsoAssert = { assertTextIsShown("Stalker") },
+            alsoAssert = { assertTextIsShown("Stalker", "History", "Watched again") },
         ) { Fixture() }
     }
 
@@ -101,11 +102,24 @@ class MovieDetailScreenGoldenTest {
                                     watchedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L),
                                 ),
                         ),
+                    // A Watched film always has the viewing its watchedAt came from (#192).
+                    viewings =
+                        listOf(
+                            WatchLogEntity(
+                                id = "v1",
+                                mediaId = "film-1",
+                                episodeId = null,
+                                watchedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L),
+                            ),
+                        ),
                 ),
             onStatusChange = {},
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},
+            onWatchedAgain = {},
+            onEditViewing = {},
+            onDeleteViewing = {},
             onNavigateToEditMovie = {},
         )
     }
@@ -150,6 +164,9 @@ class MovieDetailScreenGoldenTest {
             onDelete = {},
             onErrorShown = {},
             onNavigateBack = {},
+            onWatchedAgain = {},
+            onEditViewing = {},
+            onDeleteViewing = {},
             onNavigateToEditMovie = {},
         )
     }

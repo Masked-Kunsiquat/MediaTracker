@@ -45,10 +45,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddMovieViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
+import com.hub.media.features.tv.domain.WatchedWhen
+import com.hub.media.features.tv.domain.pickedDayMillis
+import com.hub.media.features.tv.domain.watchedOnPickedDay
 import com.hub.media.ui.AddMovieUiState
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AppContainer
@@ -105,7 +109,7 @@ fun AddMovieScreenRoute(
 @Composable
 fun AddMovieScreen(
     uiState: AddMovieUiState,
-    onSave: (String, Int?, Int?, Double?, WatchStatus) -> Unit,
+    onSave: (String, Int?, Int?, Double?, WatchStatus, WatchedWhen?) -> Unit,
     onErrorShown: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
@@ -115,6 +119,20 @@ fun AddMovieScreen(
     var runtimeMinutes by rememberSaveable { mutableStateOf("") }
     var purchasePrice by rememberSaveable { mutableStateOf("") }
     var status by rememberSaveable { mutableStateOf(WatchStatus.WATCHLIST) }
+    // The "when?" answer for Watched (#192): a picked day as UTC-midnight millis, or null for Now.
+    var watchedDayMillis by rememberSaveable { mutableStateOf<Long?>(null) }
+    var askingWhen by rememberSaveable { mutableStateOf(false) }
+    if (askingWhen) {
+        FilmWatchedDialog(
+            title = stringResource(R.string.film_watched_title, title),
+            onConfirm = {
+                status = WatchStatus.WATCHED
+                watchedDayMillis = it.pickedDayMillis()
+                askingWhen = false
+            },
+            onDismiss = { askingWhen = false },
+        )
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val errorState = uiState as? AddMovieUiState.Error
@@ -264,7 +282,14 @@ fun AddMovieScreen(
                 WatchStatus.entries.forEach { option ->
                     FilterChip(
                         selected = status == option,
-                        onClick = { status = option },
+                        onClick = {
+                            if (option == WatchStatus.WATCHED && status != WatchStatus.WATCHED) {
+                                askingWhen = true
+                            } else if (option != status) {
+                                status = option
+                                watchedDayMillis = null
+                            }
+                        },
                         label = { Text(option.displayLabel()) },
                         enabled = !isSaving,
                     )
@@ -286,6 +311,11 @@ fun AddMovieScreen(
                         parsedRuntimeMinutes,
                         parsedPurchasePrice,
                         status,
+                        if (status == WatchStatus.WATCHED) {
+                            watchedDayMillis?.let(::watchedOnPickedDay) ?: WatchedWhen.Now
+                        } else {
+                            null
+                        },
                     )
                 },
                 enabled = canSave,

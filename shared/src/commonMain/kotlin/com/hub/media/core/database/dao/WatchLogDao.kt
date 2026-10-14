@@ -26,6 +26,10 @@ interface WatchLogDao {
     )
     fun observeViewingCounts(mediaId: String): Flow<List<EpisodeViewingCount>>
 
+    /** A film's viewings (#192), newest first: its rows with no episode. */
+    @Query("SELECT * FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL ORDER BY watchedAt DESC")
+    fun observeForFilm(mediaId: String): Flow<List<WatchLogEntity>>
+
     /** Every viewing, in a stable order -- `watch_logs_export.csv`. */
     @Query("SELECT * FROM watch_logs ORDER BY mediaId, episodeId, watchedAt")
     fun observeAll(): Flow<List<WatchLogEntity>>

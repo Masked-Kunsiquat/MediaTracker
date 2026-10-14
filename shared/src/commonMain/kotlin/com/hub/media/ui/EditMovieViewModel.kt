@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +28,10 @@ public sealed class EditMovieUiState {
      * form: empty means "unknown", and re-parsing on every keystroke would make an in-progress "1"
      * of "116" indistinguishable from a finished one.
      *
+     * @property initialStatus The status the film had when the form opened: choosing Watched asks
+     *   when (#192) only if it was not already Watched.
+     * @property pendingWatched Choosing Watched is waiting on the "when?" prompt.
+     * @property watchedWhen The prompt's answer, sent with the save.
      * @property saveError Message from a rejected save, or null.
      * @property saved True once the write succeeded, so the caller can leave the screen.
      */
@@ -36,6 +41,9 @@ public sealed class EditMovieUiState {
         val runtimeMinutes: String,
         val purchasePrice: String,
         val status: WatchStatus,
+        val initialStatus: WatchStatus = status,
+        val pendingWatched: Boolean = false,
+        val watchedWhen: WatchedWhen? = null,
         val isSaving: Boolean = false,
         val saveError: String? = null,
         val saved: Boolean = false,
@@ -101,7 +109,23 @@ public class EditMovieViewModel(
 
     public fun onPurchasePriceChange(value: String): Unit = updateForm { it.copy(purchasePrice = value) }
 
-    public fun onStatusChange(value: WatchStatus): Unit = updateForm { it.copy(status = value) }
+    /**
+     * Choosing Watched for a film that was not Watched when the form opened asks when first
+     * ([confirmWatched]); the selection only changes once answered. Any other choice applies at once.
+     */
+    public fun onStatusChange(value: WatchStatus): Unit =
+        updateForm {
+            if (value == WatchStatus.WATCHED && it.initialStatus != WatchStatus.WATCHED) {
+                it.copy(pendingWatched = true)
+            } else {
+                it.copy(status = value, watchedWhen = null)
+            }
+        }
+
+    public fun confirmWatched(watchedWhen: WatchedWhen): Unit =
+        updateForm { it.copy(status = WatchStatus.WATCHED, watchedWhen = watchedWhen, pendingWatched = false) }
+
+    public fun dismissWatched(): Unit = updateForm { it.copy(pendingWatched = false) }
 
     /**
      * Writes the edited values.
@@ -145,6 +169,7 @@ public class EditMovieViewModel(
                     purchasePrice = purchasePrice.value,
                     runtimeMinutes = runtimeMinutes.value,
                     status = form.status,
+                    watchedWhen = form.watchedWhen,
                 )
             val current = _uiState.value as? EditMovieUiState.Editing ?: return@launch
             _uiState.value =

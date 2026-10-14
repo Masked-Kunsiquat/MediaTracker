@@ -51,7 +51,7 @@ class AddMovieScreenOcclusionTest {
     private fun Fixture() {
         AddMovieScreen(
             uiState = AddMovieUiState.Idle,
-            onSave = { _, _, _, _, _ -> },
+            onSave = { _, _, _, _, _, _ -> },
             onErrorShown = {},
             onNavigateBack = {},
         )

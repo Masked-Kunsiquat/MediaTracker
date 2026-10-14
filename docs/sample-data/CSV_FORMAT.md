@@ -164,21 +164,21 @@ never be shown by anything — worse than a rejection, because nothing would rep
 
 ## File 4 — `watch_logs_export.csv`
 
-Added in CSV schema **v6** (#90). One row per **viewing** of an episode, so a re-watch history
-survives an export. **Optional on import**, like `episodes_export.csv`; a v5 export without it
+Added in CSV schema **v6** (#90). One row per **viewing** of an episode or (since #192) a film, so a
+re-watch history survives an export. **Optional on import**, like `episodes_export.csv`; a v5 export without it
 imports unchanged.
 
 | # | Column | Required | Notes |
 |---|---|---|---|
 | 0 | `csv_schema_version` | yes | `6` |
 | 1 | `log_id` | yes | The viewing's id. Kept when free; a clashing id is replaced by a new one |
-| 2 | `media_id` | yes | The show |
-| 3 | `episode_id` | yes | The episode. Matched like `episodes_export.csv` rows: by id, else by show + season + episode when ids did not round-trip. Blank means a film viewing, which is not imported yet (rejected with a reason) |
+| 2 | `media_id` | yes | The show, or the film for a film viewing |
+| 3 | `episode_id` | yes | The episode. Matched like `episodes_export.csv` rows: by id, else by show + season + episode when ids did not round-trip. Blank means a **film viewing**: `media_id` must then be a film already in the library or in `library_export.csv`, or the row is rejected |
 | 4 | `watched_at` | yes | ISO-8601 UTC |
 | 5 | `duration_seconds` | no | Unused for now; leave empty |
 
 On import:
-- **A viewing already present is skipped**: same episode, same `watched_at`. Re-importing an
+- **A viewing already present is skipped**: same episode (or film), same `watched_at`. Re-importing an
   export creates nothing.
 - **Under REPLACE the file wins.** Every episode the import replaced loses its stored viewings and
   takes this file's viewings for it -- or, if this file has none for it (or is not supplied), a
@@ -186,6 +186,10 @@ On import:
   export therefore replaces a re-watch history rather than merging it.
 - **Every episode the import touched ends up with `watched_at` equal to its latest viewing.** An
   episode marked watched in `episodes_export.csv` with no viewings here gets one at that date.
+- **Films follow the same rules.** A replaced film takes this file's viewings; a `WATCHED` film's
+  `watched_at` (column 18 of `library_export.csv`) always ends up its latest viewing, gaining a
+  viewing at that date if the file has none there. A film that is not `WATCHED` keeps its viewings
+  and has no `watched_at`.
 
 ## Validation — what gets a row rejected
 

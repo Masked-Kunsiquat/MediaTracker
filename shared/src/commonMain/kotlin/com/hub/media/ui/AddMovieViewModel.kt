@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.movies.data.MovieRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,6 +69,7 @@ public class AddMovieViewModel(
         runtimeMinutes: Int?,
         purchasePrice: Double?,
         status: WatchStatus,
+        watchedWhen: WatchedWhen? = null,
     ) {
         // Two states are refused, not one: a save in flight, and a save that has already produced a
         // movie and not yet been reset. See AddTVShowViewModel.save's KDoc -- the in-flight half
@@ -86,6 +88,7 @@ public class AddMovieViewModel(
                             purchasePrice = purchasePrice,
                             runtimeMinutes = runtimeMinutes,
                             status = status,
+                            watchedWhen = watchedWhen,
                         )
                 ) {
                     is Resource.Success -> AddMovieUiState.Saved(result.data)

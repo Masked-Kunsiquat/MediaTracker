@@ -98,6 +98,9 @@ class WatchTimesTest {
         // Material's DatePicker hands back UTC-midnight millis for the chosen day.
         val feb16 = Instant.parse("2024-02-16T00:00:00Z").toEpochMilliseconds()
         assertEquals(WatchedWhen.On(LocalDate(2024, 2, 16)), watchedOnPickedDay(feb16))
+        // The inverse round-trips the day, and anything but a picked day has none (#192).
+        assertEquals(feb16, watchedOnPickedDay(feb16).pickedDayMillis())
+        assertEquals(null, WatchedWhen.Now.pickedDayMillis())
 
         val today = Instant.parse("2026-10-12T00:00:00Z").toEpochMilliseconds()
         val tomorrow = Instant.parse("2026-10-13T00:00:00Z").toEpochMilliseconds()

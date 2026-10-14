@@ -1,11 +1,13 @@
 package com.hub.media.features.movies.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.FilmViewingDeletion
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
@@ -13,8 +15,11 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.newId
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.features.tv.domain.WatchedWhen
+import com.hub.media.features.tv.domain.resolveWatchedAt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.datetime.TimeZone
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -36,6 +41,7 @@ public class MovieRepository(
     private val db: AppDatabase,
     private val clock: Clock = Clock.System,
     private val logger: Logger = AppLogger,
+    private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
     /** Observes every movie with its details, ordered by title. */
     public fun observeAllMoviesWithDetails(): Flow<List<MediaWithDetails.Movie>> =
@@ -116,6 +122,7 @@ public class MovieRepository(
         externalIdentifiers: List<Pair<IdentifierProvider, String>> = emptyList(),
         communityRating: Double? = null,
         synopsis: String? = null,
+        watchedWhen: WatchedWhen? = null,
     ): Resource<String> {
         MovieMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
@@ -145,9 +152,9 @@ public class MovieRepository(
                         mediaId = mediaId,
                         runtimeMinutes = runtimeMinutes,
                         status = status,
-                        // A movie added as already-watched is watched as of now; there is no other
-                        // date to claim, and leaving it null would lose the fact entirely.
-                        watchedAt = if (status == WatchStatus.WATCHED) now else null,
+                        // A movie added as already watched gets the day the form's prompt chose (#192),
+                        // Now by default; insertMovieAtomically records it as the first viewing.
+                        watchedAt = if (status == WatchStatus.WATCHED) instantFor(watchedWhen) else null,
                     ),
                 externalIdentifiers =
                     externalIdentifiers.map { (provider, externalId) ->
@@ -181,6 +188,7 @@ public class MovieRepository(
         purchasePrice: Double? = null,
         runtimeMinutes: Int? = null,
         status: WatchStatus,
+        watchedWhen: WatchedWhen? = null,
     ): Resource<Unit> {
         MovieMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
@@ -188,23 +196,15 @@ public class MovieRepository(
         MovieMetadataValidation.validateRuntimeMinutes(runtimeMinutes)?.let { return Resource.Error(it) }
 
         return try {
-            val existing = db.movieDetailsDao().getByMediaId(mediaId)
-            val watchedAt =
-                resolveWatchedAt(
-                    newStatus = status,
-                    oldStatus = existing?.status ?: WatchStatus.WATCHLIST,
-                    oldWatchedAt = existing?.watchedAt,
-                    clock = clock,
-                )
             val rows =
-                db.movieWriteDao().updateMovieMetadataAtomically(
+                db.movieWriteDao().updateMovieMetadataWithViewing(
                     mediaId = mediaId,
                     title = title,
                     releaseYear = releaseYear,
                     purchasePrice = purchasePrice,
                     runtimeMinutes = runtimeMinutes,
                     status = status,
-                    watchedAt = watchedAt,
+                    at = instantFor(watchedWhen),
                 )
             if (rows == 0) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(Unit)
         } catch (e: CancellationException) {
@@ -228,23 +228,20 @@ public class MovieRepository(
      * user had not touched. Writing only the two columns that actually change also means a status
      * tap can no longer overwrite a title someone edited in between.
      *
-     * @return [Resource.Error] if [mediaId] has no `movie_details` row (deleted, or never a movie).
+     * A move into Watched records a viewing at [watchedWhen] (Now when omitted); leaving Watched
+     * keeps the viewings (#192). See [com.hub.media.core.database.dao.MovieWriteDao.changeStatus].
+     *
+     * @return The status **before** the change, so a caller can offer Undo; [Resource.Error] if
+     *   [mediaId] has no `movie_details` row (deleted, or never a movie).
      */
     public suspend fun updateWatchStatus(
         mediaId: String,
         status: WatchStatus,
-    ): Resource<Unit> =
+        watchedWhen: WatchedWhen? = null,
+    ): Resource<WatchStatus> =
         try {
-            val existing = db.movieDetailsDao().getByMediaId(mediaId)
-            val watchedAt =
-                resolveWatchedAt(
-                    newStatus = status,
-                    oldStatus = existing?.status ?: WatchStatus.WATCHLIST,
-                    oldWatchedAt = existing?.watchedAt,
-                    clock = clock,
-                )
-            val rows = db.movieWriteDao().updateWatchStatusFields(mediaId, status, watchedAt)
-            if (rows == 0) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(Unit)
+            val previous = db.movieWriteDao().changeStatus(mediaId, status, instantFor(watchedWhen))
+            if (previous == null) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(previous)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -252,26 +249,90 @@ public class MovieRepository(
             Resource.Error("Failed to update movie status: ${e.message ?: "Unknown error"}", cause = e)
         }
 
-    public companion object {
-        /**
-         * Derives [MovieDetailsEntity.watchedAt] for a [WatchStatus] transition. Identical in shape
-         * to [com.hub.media.features.books.data.BookRepository.resolveFinishedAt], and for the same
-         * reasons:
-         * - Moving to anything other than [WatchStatus.WATCHED] clears it.
-         * - Staying [WatchStatus.WATCHED] preserves the original date, so re-saving an unrelated
-         *   field never silently rewrites when the film was actually watched.
-         * - Transitioning *into* [WatchStatus.WATCHED] stamps now.
-         */
-        internal fun resolveWatchedAt(
-            newStatus: WatchStatus,
-            oldStatus: WatchStatus,
-            oldWatchedAt: Instant?,
-            clock: Clock,
-        ): Instant? =
-            when {
-                newStatus != WatchStatus.WATCHED -> null
-                oldStatus == WatchStatus.WATCHED && oldWatchedAt != null -> oldWatchedAt
-                else -> clock.now()
+    // ---- Watch history (#192) -------------------------------------------------------------------
+
+    /** A film's viewings, newest first. */
+    public fun observeViewings(mediaId: String): Flow<List<WatchLogEntity>> = db.watchLogDao().observeForFilm(mediaId)
+
+    /** "Watched again": one more viewing of a Watched film. */
+    public suspend fun addViewing(
+        mediaId: String,
+        watchedWhen: WatchedWhen,
+    ): Resource<Unit> =
+        write("record a viewing of movie id=$mediaId") {
+            if (db.movieWriteDao().addFilmViewing(mediaId, instantFor(watchedWhen))) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error("Movie with id=$mediaId not found, or not watched")
             }
+        }
+
+    /** Deletes one viewing; the result carries what Undo needs. */
+    public suspend fun deleteViewing(logId: String): Resource<FilmViewingDeletion> =
+        write("delete viewing id=$logId") {
+            db.movieWriteDao().deleteFilmViewing(logId)?.let { Resource.Success(it) }
+                ?: Resource.Error("Viewing not found")
+        }
+
+    /** Undo for [deleteViewing]; quietly does nothing for a film deleted since. */
+    public suspend fun restoreViewings(
+        logs: List<WatchLogEntity>,
+        demoted: Boolean,
+    ): Resource<Unit> =
+        write("restore ${logs.size} viewing(s)") {
+            db.movieWriteDao().restoreFilmViewings(logs, demoted)
+            Resource.Success(Unit)
+        }
+
+    /**
+     * Undo for leaving Watched: puts [status] back without recording a new viewing, provided the film
+     * is still at [expectedCurrent] and, for Watched, still has a viewing.
+     */
+    public suspend fun restoreStatus(
+        mediaId: String,
+        status: WatchStatus,
+        expectedCurrent: WatchStatus,
+    ): Resource<Unit> =
+        write("restore status of movie id=$mediaId") {
+            if (db.movieWriteDao().restoreFilmStatus(mediaId, status, expectedCurrent)) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error("Couldn't undo: the film changed since")
+            }
+        }
+
+    /** Corrects one viewing's day. */
+    public suspend fun editViewingDate(
+        logId: String,
+        watchedWhen: WatchedWhen,
+    ): Resource<Unit> =
+        write("edit viewing id=$logId") {
+            if (db.movieWriteDao().updateFilmViewingDate(logId, instantFor(watchedWhen))) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error("Viewing not found")
+            }
+        }
+
+    /**
+     * The instant a film was watched: Now, or a picked day at noon local, clamped to now -- the same
+     * rule as an episode's (#131). Films store no release date, so `OnAirDate` falls back to now.
+     */
+    private fun instantFor(watchedWhen: WatchedWhen?): Instant {
+        val now = clock.now()
+        return resolveWatchedAt(watchedWhen ?: WatchedWhen.Now, airDate = null, now = now, zone = zone) ?: now
     }
+
+    private inline fun <T> write(
+        what: String,
+        block: () -> Resource<T>,
+    ): Resource<T> =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, e) { "Failed to $what" }
+            Resource.Error("Failed to $what: ${e.message ?: "Unknown error"}", cause = e)
+        }
 }

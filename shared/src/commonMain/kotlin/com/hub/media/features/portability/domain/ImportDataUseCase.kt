@@ -546,6 +546,7 @@ public class ImportDataUseCase(
             val existingViewings = mediaRepository.observeAllViewings().first()
             val seenViewings =
                 existingViewings
+                    .filter { it.episodeId != null }
                     .groupBy { it.episodeId }
                     .mapValuesTo(mutableMapOf()) { (_, logs) -> logs.mapTo(mutableSetOf()) { it.watchedAt } }
             val takenViewingIds = existingViewings.mapTo(mutableSetOf()) { it.id }
@@ -557,6 +558,28 @@ public class ImportDataUseCase(
             for (episodeId in viewingReplaceEpisodeIds) {
                 seenViewings[episodeId] = mutableSetOf()
                 existingViewings.filter { it.episodeId == episodeId }.forEach { takenViewingIds -= it.id }
+            }
+            // Film viewings (#192) dedup per film: they share the null episode key, so they get their own
+            // map. A row may name a film already in the library or one this import is adding.
+            val seenFilmViewings =
+                existingViewings
+                    .filter { it.episodeId == null }
+                    .groupBy { it.mediaId }
+                    .mapValuesTo(mutableMapOf()) { (_, logs) -> logs.mapTo(mutableSetOf()) { it.watchedAt } }
+            val filmIds =
+                existingMedia.filter { it.item.type == MediaType.MOVIE }.mapTo(mutableSetOf()) { it.item.id } +
+                    mediaResolution.inserts.filter { it.details is ImportDetails.Movie }.map { it.mediaItem.id }
+            // REPLACE means the file wins for a film too: every film this import replaced drops its stored
+            // viewings, the same as a replaced episode.
+            val replacedFilmIds =
+                mediaResolution.updates
+                    .filter { it.replaceIdentifiers && it.details is ImportDetails.Movie }
+                    .mapTo(mutableSetOf()) { it.mediaItem.id }
+            for (filmId in replacedFilmIds) {
+                seenFilmViewings[filmId] = mutableSetOf()
+                existingViewings
+                    .filter { it.episodeId == null && it.mediaId == filmId }
+                    .forEach { takenViewingIds -= it.id }
             }
             val viewingInserts = mutableListOf<WatchLogEntity>()
             var viewingsImported = 0
@@ -570,18 +593,55 @@ public class ImportDataUseCase(
 
                     is WatchLogRowParseResult.Parsed -> {
                         val row = parsed.row
+                        val rowEpisodeId = row.episodeId
+                        if (rowEpisodeId == null) {
+                            // A film viewing: the row's media_id must resolve to a film, never a show.
+                            val filmId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
+                            if (filmId !in filmIds) {
+                                rejections +=
+                                    ImportRejection(
+                                        ImportRowSource.WATCH_LOG,
+                                        rowNumber,
+                                        "media_id '${row.mediaId}' is not a known film (not already in your " +
+                                            "library, and not present in the library file being imported) -- " +
+                                            "viewing skipped",
+                                    )
+                            } else if (!seenFilmViewings.getOrPut(filmId) { mutableSetOf() }.add(row.watchedAt)) {
+                                viewingsSkipped++
+                            } else {
+                                val id =
+                                    if (takenViewingIds.add(row.logId)) {
+                                        row.logId
+                                    } else {
+                                        newId().also {
+                                            takenViewingIds +=
+                                                it
+                                        }
+                                    }
+                                viewingInserts +=
+                                    WatchLogEntity(
+                                        id = id,
+                                        mediaId = filmId,
+                                        episodeId = null,
+                                        watchedAt = row.watchedAt,
+                                        durationSeconds = row.durationSeconds,
+                                    )
+                                viewingsImported++
+                            }
+                            return@forEachIndexed
+                        }
                         // The row's show must own the episode it names: resolved the same way the episode
                         // pass resolves media ids, so a hand-edited or corrupted file cannot attach a viewing
                         // to another show's episode (the FK would not catch it -- the episode's own mediaId
                         // is what gets written).
                         val resolvedMediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
-                        val episode = existingEpisodesById[row.episodeId]?.takeIf { it.mediaId == resolvedMediaId }
+                        val episode = existingEpisodesById[rowEpisodeId]?.takeIf { it.mediaId == resolvedMediaId }
                         if (episode == null) {
                             rejections +=
                                 ImportRejection(
                                     ImportRowSource.WATCH_LOG,
                                     rowNumber,
-                                    "episode_id '${row.episodeId}' is not a known episode of " +
+                                    "episode_id '$rowEpisodeId' is not a known episode of " +
                                         "media_id '${row.mediaId}' (not already in your " +
                                         "library, and not present in the episodes file being imported) -- " +
                                         "viewing skipped",
@@ -618,6 +678,12 @@ public class ImportDataUseCase(
                     episodeInserts.map { it.id } + episodeUpdates.map { it.id } +
                         viewingInserts.mapNotNull { it.episodeId }
                 ).toSet()
+            val touchedFilmIds =
+                (
+                    mediaResolution.inserts.filter { it.details is ImportDetails.Movie }.map { it.mediaItem.id } +
+                        mediaResolution.updates.filter { it.details is ImportDetails.Movie }.map { it.mediaItem.id } +
+                        viewingInserts.filter { it.episodeId == null }.map { it.mediaId }
+                ).toSet()
 
             val writeResult =
                 importWriteRepository.importAtomically(
@@ -630,6 +696,8 @@ public class ImportDataUseCase(
                     viewingDeletesForEpisodes = viewingReplaceEpisodeIds,
                     viewingInserts = viewingInserts,
                     touchedEpisodeIds = touchedEpisodeIds,
+                    filmViewingDeletes = replacedFilmIds,
+                    touchedFilmIds = touchedFilmIds,
                 )
             if (writeResult is Resource.Error) return writeResult
 

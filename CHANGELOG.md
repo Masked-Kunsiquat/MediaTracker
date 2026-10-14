@@ -14,10 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   you have watched more than once says so on its row ("Watched 2×"). Viewings are included in the
   CSV export as a new `watch_logs_export.csv` and restored on import, and re-importing the same
   export never duplicates them.
+- **Watch history for films** (#192): setting a film to *Watched* asks when -- now, or a day you
+  pick -- in the film's screen and in Add and Edit. Its new **History** lists every viewing, with
+  **Watched again**, and each date can be edited or deleted (with Undo). Moving a film off Watched
+  keeps its history and offers Undo; deleting its last viewing puts it back on your watchlist.
 
 ### Changed
 
 - Unticking an episode now also removes its viewings; Undo puts them all back.
+- The watch-history CSV now carries film viewings too; they import, de-duplicate and follow
+  *Replace* the same way episode viewings do.
 
 ### Internal
 
@@ -26,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a startup backfill gives older watched episodes their one viewing.
 - Two `TVShowDetailViewModelTest` add-missing-episodes tests no longer flake on CI: they record
   emitted states into a thread-safe list instead of sampling `uiState.value` mid-flight.
+- Film viewings are `watch_logs` rows with no episode (no schema change; CSV stays v6). A Watched
+  film's `watchedAt` is always its latest viewing, any other status has none, and the startup
+  backfill gives older watched films their one viewing.
 
 ## [0.23.0] - 2026-10-13
 

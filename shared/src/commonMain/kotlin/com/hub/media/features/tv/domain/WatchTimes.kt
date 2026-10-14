@@ -102,6 +102,16 @@ public fun watchedOnPickedDay(utcMidnightMillis: Long): WatchedWhen =
     WatchedWhen.On(Instant.fromEpochMilliseconds(utcMidnightMillis).toLocalDateTime(TimeZone.UTC).date)
 
 /**
+ * The inverse of [watchedOnPickedDay]: a picked day as UTC-midnight millis, or `null` for any other
+ * answer. Lets a form hold its "when?" answer in `rememberSaveable` (#192), which cannot hold a
+ * [WatchedWhen].
+ */
+public fun WatchedWhen.pickedDayMillis(): Long? =
+    (this as? WatchedWhen.On)?.date?.let {
+        LocalDateTime(it, LocalTime(0, 0)).toInstant(TimeZone.UTC).toEpochMilliseconds()
+    }
+
+/**
  * Whether the picker may offer the day at [utcMidnightMillis]: not after today in [zone]. A watch
  * cannot be in the future (#131).
  */

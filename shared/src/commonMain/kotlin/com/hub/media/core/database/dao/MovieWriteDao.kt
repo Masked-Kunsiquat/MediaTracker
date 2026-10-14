@@ -8,7 +8,9 @@ import androidx.room.Transaction
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
 /**
@@ -57,6 +59,9 @@ interface MovieWriteDao {
         insertMediaItem(item)
         insertMovieDetails(details)
         externalIdentifiers.forEach { insertExternalIdentifier(it) }
+        // Added as already watched (#192): that watch is the film's first viewing.
+        val watchedAt = details.watchedAt
+        if (details.status == WatchStatus.WATCHED && watchedAt != null) insertViewing(filmViewing(item.id, watchedAt))
     }
 
     /**
@@ -223,4 +228,197 @@ interface MovieWriteDao {
         }
         return mediaRows
     }
+
+    // ---- Film viewings (#192) -------------------------------------------------------------------
+    // A film viewing is a `watch_logs` row with no episode. Every write below ends in
+    // [recomputeFilmWatchedAt], so a Watched film's `watchedAt` is always its latest viewing and any
+    // other status has none -- while the viewings themselves outlive a status change.
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertViewing(log: WatchLogEntity)
+
+    @Query("SELECT * FROM watch_logs WHERE id = :logId")
+    suspend fun viewingById(logId: String): WatchLogEntity?
+
+    @Query("DELETE FROM watch_logs WHERE id = :logId")
+    suspend fun deleteViewingRow(logId: String): Int
+
+    @Query("UPDATE watch_logs SET watchedAt = :at WHERE id = :logId")
+    suspend fun setViewingDate(
+        logId: String,
+        at: Instant,
+    ): Int
+
+    @Query("SELECT COUNT(*) FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL")
+    suspend fun filmViewingCount(mediaId: String): Int
+
+    @Query("SELECT status FROM movie_details WHERE mediaId = :mediaId")
+    suspend fun statusOf(mediaId: String): WatchStatus?
+
+    @Query("UPDATE movie_details SET status = :status WHERE mediaId = :mediaId")
+    suspend fun setStatus(
+        mediaId: String,
+        status: WatchStatus,
+    ): Int
+
+    /** The one derivation: a Watched film's `watchedAt` is its latest viewing; otherwise none. */
+    @Query(
+        "UPDATE movie_details SET watchedAt = CASE WHEN status = 'WATCHED' THEN " +
+            "(SELECT MAX(watchedAt) FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL) " +
+            "ELSE NULL END WHERE mediaId = :mediaId",
+    )
+    suspend fun recomputeFilmWatchedAt(mediaId: String): Int
+
+    /**
+     * Changes a film's status. Only a move *into* Watched records a viewing, at [at]; staying Watched
+     * adds nothing, and leaving it keeps the history.
+     *
+     * @return The previous status, or `null` when there is no such film.
+     */
+    @Transaction
+    suspend fun changeStatus(
+        mediaId: String,
+        status: WatchStatus,
+        at: Instant,
+    ): WatchStatus? {
+        val previous = statusOf(mediaId) ?: return null
+        setStatus(mediaId, status)
+        if (status == WatchStatus.WATCHED && previous != WatchStatus.WATCHED) insertViewing(filmViewing(mediaId, at))
+        recomputeFilmWatchedAt(mediaId)
+        return previous
+    }
+
+    /** "Watched again": one more viewing. Only for a Watched film; anything else is a status change. */
+    @Transaction
+    suspend fun addFilmViewing(
+        mediaId: String,
+        at: Instant,
+    ): Boolean {
+        if (statusOf(mediaId) != WatchStatus.WATCHED) return false
+        insertViewing(filmViewing(mediaId, at))
+        recomputeFilmWatchedAt(mediaId)
+        return true
+    }
+
+    /**
+     * Deletes one film viewing, returning it for Undo. Deleting a Watched film's last viewing moves it
+     * to Watchlist, the way an episode un-ticks when its last one goes -- and the result says so.
+     */
+    @Transaction
+    suspend fun deleteFilmViewing(logId: String): FilmViewingDeletion? {
+        val log = viewingById(logId)?.takeIf { it.episodeId == null } ?: return null
+        val before = statusOf(log.mediaId) ?: return null
+        deleteViewingRow(logId)
+        val demoted = before == WatchStatus.WATCHED && filmViewingCount(log.mediaId) == 0
+        if (demoted) setStatus(log.mediaId, WatchStatus.WATCHLIST)
+        recomputeFilmWatchedAt(log.mediaId)
+        return FilmViewingDeletion(log, demoted)
+    }
+
+    @Transaction
+    suspend fun updateFilmViewingDate(
+        logId: String,
+        at: Instant,
+    ): Boolean {
+        val log = viewingById(logId)?.takeIf { it.episodeId == null } ?: return false
+        setViewingDate(logId, at)
+        recomputeFilmWatchedAt(log.mediaId)
+        return true
+    }
+
+    /**
+     * Undo for [deleteFilmViewing]. A no-op when the film is gone -- re-inserting would violate the
+     * foreign key. Puts Watched back only if a delete being undone is what moved the film to Watchlist
+     * ([demoted]) and it is still there, so a status the user chose since wins.
+     */
+    @Transaction
+    suspend fun restoreFilmViewings(
+        logs: List<WatchLogEntity>,
+        demoted: Boolean,
+    ): Boolean {
+        val mediaId = logs.firstOrNull()?.mediaId ?: return false
+        val current = statusOf(mediaId) ?: return false
+        logs.filter { viewingById(it.id) == null }.forEach { insertViewing(it) }
+        if (demoted && current == WatchStatus.WATCHLIST) {
+            setStatus(mediaId, WatchStatus.WATCHED)
+        }
+        recomputeFilmWatchedAt(mediaId)
+        return true
+    }
+
+    /**
+     * Undo for leaving Watched: the status comes back and, unlike [changeStatus], adds no viewing.
+     * Only while the film is still at [expectedCurrent] -- a status chosen since wins -- and never
+     * back to Watched once no viewing is left, which would be a Watched film with no date.
+     */
+    @Transaction
+    suspend fun restoreFilmStatus(
+        mediaId: String,
+        status: WatchStatus,
+        expectedCurrent: WatchStatus,
+    ): Boolean {
+        if (statusOf(mediaId) != expectedCurrent) return false
+        if (status == WatchStatus.WATCHED && filmViewingCount(mediaId) == 0) return false
+        setStatus(mediaId, status)
+        recomputeFilmWatchedAt(mediaId)
+        return true
+    }
+
+    @Query(
+        "SELECT * FROM movie_details WHERE status = 'WATCHED' AND watchedAt IS NOT NULL AND NOT EXISTS " +
+            "(SELECT 1 FROM watch_logs w WHERE w.mediaId = movie_details.mediaId AND w.episodeId IS NULL)",
+    )
+    suspend fun watchedFilmsWithoutViewings(): List<MovieDetailsEntity>
+
+    /** The film half of the startup backfill: one viewing, at `watchedAt`, for each Watched film with none. */
+    @Transaction
+    suspend fun ensureViewingsForWatchedFilms(): Int =
+        watchedFilmsWithoutViewings()
+            .onEach { insertViewing(filmViewing(it.mediaId, checkNotNull(it.watchedAt))) }
+            .size
+
+    /**
+     * The Edit form's save, with [changeStatus]'s rule: a move into Watched records a viewing at [at];
+     * re-saving an already-Watched film adds nothing and keeps its date.
+     */
+    @Transaction
+    suspend fun updateMovieMetadataWithViewing(
+        mediaId: String,
+        title: String,
+        releaseYear: Int?,
+        purchasePrice: Double?,
+        runtimeMinutes: Int?,
+        status: WatchStatus,
+        at: Instant,
+    ): Int {
+        val before = statusOf(mediaId)
+        val rows =
+            updateMovieMetadataAtomically(
+                mediaId = mediaId,
+                title = title,
+                releaseYear = releaseYear,
+                purchasePrice = purchasePrice,
+                runtimeMinutes = runtimeMinutes,
+                status = status,
+                watchedAt = null,
+            )
+        if (rows == 0) return 0
+        if (status == WatchStatus.WATCHED && before != WatchStatus.WATCHED) insertViewing(filmViewing(mediaId, at))
+        recomputeFilmWatchedAt(mediaId)
+        return rows
+    }
 }
+
+/**
+ * What [MovieWriteDao.deleteFilmViewing] removed, and whether that delete moved the film from Watched
+ * to Watchlist ([demoted]) -- the only case in which Undo may put Watched back.
+ */
+public data class FilmViewingDeletion(
+    val log: WatchLogEntity,
+    val demoted: Boolean,
+)
+
+private fun filmViewing(
+    mediaId: String,
+    at: Instant,
+) = WatchLogEntity(id = newId(), mediaId = mediaId, episodeId = null, watchedAt = at)

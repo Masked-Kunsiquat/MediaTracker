@@ -3,18 +3,12 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
@@ -27,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.components.ViewingRow
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 
@@ -91,22 +86,11 @@ fun EpisodeSheetContent(
             } else {
                 Text(stringResource(R.string.episode_sheet_viewings_title), style = MaterialTheme.typography.titleSmall)
                 viewings.forEach { viewing ->
-                    val day = DATE_ONLY_FORMATTER.format(instantToLocalDateTime(viewing.watchedAt))
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = day, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { onEditViewing(viewing) }) {
-                            Icon(
-                                Icons.Filled.Edit,
-                                contentDescription = stringResource(R.string.episode_sheet_edit_date_cd, day),
-                            )
-                        }
-                        IconButton(onClick = { onDeleteViewing(viewing) }) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = stringResource(R.string.episode_sheet_delete_viewing_cd, day),
-                            )
-                        }
-                    }
+                    ViewingRow(
+                        viewing = viewing,
+                        onEdit = { onEditViewing(viewing) },
+                        onDelete = { onDeleteViewing(viewing) },
+                    )
                 }
                 OutlinedButton(onClick = onWatchedAgain, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.episode_sheet_watched_again))

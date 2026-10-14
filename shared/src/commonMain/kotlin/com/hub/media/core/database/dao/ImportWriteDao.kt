@@ -14,6 +14,7 @@ import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
@@ -196,6 +197,8 @@ public interface ImportWriteDao {
         viewingDeletesForEpisodes: Collection<String> = emptyList(),
         viewingInserts: List<WatchLogEntity> = emptyList(),
         touchedEpisodeIds: Collection<String> = emptyList(),
+        filmViewingDeletes: Collection<String> = emptyList(),
+        touchedFilmIds: Collection<String> = emptyList(),
     ) {
         for (insert in mediaInserts) {
             insertMediaItem(insert.mediaItem)
@@ -257,6 +260,7 @@ public interface ImportWriteDao {
         // viewing at that instant (the file marked it watched but gave no matching viewing) first
         // gets that viewing, so the recompute can never move its date backwards.
         viewingDeletesForEpisodes.forEach { deleteViewingsForEpisode(it) }
+        filmViewingDeletes.forEach { deleteFilmViewings(it) }
         viewingInserts.forEach { insertViewing(it) }
         for (episodeId in touchedEpisodeIds) {
             val episode = episodeById(episodeId) ?: continue
@@ -268,6 +272,16 @@ public interface ImportWriteDao {
             }
             recomputeEpisodeWatchedAt(episodeId)
         }
+        // Films (#192), the same rule: a Watched film's `watchedAt` gets a viewing if the file gave it
+        // none at that instant, so the recompute can never move its date backwards.
+        for (filmId in touchedFilmIds) {
+            val film = movieDetailsById(filmId) ?: continue
+            val at = film.watchedAt
+            if (film.status == WatchStatus.WATCHED && at != null && filmViewingCountAt(filmId, at) == 0) {
+                insertViewing(WatchLogEntity(id = newId(), mediaId = filmId, episodeId = null, watchedAt = at))
+            }
+            recomputeFilmWatchedAt(filmId)
+        }
     }
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -275,6 +289,28 @@ public interface ImportWriteDao {
 
     @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
     public suspend fun deleteViewingsForEpisode(episodeId: String): Int
+
+    @Query("DELETE FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL")
+    public suspend fun deleteFilmViewings(mediaId: String): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL AND watchedAt = :watchedAt",
+    )
+    public suspend fun filmViewingCountAt(
+        mediaId: String,
+        watchedAt: Instant,
+    ): Int
+
+    @Query("SELECT * FROM movie_details WHERE mediaId = :mediaId")
+    public suspend fun movieDetailsById(mediaId: String): MovieDetailsEntity?
+
+    /** The same rule as [MovieWriteDao.recomputeFilmWatchedAt]. */
+    @Query(
+        "UPDATE movie_details SET watchedAt = CASE WHEN status = 'WATCHED' THEN " +
+            "(SELECT MAX(watchedAt) FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL) " +
+            "ELSE NULL END WHERE mediaId = :mediaId",
+    )
+    public suspend fun recomputeFilmWatchedAt(mediaId: String): Int
 
     @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId AND watchedAt = :watchedAt")
     public suspend fun viewingCountAt(

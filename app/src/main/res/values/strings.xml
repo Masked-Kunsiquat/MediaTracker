@@ -221,6 +221,15 @@
     <string name="episode_sheet_mark_watched">Mark watched</string>
     <string name="episode_sheet_viewings_title">Viewings</string>
     <string name="episode_sheet_watched_again">Watched again</string>
+    <!-- Film watch history (#192) -->
+    <string name="film_watched_title">Watched %1$s</string>
+    <string name="film_watched_again_title">Watched %1$s again</string>
+    <string name="film_watched_now">Now</string>
+    <string name="film_watched_pick">Pick a date</string>
+    <string name="film_watched_pick_confirm">Save</string>
+    <string name="film_status_moved_snackbar">Moved to %1$s</string>
+    <string name="movie_history_title">History</string>
+    <string name="movie_history_not_watched">Not watched yet</string>
     <string name="episode_sheet_edit_date_cd">Edit date of the viewing on %1$s</string>
     <string name="episode_sheet_delete_viewing_cd">Delete the viewing on %1$s</string>
     <string name="mark_watched_title_again">Watched \"%1$s\" again?</string>
