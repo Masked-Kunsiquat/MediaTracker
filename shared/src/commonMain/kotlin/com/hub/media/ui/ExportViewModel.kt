@@ -20,10 +20,9 @@ import kotlinx.coroutines.launch
  * *action* with exactly the request/result shape [AddBookViewModel] already models. Both
  * ViewModels are created side by side by the Settings screen's route composable.
  *
- * @param exportDataUseCase Generates both CSV documents from a single consistent database
- *   snapshot. Typed as the narrow [ExportUseCase] interface (rather than the concrete
- *   [com.hub.media.features.portability.domain.ExportDataUseCase]) so tests can hand-roll a fake
- *   with no Room dependency (AGENTS.md §5 "No Unnecessary Dependencies" -- no mocking library).
+ * @param exporter Builds the one-file export (#196). Typed as the narrow [ArchiveExporter] interface
+ *   so tests can hand-roll a fake with no Room dependency (AGENTS.md §5 -- no mocking library).
+ * @param appVersion Recorded in the export's manifest; `shared` cannot see the app's build config.
  */
 public class ExportViewModel(
     private val exporter: ArchiveExporter,
@@ -33,7 +32,7 @@ public class ExportViewModel(
     public val uiState: StateFlow<ExportUiState> = _uiState.asStateFlow()
 
     /**
-     * Generates both CSV documents. If an export is already in flight ([ExportUiState.Loading]),
+     * Builds the export archive. If an export is already in flight ([ExportUiState.Loading]),
      * this call is silently ignored -- guards against a double-tap firing two concurrent database
      * reads. Callers must [reset] (or wait for the in-flight export to finish) before a retry is
      * accepted.
@@ -51,12 +50,6 @@ public class ExportViewModel(
         }
     }
 
-    /**
-     * Resets state back to [ExportUiState.Idle], e.g. after the app layer has finished writing
-     * (or failed to write) a [ExportUiState.Success]'s files, or after an [ExportUiState.Error]
-     * has been shown to the user.
-     */
-
     /** The screen is opening the save dialog for the built archive: see [ExportUiState.AwaitingDestination]. */
     public fun awaitDestination() {
         val success = _uiState.value as? ExportUiState.Success ?: return
@@ -73,6 +66,10 @@ public class ExportViewModel(
         return pending
     }
 
+    /**
+     * Resets state back to [ExportUiState.Idle], e.g. after an [ExportUiState.Error] has been shown
+     * to the user.
+     */
     public fun reset() {
         _uiState.value = ExportUiState.Idle
     }

@@ -5,14 +5,17 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
 import com.hub.media.features.portability.csv.ArchiveReadResult
 import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION_COLUMN
+import com.hub.media.features.portability.csv.EXPORTABLE_SETTING_KEYS
 import com.hub.media.features.portability.csv.ExportArchive
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setWeekStartDay
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Imports the one-file export. An interface so ViewModel tests can fake it without Room. */
 public interface ArchiveImporter {
@@ -88,37 +91,23 @@ public class ImportArchiveUseCase(
         var restored = 0
         if (restoreSettings) {
             for ((key, value) in read.manifest.settings) {
+                if (key !in EXPORTABLE_SETTING_KEYS) {
+                    notes += "Setting \"$key\" is not restored by this app"
+                    continue
+                }
+                // Each setting on its own: the library is already imported, so one failing write must
+                // cost that setting, not the whole result.
                 val applied =
-                    when (key) {
-                        "include_specials" ->
-                            value.toBooleanStrictOrNull()?.let {
-                                settingsRepository
-                                    .setIncludeSpecials(
-                                        it,
-                                    )
-                            }
-                        "week_start_day" ->
-                            WeekStartDay.entries.firstOrNull { it.name == value }?.let {
-                                settingsRepository
-                                    .setWeekStartDay(
-                                        it,
-                                    )
-                            }
-                        "log_verbosity" ->
-                            LogLevel.entries.firstOrNull { it.name == value }?.let {
-                                settingsRepository
-                                    .setLogVerbosity(
-                                        it,
-                                    )
-                            }
-                        else -> {
-                            notes += "Setting \"$key\" is not restored by this app"
-                            continue
-                        }
+                    try {
+                        restoreSetting(key, value)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logger.warn(TAG, e) { "Restoring setting $key failed" }
+                        notes += "Setting \"$key\" could not be saved and was not restored"
+                        continue
                     }
-                if (applied ==
-                    null
-                ) {
+                if (!applied) {
                     notes += "Setting \"$key\" had an invalid value and was not restored"
                 } else {
                     restored++
@@ -128,6 +117,28 @@ public class ImportArchiveUseCase(
         }
         return Resource.Success(summary.copy(notes = summary.notes + notes, settingsRestored = restored))
     }
+
+    /** Applies one allowlisted setting through its typed setter. @return `false` when [value] is invalid. */
+    private suspend fun restoreSetting(
+        key: String,
+        value: String,
+    ): Boolean =
+        when (key) {
+            "include_specials" ->
+                value.toBooleanStrictOrNull()?.also { settingsRepository.setIncludeSpecials(it) } !=
+                    null
+            "week_start_day" ->
+                WeekStartDay.entries.firstOrNull { it.name == value }?.also {
+                    settingsRepository.setWeekStartDay(
+                        it,
+                    )
+                } !=
+                    null
+            "log_verbosity" ->
+                LogLevel.entries.firstOrNull { it.name == value }?.also { settingsRepository.setLogVerbosity(it) } !=
+                    null
+            else -> false
+        }
 
     private companion object {
         const val TAG = "ImportArchive"

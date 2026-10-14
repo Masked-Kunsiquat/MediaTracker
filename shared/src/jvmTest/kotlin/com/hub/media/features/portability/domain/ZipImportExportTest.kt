@@ -2,6 +2,8 @@ package com.hub.media.features.portability.domain
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.MediaRepository
+import com.hub.media.core.database.dao.AppSettingsDao
+import com.hub.media.core.database.entities.AppSettingEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.LogLevel
@@ -266,6 +268,37 @@ class ZipImportExportTest {
             assertEquals(0xFEFF, withBom.first().code, "positive control: the BOM is really there")
             ok(importer(target).import(withBom.encodeToByteArray(), DuplicatePolicy.SKIP, false))
             assertEquals(listOf("Fleabag", "Heat"), titles(target))
+        }
+
+    @Test
+    fun aSettingThatFailsToSave_isANote_andTheImportStillSucceeds() =
+        runTest {
+            // CodeRabbit (#199): the library is already imported when settings are restored, so a failing
+            // settings write must not throw that away.
+            seed()
+            settings(source).setIncludeSpecials(false)
+            val zip = zip()
+            val failingSettings =
+                SettingsRepository(
+                    object : AppSettingsDao by target.appSettingsDao() {
+                        override suspend fun upsert(setting: AppSettingEntity): Unit =
+                            throw IllegalStateException("disk full")
+                    },
+                )
+            val importer =
+                ImportArchiveUseCase(
+                    ImportDataUseCase(
+                        MediaRepository(target),
+                        BookRepository(target),
+                        ReadingSessionRepository(target),
+                        ImportWriteRepository(target),
+                    ),
+                    failingSettings,
+                )
+            val summary = ok(importer.import(zip, DuplicatePolicy.SKIP, restoreSettings = true))
+            assertEquals(listOf("Fleabag", "Heat"), titles(target), "positive control: the library was imported")
+            assertEquals(0, summary.settingsRestored)
+            assertTrue(summary.notes.any { "include_specials" in it }, "notes: ${summary.notes}")
         }
 
     @Test
