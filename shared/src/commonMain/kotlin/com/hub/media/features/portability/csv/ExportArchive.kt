@@ -31,6 +31,9 @@ public object ExportArchive {
     public const val EPISODES: String = "episodes_export.csv"
     public const val WATCH_LOGS: String = "watch_logs_export.csv"
 
+    /** The only entries an import reads; anything else in the zip is skipped unread. */
+    private val ENTRIES = setOf(MANIFEST, LIBRARY, READING_LOGS, EPISODES, WATCH_LOGS)
+
     public const val NOT_OURS: String = "Not a Media Tracker export"
     public const val NEWER: String =
         "This export was made by a newer version of the app — update it to import this file"
@@ -58,10 +61,13 @@ public object ExportArchive {
      * Reads a picked archive, refusing anything that is not one of ours, or is newer than this app
      * understands, **before** a single row is imported. Entries match by exact name at the root.
      */
-    public fun decode(bytes: ByteArray): ArchiveReadResult {
+    public fun decode(
+        bytes: ByteArray,
+        maxEntryBytes: Long = MAX_ENTRY_BYTES,
+    ): ArchiveReadResult {
         val entries =
             try {
-                unzipEntries(bytes)
+                unzipEntries(bytes, wanted = ENTRIES, maxEntryBytes = maxEntryBytes)
             } catch (e: Exception) {
                 return ArchiveReadResult.Refused(UNREADABLE)
             }

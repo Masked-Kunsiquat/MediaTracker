@@ -25,6 +25,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.export.MAX_IMPORT_FILE_BYTES
+import com.github.maskedkunisquat.mediatracker.export.readAtMost
 import com.github.maskedkunisquat.mediatracker.export.readCsvFromUri
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportRejection
@@ -69,10 +71,16 @@ internal fun rememberCsvImportLauncher(
                 return@rememberLauncherForActivityResult
             }
             coroutineScope.launch {
-                // Off the main thread: an export of a large library is a few megabytes.
+                // Off the main thread: an export of a large library is a few megabytes. Bounded, so a
+                // huge file picked by mistake is refused rather than read whole into memory.
                 val bytes =
                     withContext(Dispatchers.IO) {
-                        runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+                        runCatching {
+                            context.contentResolver
+                                .openInputStream(
+                                    uri,
+                                )?.use { readAtMost(it, MAX_IMPORT_FILE_BYTES) }
+                        }.getOrNull()
                     }
                 if (bytes == null) {
                     snackbarHostState.showSnackbar(importFailureMessage)

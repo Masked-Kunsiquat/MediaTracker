@@ -46,7 +46,7 @@ public class ImportArchiveUseCase(
             // A lone CSV: only a library export qualifies. Anything else is refused outright rather than
             // fed to the importer to be rejected row by row.
             val text = bytes.decodeToString()
-            if (!text.removePrefix("").startsWith(CSV_SCHEMA_VERSION_COLUMN)) {
+            if (!text.removePrefix("\uFEFF").startsWith(CSV_SCHEMA_VERSION_COLUMN)) {
                 return Resource.Error(ExportArchive.NOT_OURS)
             }
             return importUseCase.execute(text, null, null, duplicatePolicy, null)

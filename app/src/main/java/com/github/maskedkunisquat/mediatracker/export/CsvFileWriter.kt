@@ -70,3 +70,26 @@ internal fun deleteCreatedDocument(
 ) {
     runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
 }
+
+/** The largest file the one-dialog import reads (#196): far beyond any real export. */
+internal const val MAX_IMPORT_FILE_BYTES: Long = 64L * 1024 * 1024
+
+/**
+ * Reads [input] whole if it holds at most [max] bytes, or returns `null` as soon as it proves larger,
+ * having held no more than [max] bytes. A picked file of any size must not be able to exhaust memory.
+ */
+internal fun readAtMost(
+    input: java.io.InputStream,
+    max: Long,
+): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8 * 1024)
+    var total = 0L
+    while (true) {
+        val n = input.read(buffer)
+        if (n < 0) return out.toByteArray()
+        total += n
+        if (total > max) return null
+        out.write(buffer, 0, n)
+    }
+}

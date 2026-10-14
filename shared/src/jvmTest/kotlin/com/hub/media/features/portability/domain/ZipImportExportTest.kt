@@ -230,7 +230,7 @@ class ZipImportExportTest {
         runTest {
             seed()
             // As a spreadsheet saves it: a BOM, and LF endings where the export wrote CRLF.
-            val resaved = rewrite(zip(), entry = ExportArchive.LIBRARY to { "" + it.replace("\r\n", "\n") })
+            val resaved = rewrite(zip(), entry = ExportArchive.LIBRARY to { "\uFEFF" + it.replace("\r\n", "\n") })
             val summary = ok(importer(target).import(resaved, DuplicatePolicy.SKIP, false))
             assertEquals(emptyList(), summary.notes)
             assertEquals(listOf("Fleabag", "Heat"), titles(target))
@@ -249,6 +249,22 @@ class ZipImportExportTest {
                     ).execute() as Resource.Success
                 ).data.libraryCsv
             ok(importer(target).import(library.encodeToByteArray(), DuplicatePolicy.SKIP, false))
+            assertEquals(listOf("Fleabag", "Heat"), titles(target))
+        }
+
+    @Test
+    fun aLoneLibraryCsvWithABom_imports() =
+        runTest {
+            // Excel's "CSV UTF-8" adds a byte-order mark (final review, #196).
+            seed()
+            val library =
+                (
+                    ExportDataUseCase(MediaRepository(source), BookRepository(source), ReadingSessionRepository(source))
+                        .execute() as Resource.Success
+                ).data.libraryCsv
+            val withBom = "\uFEFF" + library
+            assertEquals(0xFEFF, withBom.first().code, "positive control: the BOM is really there")
+            ok(importer(target).import(withBom.encodeToByteArray(), DuplicatePolicy.SKIP, false))
             assertEquals(listOf("Fleabag", "Heat"), titles(target))
         }
 

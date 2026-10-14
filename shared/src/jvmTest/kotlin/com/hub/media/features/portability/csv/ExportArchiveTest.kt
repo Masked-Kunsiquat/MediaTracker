@@ -66,7 +66,7 @@ class ExportArchiveTest {
     fun dataRowCount_countsRecordsNotLines() {
         assertEquals(2, ExportArchive.dataRowCount(bundle.libraryCsv), "a quoted newline is one record")
         assertEquals(0, ExportArchive.dataRowCount(bundle.readingLogsCsv))
-        assertEquals(1, ExportArchive.dataRowCount("a,b\n1,2\n"), "a BOM and LF endings do not change the count")
+        assertEquals(1, ExportArchive.dataRowCount("\uFEFFa,b\n1,2\n"), "a BOM and LF endings do not change the count")
     }
 
     @Test
@@ -115,6 +115,37 @@ class ExportArchiveTest {
         assertNull(read.readingLogsCsv)
         assertNull(read.episodesCsv)
         assertNull(read.watchLogsCsv)
+    }
+
+    @Test
+    fun anOversizedWantedEntry_isRefused_notInflated() {
+        // A zip bomb (final review, #196): a small archive that inflates past the cap is refused, not read.
+        val bomb =
+            zipEntries(
+                listOf(
+                    ExportArchive.MANIFEST to manifestBytes(),
+                    ExportArchive.LIBRARY to ByteArray(10_000),
+                ),
+            )
+        assertTrue(bomb.size < 10_000, "positive control: the entry compresses well below its inflated size")
+        assertEquals(
+            ArchiveReadResult.Refused(ExportArchive.UNREADABLE),
+            ExportArchive.decode(bomb, maxEntryBytes = 1_000),
+        )
+    }
+
+    @Test
+    fun unrelatedEntries_areSkipped_notInflated() {
+        // An unrelated, oversized entry -- a photo in a backup zip -- is never read, so it cannot exhaust memory.
+        val zip =
+            zipEntries(
+                listOf(
+                    ExportArchive.MANIFEST to manifestBytes(),
+                    ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray(),
+                    "photos/huge.jpg" to ByteArray(10_000),
+                ),
+            )
+        assertIs<ArchiveReadResult.Read>(ExportArchive.decode(zip, maxEntryBytes = 1_000))
     }
 
     @Test
