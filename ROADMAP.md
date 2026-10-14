@@ -70,15 +70,17 @@ single list below and reordering is a one-line edit there.
    with an exact-date Undo on untick
    ([#131](https://github.com/Masked-Kunsiquat/MediaTracker/issues/131), part A of
    [#153](https://github.com/Masked-Kunsiquat/MediaTracker/issues/153)), restyled as TV Time-style
-   check-circles. Part B, [#90](https://github.com/Masked-Kunsiquat/MediaTracker/issues/90), followed
-   (unreleased): "Watched again" writing `watch_logs`, a per-episode viewing history with edit and
-   delete, and watch logs in CSV. Unticking removes an episode's viewings, with an Undo that restores
-   them exactly. **Next is the film side,
-   [#192](https://github.com/Masked-Kunsiquat/MediaTracker/issues/192)**, so films and episodes ship
-   watch history in the same release; then that release, then
-   [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81)'s remaining refactors (doing the
-   ViewModel-factory rewrite after #192 avoids reworking that file twice). #122 is unblocked by #88
-   and small now.
+   check-circles. Watch history followed in `v0.24.0`: "Watched again", a viewing history with edit
+   and delete, and viewings in the CSV, for episodes
+   ([#90](https://github.com/Masked-Kunsiquat/MediaTracker/issues/90)) and films
+   ([#192](https://github.com/Masked-Kunsiquat/MediaTracker/issues/192)). **Next, in order:**
+   [#162](https://github.com/Masked-Kunsiquat/MediaTracker/issues/162), narrowed to the backup
+   picker's lost state and a startup sweep of leaked temp files; then
+   [#196](https://github.com/Masked-Kunsiquat/MediaTracker/issues/196), one `.zip` instead of four
+   CSV files and four pickers, which also removes the rest of #162; then
+   [#173](https://github.com/Masked-Kunsiquat/MediaTracker/issues/173), an edit screen for TV
+   shows; then [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81)'s remaining
+   refactors. #122 is unblocked by #88 and small now.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 
