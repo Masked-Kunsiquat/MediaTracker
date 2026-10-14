@@ -112,6 +112,8 @@ class MediaTrackerApplication : Application() {
         // Viewings are the truth (#90): give any watched episode without a viewing one. Idempotent and
         // off the main thread; a restore restarts the process, so restored backups pass through here.
         loggingScope.launch { appContainer.ensureViewingsUseCase.execute() }
+        // A backup or restore interrupted by process death leaves its temp file behind (#162).
+        loggingScope.launch { appContainer.sweepStaleTempFilesUseCase(cacheDir.absolutePath).execute() }
         // The first entry in every session's log, and the anchor everything after it is read
         // against: which build was running when whatever comes next went wrong. Emitted after
         // configure() so it goes through the real sink rather than being dropped by the

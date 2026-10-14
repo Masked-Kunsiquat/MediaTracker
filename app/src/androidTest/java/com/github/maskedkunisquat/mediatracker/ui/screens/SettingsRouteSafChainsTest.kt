@@ -9,6 +9,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -65,6 +66,9 @@ class SettingsRouteSafChainsTest {
     ): String = instrumentationContext.getString(id)
 
     private lateinit var registry: RecordingActivityResultRegistry
+
+    /** Hosts the route, so a test can recreate it mid-chain the way a rotation inside a picker does. */
+    private val restorationTester by lazy { StateRestorationTester(composeRule) }
     private lateinit var workDir: File
 
     /** Temp files that existed before this test, so [tearDown] only deletes what the test created. */
@@ -81,7 +85,7 @@ class SettingsRouteSafChainsTest {
         restoreIncomingBefore = restoreIncomingFiles().toSet()
         stagedBackupBefore = stagedBackupFiles().toSet()
 
-        composeRule.setContent {
+        restorationTester.setContent {
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides FakeRegistryOwner(registry)) {
                 SettingsScreenRoute(
                     appContainer = application.appContainer,
@@ -468,6 +472,30 @@ class SettingsRouteSafChainsTest {
         answerLatestLaunch(null)
 
         awaitTextVisible(string(R.string.backup_cancelled_message))
+        awaitFileGone(staged)
+    }
+
+    @Test
+    fun backup_recreatedWhileThePickerIsOpen_writesTheBackup_andOpensNoSecondPicker() {
+        // #162: a rotation inside the destination picker recreates the screen. The staged snapshot used
+        // to live in the composable and was lost (an empty file, a leaked snapshot), and the screen
+        // re-opened the picker because the ViewModel was still at Success.
+        val before = stagedBackupFiles()
+
+        scrollToAndClick(string(R.string.settings_backup_button))
+        awaitLaunchCount(1)
+        val staged = (stagedBackupFiles() - before.toSet()).singleOrNull()
+        checkNotNull(staged) { "expected exactly one new staged backup file" }
+
+        restorationTester.emulateSavedInstanceStateRestore()
+        composeRule.waitForIdle()
+        assertEquals("a recreated screen must not open the picker again", 1, registry.launches.size)
+
+        val destination = File(workDir, "after-recreation.db")
+        answerLatestLaunch(Uri.fromFile(destination))
+
+        awaitTextVisible(string(R.string.backup_success_message))
+        assertTrue("backup destination file was not written", destination.exists() && destination.length() > 0)
         awaitFileGone(staged)
     }
 

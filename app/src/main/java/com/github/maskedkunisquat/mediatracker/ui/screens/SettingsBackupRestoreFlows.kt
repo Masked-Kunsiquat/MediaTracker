@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -17,7 +16,6 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.export.copyFileToUri
 import com.github.maskedkunisquat.mediatracker.export.copyUriToFile
 import com.github.maskedkunisquat.mediatracker.restartApp
-import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackupUiState
 import com.hub.media.ui.BackupViewModel
@@ -50,18 +48,19 @@ internal fun DatabaseBackupFlow(
     val backupFailureMessage = stringResource(R.string.backup_failure_message)
     val backupCancelledMessage = stringResource(R.string.backup_cancelled_message)
 
+    val backupExpiredMessage = stringResource(R.string.backup_expired_message)
+
     // ---- Backup (ROADMAP Task 8 Phase C) ------------------------------------------------------
-    // Holds the staged snapshot's path between BackupUiState.Success and the SAF destination
-    // picker below, mirroring pendingBundle's export-side role.
-    var pendingBackupResult by remember { mutableStateOf<BackupResult?>(null) }
+    // The staged snapshot waits for its destination in the ViewModel (BackupUiState.AwaitingDestination),
+    // not in this composable (#162): a rotation inside the picker recreates the activity, which
+    // used to lose it here -- writing an empty file, leaking the staged one, and re-opening the
+    // picker because the ViewModel was still at Success.
 
     val backupDestinationLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
         ) { uri ->
-            val result = pendingBackupResult
-            pendingBackupResult = null
-            backupViewModel.reset()
+            val result = backupViewModel.takePendingResult()
             coroutineScope.launch {
                 try {
                     // Off the main thread: copying the staged database snapshot via SAF is blocking
@@ -69,7 +68,13 @@ internal fun DatabaseBackupFlow(
                     val message =
                         when {
                             uri == null -> backupCancelledMessage
-                            result == null -> backupFailureMessage
+                            // Nothing staged: the process died while the picker was open. The picker
+                            // has already created an empty file there; remove it rather than leave a
+                            // backup that holds nothing. The staged file goes to the startup sweep.
+                            result == null -> {
+                                withContext(Dispatchers.IO) { deleteCreatedDocument(context, uri) }
+                                backupExpiredMessage
+                            }
                             withContext(
                                 Dispatchers.IO,
                             ) { copyFileToUri(context, uri, result.stagedFilePath) } -> backupSuccessMessage
@@ -94,14 +99,14 @@ internal fun DatabaseBackupFlow(
     LaunchedEffect(backupUiState) {
         when (val state = backupUiState) {
             is BackupUiState.Success -> {
-                pendingBackupResult = state.result
+                backupViewModel.awaitDestination()
                 backupDestinationLauncher.launch(state.result.suggestedFileName)
             }
             is BackupUiState.Error -> {
                 snackbarHostState.showSnackbar(state.message)
                 backupViewModel.reset()
             }
-            BackupUiState.Idle, BackupUiState.Loading -> Unit
+            BackupUiState.Idle, BackupUiState.Loading, is BackupUiState.AwaitingDestination -> Unit
         }
     }
 }
@@ -262,4 +267,12 @@ internal fun RestoreOutcome(
             },
         )
     }
+}
+
+/** Deletes a document the SAF picker created, best-effort: a provider may not support deletion. */
+private fun deleteCreatedDocument(
+    context: android.content.Context,
+    uri: android.net.Uri,
+) {
+    runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
 }

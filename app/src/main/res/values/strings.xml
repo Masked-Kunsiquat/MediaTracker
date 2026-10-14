@@ -375,6 +375,7 @@
     <string name="settings_backup_button">Back up now</string>
     <string name="backup_success_message">Backup saved successfully</string>
     <string name="backup_failure_message">Backup failed — nothing was saved</string>
+    <string name="backup_expired_message">The backup expired before it was saved — please start it again</string>
     <string name="backup_cancelled_message">Backup cancelled</string>
 
     <!-- SettingsScreen: .sqlite restore (ROADMAP Task 8 Phase C) -->

@@ -22,6 +22,16 @@ public sealed class BackupUiState {
     ) : BackupUiState()
 
     /**
+     * The destination picker is open for [result] (#162). Held here, in the ViewModel, rather than
+     * in the screen, because the ViewModel survives the activity being recreated while the picker is
+     * open (a rotation inside it): the picker's result still finds the staged file, and a recreated
+     * screen -- which launches the picker on [Success] -- finds nothing to launch a second time.
+     */
+    public data class AwaitingDestination(
+        val result: BackupResult,
+    ) : BackupUiState()
+
+    /**
      * Backup failed before any snapshot was produced.
      *
      * @property message A user-facing/diagnostic description of the failure.

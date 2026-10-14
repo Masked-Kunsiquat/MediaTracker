@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
+import com.hub.media.features.portability.domain.BackupResult
 import com.hub.media.features.portability.domain.DatabaseBackupUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,24 @@ public class BackupViewModel(
      * Resets state back to [BackupUiState.Idle], e.g. after the app layer has finished writing (or
      * failed to write) a [BackupUiState.Success]'s staged file to its SAF destination.
      */
+
+    /** The screen is opening the destination picker for the staged snapshot: see [BackupUiState.AwaitingDestination]. */
+    public fun awaitDestination() {
+        val success = _uiState.value as? BackupUiState.Success ?: return
+        _uiState.value = BackupUiState.AwaitingDestination(success.result)
+    }
+
+    /**
+     * Hands the staged snapshot to the picker's result, once, and resets. `null` when nothing is
+     * awaiting a destination -- after process death the ViewModel is new, and the staged file is
+     * left for the startup sweep.
+     */
+    public fun takePendingResult(): BackupResult? {
+        val pending = (_uiState.value as? BackupUiState.AwaitingDestination)?.result
+        _uiState.value = BackupUiState.Idle
+        return pending
+    }
+
     public fun reset() {
         _uiState.value = BackupUiState.Idle
     }
