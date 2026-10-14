@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Importing an export can now also restore your settings (Include specials, week start, log
+  detail) — tick *Also restore settings*. API keys are never exported.
+
+### Changed
+
+- **Export now saves one `.zip` file** — your library, reading logs, episodes and watch history
+  together — instead of four separate files and four save dialogs, and import reads it back in one
+  step. A single library CSV still imports.
+
 ### Fixed
 
 - Rotating the phone while choosing where to save a database backup no longer produces an empty
@@ -17,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A startup sweep removes backup snapshots and restore copies left behind when the app was ended
   mid-flow (`SweepStaleTempFilesUseCase`).
+- Export archive format v1 (#196): `manifest.json` (format, version, per-file row counts,
+  allowlisted settings) plus the four schema-v6 CSVs, written and read with `java.util.zip` through
+  an `expect`/`actual`. `ExportArchiveUseCase` and `ImportArchiveUseCase` wrap the unchanged CSV use
+  cases.
 
 ## [0.24.0] - 2026-10-13
 

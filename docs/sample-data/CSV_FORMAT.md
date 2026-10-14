@@ -3,21 +3,76 @@
 Everything needed to generate importable CSVs for this app, without reading the source. Written to
 be handed to a generator (human or model) as a complete brief.
 
-The app exports and imports **three files**, all optional and independently selectable at import
-time, but two of them depend on the third: `reading_logs_export.csv` sessions attach to a book, and
-`episodes_export.csv` rows attach to a show, from `library_export.csv` — so if you want reading
-history or episode state to actually land somewhere, generate all the files that reference each
-other as a matched set.
+The app's data is **four CSV files**. Since #196 they travel together in **one `.zip`** with a
+`manifest.json` (see [the container](#container-the-export-zip) below). The CSV formats themselves
+are unchanged. Two of the files depend on a third: `reading_logs_export.csv` sessions attach to a
+book, and `episodes_export.csv` rows attach to a show, from `library_export.csv`; viewings in
+`watch_logs_export.csv` attach to an episode or a film. So if you want history to land somewhere,
+generate the files that reference each other as a matched set.
 
 - `library_export.csv` — every media item: books, movies and shows in one file, distinguished by
   `type`
 - `reading_logs_export.csv` — reading sessions, linked to a book by `media_id`
 - `episodes_export.csv` — a show's episodes, linked to the show by `media_id`
+- `watch_logs_export.csv` — every viewing of an episode or a film (#90, #192)
 
 Until Issue #106, `library_export.csv` wrote movie and show columns that nothing read back, and
 `episodes_export.csv` had no importer at all — an export-then-reimport of a library with films or
 shows silently came back books-only. Both gaps are closed now: the importer reads every row of all
 three files.
+
+## Container: the export `.zip`
+
+Export writes **one file**, `media-tracker-export-YYYY-MM-DD.zip`, and import reads it back from a
+single dialog. Its entries, at the root:
+
+```
+manifest.json
+library_export.csv
+reading_logs_export.csv
+episodes_export.csv
+watch_logs_export.csv
+```
+
+Each CSV is exactly the file described below; only `manifest.json` is new. To hand-build an
+importable zip, write the CSVs, write a manifest, and zip all five with no folder inside.
+
+### `manifest.json`
+
+```json
+{
+  "format": "media-tracker-export",
+  "formatVersion": 1,
+  "appVersion": "0.25.0",
+  "exportedAt": "2026-10-14T03:00:00Z",
+  "files": [
+    { "name": "library_export.csv", "csvSchemaVersion": 6, "rows": 42 }
+  ],
+  "settings": { "include_specials": "true", "week_start_day": "MONDAY", "log_verbosity": "INFO" }
+}
+```
+
+- `format` must be `media-tracker-export`, and `formatVersion` must be **at most** what the app
+  understands (`1` today). Unknown extra fields are ignored.
+- `files[].rows` is the number of **data rows**, excluding the header. On import, a file whose actual
+  count differs is reported as a **note** in the import summary, not an error, because editing a CSV
+  in a spreadsheet and re-zipping is fine.
+- `settings` holds only `include_specials` (`true`/`false`), `week_start_day` (`MONDAY`…) and
+  `log_verbosity` (`DEBUG`/`INFO`/`WARN`/`ERROR`), and only those that were ever set. **API keys are
+  never exported.** Import applies them only when *Also restore settings* is ticked. An unknown key
+  or an invalid value is skipped and noted.
+
+### What import refuses (nothing is written)
+
+- A zip with no `manifest.json`, an unreadable one, or one with the wrong `format`: *"Not a Media
+  Tracker export"*.
+- A newer `formatVersion`: *"This export was made by a newer version of the app — update it to
+  import this file"*.
+- No `library_export.csv`: *"This export has no library_export.csv"*. The other three files are
+  optional.
+
+**A lone CSV** can still be picked instead of a zip. It is imported as `library_export.csv` if it
+starts with the `csv_schema_version` header; anything else is refused.
 
 ## Rules that apply to every file
 
@@ -27,9 +82,9 @@ three files.
   negotiable — the reader matches the header against an expected list and fails the whole file if
   it does not match.
 - **`csv_schema_version` is the first column of every data row**, not just the header, and its
-  value is `5`. The marker is shared across all three files, so it moves when any one of them
+  value is `6`. The marker is shared across all four files, so it moves when any one of them
   changes shape, even if a given file's own columns didn't move. A generated file should always
-  write `5`; older values (`1`–`4`) are still accepted on import for a real historical export, via
+  write `6`; older values (`1`–`5`) are still accepted on import for a real historical export, via
   padding adapters keyed to each file's older header shape, but there is no reason to hand-write
   one.
 - **Empty means "unknown"** for every optional field. Write an empty field, never `null`, `N/A`,
