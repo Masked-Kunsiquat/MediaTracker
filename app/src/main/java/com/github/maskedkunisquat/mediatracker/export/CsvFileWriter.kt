@@ -40,3 +40,56 @@ internal fun writeCsvToUri(
     } catch (e: IOException) {
         false
     }
+
+/** [writeCsvToUri] for bytes: the one-file export's zip (#196). Same contract. */
+internal fun writeBytesToUri(
+    context: Context,
+    uri: Uri,
+    bytes: ByteArray,
+): Boolean =
+    try {
+        val stream = context.contentResolver.openOutputStream(uri)
+        if (stream == null) {
+            false
+        } else {
+            stream.use { it.write(bytes) }
+            true
+        }
+    } catch (e: IOException) {
+        false
+    }
+
+/**
+ * Deletes a document a `CreateDocument` dialog created, best-effort: a provider may not support
+ * deletion. For a save whose content was lost to process death (#162, #196), so the user is not
+ * left with an empty file that looks like a backup or an export.
+ */
+internal fun deleteCreatedDocument(
+    context: Context,
+    uri: Uri,
+) {
+    runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+}
+
+/** The largest file the one-dialog import reads (#196): far beyond any real export. */
+internal const val MAX_IMPORT_FILE_BYTES: Long = 64L * 1024 * 1024
+
+/**
+ * Reads [input] whole if it holds at most [max] bytes, or returns `null` as soon as it proves larger,
+ * having held no more than [max] bytes. A picked file of any size must not be able to exhaust memory.
+ */
+internal fun readAtMost(
+    input: java.io.InputStream,
+    max: Long,
+): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8 * 1024)
+    var total = 0L
+    while (true) {
+        val n = input.read(buffer)
+        if (n < 0) return out.toByteArray()
+        total += n
+        if (total > max) return null
+        out.write(buffer, 0, n)
+    }
+}

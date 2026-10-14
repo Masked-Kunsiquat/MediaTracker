@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
+import com.hub.media.features.portability.domain.ArchiveImporter
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.launch
  */
 public class ImportViewModel(
     private val importDataUseCase: ImportUseCase,
+    private val archiveImporter: ArchiveImporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<ImportUiState>(ImportUiState.Idle)
     public val uiState: StateFlow<ImportUiState> = _uiState.asStateFlow()
@@ -60,6 +62,29 @@ public class ImportViewModel(
                             watchLogsCsv,
                         )
                 ) {
+                    is Resource.Success -> ImportUiState.Success(result.data)
+                    is Resource.Error -> ImportUiState.Error(result.message)
+                }
+        }
+    }
+
+    /**
+     * Imports what the one-dialog import picked (#196): an export `.zip`, or a lone library CSV. Shares
+     * [uiState] and the double-tap guard with [importData].
+     *
+     * @param restoreSettings The user's "Also restore settings" choice; off unless they ticked it.
+     */
+    public fun importArchive(
+        bytes: ByteArray,
+        duplicatePolicy: DuplicatePolicy,
+        restoreSettings: Boolean,
+    ) {
+        if (_uiState.value is ImportUiState.Loading) return
+
+        _uiState.value = ImportUiState.Loading
+        viewModelScope.launch {
+            _uiState.value =
+                when (val result = archiveImporter.import(bytes, duplicatePolicy, restoreSettings)) {
                     is Resource.Success -> ImportUiState.Success(result.data)
                     is Resource.Error -> ImportUiState.Error(result.message)
                 }

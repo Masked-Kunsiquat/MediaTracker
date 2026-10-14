@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -144,10 +145,14 @@ fun SettingsScreenRoute(
     // writes to the user's real library.
     var duplicatePolicy by remember { mutableStateOf(DuplicatePolicy.SKIP) }
 
+    // "Also restore settings" (#196): off by default, so an import changes library data only.
+    var restoreSettings by rememberSaveable { mutableStateOf(false) }
+
     // Every flow below is called unconditionally. Each owns its own coroutine scope and launchers, so
     // gating one behind an `if` would cancel its in-flight work, and drop its registered picker, on its
     // own schedule rather than the screen's.
-    val launchCsvImport = rememberCsvImportLauncher(importViewModel, duplicatePolicy, snackbarHostState)
+    val launchCsvImport =
+        rememberCsvImportLauncher(importViewModel, duplicatePolicy, restoreSettings, snackbarHostState)
 
     // ---- Goodreads import (ROADMAP Task 8 Phase D) ---------------------------------------------
     // A deliberately separate action from the CSV import above (own duplicate-policy choice, own
@@ -245,6 +250,8 @@ fun SettingsScreenRoute(
         importInProgress = importUiState is ImportUiState.Loading,
         duplicatePolicy = duplicatePolicy,
         onDuplicatePolicyChange = { duplicatePolicy = it },
+        restoreSettings = restoreSettings,
+        onRestoreSettingsChange = { restoreSettings = it },
         onImportClick = launchCsvImport,
         goodreadsDuplicatePolicy = goodreadsDuplicatePolicy,
         onGoodreadsDuplicatePolicyChange = { goodreadsDuplicatePolicy = it },

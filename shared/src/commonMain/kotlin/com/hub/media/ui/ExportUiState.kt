@@ -1,6 +1,6 @@
 package com.hub.media.ui
 
-import com.hub.media.features.portability.domain.CsvExportBundle
+import com.hub.media.features.portability.domain.ExportArchiveFile
 
 /** UI state for the Settings screen's data-export action (ROADMAP Task 8 Phase A). */
 public sealed class ExportUiState {
@@ -10,18 +10,18 @@ public sealed class ExportUiState {
     /** An export is in flight; further calls to [ExportViewModel.exportData] are ignored. */
     public data object Loading : ExportUiState()
 
-    /**
-     * The CSV documents were generated successfully. The app layer is expected to write
-     * [bundle]'s three documents to files (SAF `ACTION_CREATE_DOCUMENT`) and then call
-     * [ExportViewModel.reset] once that follow-up write completes (success or failure) --
-     * generation succeeding here says nothing about whether the write-to-disk step also
-     * succeeds.
-     *
-     * @property bundle The generated `library_export.csv`, `reading_logs_export.csv`, and
-     *   `episodes_export.csv` text.
-     */
+    /** The archive is built; the screen opens the save dialog for it. */
     public data class Success(
-        val bundle: CsvExportBundle,
+        val file: ExportArchiveFile,
+    ) : ExportUiState()
+
+    /**
+     * The save dialog is open for [file] (#196). Held in the ViewModel, which survives a rotation
+     * inside the dialog, so the result still finds the bytes and a recreated screen -- which opens the
+     * dialog on [Success] -- finds nothing to open a second time. The #162 pattern.
+     */
+    public data class AwaitingDestination(
+        val file: ExportArchiveFile,
     ) : ExportUiState()
 
     /**

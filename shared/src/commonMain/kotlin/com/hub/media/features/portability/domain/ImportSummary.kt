@@ -102,4 +102,6 @@ public data class ImportSummary(
     public val viewingsImported: Int = 0,
     /** Viewings already present (same episode and moment) and therefore not imported again. */
     public val viewingsSkipped: Int = 0,
+    /** How many settings the import restored from the export's manifest (#196); 0 unless asked to. */
+    public val settingsRestored: Int = 0,
 )
