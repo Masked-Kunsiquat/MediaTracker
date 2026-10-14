@@ -2,6 +2,7 @@ package com.github.maskedkunisquat.mediatracker.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.github.maskedkunisquat.mediatracker.BuildConfig
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AddTVShowViewModel
@@ -177,7 +178,7 @@ class ExportViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<ExportViewModel>(
         ExportViewModel::class.java,
-        { ExportViewModel(appContainer.exportDataUseCase) },
+        { ExportViewModel(appContainer.exportArchiveUseCase, BuildConfig.VERSION_NAME) },
     )
 
 /**
@@ -191,7 +192,7 @@ class ImportViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<ImportViewModel>(
         ImportViewModel::class.java,
-        { ImportViewModel(appContainer.importDataUseCase) },
+        { ImportViewModel(appContainer.importDataUseCase, appContainer.importArchiveUseCase) },
     )
 
 /**

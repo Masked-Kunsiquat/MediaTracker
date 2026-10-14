@@ -70,6 +70,8 @@ class SettingsScreenOcclusionTest {
             importInProgress = false,
             duplicatePolicy = DuplicatePolicy.SKIP,
             onDuplicatePolicyChange = {},
+            restoreSettings = false,
+            onRestoreSettingsChange = {},
             onImportClick = {},
             goodreadsDuplicatePolicy = DuplicatePolicy.SKIP,
             onGoodreadsDuplicatePolicyChange = {},

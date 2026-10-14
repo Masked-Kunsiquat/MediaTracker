@@ -23,6 +23,8 @@ import com.github.maskedkunisquat.mediatracker.MediaTrackerApplication
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.hub.media.core.util.Resource
+import com.hub.media.features.portability.csv.ArchiveReadResult
+import com.hub.media.features.portability.csv.ExportArchive
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -155,14 +157,12 @@ class SettingsRouteSafChainsTest {
     }
 
     /**
-     * A real export of the current library, produced directly (bypassing the SAF chain) so the
-     * import scenarios below have something to import that changes nothing: with the default
-     * (SKIP) duplicate policy, importing the app's own current data back into itself is a no-op.
+     * A real export of the current library as the one-file zip (#196), produced directly rather than
+     * through the dialog, so the import scenarios have something to import that changes nothing: with
+     * the default (SKIP) duplicate policy, importing the app's own data back into itself is a no-op.
      */
-    private fun currentExportBundle() =
-        runBlocking {
-            (application.appContainer.exportDataUseCase.execute() as Resource.Success).data
-        }
+    private fun currentExportZip(): ByteArray =
+        runBlocking { (application.appContainer.exportArchiveUseCase.export("test") as Resource.Success).data.bytes }
 
     /** The database directory's own backup-staging files -- see [DATABASE_FILE_NAME]'s KDoc. */
     private fun stagedBackupFiles(): List<File> {
@@ -182,225 +182,88 @@ class SettingsRouteSafChainsTest {
     /** A `file://` Uri inside a directory that does not exist, so opening it for read or write fails. */
     private fun unopenableUri(): Uri = Uri.fromFile(File(workDir, "missing-dir/unopenable.csv"))
 
-    // ---- export --------------------------------------------------------------------------------------
+    // ---- export (#196: one .zip, one dialog) ----------------------------------------------------------
 
-    private fun runExportHappyPath(): List<File> {
+    @Test
+    fun export_happyPath_writesOneZipThatDecodes() {
         scrollToAndClick(string(R.string.settings_export_button))
         awaitLaunchCount(1)
-        val libraryFile = File(workDir, "library_export.csv")
-        answerLatestLaunch(Uri.fromFile(libraryFile))
+        val suggested = registry.launches.single().input as String
+        assertTrue(
+            "unexpected suggested name: $suggested",
+            suggested.startsWith("media-tracker-export-") && suggested.endsWith(".zip"),
+        )
 
-        awaitLaunchCount(2)
-        val readingLogsFile = File(workDir, "reading_logs_export.csv")
-        answerLatestLaunch(Uri.fromFile(readingLogsFile))
-
-        awaitLaunchCount(3)
-        val episodesFile = File(workDir, "episodes_export.csv")
-        answerLatestLaunch(Uri.fromFile(episodesFile))
-
-        // The fourth file (#90): every viewing.
-        awaitLaunchCount(4)
-        val watchLogsFile = File(workDir, "watch_logs_export.csv")
-        answerLatestLaunch(Uri.fromFile(watchLogsFile))
+        val destination = File(workDir, "export.zip")
+        answerLatestLaunch(Uri.fromFile(destination))
 
         awaitTextVisible(string(R.string.export_success_message))
-        return listOf(libraryFile, readingLogsFile, episodesFile, watchLogsFile)
+        val read = ExportArchive.decode(destination.readBytes())
+        assertTrue("the written file must decode as an export: $read", read is ArchiveReadResult.Read)
+        assertEquals(4, (read as ArchiveReadResult.Read).manifest.files.size)
+        composeRule.waitForIdle()
+        assertEquals("one dialog, not a chain", 1, registry.launches.size)
     }
 
     @Test
-    fun export_happyPath_writesFourNonEmptyFilesInOrder() {
-        runExportHappyPath().forEach { file ->
-            assertTrue("${file.name} was not written", file.exists() && file.length() > 0)
-            // Each exporter emits at least a header line -- see LibraryCsvExporter/
-            // ReadingLogCsvExporter/EpisodeCsvExporter.
-            assertTrue("${file.name} has no header line", file.readLines().isNotEmpty())
-        }
-
-        val inputs = registry.launches.map { it.input }
-        assertEquals(
-            listOf("library_export.csv", "reading_logs_export.csv", "episodes_export.csv", "watch_logs_export.csv"),
-            inputs,
-        )
-    }
-
-    @Test
-    fun export_cancelAtFirstPicker_showsCancelledAndLaunchesNoMore() {
+    fun export_cancel_showsCancelled() {
         scrollToAndClick(string(R.string.settings_export_button))
         awaitLaunchCount(1)
-
         answerLatestLaunch(null)
-
         awaitTextVisible(string(R.string.export_cancelled_message))
-        // Give a genuine second launch a chance to appear before asserting its absence.
         composeRule.waitForIdle()
         assertEquals(1, registry.launches.size)
     }
 
     @Test
-    fun export_cancelAtSecondPicker_showsCancelledAndFirstFileWasWritten() {
+    fun export_recreatedWhileThePickerIsOpen_writesTheZip_andOpensNoSecondPicker() {
+        // The #162 class of bug: a rotation inside the dialog recreates the screen.
         scrollToAndClick(string(R.string.settings_export_button))
         awaitLaunchCount(1)
-        val libraryFile = File(workDir, "library_export.csv")
-        answerLatestLaunch(Uri.fromFile(libraryFile))
 
-        awaitLaunchCount(2)
-        answerLatestLaunch(null)
-
-        awaitTextVisible(string(R.string.export_cancelled_message))
+        restorationTester.emulateSavedInstanceStateRestore()
         composeRule.waitForIdle()
-        assertEquals(2, registry.launches.size)
-        assertTrue("first file was not written before the cancel", libraryFile.exists() && libraryFile.length() > 0)
+        assertEquals("a recreated screen must not open the dialog again", 1, registry.launches.size)
+
+        val destination = File(workDir, "after-recreation.zip")
+        answerLatestLaunch(Uri.fromFile(destination))
+        awaitTextVisible(string(R.string.export_success_message))
+        assertTrue(ExportArchive.decode(destination.readBytes()) is ArchiveReadResult.Read)
     }
 
-    @Test
-    fun export_cancelAtThirdPicker_showsCancelled() {
-        scrollToAndClick(string(R.string.settings_export_button))
-        awaitLaunchCount(1)
-        answerLatestLaunch(Uri.fromFile(File(workDir, "library_export.csv")))
-
-        awaitLaunchCount(2)
-        answerLatestLaunch(Uri.fromFile(File(workDir, "reading_logs_export.csv")))
-
-        awaitLaunchCount(3)
-        answerLatestLaunch(null)
-
-        awaitTextVisible(string(R.string.export_cancelled_message))
-    }
+    // ---- import (#196: a .zip or a lone library CSV, one dialog) ----------------------------------------
 
     @Test
-    fun export_writeFailsAtFirstPicker_showsFailureAndLaunchesNoMore() {
-        scrollToAndClick(string(R.string.settings_export_button))
-        awaitLaunchCount(1)
-
-        answerLatestLaunch(unopenableUri())
-
-        awaitTextVisible(string(R.string.export_failure_message))
-        assertEquals(1, registry.launches.size)
-    }
-
-    @Test
-    fun export_writeFailsAtThirdPicker_showsFailure() {
-        scrollToAndClick(string(R.string.settings_export_button))
-        awaitLaunchCount(1)
-        answerLatestLaunch(Uri.fromFile(File(workDir, "library_export.csv")))
-
-        awaitLaunchCount(2)
-        answerLatestLaunch(Uri.fromFile(File(workDir, "reading_logs_export.csv")))
-
-        awaitLaunchCount(3)
-        answerLatestLaunch(unopenableUri())
-
-        awaitTextVisible(string(R.string.export_failure_message))
-    }
-
-    // ---- import --------------------------------------------------------------------------------------
-
-    @Test
-    fun import_cancelAtFirstPicker_showsCancelledAndLaunchesNoMore() {
+    fun import_ofAnExportZip_showsTheSummary() {
+        val zip = File(workDir, "import.zip").apply { writeBytes(currentExportZip()) }
         scrollToAndClick(string(R.string.settings_import_button))
         awaitLaunchCount(1)
-        assertMimeArray(registry.launches.single().input)
+        @Suppress("UNCHECKED_CAST")
+        val mimes = registry.launches.single().input as Array<String>
+        assertTrue("the dialog must offer zips: ${mimes.toList()}", "application/zip" in mimes)
 
+        answerLatestLaunch(Uri.fromFile(zip))
+
+        awaitTextVisible(string(R.string.import_summary_title))
+        assertEquals("one dialog, not a chain", 1, registry.launches.size)
+    }
+
+    @Test
+    fun import_cancel_showsCancelled() {
+        scrollToAndClick(string(R.string.settings_import_button))
+        awaitLaunchCount(1)
         answerLatestLaunch(null)
-
         awaitTextVisible(string(R.string.import_cancelled_message))
         composeRule.waitForIdle()
         assertEquals(1, registry.launches.size)
     }
 
-    /**
-     * Later pickers cancelled is a legitimate "no reading logs / no episodes" import, per
-     * `readingLogsImportLauncher`'s and `episodesImportLauncher`'s own comments -- the import still
-     * runs on whatever was gathered, rather than being treated as an overall cancel.
-     */
     @Test
-    fun import_libraryPickedLaterPickersCancelled_stillRunsAndShowsSummary() {
-        val bundle = currentExportBundle()
-        val libraryUri = sourceUri("library_export.csv", bundle.libraryCsv)
-
+    fun import_unreadableFile_showsFailure() {
         scrollToAndClick(string(R.string.settings_import_button))
         awaitLaunchCount(1)
-        answerLatestLaunch(libraryUri)
-
-        awaitLaunchCount(2)
-        answerLatestLaunch(null)
-
-        awaitLaunchCount(3)
-        answerLatestLaunch(null)
-
-        // The watch-logs pick (#90) is optional too: cancelling it still runs the import.
-        awaitLaunchCount(4)
-        answerLatestLaunch(null)
-
-        awaitTextVisible(string(R.string.import_summary_title))
-        composeRule.onNodeWithText(string(R.string.ok_button)).performClick()
-    }
-
-    @Test
-    fun import_happyPath_allFourPicked_showsSummary() {
-        val bundle = currentExportBundle()
-
-        scrollToAndClick(string(R.string.settings_import_button))
-        awaitLaunchCount(1)
-        answerLatestLaunch(sourceUri("library_export.csv", bundle.libraryCsv))
-
-        awaitLaunchCount(2)
-        answerLatestLaunch(sourceUri("reading_logs_export.csv", bundle.readingLogsCsv))
-
-        awaitLaunchCount(3)
-        answerLatestLaunch(sourceUri("episodes_export.csv", bundle.episodesCsv))
-
-        awaitLaunchCount(4)
-        answerLatestLaunch(sourceUri("watch_logs_export.csv", bundle.watchLogsCsv))
-
-        awaitTextVisible(string(R.string.import_summary_title))
-        composeRule.onNodeWithText(string(R.string.ok_button)).performClick()
-    }
-
-    @Test
-    fun import_unreadableLibraryFile_showsFailureAndLaunchesNoMore() {
-        scrollToAndClick(string(R.string.settings_import_button))
-        awaitLaunchCount(1)
-
         answerLatestLaunch(unopenableUri())
-
         awaitTextVisible(string(R.string.import_failure_message))
-        assertEquals(1, registry.launches.size)
-    }
-
-    /** A failed read of a file the user did pick abandons the chain, unlike a cancel of that picker. */
-    @Test
-    fun import_unreadableReadingLogsFile_showsFailureAndSkipsEpisodesPicker() {
-        val bundle = currentExportBundle()
-
-        scrollToAndClick(string(R.string.settings_import_button))
-        awaitLaunchCount(1)
-        answerLatestLaunch(sourceUri("library_export.csv", bundle.libraryCsv))
-
-        awaitLaunchCount(2)
-        answerLatestLaunch(unopenableUri())
-
-        awaitTextVisible(string(R.string.import_failure_message))
-        assertEquals(2, registry.launches.size)
-        assertEquals(0, nodeCountWithText(string(R.string.import_summary_title)))
-    }
-
-    @Test
-    fun import_unreadableEpisodesFile_showsFailureAndNoSummary() {
-        val bundle = currentExportBundle()
-
-        scrollToAndClick(string(R.string.settings_import_button))
-        awaitLaunchCount(1)
-        answerLatestLaunch(sourceUri("library_export.csv", bundle.libraryCsv))
-
-        awaitLaunchCount(2)
-        answerLatestLaunch(null)
-
-        awaitLaunchCount(3)
-        answerLatestLaunch(unopenableUri())
-
-        awaitTextVisible(string(R.string.import_failure_message))
-        assertEquals(0, nodeCountWithText(string(R.string.import_summary_title)))
     }
 
     @Test

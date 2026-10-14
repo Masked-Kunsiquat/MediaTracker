@@ -32,7 +32,8 @@ public object ExportArchive {
     public const val WATCH_LOGS: String = "watch_logs_export.csv"
 
     public const val NOT_OURS: String = "Not a Media Tracker export"
-    public const val NEWER: String = "This export was made by a newer version of the app — update it to import this file"
+    public const val NEWER: String =
+        "This export was made by a newer version of the app — update it to import this file"
     public const val NO_LIBRARY: String = "This export has no library_export.csv"
     public const val UNREADABLE: String = "Couldn't read this file"
 

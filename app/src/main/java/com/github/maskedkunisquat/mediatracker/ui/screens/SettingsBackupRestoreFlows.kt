@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.export.copyFileToUri
 import com.github.maskedkunisquat.mediatracker.export.copyUriToFile
+import com.github.maskedkunisquat.mediatracker.export.deleteCreatedDocument
 import com.github.maskedkunisquat.mediatracker.restartApp
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.BackupUiState
@@ -267,12 +268,4 @@ internal fun RestoreOutcome(
             },
         )
     }
-}
-
-/** Deletes a document the SAF picker created, best-effort: a provider may not support deletion. */
-private fun deleteCreatedDocument(
-    context: android.content.Context,
-    uri: android.net.Uri,
-) {
-    runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
 }

@@ -5,32 +5,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.github.maskedkunisquat.mediatracker.R
-import com.github.maskedkunisquat.mediatracker.export.writeCsvToUri
-import com.hub.media.features.portability.domain.CsvExportBundle
+import com.github.maskedkunisquat.mediatracker.export.deleteCreatedDocument
+import com.github.maskedkunisquat.mediatracker.export.writeBytesToUri
 import com.hub.media.ui.ExportUiState
 import com.hub.media.ui.ExportViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/*
- * The CSV export flow's SAF picker chain, lifted out of the route (#81) as the second cut of its
- * remaining SAF chains.
- */
-
 /**
- * The three-picker CSV export chain (library, then reading logs, then episodes), all written from
- * one cached [CsvExportBundle] snapshot -- see `ExportDataSetting`'s KDoc for why one bundle
- * produces all three files. Registers the three `CreateDocument` launchers and reacts to
- * [exportUiState] to kick off the first one.
+ * The one-file export (#196): one save dialog for one `.zip` holding the four CSVs and a manifest.
+ * Replaced a chain of four dialogs, one per CSV.
+ *
+ * The built archive waits for its destination in the ViewModel ([ExportUiState.AwaitingDestination]),
+ * not in this composable -- the pattern #162 established for backup -- so a rotation inside the dialog
+ * neither loses the bytes nor opens the dialog a second time.
  */
 @Composable
 internal fun CsvExportFlow(
@@ -43,120 +36,44 @@ internal fun CsvExportFlow(
     val exportSuccessMessage = stringResource(R.string.export_success_message)
     val exportFailureMessage = stringResource(R.string.export_failure_message)
     val exportCancelledMessage = stringResource(R.string.export_cancelled_message)
+    val exportExpiredMessage = stringResource(R.string.export_expired_message)
 
-    // Holds the generated bundle between the three sequential SAF "create document" picks below --
-    // see ExportDataSetting's KDoc for why all three files are written from one cached bundle
-    // rather than three independent ExportDataUseCase runs.
-    var pendingBundle by remember { mutableStateOf<CsvExportBundle?>(null) }
-
-    // The fourth and last file (#90): every viewing, so a re-watch history survives an export.
-    val watchLogsLauncher =
+    val exportLauncher =
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
+            contract = ActivityResultContracts.CreateDocument("application/zip"),
         ) { uri ->
-            val bundle = pendingBundle
-            pendingBundle = null
-            exportViewModel.reset()
+            val file = exportViewModel.takePendingFile()
             coroutineScope.launch {
-                // Off the main thread: writing a whole document via SAF is blocking I/O.
                 val message =
                     when {
                         uri == null -> exportCancelledMessage
-                        bundle == null -> exportFailureMessage
+                        // Nothing pending: the process died while the dialog was open. It has already
+                        // created an empty file there; remove it rather than leave an export that holds nothing.
+                        file == null -> {
+                            withContext(Dispatchers.IO) { deleteCreatedDocument(context, uri) }
+                            exportExpiredMessage
+                        }
+                        // Off the main thread: writing a whole document via SAF is blocking I/O.
                         withContext(
                             Dispatchers.IO,
-                        ) { writeCsvToUri(context, uri, bundle.watchLogsCsv) } -> exportSuccessMessage
+                        ) { writeBytesToUri(context, uri, file.bytes) } -> exportSuccessMessage
                         else -> exportFailureMessage
                     }
                 snackbarHostState.showSnackbar(message)
             }
         }
 
-    val episodesLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-        ) { uri ->
-            val bundle = pendingBundle
-            if (uri == null || bundle == null) {
-                pendingBundle = null
-                exportViewModel.reset()
-                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-            } else {
-                // Off the main thread -- see watchLogsLauncher above.
-                coroutineScope.launch {
-                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.episodesCsv) }) {
-                        // Third file written; prompt for the fourth so all four come from one snapshot.
-                        watchLogsLauncher.launch("watch_logs_export.csv")
-                    } else {
-                        pendingBundle = null
-                        exportViewModel.reset()
-                        snackbarHostState.showSnackbar(exportFailureMessage)
-                    }
-                }
-            }
-        }
-
-    val readingLogsLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-        ) { uri ->
-            val bundle = pendingBundle
-            if (uri == null || bundle == null) {
-                pendingBundle = null
-                exportViewModel.reset()
-                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-            } else {
-                // Off the main thread -- see watchLogsLauncher above.
-                coroutineScope.launch {
-                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.readingLogsCsv) }) {
-                        // Second file written; immediately prompt for the third file's destination so
-                        // all three documents come from the exact same generated snapshot.
-                        episodesLauncher.launch("episodes_export.csv")
-                    } else {
-                        pendingBundle = null
-                        exportViewModel.reset()
-                        snackbarHostState.showSnackbar(exportFailureMessage)
-                    }
-                }
-            }
-        }
-
-    val libraryLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("text/csv"),
-        ) { uri ->
-            val bundle = pendingBundle
-            if (uri == null || bundle == null) {
-                pendingBundle = null
-                exportViewModel.reset()
-                coroutineScope.launch { snackbarHostState.showSnackbar(exportCancelledMessage) }
-            } else {
-                // Off the main thread -- see watchLogsLauncher above.
-                coroutineScope.launch {
-                    if (withContext(Dispatchers.IO) { writeCsvToUri(context, uri, bundle.libraryCsv) }) {
-                        // First file written; immediately prompt for the second file's destination so
-                        // every document comes from the exact same generated snapshot.
-                        readingLogsLauncher.launch("reading_logs_export.csv")
-                    } else {
-                        pendingBundle = null
-                        exportViewModel.reset()
-                        snackbarHostState.showSnackbar(exportFailureMessage)
-                    }
-                }
-            }
-        }
-
     LaunchedEffect(exportUiState) {
         when (val state = exportUiState) {
             is ExportUiState.Success -> {
-                pendingBundle = state.bundle
-                libraryLauncher.launch("library_export.csv")
+                exportViewModel.awaitDestination()
+                exportLauncher.launch(state.file.suggestedFileName)
             }
             is ExportUiState.Error -> {
                 snackbarHostState.showSnackbar(state.message)
                 exportViewModel.reset()
             }
-            ExportUiState.Idle, ExportUiState.Loading -> Unit
+            ExportUiState.Idle, ExportUiState.Loading, is ExportUiState.AwaitingDestination -> Unit
         }
     }
 }

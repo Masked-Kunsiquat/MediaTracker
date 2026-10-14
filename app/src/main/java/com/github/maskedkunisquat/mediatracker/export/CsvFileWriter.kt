@@ -40,3 +40,33 @@ internal fun writeCsvToUri(
     } catch (e: IOException) {
         false
     }
+
+/** [writeCsvToUri] for bytes: the one-file export's zip (#196). Same contract. */
+internal fun writeBytesToUri(
+    context: Context,
+    uri: Uri,
+    bytes: ByteArray,
+): Boolean =
+    try {
+        val stream = context.contentResolver.openOutputStream(uri)
+        if (stream == null) {
+            false
+        } else {
+            stream.use { it.write(bytes) }
+            true
+        }
+    } catch (e: IOException) {
+        false
+    }
+
+/**
+ * Deletes a document a `CreateDocument` dialog created, best-effort: a provider may not support
+ * deletion. For a save whose content was lost to process death (#162, #196), so the user is not
+ * left with an empty file that looks like a backup or an export.
+ */
+internal fun deleteCreatedDocument(
+    context: Context,
+    uri: Uri,
+) {
+    runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+}

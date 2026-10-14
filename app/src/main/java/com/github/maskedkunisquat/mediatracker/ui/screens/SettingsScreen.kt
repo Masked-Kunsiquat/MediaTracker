@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -161,6 +162,8 @@ fun SettingsScreen(
     importInProgress: Boolean,
     duplicatePolicy: DuplicatePolicy,
     onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
+    restoreSettings: Boolean,
+    onRestoreSettingsChange: (Boolean) -> Unit,
     onImportClick: () -> Unit,
     goodreadsDuplicatePolicy: DuplicatePolicy,
     onGoodreadsDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
@@ -264,6 +267,8 @@ fun SettingsScreen(
                             importInProgress = importInProgress,
                             duplicatePolicy = duplicatePolicy,
                             onDuplicatePolicyChange = onDuplicatePolicyChange,
+                            restoreSettings = restoreSettings,
+                            onRestoreSettingsChange = onRestoreSettingsChange,
                             onImportClick = onImportClick,
                         )
                         HorizontalDivider()
@@ -476,6 +481,8 @@ private fun ImportDataSetting(
     importInProgress: Boolean,
     duplicatePolicy: DuplicatePolicy,
     onDuplicatePolicyChange: (DuplicatePolicy) -> Unit,
+    restoreSettings: Boolean,
+    onRestoreSettingsChange: (Boolean) -> Unit,
     onImportClick: () -> Unit,
 ) {
     Column {
@@ -507,6 +514,25 @@ private fun ImportDataSetting(
                     onClick = { onDuplicatePolicyChange(option) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                     label = { Text(option.displayLabel()) },
+                )
+            }
+        }
+        // Off by default (#196): an import restores library data; settings only when asked.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .toggleable(value = restoreSettings, role = Role.Checkbox, onValueChange = onRestoreSettingsChange),
+        ) {
+            Checkbox(checked = restoreSettings, onCheckedChange = null)
+            Column(modifier = Modifier.padding(start = 8.dp)) {
+                Text(stringResource(R.string.import_restore_settings), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    stringResource(R.string.import_restore_settings_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
