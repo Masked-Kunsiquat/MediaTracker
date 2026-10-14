@@ -299,7 +299,7 @@
     <string name="settings_section_data">Data</string>
     <string name="settings_export_label">Export library</string>
     <string name="settings_export_description">Save your library, reading history, episodes and watch history as one .zip file you choose the location for.</string>
-    <string name="settings_export_button">Export to CSV</string>
+    <string name="settings_export_button">Export</string>
     <string name="export_success_message">Export saved successfully</string>
     <string name="export_expired_message">The export expired before it was saved — please start it again</string>
     <string name="import_restore_settings">Also restore settings</string>
