@@ -3,7 +3,8 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
-import com.hub.media.features.portability.domain.ExportUseCase
+import com.hub.media.features.portability.domain.ArchiveExporter
+import com.hub.media.features.portability.domain.ExportArchiveFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +26,8 @@ import kotlinx.coroutines.launch
  *   with no Room dependency (AGENTS.md §5 "No Unnecessary Dependencies" -- no mocking library).
  */
 public class ExportViewModel(
-    private val exportDataUseCase: ExportUseCase,
+    private val exporter: ArchiveExporter,
+    private val appVersion: String,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
     public val uiState: StateFlow<ExportUiState> = _uiState.asStateFlow()
@@ -42,7 +44,7 @@ public class ExportViewModel(
         _uiState.value = ExportUiState.Loading
         viewModelScope.launch {
             _uiState.value =
-                when (val result = exportDataUseCase.execute()) {
+                when (val result = exporter.export(appVersion)) {
                     is Resource.Success -> ExportUiState.Success(result.data)
                     is Resource.Error -> ExportUiState.Error(result.message)
                 }
@@ -54,6 +56,23 @@ public class ExportViewModel(
      * (or failed to write) a [ExportUiState.Success]'s files, or after an [ExportUiState.Error]
      * has been shown to the user.
      */
+
+    /** The screen is opening the save dialog for the built archive: see [ExportUiState.AwaitingDestination]. */
+    public fun awaitDestination() {
+        val success = _uiState.value as? ExportUiState.Success ?: return
+        _uiState.value = ExportUiState.AwaitingDestination(success.file)
+    }
+
+    /**
+     * Hands the archive to the save dialog's result, once, and resets. `null` when nothing is waiting
+     * -- after process death the ViewModel is new.
+     */
+    public fun takePendingFile(): ExportArchiveFile? {
+        val pending = (_uiState.value as? ExportUiState.AwaitingDestination)?.file
+        _uiState.value = ExportUiState.Idle
+        return pending
+    }
+
     public fun reset() {
         _uiState.value = ExportUiState.Idle
     }

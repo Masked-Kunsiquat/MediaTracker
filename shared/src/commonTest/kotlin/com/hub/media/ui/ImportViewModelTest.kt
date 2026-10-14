@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.util.Resource
+import com.hub.media.features.portability.domain.ArchiveImporter
 import com.hub.media.features.portability.domain.DuplicatePolicy
 import com.hub.media.features.portability.domain.ImportSummary
 import com.hub.media.features.portability.domain.ImportUseCase
@@ -35,7 +36,25 @@ class ImportViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel(useCase: ImportUseCase) = viewModels.track(ImportViewModel(useCase))
+    private fun newViewModel(
+        useCase: ImportUseCase,
+        archiveImporter: ArchiveImporter = RecordingArchiveImporter(),
+    ) = viewModels.track(ImportViewModel(useCase, archiveImporter))
+
+    /** Records what [ImportViewModel.importArchive] passed through (#196). */
+    private class RecordingArchiveImporter : ArchiveImporter {
+        val calls = mutableListOf<Triple<ByteArray, DuplicatePolicy, Boolean>>()
+
+        override suspend fun import(
+            bytes: ByteArray,
+            duplicatePolicy: DuplicatePolicy,
+            restoreSettings: Boolean,
+        ): Resource<ImportSummary> {
+            calls += Triple(bytes, duplicatePolicy, restoreSettings)
+            val base = (FakeImportDataUseCase().execute(null, null, null, duplicatePolicy) as Resource.Success).data
+            return Resource.Success(base.copy(settingsRestored = 2))
+        }
+    }
 
     private val sampleSummary =
         ImportSummary(
@@ -196,5 +215,20 @@ class ImportViewModelTest {
             viewModel.uiState.first { it is ImportUiState.Success }
             assertEquals(1, fake.callCount)
             assertEquals(0, fake.goodreadsCallCount)
+        }
+
+    @Test
+    fun importArchive_passesBytesPolicyAndRestoreFlag() =
+        runTest {
+            val importer = RecordingArchiveImporter()
+            val vm = newViewModel(FakeImportDataUseCase(), importer)
+            val bytes = byteArrayOf(0x50, 0x4B, 3, 4)
+            vm.importArchive(bytes, DuplicatePolicy.MERGE, restoreSettings = true)
+            val state = assertIs<ImportUiState.Success>(vm.uiState.first { it is ImportUiState.Success })
+            assertEquals(2, state.summary.settingsRestored)
+            val (passed, policy, restore) = importer.calls.single()
+            assertEquals(bytes.toList(), passed.toList())
+            assertEquals(DuplicatePolicy.MERGE, policy)
+            assertEquals(true, restore)
         }
 }
