@@ -18,8 +18,8 @@ generate the files that reference each other as a matched set.
 
 Until Issue #106, `library_export.csv` wrote movie and show columns that nothing read back, and
 `episodes_export.csv` had no importer at all — an export-then-reimport of a library with films or
-shows silently came back books-only. Both gaps are closed now: the importer reads every row of all
-three files.
+shows silently came back books-only. Both gaps are closed now: the importer reads every row of every
+file.
 
 ## Container: the export `.zip`
 
@@ -35,7 +35,9 @@ watch_logs_export.csv
 ```
 
 Each CSV is exactly the file described below; only `manifest.json` is new. To hand-build an
-importable zip, write the CSVs, write a manifest, and zip all five with no folder inside.
+importable zip, write the CSVs, write a manifest, and zip all five. The files may sit at the zip's
+root or inside **one** top-level folder, which is what compressing an unzipped export folder again
+produces. Other entries (macOS `__MACOSX` files, anything else) are ignored without being read.
 
 ### `manifest.json`
 
@@ -64,15 +66,20 @@ importable zip, write the CSVs, write a manifest, and zip all five with no folde
 
 ### What import refuses (nothing is written)
 
-- A zip with no `manifest.json`, an unreadable one, or one with the wrong `format`: *"Not a Media
+- A file that is not a readable zip, or a zip entry that would unpack to more than 64 MB: *"Couldn't
+  read this file"*.
+- A zip with no `manifest.json` (at the root or in one top-level folder), a manifest that is not
+  valid JSON, one with the wrong `format`, or manifests in more than one folder: *"Not a Media
   Tracker export"*.
 - A newer `formatVersion`: *"This export was made by a newer version of the app — update it to
   import this file"*.
 - No `library_export.csv`: *"This export has no library_export.csv"*. The other three files are
   optional.
 
-**A lone CSV** can still be picked instead of a zip. It is imported as `library_export.csv` if it
-starts with the `csv_schema_version` header; anything else is refused.
+**A lone CSV** can still be picked instead of a zip. It is imported as `library_export.csv` if its
+header is a library header (`csv_schema_version,media_id,…`). One of the other three files picked
+on its own is refused with *"This CSV isn't a library export — pick the export .zip, or a
+library_export.csv"*, and anything else with *"Not a Media Tracker export"*.
 
 ## Rules that apply to every file
 

@@ -4,7 +4,8 @@ package com.hub.media.features.portability.csv
 internal expect fun zipEntries(entries: List<Pair<String, ByteArray>>): ByteArray
 
 /**
- * The file entries of a zip whose names are in [wanted] (every entry when it is null), by name.
+ * The file entries of a zip whose names are in [wanted] (every entry when it is null), by name --
+ * at the root, or inside one top-level folder, as a re-zipped export folder has them.
  * Entries not wanted are skipped without being inflated, and an entry that inflates past
  * [maxEntryBytes] throws: a small crafted archive must not be able to exhaust memory (#196).
  * Throws when [bytes] is not a readable zip holding any wanted entry.

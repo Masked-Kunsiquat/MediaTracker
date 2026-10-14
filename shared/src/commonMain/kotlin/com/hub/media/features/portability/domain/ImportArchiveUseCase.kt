@@ -49,8 +49,12 @@ public class ImportArchiveUseCase(
             // A lone CSV: only a library export qualifies. Anything else is refused outright rather than
             // fed to the importer to be rejected row by row.
             val text = bytes.decodeToString()
-            if (!text.removePrefix("\uFEFF").startsWith(CSV_SCHEMA_VERSION_COLUMN)) {
-                return Resource.Error(ExportArchive.NOT_OURS)
+            val header = text.removePrefix("\uFEFF").lineSequence().first()
+            if (!header.startsWith(CSV_SCHEMA_VERSION_COLUMN)) return Resource.Error(ExportArchive.NOT_OURS)
+            // One of this app's other CSVs -- an old loose export's reading logs, episodes or watch logs --
+            // picked by mistake: its second column is not `media_id`. Say which file to pick instead.
+            if (header.split(',').getOrNull(1)?.trim('"') != "media_id") {
+                return Resource.Error(ExportArchive.NOT_LIBRARY_CSV)
             }
             return importUseCase.execute(text, null, null, duplicatePolicy, null)
         }

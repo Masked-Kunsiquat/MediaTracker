@@ -28,7 +28,7 @@ internal actual fun unzipEntries(
     ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
         generateSequence { zip.nextEntry }.forEach { entry ->
             // Skipped entries are never inflated: closing them only advances the stream.
-            if (!entry.isDirectory && (wanted == null || entry.name in wanted)) {
+            if (!entry.isDirectory && (wanted == null || entry.name.isWanted(wanted))) {
                 result[entry.name] = zip.readCapped(maxEntryBytes)
             }
         }
@@ -36,6 +36,10 @@ internal actual fun unzipEntries(
     if (result.isEmpty()) throw ZipException("No entries")
     return result
 }
+
+/** A wanted name at the root, or inside exactly one top-level folder (a re-zipped export folder). */
+private fun String.isWanted(wanted: Set<String>): Boolean =
+    this in wanted || (count { it == '/' } == 1 && substringAfter('/') in wanted)
 
 /** Reads the current entry, throwing once it inflates past [max] rather than holding all of it. */
 private fun ZipInputStream.readCapped(max: Long): ByteArray {

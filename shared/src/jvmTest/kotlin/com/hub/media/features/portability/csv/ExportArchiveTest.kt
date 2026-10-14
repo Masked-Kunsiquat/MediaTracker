@@ -162,6 +162,41 @@ class ExportArchiveTest {
     }
 
     @Test
+    fun aRezippedFolder_isRead() {
+        // Unzip, edit a CSV, compress the folder again (Finder or Windows): every entry now sits under the
+        // folder's name, and macOS adds __MACOSX resource forks beside it (#196 re-grade).
+        val folder = "media-tracker-export-2026-10-14/"
+        val zip =
+            zipEntries(
+                listOf(
+                    folder + ExportArchive.MANIFEST to manifestBytes(),
+                    folder + ExportArchive.LIBRARY to "a,b\r\n1,2\r\n".encodeToByteArray(),
+                    folder + ExportArchive.EPISODES to "a,b\r\n".encodeToByteArray(),
+                    "__MACOSX/" + folder + "._manifest.json" to byteArrayOf(0, 5, 22, 7),
+                ),
+            )
+        val read = assertIs<ArchiveReadResult.Read>(ExportArchive.decode(zip))
+        assertEquals("a,b\r\n1,2\r\n", read.libraryCsv)
+        assertEquals("a,b\r\n", read.episodesCsv)
+        assertNull(read.watchLogsCsv)
+    }
+
+    @Test
+    fun twoFoldersWithManifests_isRefused() {
+        // Ambiguous: which export is the user importing? Refuse rather than guess.
+        val zip =
+            zipEntries(
+                listOf(
+                    "one/" + ExportArchive.MANIFEST to manifestBytes(),
+                    "one/" + ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray(),
+                    "two/" + ExportArchive.MANIFEST to manifestBytes(),
+                    "two/" + ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray(),
+                ),
+            )
+        assertEquals(ArchiveReadResult.Refused(ExportArchive.NOT_OURS), ExportArchive.decode(zip))
+    }
+
+    @Test
     fun unknownManifestFields_areIgnored() {
         val json =
             """{"format":"media-tracker-export","formatVersion":1,"appVersion":"9","exportedAt":"x",""" +

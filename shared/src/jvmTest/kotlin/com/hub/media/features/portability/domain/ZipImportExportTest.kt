@@ -302,6 +302,21 @@ class ZipImportExportTest {
         }
 
     @Test
+    fun aLoneCsvThatIsNotTheLibrary_isRefusedWithAHint() =
+        runTest {
+            // An old loose export's reading_logs_export.csv, picked by mistake (#196 re-grade).
+            seed()
+            val logs =
+                (
+                    ExportDataUseCase(MediaRepository(source), BookRepository(source), ReadingSessionRepository(source))
+                        .execute() as Resource.Success
+                ).data.episodesCsv
+            val r = importer(target).import(logs.encodeToByteArray(), DuplicatePolicy.SKIP, false)
+            assertEquals(ExportArchive.NOT_LIBRARY_CSV, assertIs<Resource.Error>(r).message)
+            assertEquals(emptyList(), titles(target))
+        }
+
+    @Test
     fun aNonCsvFile_isRefused() =
         runTest {
             val png =

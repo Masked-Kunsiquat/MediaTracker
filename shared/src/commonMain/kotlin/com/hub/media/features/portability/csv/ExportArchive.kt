@@ -39,6 +39,8 @@ public object ExportArchive {
         "This export was made by a newer version of the app — update it to import this file"
     public const val NO_LIBRARY: String = "This export has no library_export.csv"
     public const val UNREADABLE: String = "Couldn't read this file"
+    public const val NOT_LIBRARY_CSV: String =
+        "This CSV isn't a library export — pick the export .zip, or a library_export.csv"
 
     // encodeDefaults: `format` and `formatVersion` equal their defaults, and the version marker is the
     // one field a future import must be able to read -- left out, a newer app would assume its own.
@@ -65,7 +67,8 @@ public object ExportArchive {
 
     /**
      * Reads a picked archive, refusing anything that is not one of ours, or is newer than this app
-     * understands, **before** a single row is imported. Entries match by exact name at the root.
+     * understands, **before** a single row is imported. Entries match by exact name, at the root or
+     * inside one top-level folder; a duplicated name keeps its last copy.
      */
     public fun decode(
         bytes: ByteArray,
@@ -77,7 +80,25 @@ public object ExportArchive {
             } catch (e: Exception) {
                 return ArchiveReadResult.Refused(UNREADABLE)
             }
-        val manifestBytes = entries[MANIFEST] ?: return ArchiveReadResult.Refused(NOT_OURS)
+        // The export's files sit at the root -- or, once someone has unzipped the export, edited it and
+        // compressed the folder again, all inside that one folder. More than one candidate is ambiguous.
+        val root = entries.filterKeys { '/' !in it }
+        val layout =
+            if (MANIFEST in root) {
+                root
+            } else {
+                val folders =
+                    entries.keys
+                        .filter {
+                            it.endsWith(
+                                "/$MANIFEST",
+                            )
+                        }.map { it.substringBefore('/') }
+                        .distinct()
+                val prefix = (folders.singleOrNull() ?: return ArchiveReadResult.Refused(NOT_OURS)) + "/"
+                entries.filterKeys { it.startsWith(prefix) }.mapKeys { it.key.removePrefix(prefix) }
+            }
+        val manifestBytes = layout[MANIFEST] ?: return ArchiveReadResult.Refused(NOT_OURS)
         val manifest =
             try {
                 json.decodeFromString(ExportManifest.serializer(), manifestBytes.decodeToString())
@@ -88,13 +109,13 @@ public object ExportArchive {
             }
         if (manifest.format != EXPORT_FORMAT) return ArchiveReadResult.Refused(NOT_OURS)
         if (manifest.formatVersion > EXPORT_FORMAT_VERSION) return ArchiveReadResult.Refused(NEWER)
-        val library = entries[LIBRARY] ?: return ArchiveReadResult.Refused(NO_LIBRARY)
+        val library = layout[LIBRARY] ?: return ArchiveReadResult.Refused(NO_LIBRARY)
         return ArchiveReadResult.Read(
             manifest = manifest,
             libraryCsv = library.decodeToString(),
-            readingLogsCsv = entries[READING_LOGS]?.decodeToString(),
-            episodesCsv = entries[EPISODES]?.decodeToString(),
-            watchLogsCsv = entries[WATCH_LOGS]?.decodeToString(),
+            readingLogsCsv = layout[READING_LOGS]?.decodeToString(),
+            episodesCsv = layout[EPISODES]?.decodeToString(),
+            watchLogsCsv = layout[WATCH_LOGS]?.decodeToString(),
         )
     }
 
