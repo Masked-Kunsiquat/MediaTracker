@@ -98,6 +98,8 @@ class MediaTrackerApplication : Application() {
     // ViewModelFactories.kt already does for the same API.
     @OptIn(kotlin.time.ExperimentalTime::class)
     override fun onCreate() {
+        // Before anything this process does: the sweep below only removes files older than this.
+        val processStartedAtMillis = System.currentTimeMillis()
         super.onCreate()
         logFileStore = runBlocking { createLogFileStore(logStorageDirectory(applicationContext)) }
         // Release bootstraps at INFO since ROADMAP Task 15 Phase C, not WARN. DEFAULT_LOG_VERBOSITY
@@ -112,6 +114,11 @@ class MediaTrackerApplication : Application() {
         // Viewings are the truth (#90): give any watched episode without a viewing one. Idempotent and
         // off the main thread; a restore restarts the process, so restored backups pass through here.
         loggingScope.launch { appContainer.ensureViewingsUseCase.execute() }
+        // A backup or restore interrupted by process death leaves its temp file behind (#162). Only files
+        // from before this process are swept, so one a flow creates while this runs is never touched.
+        loggingScope.launch {
+            appContainer.sweepStaleTempFilesUseCase(cacheDir.absolutePath).execute(processStartedAtMillis)
+        }
         // The first entry in every session's log, and the anchor everything after it is read
         // against: which build was running when whatever comes next went wrong. Emitted after
         // configure() so it goes through the real sink rather than being dropped by the

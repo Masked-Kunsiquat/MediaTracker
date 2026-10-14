@@ -36,6 +36,7 @@ import com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase
 import com.hub.media.features.portability.domain.ExportDataUseCase
 import com.hub.media.features.portability.domain.ImportDataUseCase
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
+import com.hub.media.features.portability.domain.SweepStaleTempFilesUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.settings.data.getTmdbCredential
@@ -99,7 +100,7 @@ import kotlinx.coroutines.SupervisorJob
 public class AppContainer(
     private val database: AppDatabase,
     imageStorage: LocalImageStorageManager,
-    databaseFilePath: String,
+    private val databaseFilePath: String,
     public val logFileStore: LogFileStore,
     public val pendingRestoreMarker: RestoreMarker? = null,
 ) {
@@ -139,6 +140,10 @@ public class AppContainer(
 
     /** The startup viewing backfill (#90) -- launched by the Android Application on start. */
     public val ensureViewingsUseCase: EnsureViewingsUseCase = EnsureViewingsUseCase(database)
+
+    /** The startup sweep of temp files a backup or restore left behind (#162). */
+    public fun sweepStaleTempFilesUseCase(cacheDirPath: String): SweepStaleTempFilesUseCase =
+        SweepStaleTempFilesUseCase(databaseFilePath, cacheDirPath)
 
     /**
      * Bulk delete with reference-aware cover cleanup. Consumed by [LibraryViewModel]'s selection mode.

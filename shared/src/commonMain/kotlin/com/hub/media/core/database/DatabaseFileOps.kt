@@ -108,6 +108,17 @@ internal expect suspend fun readFileTailBytes(
 internal expect suspend fun deleteFileIfExists(path: String): Boolean
 
 /**
+ * Deletes every file directly in [dirPath] that [matches] accepts, given its name and its
+ * last-modified time in epoch millis (#162's startup sweep).
+ *
+ * @return How many were removed; 0 when the directory does not exist.
+ */
+internal expect suspend fun deleteFilesMatching(
+    dirPath: String,
+    matches: (name: String, lastModifiedMillis: Long) -> Boolean,
+): Int
+
+/**
  * Moves the file at [fromPath] to [toPath] atomically, replacing any existing file already at
  * [toPath]. Every call site in this codebase moves within the same parent directory (the
  * database's own directory), so this is expected to succeed via a real atomic rename on any

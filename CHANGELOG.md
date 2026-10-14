@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Rotating the phone while choosing where to save a database backup no longer produces an empty
+  backup file and a second save dialog (#162). The backup now completes as normal; if Android ended
+  the app while the dialog was open, the empty file is removed and you're asked to start again.
+
+### Internal
+
+- A startup sweep removes backup snapshots and restore copies left behind when the app was ended
+  mid-flow (`SweepStaleTempFilesUseCase`).
+
 ## [0.24.0] - 2026-10-13
 
 ### Added
