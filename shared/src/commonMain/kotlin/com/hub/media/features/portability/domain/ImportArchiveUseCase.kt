@@ -15,6 +15,8 @@ import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setWeekStartDay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Imports the one-file export. An interface so ViewModel tests can fake it without Room. */
@@ -59,7 +61,8 @@ public class ImportArchiveUseCase(
             return importUseCase.execute(text, null, null, duplicatePolicy, null)
         }
         val read =
-            when (val decoded = ExportArchive.decode(bytes)) {
+            // Inflating is CPU work, and callers arrive from the main thread (viewModelScope).
+            when (val decoded = withContext(Dispatchers.Default) { ExportArchive.decode(bytes) }) {
                 is ArchiveReadResult.Refused -> return Resource.Error(decoded.reason)
                 is ArchiveReadResult.Read -> decoded
             }

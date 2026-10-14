@@ -209,6 +209,24 @@ class ExportArchiveTest {
     }
 
     @Test
+    fun skippedEntries_countAgainstTheTotalBudget() {
+        // CodeRabbit (#199): skipping an entry still inflates it to find the next one. A bomb disguised as
+        // an unwanted entry must hit the budget, not run unbounded.
+        val zip =
+            zipEntries(
+                listOf(
+                    ExportArchive.MANIFEST to manifestBytes(),
+                    ExportArchive.LIBRARY to "a,b\r\n".encodeToByteArray(),
+                    "bomb.bin" to ByteArray(20_000),
+                ),
+            )
+        assertEquals(
+            ArchiveReadResult.Refused(ExportArchive.UNREADABLE),
+            ExportArchive.decode(zip, maxEntryBytes = 1_000_000, maxTotalBytes = 10_000),
+        )
+    }
+
+    @Test
     fun unknownManifestFields_areIgnored() {
         val json =
             """{"format":"media-tracker-export","formatVersion":1,"appVersion":"9","exportedAt":"x",""" +

@@ -6,9 +6,10 @@ internal expect fun zipEntries(entries: List<Pair<String, ByteArray>>): ByteArra
 /**
  * The file entries of a zip whose names are in [wanted] (every entry when it is null), by name --
  * at the root, or inside one top-level folder, as a re-zipped export folder has them.
- * Entries not wanted are skipped without being inflated, and an entry that inflates past
- * [maxEntryBytes] throws, as does inflating more than [maxTotalBytes] across all wanted entries --
- * a crafted archive of many small wanted entries must not exhaust memory either (#196).
+ * Entries not wanted are drained and discarded, never kept. An entry that inflates past
+ * [maxEntryBytes] throws, as does inflating more than [maxTotalBytes] in all -- wanted entries and
+ * skipped ones alike, since skipping one still decompresses it. A crafted archive can exhaust neither
+ * memory nor time (#196).
  * Throws when [bytes] is not a readable zip holding any wanted entry.
  */
 internal expect fun unzipEntries(

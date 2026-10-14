@@ -31,7 +31,7 @@ public object ExportArchive {
     public const val EPISODES: String = "episodes_export.csv"
     public const val WATCH_LOGS: String = "watch_logs_export.csv"
 
-    /** The only entries an import reads; anything else in the zip is skipped unread. */
+    /** The only entries an import keeps; anything else in the zip is drained and discarded. */
     private val ENTRIES = setOf(MANIFEST, LIBRARY, READING_LOGS, EPISODES, WATCH_LOGS)
 
     public const val NOT_OURS: String = "Not a Media Tracker export"
