@@ -50,13 +50,13 @@ public sealed class MovieDetailUiState {
 }
 
 /**
- * Viewings deleted in a row, merged into one Undo the way an episode's are (#90). [statusBefore] is
- * the status before the *first* delete, so undoing a run that emptied the history puts Watched back.
+ * Viewings deleted in a row, merged into one Undo the way an episode's are (#90). [demoted] is
+ * whether any delete in the run moved the film to Watchlist, so undoing it puts Watched back.
  */
 public data class FilmViewingUndo(
     val id: Long,
     val logs: List<WatchLogEntity>,
-    val statusBefore: WatchStatus,
+    val demoted: Boolean,
 )
 
 /** A status change away from Watched, offered back by the snackbar ("Moved to Watching", Undo). */
@@ -186,8 +186,15 @@ public class MovieDetailViewModel(
                 is Resource.Success -> {
                     val deletion = result.data
                     viewingUndo.value =
-                        viewingUndo.value?.let { it.copy(id = ++undoSeq, logs = it.logs + deletion.log) }
-                            ?: FilmViewingUndo(++undoSeq, listOf(deletion.log), deletion.statusBefore)
+                        viewingUndo.value?.let {
+                            it.copy(
+                                id = ++undoSeq,
+                                logs = it.logs + deletion.log,
+                                demoted =
+                                    it.demoted || deletion.demoted,
+                            )
+                        }
+                            ?: FilmViewingUndo(++undoSeq, listOf(deletion.log), deletion.demoted)
                 }
             }
         }
@@ -197,7 +204,7 @@ public class MovieDetailViewModel(
         val undo = viewingUndo.value ?: return
         viewingUndo.value = null
         viewModelScope.launch {
-            val result = movieRepository.restoreViewings(undo.logs, undo.statusBefore)
+            val result = movieRepository.restoreViewings(undo.logs, undo.demoted)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }

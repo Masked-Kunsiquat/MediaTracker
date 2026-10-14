@@ -301,19 +301,18 @@ interface MovieWriteDao {
     }
 
     /**
-     * Deletes one film viewing, returning it and the status before, for Undo. Deleting a Watched
-     * film's last viewing moves it to Watchlist, the way an episode un-ticks when its last one goes.
+     * Deletes one film viewing, returning it for Undo. Deleting a Watched film's last viewing moves it
+     * to Watchlist, the way an episode un-ticks when its last one goes -- and the result says so.
      */
     @Transaction
     suspend fun deleteFilmViewing(logId: String): FilmViewingDeletion? {
         val log = viewingById(logId)?.takeIf { it.episodeId == null } ?: return null
         val before = statusOf(log.mediaId) ?: return null
         deleteViewingRow(logId)
-        if (before == WatchStatus.WATCHED && filmViewingCount(log.mediaId) == 0) {
-            setStatus(log.mediaId, WatchStatus.WATCHLIST)
-        }
+        val demoted = before == WatchStatus.WATCHED && filmViewingCount(log.mediaId) == 0
+        if (demoted) setStatus(log.mediaId, WatchStatus.WATCHLIST)
         recomputeFilmWatchedAt(log.mediaId)
-        return FilmViewingDeletion(log, before)
+        return FilmViewingDeletion(log, demoted)
     }
 
     @Transaction
@@ -329,18 +328,18 @@ interface MovieWriteDao {
 
     /**
      * Undo for [deleteFilmViewing]. A no-op when the film is gone -- re-inserting would violate the
-     * foreign key. Puts Watched back only if the delete is what moved the film to Watchlist, so a
-     * status the user chose since wins.
+     * foreign key. Puts Watched back only if a delete being undone is what moved the film to Watchlist
+     * ([demoted]) and it is still there, so a status the user chose since wins.
      */
     @Transaction
     suspend fun restoreFilmViewings(
         logs: List<WatchLogEntity>,
-        statusBefore: WatchStatus,
+        demoted: Boolean,
     ): Boolean {
         val mediaId = logs.firstOrNull()?.mediaId ?: return false
         val current = statusOf(mediaId) ?: return false
         logs.filter { viewingById(it.id) == null }.forEach { insertViewing(it) }
-        if (statusBefore == WatchStatus.WATCHED && current == WatchStatus.WATCHLIST) {
+        if (demoted && current == WatchStatus.WATCHLIST) {
             setStatus(mediaId, WatchStatus.WATCHED)
         }
         recomputeFilmWatchedAt(mediaId)
@@ -410,10 +409,13 @@ interface MovieWriteDao {
     }
 }
 
-/** What [MovieWriteDao.deleteFilmViewing] removed, and the status before it, so Undo can restore both. */
+/**
+ * What [MovieWriteDao.deleteFilmViewing] removed, and whether that delete moved the film from Watched
+ * to Watchlist ([demoted]) -- the only case in which Undo may put Watched back.
+ */
 public data class FilmViewingDeletion(
     val log: WatchLogEntity,
-    val statusBefore: WatchStatus,
+    val demoted: Boolean,
 )
 
 private fun filmViewing(

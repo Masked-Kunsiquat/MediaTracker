@@ -24,6 +24,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
 import com.hub.media.ui.MovieDetailUiState.Ready as Ready
@@ -159,7 +160,7 @@ class MovieDetailViewModelTest {
             vm.awaitReady { it.viewings.size == 1 && it.viewingUndo != null }
             vm.deleteViewing(logs[1])
             val s = vm.awaitReady { it.viewings.isEmpty() && it.viewingUndo?.logs?.size == 2 }
-            assertEquals(WatchStatus.WATCHED, s.viewingUndo!!.statusBefore)
+            assertTrue(s.viewingUndo!!.demoted, "the second delete emptied the history, demoting the film")
             vm.undoViewing()
             vm.awaitReady { it.viewings.size == 2 && it.movie.details?.status == WatchStatus.WATCHED }
         }

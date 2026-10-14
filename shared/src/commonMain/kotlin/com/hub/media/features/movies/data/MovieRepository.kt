@@ -277,10 +277,10 @@ public class MovieRepository(
     /** Undo for [deleteViewing]; quietly does nothing for a film deleted since. */
     public suspend fun restoreViewings(
         logs: List<WatchLogEntity>,
-        statusBefore: WatchStatus,
+        demoted: Boolean,
     ): Resource<Unit> =
         write("restore ${logs.size} viewing(s)") {
-            db.movieWriteDao().restoreFilmViewings(logs, statusBefore)
+            db.movieWriteDao().restoreFilmViewings(logs, demoted)
             Resource.Success(Unit)
         }
 

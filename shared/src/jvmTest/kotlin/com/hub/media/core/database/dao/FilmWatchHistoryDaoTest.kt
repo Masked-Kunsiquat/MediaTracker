@@ -107,10 +107,10 @@ class FilmWatchHistoryDaoTest {
         runTest {
             val id = film(WatchStatus.WATCHED)
             val deletion = assertNotNull(dao.deleteFilmViewing(viewings(id).single().id))
-            assertEquals(WatchStatus.WATCHED, deletion.statusBefore)
+            assertTrue(deletion.demoted)
             assertEquals(WatchStatus.WATCHLIST, details(id).status)
             assertInvariant(id)
-            assertTrue(dao.restoreFilmViewings(listOf(deletion.log), deletion.statusBefore))
+            assertTrue(dao.restoreFilmViewings(listOf(deletion.log), deletion.demoted))
             assertEquals(WatchStatus.WATCHED, details(id).status)
             assertEquals(t1, details(id).watchedAt)
         }
@@ -139,7 +139,7 @@ class FilmWatchHistoryDaoTest {
             val id = film(WatchStatus.WATCHED)
             val deletion = assertNotNull(dao.deleteFilmViewing(viewings(id).single().id))
             db.mediaItemDao().deleteById(id)
-            assertFalse(dao.restoreFilmViewings(listOf(deletion.log), deletion.statusBefore))
+            assertFalse(dao.restoreFilmViewings(listOf(deletion.log), deletion.demoted))
         }
 
     @Test
@@ -206,5 +206,24 @@ class FilmWatchHistoryDaoTest {
             dao.changeStatus(id, WatchStatus.WATCHLIST, t2)
             assertFalse(dao.restoreFilmStatus(id, WatchStatus.WATCHED, expectedCurrent = WatchStatus.WATCHING))
             assertEquals(WatchStatus.WATCHLIST, details(id).status)
+        }
+
+    @Test
+    fun restoreFilmViewings_afterALaterWatchlistChoice_keepsIt() =
+        runTest {
+            // CodeRabbit (#193): delete one of two viewings (still Watched), choose Watchlist, then Undo.
+            val id = film(WatchStatus.WATCHED)
+            dao.addFilmViewing(id, t2)
+            val deletion = assertNotNull(dao.deleteFilmViewing(viewings(id).first { it.watchedAt == t2 }.id))
+            assertEquals(WatchStatus.WATCHED, details(id).status, "positive control: one viewing left, still Watched")
+            dao.changeStatus(id, WatchStatus.WATCHLIST, t2)
+            assertTrue(dao.restoreFilmViewings(listOf(deletion.log), deletion.demoted))
+            assertEquals(
+                WatchStatus.WATCHLIST,
+                details(id).status,
+                "the delete did not demote it, so Undo must not promote it",
+            )
+            assertEquals(2, viewings(id).size)
+            assertInvariant(id)
         }
 }
