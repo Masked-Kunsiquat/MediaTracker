@@ -40,7 +40,13 @@ public object ExportArchive {
     public const val NO_LIBRARY: String = "This export has no library_export.csv"
     public const val UNREADABLE: String = "Couldn't read this file"
 
-    private val json = Json { ignoreUnknownKeys = true }
+    // encodeDefaults: `format` and `formatVersion` equal their defaults, and the version marker is the
+    // one field a future import must be able to read -- left out, a newer app would assume its own.
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     /** Every entry is always written, even a CSV that holds only its header. */
     public fun encode(

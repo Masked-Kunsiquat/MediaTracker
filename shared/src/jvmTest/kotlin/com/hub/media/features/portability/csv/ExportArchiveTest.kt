@@ -56,6 +56,19 @@ class ExportArchiveTest {
     }
 
     @Test
+    fun manifest_alwaysWritesItsFormatAndVersion() {
+        // Found on the device (#196): kotlinx.serialization omits default-valued fields, so the version
+        // marker every future import relies on was never written. A later app would then read its own
+        // current version as the default -- the check would pass for anything.
+        val manifestJson =
+            unzipEntries(
+                ExportArchive.encode(bundle, manifest),
+            ).getValue(ExportArchive.MANIFEST).decodeToString()
+        assertTrue("\"format\":\"media-tracker-export\"" in manifestJson, manifestJson)
+        assertTrue("\"formatVersion\":1" in manifestJson, manifestJson)
+    }
+
+    @Test
     fun isZip_checksTheHeader() {
         assertTrue(ExportArchive.isZip(ExportArchive.encode(bundle, manifest)))
         assertFalse(ExportArchive.isZip("csv_schema_version,".encodeToByteArray()))
