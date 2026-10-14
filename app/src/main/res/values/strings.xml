@@ -314,7 +314,7 @@
     <!-- SettingsScreen: data import (ROADMAP Task 8 Phase B) -->
     <string name="settings_import_label">Import library</string>
     <string name="settings_import_description">Restore or merge an export: pick its .zip file, or a single library CSV.</string>
-    <string name="settings_import_button">Import from CSV</string>
+    <string name="settings_import_button">Import</string>
     <string name="settings_import_duplicate_policy_label">When an item already exists</string>
     <string name="settings_import_duplicate_policy_description">Controls what happens when an imported row matches something already in your library.</string>
     <string name="duplicate_policy_skip">Skip</string>
