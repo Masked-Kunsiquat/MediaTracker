@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- Every catch around suspending code in `shared/` now goes through two helpers in `core/util/Cancellation.kt`: `catchingNonCancellation`, which always rethrows coroutine cancellation, and `guardResource`, the standard log-and-`Resource.Error` failure built on it. 67 hand-written copies of the rethrow are gone; five sites whose cancellation branch does real work keep theirs. Closes the last item of #81.
+- `LocalImageStorageManager.saveImage` rethrows coroutine cancellation instead of returning it as `Result.failure`; it was the one suspending catch in `shared/` without the rethrow.
+
 ## [0.25.0] - 2026-10-15
 
 ### Added
