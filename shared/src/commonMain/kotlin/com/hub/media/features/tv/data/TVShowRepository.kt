@@ -764,13 +764,24 @@ public class TVShowRepository(
             Resource.Error("Failed to update viewing: ${e.message ?: "Unknown error"}", cause = e)
         }
 
+    /**
+     * Saves the Edit screen's fields (#173): title, release year, purchase price, total seasons.
+     *
+     * Never writes status -- see [com.hub.media.core.database.dao.TVWriteDao.updateTVDetailFields].
+     *
+     * ### Against a later Refresh
+     * Refresh fills only `null` columns (`COALESCE`, see
+     * [com.hub.media.core.database.dao.TVWriteDao.fillShowMetadata]), so a value typed here always
+     * survives it. A field cleared here is `null` = unknown, and the next Refresh may fill it again.
+     * That is accepted rather than prevented: pinning a cleared field would need a schema change
+     * for a case nobody has asked for.
+     */
     public suspend fun updateShowMetadata(
         mediaId: String,
         title: String,
         releaseYear: Int? = null,
         purchasePrice: Double? = null,
         totalSeasons: Int? = null,
-        status: WatchStatus,
     ): Resource<Unit> {
         TVMetadataValidation.validateTitle(title)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
@@ -785,7 +796,6 @@ public class TVShowRepository(
                     releaseYear = releaseYear,
                     purchasePrice = purchasePrice,
                     totalSeasons = totalSeasons,
-                    status = status,
                 )
             if (rows == 0) Resource.Error("TV show with id=$mediaId not found") else Resource.Success(Unit)
         } catch (e: CancellationException) {

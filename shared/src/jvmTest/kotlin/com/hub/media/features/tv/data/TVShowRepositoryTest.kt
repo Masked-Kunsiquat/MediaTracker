@@ -1380,7 +1380,6 @@ class TVShowRepositoryTest {
                     releaseYear = 2009,
                     purchasePrice = 9.99,
                     totalSeasons = 2,
-                    status = WatchStatus.WATCHING,
                 )
             assertIs<Resource.Success<Unit>>(result)
 
@@ -1391,7 +1390,7 @@ class TVShowRepositoryTest {
 
             val details = db.tvDetailsDao().getByMediaId(mediaId)
             assertEquals(2, details?.totalSeasons)
-            assertEquals(WatchStatus.WATCHING, details?.status)
+            assertEquals(WatchStatus.WATCHLIST, details?.status, "an edit leaves status as it was")
         }
 
     @Test
@@ -1400,7 +1399,7 @@ class TVShowRepositoryTest {
             val unknownId = newId()
 
             val result =
-                repo.updateShowMetadata(mediaId = unknownId, title = "Any Title", status = WatchStatus.WATCHLIST)
+                repo.updateShowMetadata(mediaId = unknownId, title = "Any Title")
             assertIs<Resource.Error>(result)
             assertTrue(result.message.contains("not found"))
 
@@ -1433,7 +1432,6 @@ class TVShowRepositoryTest {
                     releaseYear = 2000,
                     purchasePrice = 1.0,
                     totalSeasons = 3,
-                    status = WatchStatus.WATCHED,
                 )
             assertIs<Resource.Error>(result)
             assertTrue(result.message.contains("not found"))
@@ -1449,7 +1447,7 @@ class TVShowRepositoryTest {
     fun updateShowMetadata_detailsRowMissing_selfHealsRatherThanReportingAHalfWrite() =
         runTest {
             // The data-integrity edge MediaWithDetails.TVShow.details documents: a media_items row
-            // with no tv_details half. The UPDATE there matches nothing, so totalSeasons/status used
+            // with no tv_details half. The UPDATE there matches nothing, so totalSeasons used
             // to go nowhere while the media_items row count still said "updated".
             val mediaId = newId()
             db.tvWriteDao().insertMediaItem(
@@ -1469,13 +1467,132 @@ class TVShowRepositoryTest {
                     mediaId = mediaId,
                     title = "Orphaned",
                     totalSeasons = 4,
-                    status = WatchStatus.WATCHING,
                 )
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.tvDetailsDao().getByMediaId(mediaId)
             assertEquals(4, details?.totalSeasons, "the missing details row must be created, not skipped")
-            assertEquals(WatchStatus.WATCHING, details?.status)
+            assertEquals(WatchStatus.WATCHLIST, details?.status, "the repair invents only the meaningless default")
+        }
+
+    @Test
+    fun updateShowMetadata_leavesAnAbandonedShowAbandoned() =
+        runTest {
+            // The edit form has no status control (#173): abandoning is the detail screen's toggle.
+            // So the save must not write the column at all, or an edit would silently un-abandon.
+            val mediaId = (repo.addShow(title = "Lost", releaseYear = 2004) as Resource.Success).data
+            assertIs<Resource.Success<Unit>>(repo.updateWatchStatus(mediaId, WatchStatus.ABANDONED))
+
+            val result = repo.updateShowMetadata(mediaId = mediaId, title = "LOST", releaseYear = 2004)
+            assertIs<Resource.Success<Unit>>(result)
+
+            assertEquals("LOST", db.mediaItemDao().getById(mediaId)?.title, "positive control: the edit landed")
+            assertEquals(WatchStatus.ABANDONED, db.tvDetailsDao().getByMediaId(mediaId)?.status)
+        }
+
+    @Test
+    fun updateShowMetadata_leavesProviderOnlyFieldsUntouched() =
+        runTest {
+            val firstAired = Instant.fromEpochMilliseconds(1_200_000_000_000L)
+            val lastAired = Instant.fromEpochMilliseconds(1_300_000_000_000L)
+            val mediaId =
+                (
+                    repo.addShow(
+                        title = "Breaking Bad",
+                        releaseYear = 2008,
+                        synopsis = "A chemistry teacher.",
+                        airingStatus = AiringStatus.ENDED,
+                        firstAirDate = firstAired,
+                        lastAirDate = lastAired,
+                        communityRating = 8.9,
+                    ) as Resource.Success
+                ).data
+
+            assertIs<Resource.Success<Unit>>(
+                repo.updateShowMetadata(mediaId = mediaId, title = "Breaking Bad (2008)", releaseYear = 2008),
+            )
+
+            val item = db.mediaItemDao().getById(mediaId)
+            assertEquals("Breaking Bad (2008)", item?.title, "positive control: the edit landed")
+            assertEquals("A chemistry teacher.", item?.synopsis)
+            assertEquals(8.9, item?.communityRating)
+            val details = db.tvDetailsDao().getByMediaId(mediaId)
+            assertEquals(AiringStatus.ENDED, details?.airingStatus)
+            assertEquals(firstAired.toEpochMilliseconds(), details?.firstAirDate)
+            assertEquals(lastAired.toEpochMilliseconds(), details?.lastAirDate)
+        }
+
+    @Test
+    fun updateShowMetadata_editedYearSurvivesALaterRefresh() =
+        runTest {
+            // "A typed value always wins" (#173's spec): Refresh fills only null columns.
+            val mediaId = (repo.addShow(title = "Dark", releaseYear = 2016) as Resource.Success).data
+            assertIs<Resource.Success<Unit>>(
+                repo.updateShowMetadata(mediaId = mediaId, title = "Dark", releaseYear = 2017),
+            )
+
+            db.tvWriteDao().fillShowMetadata(
+                mediaId = mediaId,
+                releaseYear = 2016,
+                communityRating = null,
+                totalSeasons = null,
+                airingStatus = null,
+                synopsis = null,
+                firstAirDate = null,
+                lastAirDate = null,
+            )
+
+            assertEquals(2017, db.mediaItemDao().getById(mediaId)?.releaseYear)
+        }
+
+    @Test
+    fun updateShowMetadata_clearedYearIsRefilledByALaterRefresh() =
+        runTest {
+            // The accepted half of the same rule, pinned so it is documented rather than discovered:
+            // blank means "unknown", and Refresh may fill an unknown. Changing this needs a schema change.
+            val mediaId = (repo.addShow(title = "Dark", releaseYear = 2016) as Resource.Success).data
+            assertIs<Resource.Success<Unit>>(
+                repo.updateShowMetadata(mediaId = mediaId, title = "Dark", releaseYear = null),
+            )
+            assertNull(db.mediaItemDao().getById(mediaId)?.releaseYear, "precondition: the year was cleared")
+
+            db.tvWriteDao().fillShowMetadata(
+                mediaId = mediaId,
+                releaseYear = 2016,
+                communityRating = null,
+                totalSeasons = null,
+                airingStatus = null,
+                synopsis = null,
+                firstAirDate = null,
+                lastAirDate = null,
+            )
+
+            assertEquals(2016, db.mediaItemDao().getById(mediaId)?.releaseYear)
+        }
+
+    @Test
+    fun updateShowMetadata_lowerTotalSeasons_deletesNoEpisodes() =
+        runTest {
+            // totalSeasons is advisory (TVDetailsEntity KDoc); the season dialog owns episode rows.
+            val mediaId =
+                (
+                    repo.addShow(
+                        title = "Fargo",
+                        totalSeasons = 2,
+                        seasons =
+                            listOf(
+                                SeasonQuickFill(seasonNumber = 1, episodeCount = 3),
+                                SeasonQuickFill(seasonNumber = 2, episodeCount = 2),
+                            ),
+                    ) as Resource.Success
+                ).data
+
+            assertIs<Resource.Success<Unit>>(
+                repo.updateShowMetadata(mediaId = mediaId, title = "Fargo", totalSeasons = 1),
+            )
+
+            assertEquals(1, db.tvDetailsDao().getByMediaId(mediaId)?.totalSeasons)
+            assertEquals(5, repo.observeEpisodes(mediaId).first().size)
         }
 
     // ---- updateWatchStatus -----------------------------------------------------------------------
