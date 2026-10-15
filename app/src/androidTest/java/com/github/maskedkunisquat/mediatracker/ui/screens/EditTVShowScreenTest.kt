@@ -66,6 +66,7 @@ class EditTVShowScreenTest {
                     onPurchasePriceChange = onPurchasePriceChange,
                     onSave = onSave,
                     onErrorShown = onErrorShown,
+                    onRetry = {},
                     onNavigateBack = {},
                 )
             }

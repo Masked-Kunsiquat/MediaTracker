@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rotating the phone while choosing where to save a database backup no longer produces an empty
   backup file and a second save dialog (#162). The backup now completes as normal; if Android ended
   the app while the dialog was open, the empty file is removed and you're asked to start again.
+- Opening Edit on a book, film or show no longer crashes the app if its details can't be read;
+  the screen now says so and offers Retry or Go back.
 
 ### Internal
 

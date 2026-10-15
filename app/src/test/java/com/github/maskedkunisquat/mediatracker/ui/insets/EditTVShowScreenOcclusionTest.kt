@@ -50,6 +50,7 @@ class EditTVShowScreenOcclusionTest {
             onPurchasePriceChange = {},
             onSave = {},
             onErrorShown = {},
+            onRetry = {},
             onNavigateBack = {},
         )
     }

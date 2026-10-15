@@ -92,6 +92,7 @@ class EditMovieScreenTest {
                     onStatusChange = {},
                     onSave = onSave,
                     onErrorShown = onErrorShown,
+                    onRetry = {},
                     onNavigateBack = {},
                 )
             }

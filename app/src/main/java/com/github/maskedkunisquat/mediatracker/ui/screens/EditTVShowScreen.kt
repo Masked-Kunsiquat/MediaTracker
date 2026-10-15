@@ -41,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditTVShowViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.features.tv.data.TVMetadataValidation
@@ -77,6 +78,7 @@ fun EditTVShowScreenRoute(
         onPurchasePriceChange = viewModel::onPurchasePriceChange,
         onSave = viewModel::save,
         onErrorShown = viewModel::consumeSaveError,
+        onRetry = viewModel::retry,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -98,6 +100,7 @@ fun EditTVShowScreen(
     onPurchasePriceChange: (String) -> Unit,
     onSave: () -> Unit,
     onErrorShown: () -> Unit,
+    onRetry: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -144,7 +147,11 @@ fun EditTVShowScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (form == null) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                if (uiState is EditTVShowUiState.LoadFailed) {
+                    EditLoadFailed(onRetry = onRetry, onNavigateBack = onNavigateBack)
+                } else {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
                 return@Column
             }
 

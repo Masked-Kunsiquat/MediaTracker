@@ -60,6 +60,7 @@ class EditMovieScreenOcclusionTest {
             onStatusChange = {},
             onSave = {},
             onErrorShown = {},
+            onRetry = {},
             onNavigateBack = {},
         )
     }

@@ -61,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
 import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
@@ -110,6 +111,7 @@ fun EditBookScreenRoute(
     EditBookScreen(
         uiState = uiState,
         onNavigateBack = onNavigateBack,
+        onRetry = viewModel::retry,
         onSave = { title, releaseYear, purchasePrice, totalPages, format, status, trackingMode ->
             viewModel.save(
                 title = title,
@@ -129,12 +131,15 @@ fun EditBookScreenRoute(
  *
  * Renders [uiState]:
  * - [EditBookUiState.Loading]: a centered [CircularProgressIndicator].
+ * - [EditBookUiState.LoadFailed]: [EditLoadFailed], offering Retry and Go back.
  * - [EditBookUiState.NotFound]/[EditBookUiState.Saved]: nothing (the route wrapper navigates back
  *   before either would be visible for more than a frame).
  * - [EditBookUiState.Ready]: the editable form, see [EditBookForm].
  *
  * @param uiState Current [EditBookUiState].
  * @param onNavigateBack Called when the back icon or Cancel button is pressed.
+ * @param onRetry Re-reads the book after [EditBookUiState.LoadFailed], wired to
+ *   [EditBookViewModel.retry].
  * @param onSave Called with the edited (title, releaseYear, purchasePrice, totalPages, format,
  *   status, trackingMode) once the form passes client-side validation, wired to
  *   [EditBookViewModel.save].
@@ -144,6 +149,7 @@ fun EditBookScreenRoute(
 fun EditBookScreen(
     uiState: EditBookUiState,
     onNavigateBack: () -> Unit,
+    onRetry: () -> Unit,
     onSave: (
         title: String,
         releaseYear: Int?,
@@ -189,6 +195,14 @@ fun EditBookScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator()
+                    }
+                }
+                is EditBookUiState.LoadFailed -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EditLoadFailed(onRetry = onRetry, onNavigateBack = onNavigateBack)
                     }
                 }
                 is EditBookUiState.NotFound, is EditBookUiState.Saved -> {
@@ -683,6 +697,7 @@ private fun EditBookScreenReadyPreview() {
     MediaTrackerTheme {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE,
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
@@ -696,6 +711,7 @@ private fun EditBookScreenReadyDarkPreview() {
     MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE,
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
@@ -709,6 +725,7 @@ private fun EditBookScreenErrorPreview() {
     MediaTrackerTheme {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE.copy(errorMessage = "Total pages must be a positive number"),
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
@@ -722,6 +739,7 @@ private fun EditBookScreenSavingPreview() {
     MediaTrackerTheme {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE.copy(isSaving = true),
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
@@ -735,6 +753,7 @@ private fun EditBookScreenUnknownTotalPagesPreview() {
     MediaTrackerTheme {
         EditBookScreen(
             uiState = PREVIEW_READY_STATE.copy(totalPages = null, purchasePrice = null),
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
@@ -753,6 +772,7 @@ private fun EditBookScreenLongTitlePreview() {
                         "The Extraordinarily Long and Overly Descriptive Subtitle-Laden Book Title " +
                             "That Just Keeps Going",
                 ),
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
@@ -766,6 +786,7 @@ private fun EditBookScreenLoadingPreview() {
     MediaTrackerTheme {
         EditBookScreen(
             uiState = EditBookUiState.Loading,
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )
