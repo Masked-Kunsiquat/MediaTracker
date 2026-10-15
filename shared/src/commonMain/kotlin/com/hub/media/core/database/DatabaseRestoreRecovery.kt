@@ -1,5 +1,11 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.error
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
+
 /**
  * Outcome of the most recent restore attempt (ROADMAP Task 8 Phase C), persisted as a small
  * plain-text marker file next to the live database by
@@ -127,16 +133,49 @@ public suspend fun consumeRestoreMarker(liveDatabaseFilePath: String): RestoreMa
  * either failed, this call leaves the live file still missing -- the exact "not yet healed" state the
  * early-return above knows how to retry -- rather than ever presenting a half-healed database as
  * whole.
+ *
+ * @return `true` only when the backup's main file was moved back into place; `false` when there was
+ *   nothing to heal, or a sidecar move failed (the next launch retries). Logged by [logRestoreRecovery].
  */
-public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String) {
+public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String): Boolean {
     val backupPath = preRestoreBackupPath(liveDatabaseFilePath)
-    if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return
+    if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return false
 
     val backupWal = "$backupPath-wal"
     val backupShm = "$backupPath-shm"
     val walRestored = !fileExists(backupWal) || renameFile(backupWal, "$liveDatabaseFilePath-wal")
     val shmRestored = !fileExists(backupShm) || renameFile(backupShm, "$liveDatabaseFilePath-shm")
-    if (walRestored && shmRestored) {
-        renameFile(backupPath, liveDatabaseFilePath)
+    return walRestored && shmRestored && renameFile(backupPath, liveDatabaseFilePath)
+}
+
+private const val RECOVERY_TAG = "RestoreRecovery"
+
+/**
+ * Records, on the launch after a restore, what [selfHealDatabaseIfNeeded] and [consumeRestoreMarker]
+ * found (#115). This is the first moment the persistent log store is alive again: the restore
+ * itself ran after `AppContainer.close()` had shut the store down, so its own lines reached logcat
+ * only. An ordinary launch (nothing healed, no marker) logs nothing.
+ */
+internal fun logRestoreRecovery(
+    healed: Boolean,
+    marker: RestoreMarker?,
+    logger: Logger = AppLogger,
+) {
+    if (healed) {
+        logger.warn(RECOVERY_TAG) {
+            "the live database was missing at startup; the pre-restore backup was moved back into place " +
+                "(an interrupted restore)"
+        }
+    }
+    when (marker) {
+        RestoreMarker.Success ->
+            logger.info(RECOVERY_TAG) {
+                "restore completed before this launch: the database was replaced from a staged backup"
+            }
+        is RestoreMarker.Failure ->
+            logger.error(
+                RECOVERY_TAG,
+            ) { "restore failed before this launch: ${marker.message}" }
+        null -> Unit
     }
 }
