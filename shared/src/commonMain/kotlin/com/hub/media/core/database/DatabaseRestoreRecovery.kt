@@ -1,5 +1,11 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.error
+import com.hub.media.core.util.info
+import com.hub.media.core.util.warn
+
 /**
  * Outcome of the most recent restore attempt (ROADMAP Task 8 Phase C), persisted as a small
  * plain-text marker file next to the live database by
@@ -124,19 +130,86 @@ public suspend fun consumeRestoreMarker(liveDatabaseFilePath: String): RestoreMa
  * file present (sentinel satisfied) with its WAL still stranded at the backup path, forever
  * unreachable once this function's own early-return stops looking for it. So the main-file rename is
  * gated on both sidecar renames having succeeded (or not having been needed in the first place); if
- * either failed, this call leaves the live file still missing -- the exact "not yet healed" state the
- * early-return above knows how to retry -- rather than ever presenting a half-healed database as
- * whole.
+ * either failed, this call leaves the live file still missing rather than ever presenting a
+ * half-healed database as whole, and reports [SelfHealResult.Failed]. (Only a process death between
+ * steps is finished by the next launch; a failure on a live process is followed by Room opening an
+ * empty database -- see `@return`.)
+ *
+ * @return [SelfHealResult.Healed] when the backup's main file was moved back into place,
+ *   [SelfHealResult.NotNeeded] when there was nothing to heal, and [SelfHealResult.Failed] when a heal
+ *   was needed but moving a sidecar or the main file back failed. A failure is not retried in practice: the caller goes on to
+ *   open Room, which creates an empty database at the live path, so the next launch sees a live file
+ *   and stops here. The backup stays where [SelfHealResult.Failed.backupPath] says, for recovery by
+ *   hand. All three are logged by [logRestoreRecovery].
  */
-public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String) {
+public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String): SelfHealResult {
     val backupPath = preRestoreBackupPath(liveDatabaseFilePath)
-    if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return
+    if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return SelfHealResult.NotNeeded
 
     val backupWal = "$backupPath-wal"
     val backupShm = "$backupPath-shm"
     val walRestored = !fileExists(backupWal) || renameFile(backupWal, "$liveDatabaseFilePath-wal")
     val shmRestored = !fileExists(backupShm) || renameFile(backupShm, "$liveDatabaseFilePath-shm")
-    if (walRestored && shmRestored) {
-        renameFile(backupPath, liveDatabaseFilePath)
+    val healed = walRestored && shmRestored && renameFile(backupPath, liveDatabaseFilePath)
+    return if (healed) SelfHealResult.Healed else SelfHealResult.Failed(backupPath)
+}
+
+/** What [selfHealDatabaseIfNeeded] did at startup (#115). */
+public sealed class SelfHealResult {
+    /** The live database was present, or there was no pre-restore backup: nothing to do. */
+    public data object NotNeeded : SelfHealResult()
+
+    /** The live database was missing, and the pre-restore backup was moved back into place. */
+    public data object Healed : SelfHealResult()
+
+    /**
+     * The live database was missing and a heal was needed, but moving a `-wal`/`-shm` sidecar or
+     * the main file back failed, so the main backup file is still at [backupPath] (a failed sidecar
+     * move leaves it there deliberately, rather than presenting it without its WAL).
+     */
+    public data class Failed(
+        val backupPath: String,
+    ) : SelfHealResult()
+}
+
+private const val RECOVERY_TAG = "RestoreRecovery"
+
+/**
+ * Records, on the launch after a restore, what [selfHealDatabaseIfNeeded] and [consumeRestoreMarker]
+ * found (#115). This is the first moment the persistent log store is alive again: the restore
+ * itself ran after `AppContainer.close()` had shut the store down, so its own lines reached logcat
+ * only. An ordinary launch (nothing healed, no marker) logs nothing.
+ */
+internal fun logRestoreRecovery(
+    heal: SelfHealResult,
+    marker: RestoreMarker?,
+    logger: Logger = AppLogger,
+) {
+    when (heal) {
+        SelfHealResult.NotNeeded -> Unit
+        SelfHealResult.Healed ->
+            logger.warn(RECOVERY_TAG) {
+                "the live database was missing at startup; the pre-restore backup was moved back into place " +
+                    "(an interrupted restore)"
+            }
+        is SelfHealResult.Failed ->
+            // The one restore incident that loses the library from the user's view: Room opens an
+            // empty database at the live path next. The path is app-private (Logger's identifier
+            // rule allows the restore backup path), and it is what recovery by hand needs.
+            logger.error(RECOVERY_TAG) {
+                "the live database was missing at startup and the pre-restore backup could not be moved " +
+                    "back (moving it or its WAL/SHM failed); it remains at ${heal.backupPath}"
+            }
+    }
+    when (marker) {
+        RestoreMarker.Success ->
+            logger.info(RECOVERY_TAG) {
+                "restore completed before this launch: the database was replaced from a staged backup"
+            }
+        is RestoreMarker.Failure ->
+            logger.error(
+                RECOVERY_TAG,
+            ) { "restore failed before this launch: ${marker.message}" }
+        null -> Unit
     }
 }

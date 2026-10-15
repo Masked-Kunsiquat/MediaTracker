@@ -4,6 +4,7 @@ import android.content.Context
 import com.hub.media.core.database.DatabaseFactory
 import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
+import com.hub.media.core.database.logRestoreRecovery
 import com.hub.media.core.database.selfHealDatabaseIfNeeded
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.LogFileStore
@@ -43,8 +44,8 @@ public fun createAppContainer(
     val databaseFilePath = databaseFactory.databaseFilePath()
     val pendingRestoreMarker =
         runBlocking {
-            selfHealDatabaseIfNeeded(databaseFilePath)
-            consumeRestoreMarker(databaseFilePath)
+            val heal = selfHealDatabaseIfNeeded(databaseFilePath)
+            consumeRestoreMarker(databaseFilePath).also { marker -> logRestoreRecovery(heal, marker) }
         }
     val database = buildAppDatabase(databaseFactory.create())
     val imageStorage = LocalImageStorageManager(coverStorageDirectory(context))

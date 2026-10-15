@@ -11,6 +11,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.AppDatabaseConstructor
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.database.SQLITE_HEADER_SIZE
+import com.hub.media.core.database.SelfHealResult
 import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
 import com.hub.media.core.database.entities.BookFormat
@@ -20,6 +21,7 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.data.ReadingSessionRepository
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -39,6 +41,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * Integration tests for [DefaultRestoreDatabaseUseCase] against real, file-backed databases
@@ -596,7 +599,11 @@ class RestoreDatabaseUseCaseTest {
         runTest {
             val livePath = path("live.db")
             createFreshDatabaseFile(livePath)
-            selfHealDatabaseIfNeeded(livePath)
+            assertEquals(
+                SelfHealResult.NotNeeded,
+                selfHealDatabaseIfNeeded(livePath),
+                "nothing to heal: the live file is present",
+            )
             assertTrue(File(livePath).exists())
             assertFalse(File("$livePath.pre-restore-bak").exists())
         }
@@ -625,7 +632,7 @@ class RestoreDatabaseUseCaseTest {
             File(livePath).renameTo(File("$livePath.pre-restore-bak"))
             assertFalse(File(livePath).exists())
 
-            selfHealDatabaseIfNeeded(livePath)
+            assertEquals(SelfHealResult.Healed, selfHealDatabaseIfNeeded(livePath), "healed")
 
             assertTrue(File(livePath).exists(), "self-heal must restore the live file from the backup")
             val reopened = openDatabase(livePath)
@@ -641,7 +648,7 @@ class RestoreDatabaseUseCaseTest {
     fun selfHeal_neitherLiveNorBackupExists_isANoOp() =
         runTest {
             val livePath = path("live.db")
-            selfHealDatabaseIfNeeded(livePath)
+            assertEquals(SelfHealResult.NotNeeded, selfHealDatabaseIfNeeded(livePath), "nothing to heal: no backup")
             assertFalse(File(livePath).exists())
         }
 
@@ -675,7 +682,7 @@ class RestoreDatabaseUseCaseTest {
             val walPath = "$livePath-wal"
             File(walPath).mkdirs()
 
-            selfHealDatabaseIfNeeded(livePath)
+            assertIs<SelfHealResult.Failed>(selfHealDatabaseIfNeeded(livePath), "a sidecar move failed")
 
             assertFalse(
                 File(livePath).exists(),
@@ -689,7 +696,7 @@ class RestoreDatabaseUseCaseTest {
             // Directory cleared (as if the transient condition cleared) -- a subsequent call must
             // finish the job completely, with no data lost.
             File(walPath).delete()
-            selfHealDatabaseIfNeeded(livePath)
+            assertEquals(SelfHealResult.Healed, selfHealDatabaseIfNeeded(livePath), "the retry heals")
 
             assertTrue(File(livePath).exists(), "retrying after the transient failure clears must complete the heal")
             assertEquals("WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS", File("$livePath-wal").readText())
@@ -817,5 +824,89 @@ class RestoreDatabaseUseCaseTest {
                 },
                 "the log message must never echo file content -- only fixed diagnostic text and paths",
             )
+        }
+
+    // ==========================================================================================
+    // #115: stage() records what a candidate holds, while the log store is still alive
+    // ==========================================================================================
+
+    @Test
+    fun stage_currentSchema_logsAStagedLineWithRowCounts() =
+        runTest {
+            val candidatePath = path("candidate.db")
+            val db = openDatabase(candidatePath)
+            val books = BookRepository(db)
+            val sessions = ReadingSessionRepository(db)
+            val ids =
+                (1..2).map { i ->
+                    assertIs<Resource.Success<String>>(
+                        books.addBook(
+                            title = "Book $i",
+                            releaseYear = 2019,
+                            purchasePrice = null,
+                            format = BookFormat.HARDCOVER,
+                            totalPages = 100,
+                            isbn = null,
+                            externalIdentifiers = emptyList(),
+                        ),
+                    ).data
+                }
+            repeat(3) { n ->
+                assertIs<Resource.Success<String>>(
+                    sessions.logSession(
+                        mediaId = ids.first(),
+                        timestampStart = Instant.fromEpochSeconds(1_700_000_000L + n * 3_600),
+                        timestampEnd = Instant.fromEpochSeconds(1_700_000_600L + n * 3_600),
+                        durationSeconds = 600,
+                        startUnit = n * 10.0,
+                        endUnit = n * 10.0 + 10,
+                    ),
+                )
+            }
+            db.close()
+            val recorder = RecordingLogger()
+
+            val result = DefaultRestoreDatabaseUseCase(path("live.db"), logger = recorder).stage(candidatePath)
+
+            assertIs<Resource.Success<StagedRestoreInfo>>(result)
+            val staged = recorder.entries.single { it.message.startsWith("Restore staged") }
+            assertEquals(LogLevel.INFO, staged.level)
+            for (part in listOf(
+                "schema v$APP_DATABASE_VERSION (current)",
+                "items=2",
+                "sessions=3",
+                "episodes=0",
+                "viewings=0",
+            )) {
+                assertTrue(part in staged.message, "expected '$part' in: ${staged.message}")
+            }
+            assertFalse("Book 1" in staged.message, "identifier rule: no titles")
+        }
+
+    @Test
+    fun stage_olderSchema_logsMissingTablesAsNotApplicable() =
+        runTest {
+            migrationHelper.createDatabase(2).use { db ->
+                db.execSQL(
+                    "INSERT INTO media_items (id, type, title, releaseYear, " +
+                        "purchasePrice, createdAt, coverImageHash) " +
+                        "VALUES ('media-1', 'BOOK', 'Old Book', 2015, 4.99, 1600000000000, NULL)",
+                )
+            }
+            val candidatePath = tempDir.resolve("migration-seed.db").toString()
+            val recorder = RecordingLogger()
+
+            DefaultRestoreDatabaseUseCase(path("live.db"), logger = recorder).stage(candidatePath)
+
+            val staged = recorder.entries.single { it.message.startsWith("Restore staged") }
+            for (part in listOf(
+                "schema v2 (older; migrates on next launch)",
+                "items=1",
+                "sessions=0",
+                "episodes=n/a",
+                "viewings=n/a",
+            )) {
+                assertTrue(part in staged.message, "expected '$part' in: ${staged.message}")
+            }
         }
 }

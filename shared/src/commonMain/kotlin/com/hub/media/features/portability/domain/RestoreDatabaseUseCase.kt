@@ -3,12 +3,14 @@ package com.hub.media.features.portability.domain
 import com.hub.media.core.database.APP_DATABASE_VERSION
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.database.SQLITE_HEADER_SIZE
+import com.hub.media.core.database.countStagedDatabaseRows
 import com.hub.media.core.database.deleteFileIfExists
 import com.hub.media.core.database.fileExists
 import com.hub.media.core.database.parseSqliteHeader
 import com.hub.media.core.database.preRestoreBackupPath
 import com.hub.media.core.database.readFileHeaderBytes
 import com.hub.media.core.database.renameFile
+import com.hub.media.core.database.toLogText
 import com.hub.media.core.database.validateStagedDatabaseIntegrity
 import com.hub.media.core.database.writeRestoreMarker
 import com.hub.media.core.util.AppLogger
@@ -256,6 +258,15 @@ public class DefaultRestoreDatabaseUseCase(
                 "This file isn't a valid, intact MediaTracker backup ($integrityFailure). " +
                     "Nothing was changed.",
             )
+        }
+        // Logged here, not in commit(): commit runs after AppContainer.close() has shut the log
+        // store down, so this is the last moment a restore can reach the app log before the
+        // next launch records its outcome (#115). Counts only -- no titles, no path.
+        val counts = countStagedDatabaseRows(incomingFilePath, logger)
+        logger.info(TAG) {
+            "Restore staged: schema v${info.userVersion} " +
+                (if (info.userVersion < APP_DATABASE_VERSION) "(older; migrates on next launch)" else "(current)") +
+                "; ${counts.toLogText()}"
         }
         return Resource.Success(
             StagedRestoreInfo(

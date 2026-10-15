@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A database restore now leaves a trace in the application log (Settings → Diagnostics → View log): a line when a backup is staged (schema version and row counts), and on the next launch the outcome, plus a warning if startup had to move the pre-restore backup back. The restore's own lines were written after the log store had been shut down, so they never reached it. (#115)
 - In languages that write decimals with a comma, prices and reading-session positions are no longer saved wrong while you type or edit them. Typing "14,99" saved 1499, and one backspace in a saved price of 19.99 saved 199. These fields now accept either a comma or a period as the decimal point, since some keyboards offer only the period, and show the decimal comma. (#201)
 
 ### Internal
