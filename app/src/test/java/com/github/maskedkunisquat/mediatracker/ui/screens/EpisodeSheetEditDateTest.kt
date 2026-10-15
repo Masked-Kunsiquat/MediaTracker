@@ -18,6 +18,8 @@ import com.hub.media.features.tv.domain.watchedOnPickedDay
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import kotlin.time.Instant
 
 /**
@@ -27,6 +29,7 @@ import kotlin.time.Instant
  * the sheet content reports which viewing to edit, the host opens the picker for it.
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
+@RunWith(RobolectricTestRunner::class)
 class EpisodeSheetEditDateTest {
     @get:Rule
     val composeRule = createComposeRule()
