@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.features.movies.data.MovieRepository
 import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,7 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
 
 /** State of the edit-movie form (ROADMAP Task 13 Phase B). */
 public sealed class EditMovieUiState {
@@ -95,15 +95,16 @@ public class EditMovieViewModel(
     private fun load() {
         viewModelScope.launch {
             val movie =
-                try {
-                    movieRepository.observeMovieDetail(movieId).first()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Uncaught, this would escape viewModelScope and crash the app.
-                    _uiState.value = EditMovieUiState.LoadFailed
-                    return@launch
-                }
+                catchingNonCancellation(
+                    block = {
+                        movieRepository.observeMovieDetail(movieId).first()
+                    },
+                    onException = {
+                        // Uncaught, this would escape viewModelScope and crash the app.
+                        _uiState.value = EditMovieUiState.LoadFailed
+                        return@launch
+                    },
+                )
             _uiState.value =
                 if (movie == null) {
                     EditMovieUiState.NotFound

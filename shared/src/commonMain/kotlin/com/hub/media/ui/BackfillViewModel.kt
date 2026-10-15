@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.error
 import com.hub.media.features.media.domain.BackfillRun
 import kotlinx.coroutines.CancellationException
@@ -65,17 +66,16 @@ public class BackfillViewModel<P : Any>(
             // progress bar. start() below has carried this reasoning since Phase A; init was simply
             // missed, and it surfaced as an intermittent CI failure rather than as a bug report
             // because provoking it needs the read to fail.
-            try {
-                peekPersistedProgress()
-            } catch (e: CancellationException) {
-                // Rethrown for the same reason start() rethrows it -- see that catch. On JVM
-                // CancellationException is an Exception, so ordering these two catches matters.
-                throw e
-            } catch (e: Exception) {
-                // Nothing to recover: uiState is already Idle, which is the correct state for "no
-                // persisted progress could be read". Logged so the cause is not simply discarded.
-                logger.error(TAG, e) { "Failed to read persisted backfill progress" }
-            }
+            catchingNonCancellation(
+                block = {
+                    peekPersistedProgress()
+                },
+                onException = { e ->
+                    // Nothing to recover: uiState is already Idle, which is the correct state for "no
+                    // persisted progress could be read". Logged so the cause is not simply discarded.
+                    logger.error(TAG, e) { "Failed to read persisted backfill progress" }
+                },
+            )
         }
     }
 
@@ -116,8 +116,8 @@ public class BackfillViewModel<P : Any>(
                     // cancel() below cancels this exact job. Must be caught -- and rethrown -- before
                     // the broad Exception catch below: CancellationException is itself a subtype of
                     // Exception on Kotlin/JVM, so catching Exception first would swallow the caller's
-                    // coroutine cancellation instead of propagating it (the same ordering discipline
-                    // OpenLibraryIsbnCoverProbe's catch already established). settleOutOfRunning()
+                    // coroutine cancellation instead of propagating it (the ordering catchingNonCancellation
+                    // encodes; hand-written here because this branch has work to do). settleOutOfRunning()
                     // ensures uiState doesn't stay stuck at Running forever (the Stopped assignment
                     // above never runs once this coroutine is cancelled).
                     settleOutOfRunning()

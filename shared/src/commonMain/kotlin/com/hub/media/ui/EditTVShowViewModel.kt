@@ -3,13 +3,13 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
 
 /** State of the edit-show form (#173). */
 public sealed class EditTVShowUiState {
@@ -76,15 +76,16 @@ public class EditTVShowViewModel(
     private fun load() {
         viewModelScope.launch {
             val show =
-                try {
-                    tvShowRepository.observeShowDetail(showId).first()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Uncaught, this would escape viewModelScope and crash the app.
-                    _uiState.value = EditTVShowUiState.LoadFailed
-                    return@launch
-                }
+                catchingNonCancellation(
+                    block = {
+                        tvShowRepository.observeShowDetail(showId).first()
+                    },
+                    onException = {
+                        // Uncaught, this would escape viewModelScope and crash the app.
+                        _uiState.value = EditTVShowUiState.LoadFailed
+                        return@launch
+                    },
+                )
             _uiState.value =
                 if (show == null) {
                     EditTVShowUiState.NotFound

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.clearGoogleBooksApiKey
@@ -19,7 +20,6 @@ import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setTmdbCredential
 import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.tv.network.TmdbClient
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
@@ -134,14 +134,15 @@ public class SettingsViewModel(
      * @return [Resource.Success] if the write completed, or [Resource.Error] with a message.
      */
     public suspend fun setGoogleBooksApiKey(value: String): Resource<Unit> =
-        try {
-            settingsRepository.setGoogleBooksApiKey(value)
-            Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Resource.Error("Failed to save API key", e)
-        }
+        catchingNonCancellation(
+            block = {
+                settingsRepository.setGoogleBooksApiKey(value)
+                Resource.Success(Unit)
+            },
+            onException = { e ->
+                Resource.Error("Failed to save API key", e)
+            },
+        )
 
     /**
      * Removes the stored Google Books API key, returning every Google Books request to the keyless
@@ -154,14 +155,15 @@ public class SettingsViewModel(
      * @return [Resource.Success] if the key was cleared, or [Resource.Error] with a message.
      */
     public suspend fun clearGoogleBooksApiKey(): Resource<Unit> =
-        try {
-            settingsRepository.clearGoogleBooksApiKey()
-            Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Resource.Error("Failed to clear API key", e)
-        }
+        catchingNonCancellation(
+            block = {
+                settingsRepository.clearGoogleBooksApiKey()
+                Resource.Success(Unit)
+            },
+            onException = { e ->
+                Resource.Error("Failed to clear API key", e)
+            },
+        )
 
     /**
      * Persists [value] as the user's TMDB credential, or clears it when [value] is blank (#75).
@@ -177,14 +179,15 @@ public class SettingsViewModel(
      * @return [Resource.Success] if the write completed, or [Resource.Error] with a message.
      */
     public suspend fun setTmdbCredential(value: String): Resource<Unit> =
-        try {
-            settingsRepository.setTmdbCredential(value)
-            Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Resource.Error("Failed to save TMDB credential", e)
-        }
+        catchingNonCancellation(
+            block = {
+                settingsRepository.setTmdbCredential(value)
+                Resource.Success(Unit)
+            },
+            onException = { e ->
+                Resource.Error("Failed to save TMDB credential", e)
+            },
+        )
 
     /**
      * Removes the stored TMDB credential.
@@ -198,14 +201,15 @@ public class SettingsViewModel(
      * @return [Resource.Success] if the credential was cleared, or [Resource.Error] with a message.
      */
     public suspend fun clearTmdbCredential(): Resource<Unit> =
-        try {
-            settingsRepository.clearTmdbCredential()
-            Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Resource.Error("Failed to clear TMDB credential", e)
-        }
+        catchingNonCancellation(
+            block = {
+                settingsRepository.clearTmdbCredential()
+                Resource.Success(Unit)
+            },
+            onException = { e ->
+                Resource.Error("Failed to clear TMDB credential", e)
+            },
+        )
 
     /**
      * Asks TMDB whether the saved credential actually works, via one `GET /authentication` (#75).
@@ -222,11 +226,12 @@ public class SettingsViewModel(
      *   that it will still be accepted later, nor that any particular endpoint is permitted.
      */
     public suspend fun verifyTmdbCredential(): Resource<Unit> =
-        try {
-            tmdbClient.verifyCredential()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Resource.Error("Could not check the TMDB credential", e)
-        }
+        catchingNonCancellation(
+            block = {
+                tmdbClient.verifyCredential()
+            },
+            onException = { e ->
+                Resource.Error("Could not check the TMDB credential", e)
+            },
+        )
 }
