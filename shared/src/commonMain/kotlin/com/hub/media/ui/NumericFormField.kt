@@ -70,23 +70,31 @@ public fun String.filterIntegerInput(): String = filter { it.isDigit() }
  * it only ever accepts `.` — parsed that cleanly into a price a hundred times too large, with no
  * error and nothing on screen to notice.
  *
- * Accepting both `.` and `,` as decimal points would fix that locale and break the other one:
- * an en-US user typing "1,499" means one thousand four hundred ninety-nine, and turning it into
- * "1.499" is the same class of silent corruption pointing the other way. Taking the locale's
- * separator as an argument gets both right — whichever character is *not* the decimal separator is
- * a thousands separator, and dropping it is the correct reading:
+ * Accepting `,` as a decimal point everywhere would fix that locale and break the other one: an
+ * en-US user typing "1,499" means one thousand four hundred ninety-nine, and turning it into "1.499"
+ * is the same class of silent corruption pointing the other way. So in a `.` locale `,` is a
+ * thousands mark and is dropped.
  *
- * | separator | input     | result |
- * |-----------|-----------|--------|
- * | `.`       | `1,499`   | `1499` |
- * | `,`       | `1.499`   | `1499` |
- * | `,`       | `14,99`   | `14.99`|
+ * In a comma locale **both** `,` and `.` are read as the decimal point, and the first one typed
+ * wins. A device check for #201 found that Samsung's decimal keypad in de-DE disables `,` and
+ * offers only `.`, so a comma locale that dropped `.` as a thousands mark left its users no way to
+ * type a decimal at all: "14.99" became 1499. Reading it as a decimal point costs only the rare
+ * "1.499 meaning one thousand…" case, and that one is not silent: the field displays its text
+ * through [toDisplayDecimal], so it reads back as "1,499" on screen.
+ *
+ * | separator | input     | result  |
+ * |-----------|-----------|---------|
+ * | `.`       | `1,499`   | `1499`  |
+ * | `.`       | `14.99`   | `14.99` |
+ * | `,`       | `14,99`   | `14.99` |
+ * | `,`       | `14.99`   | `14.99` |
+ * | `,`       | `1.2,3`   | `1.23`  |
  *
  * `commonMain` cannot see the platform locale, which is the other half of why this is a parameter:
  * the app module looks the separator up and passes it in, and this stays testable without one.
  *
- * @param decimalSeparator The character the user's keyboard offers as a decimal point. Anything
- *   else non-digit is discarded, including a second occurrence of this one.
+ * @param decimalSeparator The locale's decimal separator. It, and `.` in any locale, is read as the
+ *   decimal point; anything else non-digit is discarded, including any separator after the first.
  */
 public fun String.filterDecimalInput(decimalSeparator: Char): String {
     val builder = StringBuilder()
@@ -94,7 +102,7 @@ public fun String.filterDecimalInput(decimalSeparator: Char): String {
     for (char in this) {
         when {
             char.isDigit() -> builder.append(char)
-            char == decimalSeparator && !seenSeparator -> {
+            (char == decimalSeparator || char == '.') && !seenSeparator -> {
                 builder.append('.')
                 seenSeparator = true
             }
@@ -102,6 +110,24 @@ public fun String.filterDecimalInput(decimalSeparator: Char): String {
     }
     return builder.toString()
 }
+
+/**
+ * How a decimal field should DISPLAY its canonical text: [filterDecimalInput]'s `.` shown as the
+ * locale's [decimalSeparator].
+ *
+ * A Compose text field hands the whole displayed text back to `onValueChange` on every keystroke,
+ * so whatever a field displays is what the filter reads next. Displaying the canonical text in a
+ * comma locale made the filter re-read its own `.` as a thousands mark: "14,99" was stored as 1499,
+ * and one backspace on a pre-filled "19.99" stored 199 (#201). Displaying this instead means the
+ * filter only ever sees locale-style text, the one case it was written for, and
+ * `toDisplayDecimal(sep).filterDecimalInput(sep)` is the identity on anything the filter produced.
+ *
+ * One character replaces one character, so the displayed string is the same length as the canonical
+ * one: when the filter keeps every character the user typed, a string-based field keeps the cursor
+ * where it was. When the filter drops one (a thousands mark, a second separator) the text shrinks
+ * and the cursor can shift by a character, exactly as it did before this function existed.
+ */
+public fun String.toDisplayDecimal(decimalSeparator: Char): String = replace('.', decimalSeparator)
 
 /**
  * Reads an optional decimal field whose value must be a **finite** number, treating an overflowing

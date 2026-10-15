@@ -22,8 +22,18 @@ class NumericFormFieldTest {
     }
 
     @Test
-    fun filterDecimalInput_commaLocale_dropsPeriodAsAThousandsSeparator() {
-        assertEquals("1499", "1.499".filterDecimalInput(decimalSeparator = ','))
+    fun filterDecimalInput_commaLocale_readsPeriodAsADecimalPointToo() {
+        // #201, found on a device: Samsung's decimal keypad in de-DE disables ',' and offers only
+        // '.', so a comma locale that dropped '.' as a thousands mark left its users no way to type
+        // a decimal at all -- "14.99" became 1499. The field displays the comma either way, so a
+        // '.' meant as a thousands mark shows up as "1,499" rather than being misread silently.
+        assertEquals("14.99", "14.99".filterDecimalInput(decimalSeparator = ','))
+    }
+
+    @Test
+    fun filterDecimalInput_commaLocale_theFirstSeparatorOfEitherKindIsTheDecimalPoint() {
+        assertEquals("1.23", "1.2,3".filterDecimalInput(decimalSeparator = ','))
+        assertEquals("1.23", "1,2.3".filterDecimalInput(decimalSeparator = ','))
     }
 
     @Test
@@ -133,5 +143,78 @@ class NumericFormFieldTest {
         val overflowing = "9".repeat(400)
         assertEquals(Double.POSITIVE_INFINITY, overflowing.toDoubleOrNull())
         assertNull(parseOptionalFiniteDouble(overflowing))
+    }
+
+    // --- #201: the field displays its value, and Compose feeds the displayed text back ---
+
+    /**
+     * Replays Compose's loop for a string-based field: each edit is applied to what the field
+     * DISPLAYS, and the result goes through the filter into state. [display] is the call site's
+     * `value =` mapping.
+     */
+    private fun replay(
+        start: String,
+        edits: List<(String) -> String>,
+        separator: Char,
+        display: (String) -> String,
+    ): String = edits.fold(start) { canonical, edit -> edit(display(canonical)).filterDecimalInput(separator) }
+
+    private fun typing(text: String): List<(String) -> String> = text.map { char -> { shown: String -> shown + char } }
+
+    private val backspace: (String) -> String = { it.dropLast(1) }
+
+    @Test
+    fun displayingCanonicalText_commaLocale_isSafeNowThatPeriodIsADecimalPoint() {
+        // The #201 defect: fields displayed the canonical text, and a filter that dropped '.' as a
+        // thousands mark in comma locales re-read its own output -- "14,99" stored 1499, one
+        // backspace on "19.99" stored 199. The filter now reads '.' as a decimal point there too
+        // (for Samsung's de-DE keypad), so even a field that forgot toDisplayDecimal stays correct.
+        // Both halves guard the bug; this pins the filter's half on its own.
+        assertEquals("14.99", replay("", typing("14,99"), ',', display = { it }))
+        assertEquals("19.9", replay("19.99", listOf(backspace), ',', display = { it }))
+    }
+
+    @Test
+    fun displayingLocaleText_commaLocale_typingStoresTheDecimal() {
+        assertEquals("14.99", replay("", typing("14,99"), ',', display = { it.toDisplayDecimal(',') }))
+    }
+
+    @Test
+    fun displayingLocaleText_commaLocale_backspaceOnAPrefillKeepsTheDecimal() {
+        assertEquals("19.9", replay("19.99", listOf(backspace), ',', display = { it.toDisplayDecimal(',') }))
+    }
+
+    @Test
+    fun displayingLocaleText_commaLocale_typingWithAPeriodKeyStoresTheDecimal() {
+        // The Samsung de-DE keypad's only separator key is '.'.
+        assertEquals("14.99", replay("", typing("14.99"), ',', display = { it.toDisplayDecimal(',') }))
+    }
+
+    @Test
+    fun displayingLocaleText_periodLocale_behavesExactlyAsBefore() {
+        // Positive control: en-US was never broken, and the fix must not change it.
+        assertEquals("14.99", replay("", typing("14.99"), '.', display = { it.toDisplayDecimal('.') }))
+        assertEquals("19.9", replay("19.99", listOf(backspace), '.', display = { it.toDisplayDecimal('.') }))
+        assertEquals("1499", replay("", typing("1,499"), '.', display = { it.toDisplayDecimal('.') }))
+    }
+
+    @Test
+    fun toDisplayDecimal_thenFilter_isTheIdentityOnCanonicalText() {
+        for (separator in listOf(',', '.')) {
+            for (canonical in listOf("", "0", "14", "14.", "14.99", ".5", "20.0", "1499")) {
+                assertEquals(
+                    canonical,
+                    canonical.toDisplayDecimal(separator).filterDecimalInput(separator),
+                    "round trip of '$canonical' with '$separator'",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun toDisplayDecimal_commaLocale_showsTheComma() {
+        assertEquals("14,99", "14.99".toDisplayDecimal(','))
+        assertEquals("20,0", "20.0".toDisplayDecimal(','))
+        assertEquals("", "".toDisplayDecimal(','))
     }
 }

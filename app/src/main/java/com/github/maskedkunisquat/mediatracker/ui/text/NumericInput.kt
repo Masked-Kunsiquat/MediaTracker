@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.text
 
 import com.hub.media.ui.filterDecimalInput
+import com.hub.media.ui.toDisplayDecimal
 import java.text.DecimalFormatSymbols
 
 /**
@@ -29,9 +30,18 @@ internal fun localeDecimalSeparator(): Char = DecimalFormatSymbols.getInstance()
  * that [String.toDoubleOrNull] reads. See [com.hub.media.ui.filterDecimalInput] for why the
  * separator has to be decided rather than assumed.
  *
- * Note the field then *displays* the normalised text: a comma-decimal user typing "14,99" sees
- * "14.99". That is deliberate for now -- it is the honest representation of what will be stored,
- * and showing a localised string while parsing a canonical one needs separate display and edit
- * representations, which is a larger change than the defect being fixed here warrants.
+ * The field must DISPLAY its text through [toDisplayDecimal], not as stored. Compose feeds the
+ * displayed text back to `onValueChange`, and when this filter still dropped `.` as a thousands mark
+ * in comma locales, displaying the canonical text made it re-read and drop its own output (#201).
+ * This used to say showing the canonical text was "deliberate for now"; it was half the bug.
  */
 internal fun String.filterDecimalInput(): String = filterDecimalInput(localeDecimalSeparator())
+
+/**
+ * What a decimal field displays: its canonical text with the device locale's separator. Pair it with
+ * [filterDecimalInput] on every decimal field, `value = x.toDisplayDecimal()` and
+ * `onValueChange = { x = it.filterDecimalInput() }`, so the filter only ever reads locale-style
+ * text. See [com.hub.media.ui.toDisplayDecimal] for why displaying the canonical text corrupted
+ * comma-locale input (#201).
+ */
+internal fun String.toDisplayDecimal(): String = toDisplayDecimal(localeDecimalSeparator())

@@ -65,6 +65,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
 import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
+import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
@@ -435,7 +436,7 @@ private fun EditBookForm(
 
             FormSection(title = stringResource(R.string.edit_section_purchase)) {
                 OutlinedTextField(
-                    value = purchasePriceText,
+                    value = purchasePriceText.toDisplayDecimal(),
                     onValueChange = { purchasePriceText = it.filterDecimalInput() },
                     label = { Text(stringResource(R.string.edit_purchase_price_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
