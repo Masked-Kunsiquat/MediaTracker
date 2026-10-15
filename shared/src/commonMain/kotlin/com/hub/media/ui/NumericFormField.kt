@@ -70,23 +70,31 @@ public fun String.filterIntegerInput(): String = filter { it.isDigit() }
  * it only ever accepts `.` — parsed that cleanly into a price a hundred times too large, with no
  * error and nothing on screen to notice.
  *
- * Accepting both `.` and `,` as decimal points would fix that locale and break the other one:
- * an en-US user typing "1,499" means one thousand four hundred ninety-nine, and turning it into
- * "1.499" is the same class of silent corruption pointing the other way. Taking the locale's
- * separator as an argument gets both right — whichever character is *not* the decimal separator is
- * a thousands separator, and dropping it is the correct reading:
+ * Accepting `,` as a decimal point everywhere would fix that locale and break the other one: an
+ * en-US user typing "1,499" means one thousand four hundred ninety-nine, and turning it into "1.499"
+ * is the same class of silent corruption pointing the other way. So in a `.` locale `,` is a
+ * thousands mark and is dropped.
  *
- * | separator | input     | result |
- * |-----------|-----------|--------|
- * | `.`       | `1,499`   | `1499` |
- * | `,`       | `1.499`   | `1499` |
- * | `,`       | `14,99`   | `14.99`|
+ * In a comma locale **both** `,` and `.` are read as the decimal point, and the first one typed
+ * wins. A device check for #201 found that Samsung's decimal keypad in de-DE disables `,` and
+ * offers only `.`, so a comma locale that dropped `.` as a thousands mark left its users no way to
+ * type a decimal at all: "14.99" became 1499. Reading it as a decimal point costs only the rare
+ * "1.499 meaning one thousand…" case, and that one is not silent: the field displays its text
+ * through [toDisplayDecimal], so it reads back as "1,499" on screen.
+ *
+ * | separator | input     | result  |
+ * |-----------|-----------|---------|
+ * | `.`       | `1,499`   | `1499`  |
+ * | `.`       | `14.99`   | `14.99` |
+ * | `,`       | `14,99`   | `14.99` |
+ * | `,`       | `14.99`   | `14.99` |
+ * | `,`       | `1.2,3`   | `1.23`  |
  *
  * `commonMain` cannot see the platform locale, which is the other half of why this is a parameter:
  * the app module looks the separator up and passes it in, and this stays testable without one.
  *
- * @param decimalSeparator The character the user's keyboard offers as a decimal point. Anything
- *   else non-digit is discarded, including a second occurrence of this one.
+ * @param decimalSeparator The locale's decimal separator. It, and `.` in any locale, is read as the
+ *   decimal point; anything else non-digit is discarded, including any separator after the first.
  */
 public fun String.filterDecimalInput(decimalSeparator: Char): String {
     val builder = StringBuilder()
@@ -94,7 +102,7 @@ public fun String.filterDecimalInput(decimalSeparator: Char): String {
     for (char in this) {
         when {
             char.isDigit() -> builder.append(char)
-            char == decimalSeparator && !seenSeparator -> {
+            (char == decimalSeparator || char == '.') && !seenSeparator -> {
                 builder.append('.')
                 seenSeparator = true
             }

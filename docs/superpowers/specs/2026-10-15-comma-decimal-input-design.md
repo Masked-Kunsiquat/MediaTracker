@@ -140,3 +140,25 @@ Formatting numbers for *display elsewhere* (detail screens, stats). Grouping sep
 input fields. `TextFieldValue`-based fields. Edit pre-fills of values of 10⁷ and above, which
 `Double.toString()` writes in scientific notation; that is pre-existing in every locale and
 implausible for a price, but it is noted on #201 so it is not lost.
+
+## Amendment (owner-approved, after the device check)
+
+The hand check on a Samsung SM-G975U1 (Android 12, de-DE) confirmed the `,` path: `14,99` typed and
+displayed correctly, and backspace walked `14,99 → 14,9 → 14, → 14`. But it also found that
+**Samsung's decimal keypad in de-DE disables `,` and offers only `.`**. With the original rule, `.`
+was dropped as a thousands mark, so those users could not type a decimal at all (`14.99` → 1499),
+the same as on `main`.
+
+So the filter's rule changes, against "What does not change" above. **In a comma locale, both `,`
+and `.` are read as the decimal point, and the first one typed wins.** A `.` locale is unchanged:
+there `,` is still dropped as a thousands mark.
+
+- The cost: a comma-locale user typing `1.499` to mean one thousand four hundred ninety-nine gets
+  1.499. It is not silent, because the field displays `1,499`.
+- Tests: `filterDecimalInput_commaLocale_dropsPeriodAsAThousandsSeparator` becomes
+  `…_readsPeriodAsADecimalPointToo`. The replay test's "a typed `.` is still a thousands mark"
+  becomes "typing with a period key stores the decimal". The bug-reproduction test now pins that
+  the filter alone also prevents the defect.
+- New tests: a mixed-separator test (first wins), and a Robolectric test typing `14.99` with the
+  `.` key under `Locale.GERMANY`.
+- Each was red first: three shared failures, and the screen test stored `1499`.

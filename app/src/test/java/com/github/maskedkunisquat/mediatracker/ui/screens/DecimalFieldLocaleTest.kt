@@ -99,4 +99,14 @@ class DecimalFieldLocaleTest {
         assertEquals("14.99", storedPrice)
         priceField().assert(hasText("14,99"))
     }
+
+    @Test
+    fun typingAPriceWithThePeriodKey_storesTheDecimal() {
+        // Samsung's decimal keypad in de-DE disables ',' and offers only '.' (found on a device).
+        setUpEditMovie(prefill = "")
+        for (char in "14.99") priceField().performTextInput(char.toString())
+        composeRule.waitForIdle()
+        assertEquals("14.99", storedPrice)
+        priceField().assert(hasText("14,99"))
+    }
 }

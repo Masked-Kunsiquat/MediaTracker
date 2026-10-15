@@ -22,8 +22,18 @@ class NumericFormFieldTest {
     }
 
     @Test
-    fun filterDecimalInput_commaLocale_dropsPeriodAsAThousandsSeparator() {
-        assertEquals("1499", "1.499".filterDecimalInput(decimalSeparator = ','))
+    fun filterDecimalInput_commaLocale_readsPeriodAsADecimalPointToo() {
+        // #201, found on a device: Samsung's decimal keypad in de-DE disables ',' and offers only
+        // '.', so a comma locale that dropped '.' as a thousands mark left its users no way to type
+        // a decimal at all -- "14.99" became 1499. The field displays the comma either way, so a
+        // '.' meant as a thousands mark shows up as "1,499" rather than being misread silently.
+        assertEquals("14.99", "14.99".filterDecimalInput(decimalSeparator = ','))
+    }
+
+    @Test
+    fun filterDecimalInput_commaLocale_theFirstSeparatorOfEitherKindIsTheDecimalPoint() {
+        assertEquals("1.23", "1.2,3".filterDecimalInput(decimalSeparator = ','))
+        assertEquals("1.23", "1,2.3".filterDecimalInput(decimalSeparator = ','))
     }
 
     @Test
@@ -154,11 +164,14 @@ class NumericFormFieldTest {
     private val backspace: (String) -> String = { it.dropLast(1) }
 
     @Test
-    fun displayingCanonicalText_commaLocale_reproducesTheBug() {
-        // Today's call sites (#201): the field shows the canonical text, so the filter re-reads its
-        // own '.' as a thousands mark. Kept as a named record of the defect the fix closes.
-        assertEquals("1499", replay("", typing("14,99"), ',', display = { it }))
-        assertEquals("199", replay("19.99", listOf(backspace), ',', display = { it }))
+    fun displayingCanonicalText_commaLocale_isSafeNowThatPeriodIsADecimalPoint() {
+        // The #201 defect: fields displayed the canonical text, and a filter that dropped '.' as a
+        // thousands mark in comma locales re-read its own output -- "14,99" stored 1499, one
+        // backspace on "19.99" stored 199. The filter now reads '.' as a decimal point there too
+        // (for Samsung's de-DE keypad), so even a field that forgot toDisplayDecimal stays correct.
+        // Both halves guard the bug; this pins the filter's half on its own.
+        assertEquals("14.99", replay("", typing("14,99"), ',', display = { it }))
+        assertEquals("19.9", replay("19.99", listOf(backspace), ',', display = { it }))
     }
 
     @Test
@@ -172,8 +185,9 @@ class NumericFormFieldTest {
     }
 
     @Test
-    fun displayingLocaleText_commaLocale_aTypedPeriodIsStillAThousandsMark() {
-        assertEquals("1499", replay("", typing("1.499"), ',', display = { it.toDisplayDecimal(',') }))
+    fun displayingLocaleText_commaLocale_typingWithAPeriodKeyStoresTheDecimal() {
+        // The Samsung de-DE keypad's only separator key is '.'.
+        assertEquals("14.99", replay("", typing("14.99"), ',', display = { it.toDisplayDecimal(',') }))
     }
 
     @Test

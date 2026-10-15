@@ -31,9 +31,9 @@ internal fun localeDecimalSeparator(): Char = DecimalFormatSymbols.getInstance()
  * separator has to be decided rather than assumed.
  *
  * The field must DISPLAY its text through [toDisplayDecimal], not as stored. Compose feeds the
- * displayed text back to `onValueChange`, and in a comma locale this filter reads a displayed `.`
- * as a thousands mark (#201). This used to say showing the canonical text was "deliberate for
- * now"; it was the bug.
+ * displayed text back to `onValueChange`, and when this filter still dropped `.` as a thousands mark
+ * in comma locales, displaying the canonical text made it re-read and drop its own output (#201).
+ * This used to say showing the canonical text was "deliberate for now"; it was half the bug.
  */
 internal fun String.filterDecimalInput(): String = filterDecimalInput(localeDecimalSeparator())
 
