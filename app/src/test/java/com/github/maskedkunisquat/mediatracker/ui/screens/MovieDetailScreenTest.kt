@@ -22,6 +22,9 @@ import com.hub.media.ui.MovieDetailUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -34,6 +37,7 @@ import kotlin.time.Instant
  * "0 min" for an unknown runtime would silently assert something untrue.
  */
 @OptIn(ExperimentalTime::class)
+@RunWith(RobolectricTestRunner::class)
 class MovieDetailScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
@@ -302,6 +306,9 @@ class MovieDetailScreenTest {
         composeRule.onNodeWithText(moreLabel).assertDoesNotExist()
     }
 
+    // NATIVE: the More button appears only when the synopsis overflows its line limit, which needs
+    // real text layout; Robolectric's default (legacy) graphics never overflows.
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test
     fun longSynopsis_showsMoreButton_andExpandsOnClick() {
         setContent(MovieDetailUiState.Ready(movie(synopsis = LONG_SYNOPSIS)))
