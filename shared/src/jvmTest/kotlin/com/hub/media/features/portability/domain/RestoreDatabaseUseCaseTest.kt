@@ -11,6 +11,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.AppDatabaseConstructor
 import com.hub.media.core.database.RestoreMarker
 import com.hub.media.core.database.SQLITE_HEADER_SIZE
+import com.hub.media.core.database.SelfHealResult
 import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
 import com.hub.media.core.database.entities.BookFormat
@@ -598,7 +599,11 @@ class RestoreDatabaseUseCaseTest {
         runTest {
             val livePath = path("live.db")
             createFreshDatabaseFile(livePath)
-            assertFalse(selfHealDatabaseIfNeeded(livePath), "nothing to heal: the live file is present")
+            assertEquals(
+                SelfHealResult.NotNeeded,
+                selfHealDatabaseIfNeeded(livePath),
+                "nothing to heal: the live file is present",
+            )
             assertTrue(File(livePath).exists())
             assertFalse(File("$livePath.pre-restore-bak").exists())
         }
@@ -627,7 +632,7 @@ class RestoreDatabaseUseCaseTest {
             File(livePath).renameTo(File("$livePath.pre-restore-bak"))
             assertFalse(File(livePath).exists())
 
-            assertTrue(selfHealDatabaseIfNeeded(livePath), "healed")
+            assertEquals(SelfHealResult.Healed, selfHealDatabaseIfNeeded(livePath), "healed")
 
             assertTrue(File(livePath).exists(), "self-heal must restore the live file from the backup")
             val reopened = openDatabase(livePath)
@@ -643,7 +648,7 @@ class RestoreDatabaseUseCaseTest {
     fun selfHeal_neitherLiveNorBackupExists_isANoOp() =
         runTest {
             val livePath = path("live.db")
-            assertFalse(selfHealDatabaseIfNeeded(livePath), "nothing to heal: no backup")
+            assertEquals(SelfHealResult.NotNeeded, selfHealDatabaseIfNeeded(livePath), "nothing to heal: no backup")
             assertFalse(File(livePath).exists())
         }
 
@@ -677,10 +682,7 @@ class RestoreDatabaseUseCaseTest {
             val walPath = "$livePath-wal"
             File(walPath).mkdirs()
 
-            assertFalse(
-                selfHealDatabaseIfNeeded(livePath),
-                "a sidecar move failed: the main file waits for the next launch",
-            )
+            assertIs<SelfHealResult.Failed>(selfHealDatabaseIfNeeded(livePath), "a sidecar move failed")
 
             assertFalse(
                 File(livePath).exists(),
@@ -694,7 +696,7 @@ class RestoreDatabaseUseCaseTest {
             // Directory cleared (as if the transient condition cleared) -- a subsequent call must
             // finish the job completely, with no data lost.
             File(walPath).delete()
-            assertTrue(selfHealDatabaseIfNeeded(livePath), "the retry heals")
+            assertEquals(SelfHealResult.Healed, selfHealDatabaseIfNeeded(livePath), "the retry heals")
 
             assertTrue(File(livePath).exists(), "retrying after the transient failure clears must complete the heal")
             assertEquals("WAL-CONTENT-WITH-UNCHECKPOINTED-COMMITS", File("$livePath-wal").readText())

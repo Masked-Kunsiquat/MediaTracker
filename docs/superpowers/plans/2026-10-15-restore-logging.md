@@ -240,7 +240,8 @@ Imports, if absent: `AppLogger`, `Logger`, `info`, `warn`, `error` from `com.hub
                 assertTrue(part in staged.message, "expected '$part' in: ${staged.message}")
             }
             assertFalse("Book 1" in staged.message, "identifier rule: no titles")
-            assertFalse(File("$candidatePath-wal").exists() || File("$candidatePath-shm").exists(), "counting is read-only")
+            // (A planned "no -wal/-shm beside the candidate" assertion was dropped: validation's own
+            // read-only open already creates them -- see the spec's Amendment.)
         }
 
     @Test

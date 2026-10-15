@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A database restore now leaves a trace in the application log (Settings → Diagnostics → View log): a line when a backup is staged (schema version and row counts), and on the next launch the outcome, plus a warning if startup had to move the pre-restore backup back. The restore's own lines were written after the log store had been shut down, so they never reached it. (#115)
 - In languages that write decimals with a comma, prices and reading-session positions are no longer saved wrong while you type or edit them. Typing "14,99" saved 1499, and one backspace in a saved price of 19.99 saved 199. These fields now accept either a comma or a period as the decimal point, since some keyboards offer only the period, and show the decimal comma. (#201)
 
 ### Internal
 - Every catch around suspending code in `shared/` now goes through two helpers in `core/util/Cancellation.kt`: `catchingNonCancellation`, which always rethrows coroutine cancellation, and `guardResource`, the standard log-and-`Resource.Error` failure built on it. 67 hand-written copies of the rethrow are gone; five sites whose cancellation branch does real work keep theirs. Closes the last item of #81.
 - `LocalImageStorageManager.saveImage` rethrows coroutine cancellation instead of returning it as `Result.failure`. It was the one suspending catch in `shared/` where a missing rethrow could actually swallow a cancellation. The restore swap's catch also lacks one, but its only caller already runs it under `NonCancellable`; making that guarantee the swap's own follows in #203.
 - `DefaultRestoreDatabaseUseCase.commit` now runs the database swap and its outcome marker under `NonCancellable` itself, instead of relying on its one caller to do so; its KDoc no longer claims the swap has no suspension points, and its catch-all says why it does not roll back. (#203)
-- A database restore now leaves a trace in the app log: a line when a backup is staged (schema version and row counts), and on the next launch the outcome, plus a warning if startup had to move the pre-restore backup back. The restore's own lines were written after the log store had been shut down, so they never reached it. (#115)
 
 ## [0.25.0] - 2026-10-15
 

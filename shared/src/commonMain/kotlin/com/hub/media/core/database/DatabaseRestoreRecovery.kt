@@ -134,18 +134,40 @@ public suspend fun consumeRestoreMarker(liveDatabaseFilePath: String): RestoreMa
  * early-return above knows how to retry -- rather than ever presenting a half-healed database as
  * whole.
  *
- * @return `true` only when the backup's main file was moved back into place; `false` when there was
- *   nothing to heal, or a sidecar move failed (the next launch retries). Logged by [logRestoreRecovery].
+ * @return [SelfHealResult.Healed] when the backup's main file was moved back into place,
+ *   [SelfHealResult.NotNeeded] when there was nothing to heal, and [SelfHealResult.Failed] when a heal
+ *   was needed but a sidecar move failed. A failure is not retried in practice: the caller goes on to
+ *   open Room, which creates an empty database at the live path, so the next launch sees a live file
+ *   and stops here. The backup stays where [SelfHealResult.Failed.backupPath] says, for recovery by
+ *   hand. All three are logged by [logRestoreRecovery].
  */
-public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String): Boolean {
+public suspend fun selfHealDatabaseIfNeeded(liveDatabaseFilePath: String): SelfHealResult {
     val backupPath = preRestoreBackupPath(liveDatabaseFilePath)
-    if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return false
+    if (fileExists(liveDatabaseFilePath) || !fileExists(backupPath)) return SelfHealResult.NotNeeded
 
     val backupWal = "$backupPath-wal"
     val backupShm = "$backupPath-shm"
     val walRestored = !fileExists(backupWal) || renameFile(backupWal, "$liveDatabaseFilePath-wal")
     val shmRestored = !fileExists(backupShm) || renameFile(backupShm, "$liveDatabaseFilePath-shm")
-    return walRestored && shmRestored && renameFile(backupPath, liveDatabaseFilePath)
+    val healed = walRestored && shmRestored && renameFile(backupPath, liveDatabaseFilePath)
+    return if (healed) SelfHealResult.Healed else SelfHealResult.Failed(backupPath)
+}
+
+/** What [selfHealDatabaseIfNeeded] did at startup (#115). */
+public sealed class SelfHealResult {
+    /** The live database was present, or there was no pre-restore backup: nothing to do. */
+    public data object NotNeeded : SelfHealResult()
+
+    /** The live database was missing, and the pre-restore backup was moved back into place. */
+    public data object Healed : SelfHealResult()
+
+    /**
+     * The live database was missing and a heal was needed, but a sidecar move failed, so the main
+     * backup file was left at [backupPath] rather than presented without its WAL.
+     */
+    public data class Failed(
+        val backupPath: String,
+    ) : SelfHealResult()
 }
 
 private const val RECOVERY_TAG = "RestoreRecovery"
@@ -157,15 +179,25 @@ private const val RECOVERY_TAG = "RestoreRecovery"
  * only. An ordinary launch (nothing healed, no marker) logs nothing.
  */
 internal fun logRestoreRecovery(
-    healed: Boolean,
+    heal: SelfHealResult,
     marker: RestoreMarker?,
     logger: Logger = AppLogger,
 ) {
-    if (healed) {
-        logger.warn(RECOVERY_TAG) {
-            "the live database was missing at startup; the pre-restore backup was moved back into place " +
-                "(an interrupted restore)"
-        }
+    when (heal) {
+        SelfHealResult.NotNeeded -> Unit
+        SelfHealResult.Healed ->
+            logger.warn(RECOVERY_TAG) {
+                "the live database was missing at startup; the pre-restore backup was moved back into place " +
+                    "(an interrupted restore)"
+            }
+        is SelfHealResult.Failed ->
+            // The one restore incident that loses the library from the user's view: Room opens an
+            // empty database at the live path next. The path is app-private (Logger's identifier
+            // rule allows the restore backup path), and it is what recovery by hand needs.
+            logger.error(RECOVERY_TAG) {
+                "the live database was missing at startup and the pre-restore backup could not be moved " +
+                    "back (a WAL/SHM move failed); it remains at ${heal.backupPath}"
+            }
     }
     when (marker) {
         RestoreMarker.Success ->

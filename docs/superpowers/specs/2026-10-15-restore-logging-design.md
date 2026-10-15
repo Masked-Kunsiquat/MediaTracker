@@ -31,8 +31,9 @@ Restore staged: schema v7 (current); items=212, sessions=1480, episodes=3104, vi
 The counts come from a new
 `internal suspend fun countStagedDatabaseRows(path: String): StagedRowCounts?` in
 `StagedDatabaseValidation.kt`. It opens the candidate **read-only** with the same
-`BundledSQLiteDriver` + `SQLITE_OPEN_READONLY` that validation uses, so it creates no `-wal`/`-shm`
-side effects, and runs `SELECT COUNT(*)` on:
+`BundledSQLiteDriver` + `SQLITE_OPEN_READONLY` that validation uses, so it writes nothing to the
+database (opening a WAL-mode file read-only still creates `-wal`/`-shm`; see the Amendment), and runs
+`SELECT COUNT(*)` on:
 
 | field | table | present since |
 | --- | --- | --- |

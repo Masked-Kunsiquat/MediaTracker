@@ -44,8 +44,8 @@ public fun createAppContainer(
     val databaseFilePath = databaseFactory.databaseFilePath()
     val pendingRestoreMarker =
         runBlocking {
-            val healed = selfHealDatabaseIfNeeded(databaseFilePath)
-            consumeRestoreMarker(databaseFilePath).also { marker -> logRestoreRecovery(healed, marker) }
+            val heal = selfHealDatabaseIfNeeded(databaseFilePath)
+            consumeRestoreMarker(databaseFilePath).also { marker -> logRestoreRecovery(heal, marker) }
         }
     val database = buildAppDatabase(databaseFactory.create())
     val imageStorage = LocalImageStorageManager(coverStorageDirectory(context))
