@@ -247,4 +247,20 @@ class EditTVShowViewModelTest {
             // The edit made mid-save is refused, so the form never shows a value as saved that was not.
             assertEquals("First", form.title)
         }
+
+    @Test
+    fun load_whenTheReadFails_isLoadFailed_andRetryRecovers() =
+        runTest {
+            // A database read that throws used to escape viewModelScope and crash the app.
+            val id = insertShow(title = "Chernobyl")
+            db.breakMediaItems()
+            val vm = viewModels.track(EditTVShowViewModel(id, repo))
+
+            assertIs<EditTVShowUiState.LoadFailed>(vm.uiState.first { it !is EditTVShowUiState.Loading })
+
+            db.restoreMediaItems()
+            vm.retry()
+
+            assertEquals("Chernobyl", vm.awaitForm { true }.title, "Retry loads the form once the read works")
+        }
 }

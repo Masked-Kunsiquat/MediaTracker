@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 /** State of the edit-movie form (ROADMAP Task 13 Phase B). */
 public sealed class EditMovieUiState {
@@ -19,6 +20,12 @@ public sealed class EditMovieUiState {
 
     /** No movie with this id — deleted, or never a movie. */
     public data object NotFound : EditMovieUiState()
+
+    /**
+     * The film's current values could not be read -- the database threw. Offered as Retry or Back
+     * rather than left as an endless spinner or an app crash.
+     */
+    public data object LoadFailed : EditMovieUiState()
 
     /**
      * The form, pre-filled with the movie's current values.
@@ -72,8 +79,31 @@ public class EditMovieViewModel(
     public val uiState: StateFlow<EditMovieUiState> = _uiState.asStateFlow()
 
     init {
+        load()
+    }
+
+    /**
+     * Reads the film again after [EditMovieUiState.LoadFailed]. A no-op in any other state, so a stray tap
+     * cannot reload a form the user is part-way through editing.
+     */
+    public fun retry() {
+        if (_uiState.value !is EditMovieUiState.LoadFailed) return
+        _uiState.value = EditMovieUiState.Loading
+        load()
+    }
+
+    private fun load() {
         viewModelScope.launch {
-            val movie = movieRepository.observeMovieDetail(movieId).first()
+            val movie =
+                try {
+                    movieRepository.observeMovieDetail(movieId).first()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Uncaught, this would escape viewModelScope and crash the app.
+                    _uiState.value = EditMovieUiState.LoadFailed
+                    return@launch
+                }
             _uiState.value =
                 if (movie == null) {
                     EditMovieUiState.NotFound

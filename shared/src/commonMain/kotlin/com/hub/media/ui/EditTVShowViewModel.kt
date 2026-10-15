@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 /** State of the edit-show form (#173). */
 public sealed class EditTVShowUiState {
@@ -17,6 +18,12 @@ public sealed class EditTVShowUiState {
 
     /** No show with this id -- deleted, or never a show. */
     public data object NotFound : EditTVShowUiState()
+
+    /**
+     * The show's current values could not be read -- the database threw. Offered as Retry or Back
+     * rather than left as an endless spinner or an app crash.
+     */
+    public data object LoadFailed : EditTVShowUiState()
 
     /**
      * The form, pre-filled with the show's current values. Numbers are the strings being edited,
@@ -53,8 +60,31 @@ public class EditTVShowViewModel(
     public val uiState: StateFlow<EditTVShowUiState> = _uiState.asStateFlow()
 
     init {
+        load()
+    }
+
+    /**
+     * Reads the show again after [EditTVShowUiState.LoadFailed]. A no-op in any other state, so a stray tap
+     * cannot reload a form the user is part-way through editing.
+     */
+    public fun retry() {
+        if (_uiState.value !is EditTVShowUiState.LoadFailed) return
+        _uiState.value = EditTVShowUiState.Loading
+        load()
+    }
+
+    private fun load() {
         viewModelScope.launch {
-            val show = tvShowRepository.observeShowDetail(showId).first()
+            val show =
+                try {
+                    tvShowRepository.observeShowDetail(showId).first()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Uncaught, this would escape viewModelScope and crash the app.
+                    _uiState.value = EditTVShowUiState.LoadFailed
+                    return@launch
+                }
             _uiState.value =
                 if (show == null) {
                     EditTVShowUiState.NotFound
