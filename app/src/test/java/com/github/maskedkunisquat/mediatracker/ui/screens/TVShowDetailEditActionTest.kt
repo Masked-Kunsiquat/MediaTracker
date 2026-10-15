@@ -50,11 +50,14 @@ class TVShowDetailEditActionTest {
     }
 
     @Test
-    fun whileLoading_editIsAbsent_butDeleteIsNot() {
+    fun whileLoading_neitherEditNorMoreOptionsIsShown() {
+        // #172 settled TV's old divergence: Delete used to show while loading. Like the film and
+        // book screens, nothing is offered until the show has loaded.
         setContent(ready = false)
 
         composeRule.onNodeWithContentDescription("Edit show").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Delete show").assertExists()
+        composeRule.onNodeWithContentDescription("More options").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Delete show").assertDoesNotExist()
     }
 
     private fun setContent(
