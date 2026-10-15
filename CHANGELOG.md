@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The film, show and book screens now share one top bar: Edit, then a More options menu holding the screen's other actions (refreshing a show, re-fetching a book's cover), with Delete last. Delete is no longer offered before a show has loaded, and stays reachable while a book's cover is being re-fetched. (#172)
+- The Edit book, Edit film and Edit show screens now match the detail screens: a header showing what you're editing, fields grouped into cards, status picked from the same dropdown, and Cancel / Save pinned at the bottom. Edit book's status no longer cuts off "Did not finish". (#174)
 
 ### Fixed
 - A database restore now leaves a trace in the application log (Settings → Diagnostics → View log): a line when a backup is staged (schema version and row counts), and on the next launch the outcome, plus a warning if startup had to move the pre-restore backup back. The restore's own lines were written after the log store had been shut down, so they never reached it. (#115)
