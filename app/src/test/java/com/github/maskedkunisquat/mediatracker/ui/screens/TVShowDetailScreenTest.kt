@@ -40,6 +40,8 @@ import com.hub.media.ui.TVShowDetailUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -55,6 +57,7 @@ import kotlin.time.Instant
  * description survives the two-digit case, which is the whole point of the first test.
  */
 @OptIn(ExperimentalTime::class)
+@RunWith(RobolectricTestRunner::class)
 class TVShowDetailScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
@@ -262,129 +265,9 @@ class TVShowDetailScreenTest {
         composeRule.onNodeWithContentDescription(menuDesc).assertIsDisplayed()
     }
 
-    @Test
-    fun dialogConfirm_isDisabledWhenEpisodeCountIsBlank() {
-        setContent(readyState(episodeCount = 5))
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("")
-
-        composeRule.onNode(dialogConfirmMatcher()).assertIsNotEnabled()
-    }
-
-    @Test
-    fun shrinkingASeason_showsConfirmationDialog_andDoesNotCallOnSetSeasonLengthUntilConfirmed() {
-        var calls = 0
-        setContent(readyState(episodeCount = 5), onSetSeasonLength = { _, _ -> calls++ })
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("3")
-        composeRule.onNode(dialogConfirmMatcher()).performClick()
-
-        // Two episodes (numbers 4 and 5) would be removed by this shrink.
-        val shrinkTitle = context.resources.getQuantityString(R.plurals.tv_show_detail_shrink_season_title, 2, 2)
-        composeRule.onNodeWithText(shrinkTitle).assertIsDisplayed()
-        assertEquals("a shrink must be confirmed before it is applied", 0, calls)
-    }
-
-    @Test
-    fun cancellingTheShrinkConfirmation_callsOnSetSeasonLengthZeroTimes() {
-        var calls = 0
-        setContent(readyState(episodeCount = 5), onSetSeasonLength = { _, _ -> calls++ })
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("3")
-        composeRule.onNode(dialogConfirmMatcher()).performClick()
-
-        val cancelText = context.getString(R.string.cancel_button)
-        composeRule.onNodeWithText(cancelText).performClick()
-
-        assertEquals(0, calls)
-    }
-
-    @Test
-    fun growingASeason_callsOnSetSeasonLengthImmediately_withNoConfirmation() {
-        var calls = 0
-        var capturedSeason = -1
-        var capturedCount = -1
-        setContent(
-            readyState(episodeCount = 5),
-            onSetSeasonLength = { season, count ->
-                calls++
-                capturedSeason = season
-                capturedCount = count
-            },
-        )
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("8")
-        composeRule.onNode(dialogConfirmMatcher()).performClick()
-
-        assertEquals(1, calls)
-        assertEquals(1, capturedSeason)
-        assertEquals(8, capturedCount)
-    }
-
-    // #83's last gaps. In this lane rather than app/src/test/ because under Robolectric a text
-    // field inside a dialog never lets Compose go idle (AppNotIdleException), and with the clock
-    // stopped the dialog never composes; the Remove-season prompt, which has no text field, is
-    // covered there instead (TVShowDetailSeasonEditPromptTest).
-
-    @Test
-    fun reEnteringTheSameCount_appliesImmediately_withNoConfirmation() {
-        // The gate is `episodeCount < existingLength`. Equal is the edge a `<=` would get wrong,
-        // asking "Remove 0 episodes?" about a change that removes nothing.
-        val calls = mutableListOf<Pair<Int, Int>>()
-        setContent(readyState(episodeCount = 5), onSetSeasonLength = { season, count -> calls += season to count })
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("5")
-        composeRule.onNode(dialogConfirmMatcher()).performClick()
-
-        assertEquals("an unchanged count applies at once", listOf(1 to 5), calls)
-        composeRule
-            .onNodeWithText(
-                context.getString(R.string.tv_show_detail_shrink_season_confirm),
-            ).assertDoesNotExist()
-    }
-
-    @Test
-    fun shrinkConfirmation_namesHowManyRemovedEpisodesWereWatched() {
-        // Five of five watched; shrinking to 3 removes episodes 4 and 5, both watched.
-        val calls = mutableListOf<Pair<Int, Int>>()
-        setContent(readyStateForBucket(watched = 5, total = 5), onSetSeasonLength = { s, n -> calls += s to n })
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("3")
-        composeRule.onNode(dialogConfirmMatcher()).performClick()
-
-        composeRule.onNodeWithText(quantity(R.plurals.tv_show_detail_shrink_season_title, 2)).assertIsDisplayed()
-        composeRule.onNodeWithText(quantity(R.plurals.tv_show_detail_episodes_watched_warning, 2)).assertIsDisplayed()
-        assertEquals("nothing applies until confirmed", emptyList<Pair<Int, Int>>(), calls)
-
-        composeRule.onNodeWithText(context.getString(R.string.tv_show_detail_shrink_season_confirm)).performClick()
-        assertEquals(listOf(1 to 3), calls)
-    }
-
-    @Test
-    fun shrinkConfirmation_whenNoRemovedEpisodeWasWatched_saysOnlyThatItCannotBeUndone() {
-        // Episodes 1-3 are watched and survive; 4 and 5 go, unwatched. The warning counts the
-        // removed episodes, not the season's, so it takes the zero wording although the season has
-        // watched episodes -- "0 of them are marked watched" reads like a bug.
-        setContent(readyStateForBucket(watched = 3, total = 5))
-
-        openChangeEpisodeCountDialog(seasonNumber = 1)
-        setEpisodeCountField("3")
-        composeRule.onNode(dialogConfirmMatcher()).performClick()
-
-        composeRule.onNodeWithText(quantity(R.plurals.tv_show_detail_shrink_season_title, 2)).assertIsDisplayed()
-        composeRule
-            .onNodeWithText(
-                context.getString(R.string.tv_show_detail_removal_undone_warning),
-            ).assertIsDisplayed()
-        composeRule.onNodeWithText(quantity(R.plurals.tv_show_detail_episodes_watched_warning, 3)).assertDoesNotExist()
-        composeRule.onNodeWithText(quantity(R.plurals.tv_show_detail_episodes_watched_warning, 0)).assertDoesNotExist()
-    }
+    // The tests that type into the episode-count dialog stay on a device, in
+    // TVShowDetailEpisodeCountDialogTest: under Robolectric a text field inside a dialog never lets
+    // Compose go idle (AGENTS.md section 7), and the hang poisons every later test in the JVM.
 
     private fun quantity(
         id: Int,
