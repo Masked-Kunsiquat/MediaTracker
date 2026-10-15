@@ -231,4 +231,21 @@ class EditMovieViewModelTest {
                 "a re-save adds no viewing",
             )
         }
+
+    @Test
+    fun load_whenTheReadFails_isLoadFailed_andRetryRecovers() =
+        runTest {
+            // A database read that throws used to escape viewModelScope and crash the app.
+            val movieId = insertMovie(title = "Interstellar")
+            db.breakMediaItems()
+            val viewModel = viewModels.track(EditMovieViewModel(movieId, movieRepository))
+
+            assertIs<EditMovieUiState.LoadFailed>(viewModel.uiState.first { it !is EditMovieUiState.Loading })
+
+            db.restoreMediaItems()
+            viewModel.retry()
+
+            val form = viewModel.uiState.first { it is EditMovieUiState.Editing } as EditMovieUiState.Editing
+            assertEquals("Interstellar", form.title, "Retry loads the form once the read works")
+        }
 }

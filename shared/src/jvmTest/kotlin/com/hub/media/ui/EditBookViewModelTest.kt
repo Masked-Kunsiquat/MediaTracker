@@ -391,4 +391,21 @@ class EditBookViewModelTest {
                 "trackingMode must round-trip unchanged despite totalPages being non-null",
             )
         }
+
+    @Test
+    fun load_whenTheReadFails_isLoadFailed_andRetryRecovers() =
+        runTest {
+            // A database read that throws used to escape the stateIn coroutine and crash the app.
+            insertBook(title = "Project Hail Mary")
+            db.breakMediaItems()
+            val viewModel = newViewModel()
+
+            assertIs<EditBookUiState.LoadFailed>(viewModel.uiState.first { it !is EditBookUiState.Loading })
+
+            db.restoreMediaItems()
+            viewModel.retry()
+
+            val ready = viewModel.uiState.first { it is EditBookUiState.Ready } as EditBookUiState.Ready
+            assertEquals("Project Hail Mary", ready.title, "Retry loads the form once the read works")
+        }
 }

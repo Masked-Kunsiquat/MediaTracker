@@ -19,6 +19,12 @@ public sealed class EditBookUiState {
     public data object NotFound : EditBookUiState()
 
     /**
+     * The book's current values could not be read -- the database threw. Offered as Retry or Back
+     * rather than left as an endless spinner or an app crash.
+     */
+    public data object LoadFailed : EditBookUiState()
+
+    /**
      * The book's current metadata, prefilled for editing.
      *
      * @property format Falls back to [BookFormat.PHYSICAL] when this book has no

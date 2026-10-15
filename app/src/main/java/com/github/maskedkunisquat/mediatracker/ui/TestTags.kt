@@ -59,6 +59,11 @@ object TestTags {
         const val SAVE_BUTTON = "editMovie:save"
     }
 
+    object EditTVShow {
+        const val FORM = "editTVShow:form"
+        const val SAVE_BUTTON = "editTVShow:save"
+    }
+
     object AddTVShow {
         const val FORM = "addTVShow:form"
         const val SAVE_BUTTON = "addTVShow:save"

@@ -7,11 +7,17 @@ import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.media.data.MediaWithDetails
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -46,6 +52,7 @@ import kotlin.time.Duration.Companion.seconds
  * @param bookId The media id this screen was opened for.
  * @param bookRepository Source of reactive book metadata and [BookRepository.updateBookMetadata].
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 public class EditBookViewModel(
     private val bookId: String,
     private val bookRepository: BookRepository,
@@ -69,13 +76,51 @@ public class EditBookViewModel(
      */
     private var saveInFlight: Boolean = false
 
+    /** Where the book's current metadata stands: still being read, read, or failed. */
+    private sealed interface Load {
+        data object Pending : Load
+
+        data class Loaded(
+            val book: MediaWithDetails.Book?,
+        ) : Load
+
+        data object Failed : Load
+    }
+
+    /** Bumped by [retry]; each value restarts the read below. */
+    private val loadAttempt = MutableStateFlow(0)
+
+    /**
+     * The book's metadata, with a failed read turned into [Load.Failed] rather than left to escape
+     * the `stateIn` coroutine, which would crash the app. `catch` does not swallow cancellation.
+     */
+    private val load =
+        loadAttempt.flatMapLatest {
+            bookRepository
+                .observeBookDetail(bookId)
+                .map<MediaWithDetails.Book?, Load> { Load.Loaded(it) }
+                .onStart { emit(Load.Pending) }
+                .catch { emit(Load.Failed) }
+        }
+
+    /**
+     * Reads the book again after [EditBookUiState.LoadFailed]. A no-op in any other state, so a
+     * stray tap cannot restart a read the form already has.
+     */
+    public fun retry() {
+        if (uiState.value is EditBookUiState.LoadFailed) loadAttempt.update { it + 1 }
+    }
+
     public val uiState: StateFlow<EditBookUiState> =
         combine(
-            bookRepository.observeBookDetail(bookId),
+            load,
             localState,
-        ) { bookDetail, local ->
+        ) { load, local ->
+            val bookDetail = (load as? Load.Loaded)?.book
             when {
                 local.saved -> EditBookUiState.Saved
+                load is Load.Pending -> EditBookUiState.Loading
+                load is Load.Failed -> EditBookUiState.LoadFailed
                 bookDetail == null -> EditBookUiState.NotFound
                 else ->
                     EditBookUiState.Ready(

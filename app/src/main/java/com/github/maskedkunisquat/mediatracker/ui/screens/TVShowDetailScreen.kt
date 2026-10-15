@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -105,6 +106,7 @@ fun TVShowDetailScreenRoute(
     coverStorageDir: String,
     showId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToEdit: () -> Unit,
 ) {
     val viewModel: TVShowDetailViewModel =
         viewModel(factory = TVShowDetailViewModelFactory(appContainer, showId))
@@ -193,6 +195,7 @@ fun TVShowDetailScreenRoute(
         onUntickShown = viewModel::consumeUntick,
         onEpisodeOpen = viewModel::openEpisode,
         onNavigateBack = onNavigateBack,
+        onNavigateToEdit = onNavigateToEdit,
     )
 }
 
@@ -220,6 +223,7 @@ fun TVShowDetailScreen(
     onUntickShown: (Long) -> Unit,
     onEpisodeOpen: (String) -> Unit,
     onNavigateBack: () -> Unit,
+    onNavigateToEdit: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -472,6 +476,18 @@ fun TVShowDetailScreen(
                     }
                 },
                 actions = {
+                    // First, as on the film and book screens (#173). Gated on Ready like theirs:
+                    // there is nothing to edit until the show has loaded. Not inside the refresh
+                    // guard -- a hand-entered show, which cannot refresh, is the one that most
+                    // needs editing.
+                    if (uiState is TVShowDetailUiState.Ready) {
+                        IconButton(onClick = onNavigateToEdit) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = stringResource(R.string.tv_show_detail_edit),
+                            )
+                        }
+                    }
                     // Only for a show that records where it came from. A hand-entered show has
                     // nothing to refresh against, and a control that always fails is worse than one
                     // that is absent.

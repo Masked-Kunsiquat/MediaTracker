@@ -63,6 +63,7 @@ class EditBookScreenOcclusionTest {
                     status = ReadingStatus.TO_READ,
                     trackingMode = TrackingMode.PAGES,
                 ),
+            onRetry = {},
             onNavigateBack = {},
             onSave = { _, _, _, _, _, _, _ -> },
         )

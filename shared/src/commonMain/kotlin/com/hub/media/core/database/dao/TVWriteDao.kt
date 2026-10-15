@@ -178,11 +178,17 @@ interface TVWriteDao {
         purchasePrice: Double?,
     ): Int
 
-    @Query("UPDATE tv_details SET totalSeasons = :totalSeasons, status = :status WHERE mediaId = :mediaId")
+    /**
+     * The `tv_details` half of [updateShowMetadataAtomically]: `totalSeasons` only.
+     *
+     * `status` is deliberately absent (#173). The edit form has no status control -- abandoning is
+     * the detail screen's toggle via [updateStatusFields] -- so writing it here could only ever put
+     * back a value read when the form opened, silently undoing an abandon made since.
+     */
+    @Query("UPDATE tv_details SET totalSeasons = :totalSeasons WHERE mediaId = :mediaId")
     suspend fun updateTVDetailFields(
         mediaId: String,
         totalSeasons: Int?,
-        status: WatchStatus,
     ): Int
 
     /**
@@ -208,8 +214,8 @@ interface TVWriteDao {
      * Self-heals a missing details row rather than reporting a success that wrote half the values.
      * A `media_items` row without its `tv_details` half is the data-integrity edge
      * [com.hub.media.features.media.data.MediaWithDetails.TVShow.details] documents as possible;
-     * before this, the `UPDATE` there would match nothing, `totalSeasons`/`status` would go nowhere,
-     * and the count this returns would still say "updated". Inserting inside the same transaction is
+     * before this, the `UPDATE` there would match nothing, `totalSeasons` would go nowhere, and
+     * the count this returns would still say "updated". Inserting inside the same transaction is
      * what makes the repair atomic with the half that did land.
      *
      * @return the number of `media_items` rows affected, so a caller can tell "no such show" (0)
@@ -222,19 +228,14 @@ interface TVWriteDao {
         releaseYear: Int?,
         purchasePrice: Double?,
         totalSeasons: Int?,
-        status: WatchStatus,
     ): Int {
         val mediaRows = updateMediaItemFields(mediaId, title, releaseYear, purchasePrice)
         if (mediaRows > 0) {
-            val detailRows = updateTVDetailFields(mediaId, totalSeasons, status)
+            val detailRows = updateTVDetailFields(mediaId, totalSeasons)
             if (detailRows == 0) {
-                insertTVDetails(
-                    TVDetailsEntity(
-                        mediaId = mediaId,
-                        totalSeasons = totalSeasons,
-                        status = status,
-                    ),
-                )
+                // The default WATCHLIST is the one status that means nothing for a show (only
+                // ABANDONED is read), so this repair invents no state a user could see.
+                insertTVDetails(TVDetailsEntity(mediaId = mediaId, totalSeasons = totalSeasons))
             }
         }
         return mediaRows

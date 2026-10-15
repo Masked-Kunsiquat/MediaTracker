@@ -74,6 +74,7 @@ class EditBookScreenTest {
             MediaTrackerTheme {
                 EditBookScreen(
                     uiState = uiState,
+                    onRetry = {},
                     onNavigateBack = {},
                     onSave = onSave,
                 )

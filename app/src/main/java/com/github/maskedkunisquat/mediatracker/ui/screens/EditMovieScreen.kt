@@ -43,6 +43,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditMovieViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
 import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
@@ -91,6 +92,7 @@ fun EditMovieScreenRoute(
         onStatusChange = viewModel::onStatusChange,
         onSave = viewModel::save,
         onErrorShown = viewModel::consumeSaveError,
+        onRetry = viewModel::retry,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -112,6 +114,7 @@ fun EditMovieScreen(
     onStatusChange: (WatchStatus) -> Unit,
     onSave: () -> Unit,
     onErrorShown: () -> Unit,
+    onRetry: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -159,7 +162,11 @@ fun EditMovieScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (form == null) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                if (uiState is EditMovieUiState.LoadFailed) {
+                    EditLoadFailed(onRetry = onRetry, onNavigateBack = onNavigateBack)
+                } else {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
                 return@Column
             }
 

@@ -13,6 +13,7 @@ import com.hub.media.ui.BookDetailViewModel
 import com.hub.media.ui.ChangelogViewModel
 import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.EditMovieViewModel
+import com.hub.media.ui.EditTVShowViewModel
 import com.hub.media.ui.ExportViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
@@ -357,6 +358,20 @@ class EditMovieViewModelFactory(
             EditMovieViewModel(
                 movieId = movieId,
                 movieRepository = appContainer.movieRepository,
+            )
+        },
+    )
+
+/** Factory for [EditTVShowViewModel] with its [showId] (#173). */
+class EditTVShowViewModelFactory(
+    appContainer: AppContainer,
+    showId: String,
+) : AppViewModelFactory<EditTVShowViewModel>(
+        EditTVShowViewModel::class.java,
+        {
+            EditTVShowViewModel(
+                showId = showId,
+                tvShowRepository = appContainer.tvShowRepository,
             )
         },
     )

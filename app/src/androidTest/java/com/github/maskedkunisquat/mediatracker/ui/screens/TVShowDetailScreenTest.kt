@@ -166,6 +166,7 @@ class TVShowDetailScreenTest {
         onRefreshMetadata: () -> Unit = {},
         onAddMissingEpisodes: (Int) -> Unit = {},
         onAddAllMissingEpisodes: () -> Unit = {},
+        onNavigateToEdit: () -> Unit = {},
         // Pins the composable to a narrow-phone logical width instead of letting it fill this test
         // device's actual (much wider) screen. The #83 layout regression this test class guards
         // against only reproduces once the season header row is genuinely over its width budget --
@@ -201,6 +202,7 @@ class TVShowDetailScreenTest {
                                 onRefreshMetadata = onRefreshMetadata,
                                 onAddMissingEpisodes = onAddMissingEpisodes,
                                 onAddAllMissingEpisodes = onAddAllMissingEpisodes,
+                                onNavigateToEdit = onNavigateToEdit,
                             )
                         }
                     if (narrowWidth) {
@@ -412,8 +414,7 @@ class TVShowDetailScreenTest {
 
     @Test
     fun refreshAction_presentWhenCanRefreshMetadata_andInvokesOnRefreshMetadata() {
-        // TV has no Edit action at all (see TVShowDetailScreen's topBar actions) -- refresh is its
-        // Ready-gated action, and unlike delete (below) it is additionally gated on
+        // Refresh is Ready-gated like Edit, and unlike delete (below) it is additionally gated on
         // uiState.canRefreshMetadata, per the "nothing to refresh against" comment at its call site.
         var refreshes = 0
         setContent(readyState(episodeCount = 3, canRefreshMetadata = true), onRefreshMetadata = { refreshes++ })
@@ -433,6 +434,16 @@ class TVShowDetailScreenTest {
     }
 
     @Test
+    fun editAction_presentWhenReady_evenWithoutTmdb_andInvokesOnNavigateToEdit() {
+        var edits = 0
+        setContent(readyState(episodeCount = 3, canRefreshMetadata = false), onNavigateToEdit = { edits++ })
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.tv_show_detail_edit)).performClick()
+
+        assertEquals(1, edits)
+    }
+
+    @Test
     fun deleteAction_isShownEvenDuringLoading_unlikeMovieAndBook() {
         // Deliberate divergence pinned here for the unification: TVShowDetailScreen's delete
         // IconButton sits outside the `uiState is Ready` guard that gates refresh (and that gates
@@ -442,6 +453,8 @@ class TVShowDetailScreenTest {
 
         val deleteDesc = context.getString(R.string.tv_show_detail_delete)
         composeRule.onNodeWithContentDescription(deleteDesc).assertIsDisplayed()
+        // Edit, unlike Delete, waits for Ready (#173), as it does on the film and book screens.
+        composeRule.onNodeWithContentDescription(context.getString(R.string.tv_show_detail_edit)).assertDoesNotExist()
     }
 
     @Test
