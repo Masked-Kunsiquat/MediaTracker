@@ -21,6 +21,8 @@ import com.hub.media.ui.EditBookUiState
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for the Edit Book screen (Issue #83, filling the coverage gap the numeric-
@@ -41,6 +43,7 @@ import org.junit.Test
  * [EditBookForm]'s KDoc: client-side and repository-side validation read the same numbers, so this
  * test would fail to compile (not just fail) if the two drifted apart.
  */
+@RunWith(RobolectricTestRunner::class)
 class EditBookScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
