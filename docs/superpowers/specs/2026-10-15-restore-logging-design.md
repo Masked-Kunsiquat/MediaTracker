@@ -104,9 +104,10 @@ deliberate, see its comment), the restore flow, and the snackbar. **No `app/src/
   - staging an older v2 candidate (built through `MigrationTestHelper`, as the existing
     older-schema tests do) logs `(older; migrates on next launch)` with `episodes=n/a` and
     `viewings=n/a`;
-  - `countStagedDatabaseRows` leaves no `-wal`/`-shm` next to the candidate;
-  - the self-heal tests also assert `true` when healed, and `false` when the live file is present
-    and when there is no backup.
+  - the self-heal tests assert the `SelfHealResult`: `NotNeeded` when the live file is present and
+    when there is no backup, `Healed` when the backup is moved back, and `Failed` when a sidecar
+    move fails (the retry then gives `Healed`). (The "no `-wal`/`-shm` beside the candidate" check
+    was dropped; see the Amendment.)
 - **The full gate.** No device lane, since `app/src/` is unchanged.
 
 ## Also in this PR

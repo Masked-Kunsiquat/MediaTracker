@@ -31,8 +31,8 @@
 ## Review Focus
 
 1. **An ordinary launch logs nothing new:** no marker and no heal means zero entries.
-2. **`selfHealDatabaseIfNeeded` returns `true` only when the main-file rename succeeded.** The WAL-failure first call returns `false`; the retry returns `true`.
-3. **Counting creates no `-wal`/`-shm`** beside the candidate. The connection is opened read-only.
+2. **`selfHealDatabaseIfNeeded` returns `SelfHealResult`:** `Healed` only when the main-file rename succeeded, `NotNeeded` when there is nothing to heal, and `Failed(backupPath)` when a sidecar or main-file move fails. A failure logs ERROR. The WAL-failure first call gives `Failed`; the retry gives `Healed`.
+3. **Counting opens the candidate read-only and writes nothing to the database.** It does not promise "no `-wal`/`-shm`": validation's own read-only open already creates them (see the spec's Amendment).
 4. **Existing `entries.single()` assertions** on `stage()` rejections are unaffected: the staged line is written on success only.
 5. **An older candidate** without `episodes`/`watch_logs` reports `n/a`, not 0.
 
