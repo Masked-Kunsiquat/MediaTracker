@@ -23,8 +23,8 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * ### When not to use it
  * When the cancellation branch itself has work to do -- log a resume point, delete a partial file
- * under `NonCancellable`, settle UI state -- keep a hand-written `catch (e: CancellationException)`
- * that does that work and then rethrows (`BulkBackfillUseCase`, `DatabaseBackupUseCase`,
+ * under `NonCancellable`, settle UI state -- keep a hand-written cancellation catch that does that
+ * work and then rethrows (`BulkBackfillUseCase`, `DatabaseBackupUseCase`,
  * `BackfillViewModel.start`). Use [guardResource] for the standard repository failure.
  */
 public inline fun <T> catchingNonCancellation(
