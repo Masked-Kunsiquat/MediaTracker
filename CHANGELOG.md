@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- In languages that write decimals with a comma, prices and reading-session positions are no longer saved wrong while you type or edit them. Typing "14,99" saved 1499, and one backspace in a saved "19,99" saved 199. These fields now also show the decimal comma. (#201)
+
 ### Internal
 - Every catch around suspending code in `shared/` now goes through two helpers in `core/util/Cancellation.kt`: `catchingNonCancellation`, which always rethrows coroutine cancellation, and `guardResource`, the standard log-and-`Resource.Error` failure built on it. 67 hand-written copies of the rethrow are gone; five sites whose cancellation branch does real work keep theirs. Closes the last item of #81.
 - `LocalImageStorageManager.saveImage` rethrows coroutine cancellation instead of returning it as `Result.failure`. It was the one suspending catch in `shared/` where a missing rethrow could actually swallow a cancellation. The restore swap's catch also lacks one, but its only caller already runs it under `NonCancellable`; making that guarantee the swap's own follows in #203.
