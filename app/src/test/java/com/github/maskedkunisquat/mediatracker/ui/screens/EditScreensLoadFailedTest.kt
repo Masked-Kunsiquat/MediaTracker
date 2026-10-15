@@ -65,6 +65,7 @@ class EditScreensLoadFailedTest {
     @Composable
     private fun EditFilm() =
         EditMovieScreen(
+            coverStorageDir = "",
             uiState = EditMovieUiState.LoadFailed,
             onTitleChange = {},
             onReleaseYearChange = {},

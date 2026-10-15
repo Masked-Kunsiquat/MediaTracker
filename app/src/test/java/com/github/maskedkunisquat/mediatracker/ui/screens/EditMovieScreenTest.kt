@@ -7,13 +7,17 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.EditMovieUiState
@@ -51,14 +55,11 @@ class EditMovieScreenTest {
     private fun hasRole(role: Role) = SemanticsMatcher.expectValue(SemanticsProperties.Role, role)
 
     /**
-     * Matches the "Save changes" button specifically -- [Role.Button] alone also matches the top
-     * bar's back [androidx.compose.material3.IconButton], which is told apart by the content
-     * description the save button does not have. Needed for the saving-state test, where the label
-     * is replaced by a [androidx.compose.material3.CircularProgressIndicator] and cannot be found
-     * by text. Same matcher [AddMovieScreenTest] uses, for the same reason.
+     * Save, by tag. It used to be "a button with no content description", which told it apart from
+     * the back arrow; since #174 Cancel sits beside it and matches that too, so a test could pass by
+     * tapping Cancel. The saving state hides the label, so text cannot find it either.
      */
-    private val saveButtonMatcher =
-        hasRole(Role.Button) and SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription)
+    private val saveButtonMatcher = hasTestTag(TestTags.EditMovie.SAVE_BUTTON)
 
     private fun editing(
         title: String = "Interstellar",
@@ -83,20 +84,23 @@ class EditMovieScreenTest {
         onSave: () -> Unit = {},
         onErrorShown: () -> Unit = {},
         onPurchasePriceChange: (String) -> Unit = {},
+        onStatusChange: (WatchStatus) -> Unit = {},
+        onNavigateBack: () -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
                 EditMovieScreen(
                     uiState = uiState,
+                    coverStorageDir = "",
                     onTitleChange = {},
                     onReleaseYearChange = {},
                     onRuntimeChange = {},
                     onPurchasePriceChange = onPurchasePriceChange,
-                    onStatusChange = {},
+                    onStatusChange = onStatusChange,
                     onSave = onSave,
                     onErrorShown = onErrorShown,
                     onRetry = {},
-                    onNavigateBack = {},
+                    onNavigateBack = onNavigateBack,
                 )
             }
         }
@@ -187,7 +191,8 @@ class EditMovieScreenTest {
         val titleLabel = context.getString(R.string.add_movie_field_title)
         composeRule.onNode(hasText(titleLabel) and hasSetTextAction()).assertDoesNotExist()
 
-        composeRule.onNodeWithText(context.getString(R.string.watch_status_watching)).assertIsNotEnabled()
+        // The status chip, not an option: the options sit in a menu that a disabled chip never opens.
+        composeRule.onNodeWithText(context.getString(R.string.watch_status_watchlist)).assertIsNotEnabled()
     }
 
     @Test
@@ -221,5 +226,37 @@ class EditMovieScreenTest {
         composeRule.onNode(saveButtonMatcher).performClick()
 
         assertEquals(1, saves)
+    }
+
+    @Test
+    fun header_keepsTheSavedTitle_whileTheFieldSaysSomethingElse() {
+        setContent(editing(title = "Interstellarr").copy(savedTitle = "Interstellar", savedYear = 2014))
+
+        composeRule.onNode(hasText("Interstellar") and isHeading()).assertExists()
+        composeRule.onNodeWithText("Film · 2014").assertExists()
+    }
+
+    @Test
+    fun status_isChosenFromTheDropdown() {
+        var chosen: WatchStatus? = null
+        setContent(editing(), onStatusChange = { chosen = it })
+        val watched = context.getString(R.string.watch_status_watched)
+        // Positive control for the dropdown: the option is not on screen until the chip is opened.
+        composeRule.onNodeWithText(watched).assertDoesNotExist()
+
+        composeRule.onNodeWithText(context.getString(R.string.watch_status_watchlist)).performClick()
+        composeRule.onNodeWithText(watched).performClick()
+
+        assertEquals(WatchStatus.WATCHED, chosen)
+    }
+
+    @Test
+    fun cancel_isInTheBottomBar_andNavigatesBack() {
+        var backs = 0
+        setContent(editing(), onNavigateBack = { backs++ })
+
+        composeRule.onNodeWithTag(TestTags.EditMovie.CANCEL_BUTTON).performClick()
+
+        assertEquals(1, backs)
     }
 }

@@ -156,6 +156,7 @@ fun AppNavigation(
             EditMovieScreenRoute(
                 appContainer = appContainer,
                 movieId = movieId,
+                coverStorageDir = coverStorageDir,
                 onNavigateBack = { navController.navigateUp() },
             )
         }

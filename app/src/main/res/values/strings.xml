@@ -115,6 +115,7 @@
     <string name="edit_section_physical">Physical</string>
     <string name="edit_section_status">Status</string>
     <string name="edit_section_purchase">Purchase</string>
+    <string name="edit_section_details">Details</string>
     <string name="edit_purchase_price_prefix">$</string>
     <string name="edit_total_pages_suffix">pages</string>
 

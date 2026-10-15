@@ -45,6 +45,7 @@ class EditMovieScreenOcclusionTest {
     @Composable
     private fun Fixture() {
         EditMovieScreen(
+            coverStorageDir = "",
             uiState =
                 EditMovieUiState.Editing(
                     title = "Interstellar",
@@ -71,6 +72,7 @@ class EditMovieScreenOcclusionTest {
             listOf(
                 TestTags.EditMovie.FORM,
                 TestTags.EditMovie.SAVE_BUTTON,
+                TestTags.EditMovie.CANCEL_BUTTON,
             )
     }
 }
