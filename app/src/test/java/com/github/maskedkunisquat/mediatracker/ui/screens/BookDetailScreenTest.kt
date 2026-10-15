@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -187,9 +188,6 @@ class BookDetailScreenTest {
             .onNodeWithContentDescription(context.getString(R.string.edit_book_content_description))
             .assertDoesNotExist()
         composeRule
-            .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
-            .assertDoesNotExist()
-        composeRule
             .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
             .assertDoesNotExist()
     }
@@ -200,9 +198,6 @@ class BookDetailScreenTest {
 
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.edit_book_content_description))
-            .assertDoesNotExist()
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
             .assertDoesNotExist()
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
@@ -548,6 +543,7 @@ class BookDetailScreenTest {
         openMoreOptions()
         // Both halves: that the item is disabled, and that it does nothing. The click alone would pass
         // for an item that was enabled but wired to nothing, which is not what this test's name claims.
+        composeRule.onNodeWithText(context.getString(R.string.refetch_cover_button)).assertExists()
         val item = composeRule.onNodeWithText(context.getString(R.string.refetch_cover_no_isbn))
         item.assertIsNotEnabled()
         item.performClick()
@@ -570,8 +566,15 @@ class BookDetailScreenTest {
         val refetching = composeRule.onNodeWithText(context.getString(R.string.refetch_cover_in_progress))
         refetching.assertIsNotEnabled()
         composeRule
-            .onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo), useUnmergedTree = true)
-            .assertExists()
+            // Indeterminate: the refetch item's spinner. The progress card's bar is determinate, so a
+            // broad keyIsDefined(ProgressBarRangeInfo) would pass here with the spinner gone.
+            .onNode(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
+                ),
+                useUnmergedTree = true,
+            ).assertExists()
         composeRule
             .onNode(hasText(context.getString(R.string.delete_book_content_description)) and hasClickAction())
             .performClick()

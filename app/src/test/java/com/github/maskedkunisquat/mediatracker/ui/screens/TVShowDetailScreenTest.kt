@@ -337,7 +337,6 @@ class TVShowDetailScreenTest {
         setContent(TVShowDetailUiState.Loading)
 
         composeRule.onNodeWithContentDescription(context.getString(R.string.detail_more_options)).assertDoesNotExist()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.tv_show_detail_delete)).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(R.string.tv_show_detail_edit)).assertDoesNotExist()
     }
 

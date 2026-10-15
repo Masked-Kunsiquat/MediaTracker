@@ -181,7 +181,7 @@ fun BookDetailScreenRoute(
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateBack Called when the back icon is pressed.
  * @param onDeleteBook Called after the delete-book confirmation dialog (opened from the TopAppBar
- *   delete icon, only shown for [BookDetailUiState.Ready]) is confirmed. Wired by
+ *   "Delete book" item in More options, only shown for [BookDetailUiState.Ready]) is confirmed. Wired by
  *   [BookDetailScreenRoute] to [BookDetailViewModel.deleteBook], whose [Resource.Error][com.hub.media.core.util.Resource.Error]
  *   surfaces via [BookDetailUiState.Ready.errorMessage] the same way a failed
  *   [BookDetailViewModel.saveSession]/[BookDetailViewModel.deleteSession] does.
@@ -521,7 +521,7 @@ fun BookDetailScreen(
 }
 
 /**
- * Delete-book confirmation dialog (Task4 Phase E), opened from the TopAppBar delete icon.
+ * Delete-book confirmation dialog (Task4 Phase E), opened from the "Delete book" item in the top bar's More options menu (#172).
  * Mirrors the wording of the confirmation dialog that used to live on `LibraryScreen`'s book
  * cards before deletion moved here.
  */

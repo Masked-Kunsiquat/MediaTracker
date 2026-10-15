@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -81,12 +82,15 @@ fun DetailTopBarActions(
                             }
                         }
                     },
-                    leadingIcon =
-                        if (action.inProgress) {
-                            { CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) }
-                        } else {
-                            null
-                        },
+                    // Always a 24dp slot -- empty, or the spinner -- so every item's text lines up
+                    // with Delete's (which has an icon) and does not shift when progress appears.
+                    leadingIcon = {
+                        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            if (action.inProgress) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            }
+                        }
+                    },
                     enabled = action.enabled && !action.inProgress,
                     onClick = {
                         expanded = false

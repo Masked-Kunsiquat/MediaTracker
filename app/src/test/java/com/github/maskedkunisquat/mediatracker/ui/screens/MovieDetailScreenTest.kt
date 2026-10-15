@@ -263,9 +263,6 @@ class MovieDetailScreenTest {
             .onNodeWithContentDescription(context.getString(R.string.edit_movie_content_description))
             .assertDoesNotExist()
         composeRule
-            .onNodeWithContentDescription(context.getString(R.string.movie_detail_delete))
-            .assertDoesNotExist()
-        composeRule
             .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
             .assertDoesNotExist()
     }
@@ -276,9 +273,6 @@ class MovieDetailScreenTest {
 
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.edit_movie_content_description))
-            .assertDoesNotExist()
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.movie_detail_delete))
             .assertDoesNotExist()
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.detail_more_options))

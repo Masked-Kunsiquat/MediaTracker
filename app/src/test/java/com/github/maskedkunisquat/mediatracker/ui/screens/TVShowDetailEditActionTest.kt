@@ -57,7 +57,6 @@ class TVShowDetailEditActionTest {
 
         composeRule.onNodeWithContentDescription("Edit show").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("More options").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Delete show").assertDoesNotExist()
     }
 
     private fun setContent(
