@@ -11,12 +11,15 @@ import com.hub.media.ui.PendingTick
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * The date-picker half of [MarkWatchedDialog] (#131). Device-only: a dialog holding an input does
  * not go idle under Robolectric (AGENTS.md §7). Which days are pickable is pure logic, tested in
  * `WatchTimesTest`; this proves the picker opens on the air date and confirms that day.
  */
+@RunWith(RobolectricTestRunner::class)
 class MarkWatchedDialogPickerTest {
     @get:Rule
     val composeRule = createComposeRule()
