@@ -4,6 +4,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -151,4 +152,68 @@ internal suspend fun validateStagedDatabaseIntegrity(
             logger.warn(TAG, e) { "staged database validation threw while opening/querying the candidate" }
             "the file could not be opened as a SQLite database (${e.message ?: e::class.simpleName})"
         }
+    }
+
+/**
+ * Row counts read from a staged restore candidate, for the restore's log line (#115). A `null` field
+ * is a table the candidate does not have -- an older backup predating it (episodes and watch logs
+ * arrived in schema v6) -- which is not the same as 0.
+ */
+internal data class StagedRowCounts(
+    val items: Long?,
+    val sessions: Long?,
+    val episodes: Long?,
+    val viewings: Long?,
+)
+
+/**
+ * Counts the rows a restore would bring in, opening the candidate read-only exactly as
+ * [validateStagedDatabaseIntegrity] does, so no `-wal`/`-shm` appears beside it. Best-effort: any
+ * failure is logged and returns `null`, and a restore never depends on it -- logging must not become
+ * a new source of failure for its caller.
+ */
+internal suspend fun countStagedDatabaseRows(
+    path: String,
+    logger: Logger = AppLogger,
+): StagedRowCounts? =
+    withContext(Dispatchers.IO) {
+        catchingNonCancellation(
+            block = {
+                BundledSQLiteDriver().open(path, SQLITE_OPEN_READONLY).use { connection ->
+                    val tables = mutableSetOf<String>()
+                    connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").use { statement ->
+                        while (statement.step()) tables += statement.getText(0)
+                    }
+
+                    fun count(table: String): Long? =
+                        if (table !in tables) {
+                            null
+                        } else {
+                            connection.prepare("SELECT COUNT(*) FROM $table").use { statement ->
+                                statement.step()
+                                statement.getLong(0)
+                            }
+                        }
+                    StagedRowCounts(
+                        items = count("media_items"),
+                        sessions = count("reading_sessions"),
+                        episodes = count("episodes"),
+                        viewings = count("watch_logs"),
+                    )
+                }
+            },
+            onException = { e ->
+                logger.warn(TAG, e) { "could not count the staged database's rows" }
+                null
+            },
+        )
+    }
+
+/** `items=…, sessions=…, episodes=…, viewings=…`, with `n/a` for a table the candidate lacks. */
+internal fun StagedRowCounts?.toLogText(): String =
+    if (this == null) {
+        "counts unavailable"
+    } else {
+        "items=${items ?: "n/a"}, sessions=${sessions ?: "n/a"}, episodes=${episodes ?: "n/a"}, " +
+            "viewings=${viewings ?: "n/a"}"
     }
