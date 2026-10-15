@@ -886,7 +886,8 @@ class RestoreDatabaseUseCaseTest {
         runTest {
             migrationHelper.createDatabase(2).use { db ->
                 db.execSQL(
-                    "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash) " +
+                    "INSERT INTO media_items (id, type, title, releaseYear, " +
+                        "purchasePrice, createdAt, coverImageHash) " +
                         "VALUES ('media-1', 'BOOK', 'Old Book', 2015, 4.99, 1600000000000, NULL)",
                 )
             }
