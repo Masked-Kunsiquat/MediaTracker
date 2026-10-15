@@ -113,3 +113,13 @@ Showing the counts in the restore confirmation dialog: that's a UI change, and c
 issue. Reordering `AppContainer.close()`. A "restore requested" line at confirm time: the staged
 line is written moments before the confirm dialog appears, and the outcome line on the next launch
 brackets the restore.
+
+## Amendment (during implementation)
+
+The design said the read-only count "creates no `-wal`/`-shm` side effects", and the plan's test
+asserted it. That is not true, and not because of this change: `stage()`'s existing integrity
+validation, a read-only `BundledSQLiteDriver` open of a WAL-mode file, already creates both
+sidecars beside the candidate. Proven by disabling the new counting call: the sidecars still
+appear. That contradicts `RestoreDatabaseUseCase`'s own KDoc, and the staged file's sidecars are
+probably left orphaned after the swap. The assertion was dropped from #115's test, and the finding
+was reported to the owner as a separate issue rather than folded in here.

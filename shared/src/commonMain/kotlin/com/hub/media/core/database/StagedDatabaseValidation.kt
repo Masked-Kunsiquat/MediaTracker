@@ -168,7 +168,9 @@ internal data class StagedRowCounts(
 
 /**
  * Counts the rows a restore would bring in, opening the candidate read-only exactly as
- * [validateStagedDatabaseIntegrity] does, so no `-wal`/`-shm` appears beside it. Best-effort: any
+ * [validateStagedDatabaseIntegrity] does, so it writes nothing to the database itself. (Opening a
+ * WAL-mode file read-only still lets SQLite create `-wal`/`-shm` beside it; validation already does
+ * that before this runs, and this adds none of its own.) Best-effort: any
  * failure is logged and returns `null`, and a restore never depends on it -- logging must not become
  * a new source of failure for its caller.
  */
