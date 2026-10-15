@@ -3,9 +3,9 @@ package com.hub.media.features.portability.domain
 import com.hub.media.core.database.deleteFilesMatching
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
-import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Removes temp files that outlived the flow that made them (#162), run once at startup.
@@ -30,25 +30,26 @@ public class SweepStaleTempFilesUseCase(
      * @return How many files were removed.
      */
     public suspend fun execute(startedAtMillis: Long): Int =
-        try {
-            val split = maxOf(databaseFilePath.lastIndexOf('/'), databaseFilePath.lastIndexOf('\\'))
-            val databaseDir = databaseFilePath.substring(0, split.coerceAtLeast(0))
-            val backupPrefix = databaseFilePath.substring(split + 1) + ".backup-"
-            val removed =
-                deleteFilesMatching(databaseDir) { name, modified ->
-                    modified < startedAtMillis && name.startsWith(backupPrefix) && name.endsWith(".tmp")
-                } +
-                    deleteFilesMatching(cacheDirPath) { name, modified ->
-                        modified < startedAtMillis && name.startsWith("restore-incoming-") && name.endsWith(".tmp")
-                    }
-            if (removed > 0) logger.info(TAG) { "Removed $removed stale temp file(s)" }
-            removed
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(TAG, e) { "Stale temp file sweep failed" }
-            0
-        }
+        catchingNonCancellation(
+            block = {
+                val split = maxOf(databaseFilePath.lastIndexOf('/'), databaseFilePath.lastIndexOf('\\'))
+                val databaseDir = databaseFilePath.substring(0, split.coerceAtLeast(0))
+                val backupPrefix = databaseFilePath.substring(split + 1) + ".backup-"
+                val removed =
+                    deleteFilesMatching(databaseDir) { name, modified ->
+                        modified < startedAtMillis && name.startsWith(backupPrefix) && name.endsWith(".tmp")
+                    } +
+                        deleteFilesMatching(cacheDirPath) { name, modified ->
+                            modified < startedAtMillis && name.startsWith("restore-incoming-") && name.endsWith(".tmp")
+                        }
+                if (removed > 0) logger.info(TAG) { "Removed $removed stale temp file(s)" }
+                removed
+            },
+            onException = { e ->
+                logger.warn(TAG, e) { "Stale temp file sweep failed" }
+                0
+            },
+        )
 
     private companion object {
         const val TAG = "SweepStaleTempFiles"

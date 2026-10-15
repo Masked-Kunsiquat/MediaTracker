@@ -4,9 +4,8 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.info
-import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * The startup backfill (#90): gives every watched episode that has no viewing exactly one, at its
@@ -22,16 +21,15 @@ public class EnsureViewingsUseCase(
 ) {
     /** @return How many viewings were created; 0 once everything has one. */
     public suspend fun execute(): Resource<Int> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Viewing backfill failed",
+            logMessage = { "Viewing backfill failed" },
+        ) {
             val created =
                 db.tvWriteDao().ensureViewingsForWatchedEpisodes() + db.movieWriteDao().ensureViewingsForWatchedFilms()
             if (created > 0) logger.info(TAG) { "Backfilled $created viewing(s) for watched episodes and films" }
             Resource.Success(created)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Viewing backfill failed" }
-            Resource.Error("Viewing backfill failed: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     private companion object {

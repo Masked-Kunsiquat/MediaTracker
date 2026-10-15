@@ -6,6 +6,7 @@ import com.hub.media.core.network.networkJson
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import com.hub.media.features.tv.network.dto.TmdbMovieDetailsDto
 import com.hub.media.features.tv.network.dto.TmdbSearchResponseDto
@@ -18,7 +19,6 @@ import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.JsonObject
-import kotlin.coroutines.cancellation.CancellationException
 
 /** Base for every TMDB v3 endpoint this app calls. */
 internal const val TMDB_BASE_URL: String = "https://api.themoviedb.org/3"
@@ -121,27 +121,28 @@ public class TmdbClient(
      * had just accepted it -- the single most misleading answer that screen can give.
      */
     private suspend fun requestStatusOnly(path: String): Resource<Unit> {
-        return try {
-            // Inside the try: reading the credential is a database read, so it can fail like any
-            // other, and every other failure in this class comes back as a Resource. A read that
-            // threw past this point would make the contract "returns a Resource, except sometimes"
-            // -- which only holds while every caller happens to wrap it.
-            val credential =
-                credentialProvider()?.let { TmdbCredential.of(it) }
-                    ?: return Resource.Error(NO_CREDENTIAL_MESSAGE)
-            pacer?.acquire()
-            val response = client.get("$TMDB_BASE_URL$path") { credential.applyTo(this) }
-            if (response.status.isSuccess()) {
-                Resource.Success(Unit)
-            } else {
-                failureFor(credential, response.status.value, path)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(TAG) { "TMDB request to $path failed (${e::class.simpleName})" }
-            Resource.Error("Could not reach TMDB")
-        }
+        return catchingNonCancellation(
+            block = {
+                // Inside the guarded block: reading the credential is a database read, so it can fail like any
+                // other, and every other failure in this class comes back as a Resource. A read that
+                // threw past this point would make the contract "returns a Resource, except sometimes"
+                // -- which only holds while every caller happens to wrap it.
+                val credential =
+                    credentialProvider()?.let { TmdbCredential.of(it) }
+                        ?: return Resource.Error(NO_CREDENTIAL_MESSAGE)
+                pacer?.acquire()
+                val response = client.get("$TMDB_BASE_URL$path") { credential.applyTo(this) }
+                if (response.status.isSuccess()) {
+                    Resource.Success(Unit)
+                } else {
+                    failureFor(credential, response.status.value, path)
+                }
+            },
+            onException = { e ->
+                logger.warn(TAG) { "TMDB request to $path failed (${e::class.simpleName})" }
+                Resource.Error("Could not reach TMDB")
+            },
+        )
     }
 
     /**
@@ -170,33 +171,34 @@ public class TmdbClient(
         path: String,
         queryParams: Map<String, String> = emptyMap(),
     ): Resource<T> {
-        return try {
-            // Read inside the try for the reason [requestStatusOnly] gives. Absence itself is not
-            // logged as a warning: having no credential is an ordinary state for this app, not a
-            // fault, and the screen that asked is responsible for saying so.
-            val credential =
-                credentialProvider()?.let { TmdbCredential.of(it) }
-                    ?: return Resource.Error(NO_CREDENTIAL_MESSAGE)
-            pacer?.acquire()
-            val response: HttpResponse =
-                client.get("$TMDB_BASE_URL$path") {
-                    credential.applyTo(this)
-                    queryParams.forEach { (key, value) -> parameter(key, value) }
+        return catchingNonCancellation(
+            block = {
+                // Read inside the guarded block for the reason [requestStatusOnly] gives. Absence itself is not
+                // logged as a warning: having no credential is an ordinary state for this app, not a
+                // fault, and the screen that asked is responsible for saying so.
+                val credential =
+                    credentialProvider()?.let { TmdbCredential.of(it) }
+                        ?: return Resource.Error(NO_CREDENTIAL_MESSAGE)
+                pacer?.acquire()
+                val response: HttpResponse =
+                    client.get("$TMDB_BASE_URL$path") {
+                        credential.applyTo(this)
+                        queryParams.forEach { (key, value) -> parameter(key, value) }
+                    }
+
+                if (!response.status.isSuccess()) {
+                    return failureFor(credential, response.status.value, path)
                 }
 
-            if (!response.status.isSuccess()) {
-                return failureFor(credential, response.status.value, path)
-            }
-
-            Resource.Success(response.body<T>())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // The exception's own message is not interpolated into the user-facing text: Ktor's
-            // failures can include the request URL, which carries an api_key credential.
-            logger.warn(TAG) { "TMDB request to $path failed (${e::class.simpleName})" }
-            Resource.Error("Could not reach TMDB")
-        }
+                Resource.Success(response.body<T>())
+            },
+            onException = { e ->
+                // The exception's own message is not interpolated into the user-facing text: Ktor's
+                // failures can include the request URL, which carries an api_key credential.
+                logger.warn(TAG) { "TMDB request to $path failed (${e::class.simpleName})" }
+                Resource.Error("Could not reach TMDB")
+            },
+        )
     }
 
     /**

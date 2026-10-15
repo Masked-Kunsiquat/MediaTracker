@@ -3,7 +3,7 @@ package com.hub.media.features.portability.domain
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION
 import com.hub.media.features.portability.csv.EXPORTABLE_SETTING_KEYS
 import com.hub.media.features.portability.csv.ExportArchive
@@ -12,7 +12,6 @@ import com.hub.media.features.portability.csv.ExportManifestFile
 import com.hub.media.features.settings.data.SettingsRepository
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 /** The export as one file: the zip's bytes and the name the save dialog suggests. */
@@ -50,7 +49,11 @@ public class ExportArchiveUseCase(
                 is Resource.Error -> return result
                 is Resource.Success -> result.data
             }
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Export failed",
+            logMessage = { "Building the export archive failed" },
+        ) {
             val now = clock.now()
             val files =
                 listOf(
@@ -73,11 +76,6 @@ public class ExportArchiveUseCase(
                     suggestedFileName = "media-tracker-export-${now.toLocalDateTime(zone).date}.zip",
                 ),
             )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Building the export archive failed" }
-            Resource.Error("Export failed: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 

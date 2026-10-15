@@ -5,6 +5,7 @@ import com.hub.media.core.network.RequestPacer
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.dto.OpenLibraryAuthorDto
@@ -16,7 +17,6 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.isSuccess
-import kotlin.coroutines.cancellation.CancellationException
 
 private const val OPEN_LIBRARY_BASE_URL = "https://openlibrary.org"
 private const val OPEN_LIBRARY_COVERS_BASE_URL = "https://covers.openlibrary.org/b"
@@ -66,69 +66,68 @@ public class OpenLibraryClient(
     }
 
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
-        return try {
-            val response = pacedGet("$OPEN_LIBRARY_BASE_URL/isbn/$isbn.json")
-            if (!response.status.isSuccess()) {
-                // Logged for the same reason the thrown-exception path below is: this is the primary
-                // provider on the add-book flow, and a status failure is the one failure mode that
-                // used to leave no trace at all. A real Open Library outage produced a user-visible
-                // error and an empty log, which is precisely backwards.
-                logger.warn(TAG) {
-                    "Open Library lookup returned ${response.status.value} for isbn=$isbn"
+        return catchingNonCancellation(
+            block = {
+                val response = pacedGet("$OPEN_LIBRARY_BASE_URL/isbn/$isbn.json")
+                if (!response.status.isSuccess()) {
+                    // Logged for the same reason the thrown-exception path below is: this is the primary
+                    // provider on the add-book flow, and a status failure is the one failure mode that
+                    // used to leave no trace at all. A real Open Library outage produced a user-visible
+                    // error and an empty log, which is precisely backwards.
+                    logger.warn(TAG) {
+                        "Open Library lookup returned ${response.status.value} for isbn=$isbn"
+                    }
+                    return Resource.Error(
+                        "Open Library request failed with status ${response.status.value} for ISBN $isbn",
+                    )
                 }
-                return Resource.Error(
-                    "Open Library request failed with status ${response.status.value} for ISBN $isbn",
+
+                // Cancellation is rethrown here as in the outer handler below -- a cancelled
+                // deserialization is not a malformed-JSON failure.
+                val dto =
+                    catchingNonCancellation(
+                        block = {
+                            response.body<OpenLibraryEditionDto>()
+                        },
+                        onException = { e ->
+                            logger.warn(TAG, e) { "Open Library returned malformed JSON for isbn=$isbn" }
+                            return Resource.Error("Open Library returned malformed JSON for ISBN $isbn", e)
+                        },
+                    )
+
+                val title = dto.title
+                if (title.isNullOrBlank()) {
+                    return Resource.Error("Open Library response for ISBN $isbn is missing a title")
+                }
+
+                val coverId = dto.covers?.firstOrNull()
+                val coverImageUrl = coverId?.let { "$OPEN_LIBRARY_COVERS_BASE_URL/id/$it-L.jpg" }
+                val releaseYear = dto.publishDate?.let { parseYear(it) }
+                val workKey = dto.works?.firstOrNull()?.key
+                val authors = resolveAuthors(dto.authors.orEmpty(), workKey)
+
+                Resource.Success(
+                    BookMetadata(
+                        title = title,
+                        authors = authors,
+                        releaseYear = releaseYear,
+                        pageCount = dto.numberOfPages,
+                        isbn = isbn,
+                        coverImageUrl = coverImageUrl,
+                        provider = IdentifierProvider.OPEN_LIBRARY,
+                        externalId = dto.key,
+                        workKey = workKey,
+                    ),
                 )
-            }
-
-            val dto =
-                try {
-                    response.body<OpenLibraryEditionDto>()
-                } catch (e: CancellationException) {
-                    // Same rethrow as the outer catch below -- a cancelled deserialization is not a
-                    // malformed-JSON failure.
-                    throw e
-                } catch (e: Exception) {
-                    logger.warn(TAG, e) { "Open Library returned malformed JSON for isbn=$isbn" }
-                    return Resource.Error("Open Library returned malformed JSON for ISBN $isbn", e)
-                }
-
-            val title = dto.title
-            if (title.isNullOrBlank()) {
-                return Resource.Error("Open Library response for ISBN $isbn is missing a title")
-            }
-
-            val coverId = dto.covers?.firstOrNull()
-            val coverImageUrl = coverId?.let { "$OPEN_LIBRARY_COVERS_BASE_URL/id/$it-L.jpg" }
-            val releaseYear = dto.publishDate?.let { parseYear(it) }
-            val workKey = dto.works?.firstOrNull()?.key
-            val authors = resolveAuthors(dto.authors.orEmpty(), workKey)
-
-            Resource.Success(
-                BookMetadata(
-                    title = title,
-                    authors = authors,
-                    releaseYear = releaseYear,
-                    pageCount = dto.numberOfPages,
-                    isbn = isbn,
-                    coverImageUrl = coverImageUrl,
-                    provider = IdentifierProvider.OPEN_LIBRARY,
-                    externalId = dto.key,
-                    workKey = workKey,
-                ),
-            )
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception,
-            // so swallowing it here would both break structured concurrency and log a spurious WARN
-            // every time a screen is closed mid-lookup.
-            throw e
-        } catch (e: Exception) {
-            // WARN, not ERROR: an offline device is the ordinary case here, and a failed lookup
-            // that the app recovers from by falling back to Google Books is not a fault to shout
-            // about. Same level, and the same isbn= identifier, as OpenLibraryIsbnCoverProbe.
-            logger.warn(TAG, e) { "Open Library lookup failed for isbn=$isbn" }
-            Resource.Error("Open Library lookup failed for ISBN $isbn: ${e.message}", e)
-        }
+            },
+            onException = { e ->
+                // WARN, not ERROR: an offline device is the ordinary case here, and a failed lookup
+                // that the app recovers from by falling back to Google Books is not a fault to shout
+                // about. Same level, and the same isbn= identifier, as OpenLibraryIsbnCoverProbe.
+                logger.warn(TAG, e) { "Open Library lookup failed for isbn=$isbn" }
+                Resource.Error("Open Library lookup failed for ISBN $isbn: ${e.message}", e)
+            },
+        )
     }
 
     /**
@@ -167,26 +166,27 @@ public class OpenLibraryClient(
      * worth failing an otherwise good book lookup over, exactly as [fetchAuthorName] treats one.
      */
     private suspend fun fetchWorkAuthorRefs(workKey: String): List<OpenLibraryAuthorRefDto> {
-        return try {
-            val response = pacedGet("$OPEN_LIBRARY_BASE_URL$workKey.json")
-            if (!response.status.isSuccess()) {
-                logger.warn(TAG) {
-                    "Open Library work lookup returned ${response.status.value} for key=$workKey"
+        return catchingNonCancellation(
+            block = {
+                val response = pacedGet("$OPEN_LIBRARY_BASE_URL$workKey.json")
+                if (!response.status.isSuccess()) {
+                    logger.warn(TAG) {
+                        "Open Library work lookup returned ${response.status.value} for key=$workKey"
+                    }
+                    return emptyList()
                 }
-                return emptyList()
-            }
-            // A work nests its refs one level deeper than an edition does -- see OpenLibraryWorkDto.
-            response
-                .body<OpenLibraryWorkDto>()
-                .authors
-                .orEmpty()
-                .mapNotNull { it.author }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(TAG, e) { "Open Library work lookup failed for key=$workKey" }
-            emptyList()
-        }
+                // A work nests its refs one level deeper than an edition does -- see OpenLibraryWorkDto.
+                response
+                    .body<OpenLibraryWorkDto>()
+                    .authors
+                    .orEmpty()
+                    .mapNotNull { it.author }
+            },
+            onException = { e ->
+                logger.warn(TAG, e) { "Open Library work lookup failed for key=$workKey" }
+                emptyList()
+            },
+        )
     }
 
     /**
@@ -204,33 +204,34 @@ public class OpenLibraryClient(
     }
 
     private suspend fun fetchAuthorName(key: String): String? {
-        return try {
-            val response = pacedGet("$OPEN_LIBRARY_BASE_URL$key.json")
-            if (!response.status.isSuccess()) {
-                // The other half of the silent drop, and the likelier half: a non-2xx answer
-                // returns here without ever throwing, so the catch below never sees it. Status
-                // codes are explicitly loggable under the identifier rule.
-                logger.warn(TAG) {
-                    "Open Library author lookup returned ${response.status.value} for key=$key"
+        // Cancellation is rethrown, never swallowed: this method already returns null for an
+        // unresolved author, so a swallowed cancellation would look identical to "no such
+        // author" instead of propagating like every other cancellation in this file.
+        return catchingNonCancellation(
+            block = {
+                val response = pacedGet("$OPEN_LIBRARY_BASE_URL$key.json")
+                if (!response.status.isSuccess()) {
+                    // The other half of the silent drop, and the likelier half: a non-2xx answer
+                    // returns here without ever throwing, so the catch below never sees it. Status
+                    // codes are explicitly loggable under the identifier rule.
+                    logger.warn(TAG) {
+                        "Open Library author lookup returned ${response.status.value} for key=$key"
+                    }
+                    return null
                 }
-                return null
-            }
-            response.body<OpenLibraryAuthorDto>().name?.takeIf { it.isNotBlank() }
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch below: this method already returns null for an
-            // unresolved author, so a swallowed cancellation would look identical to "no such
-            // author" instead of propagating like every other cancellation in this file.
-            throw e
-        } catch (e: Exception) {
-            // Was a silent drop -- the one swallow in this file that discarded its cause entirely,
-            // returning null with nothing recorded anywhere. It is also the one a user actually
-            // notices: an author that never arrives is exactly the "why has this book got no
-            // author?" symptom, and until now nothing explained it. The Open Library author key is
-            // public catalogue data, an identifier of the same kind as the isbn the rule already
-            // permits -- not the author name itself, which is library content and stays out.
-            logger.warn(TAG, e) { "Open Library author lookup failed for key=$key" }
-            null
-        }
+                response.body<OpenLibraryAuthorDto>().name?.takeIf { it.isNotBlank() }
+            },
+            onException = { e ->
+                // Was a silent drop -- the one swallow in this file that discarded its cause entirely,
+                // returning null with nothing recorded anywhere. It is also the one a user actually
+                // notices: an author that never arrives is exactly the "why has this book got no
+                // author?" symptom, and until now nothing explained it. The Open Library author key is
+                // public catalogue data, an identifier of the same kind as the isbn the rule already
+                // permits -- not the author name itself, which is library content and stays out.
+                logger.warn(TAG, e) { "Open Library author lookup failed for key=$key" }
+                null
+            },
+        )
     }
 }
 

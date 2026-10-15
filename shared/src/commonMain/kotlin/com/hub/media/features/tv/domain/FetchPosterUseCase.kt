@@ -6,11 +6,11 @@ import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.CoverImageDownloader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "FetchPoster"
 
@@ -87,25 +87,26 @@ public class FetchPosterUseCase(
             tmdbPosterUrl(posterPath)
                 ?: return Resource.Error("This title has no poster on TMDB.")
 
-        return try {
-            val bytes =
-                when (val downloaded = coverDownloader.download(url)) {
-                    is Resource.Error -> return downloaded
-                    is Resource.Success -> downloaded.data
-                }
-            val hash =
-                imageStorage.saveImage(bytes).getOrElse { error ->
-                    logger.warn(TAG) { "Could not store a poster for $mediaId (${error::class.simpleName})" }
-                    return Resource.Error("Could not store the downloaded poster.")
-                }
-            mediaRepository.updateCoverImageHash(mediaId, hash)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // The URL is never interpolated into the message: it is not secret, but the download
-            // path is shared with Open Library covers and this keeps one rule for both.
-            logger.warn(TAG) { "Failed to fetch a poster for $mediaId (${e::class.simpleName})" }
-            Resource.Error("Failed to fetch poster: ${e.message ?: "Unknown error"}", cause = e)
-        }
+        return catchingNonCancellation(
+            block = {
+                val bytes =
+                    when (val downloaded = coverDownloader.download(url)) {
+                        is Resource.Error -> return downloaded
+                        is Resource.Success -> downloaded.data
+                    }
+                val hash =
+                    imageStorage.saveImage(bytes).getOrElse { error ->
+                        logger.warn(TAG) { "Could not store a poster for $mediaId (${error::class.simpleName})" }
+                        return Resource.Error("Could not store the downloaded poster.")
+                    }
+                mediaRepository.updateCoverImageHash(mediaId, hash)
+            },
+            onException = { e ->
+                // The URL is never interpolated into the message: it is not secret, but the download
+                // path is shared with Open Library covers and this keeps one rule for both.
+                logger.warn(TAG) { "Failed to fetch a poster for $mediaId (${e::class.simpleName})" }
+                Resource.Error("Failed to fetch poster: ${e.message ?: "Unknown error"}", cause = e)
+            },
+        )
     }
 }

@@ -8,12 +8,11 @@ import com.hub.media.core.network.toInstantOrNull
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.info
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.network.TmdbClient
 import com.hub.media.features.tv.network.TmdbShowWithSeasons
-import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "BackfillShowEpisodes"
 
@@ -113,7 +112,11 @@ public class BackfillShowEpisodesUseCase(
      *   report, not an error: having complete metadata is not a failure.
      */
     public suspend fun execute(mediaId: String): Resource<EpisodeBackfillReport> {
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to backfill episodes",
+            logMessage = { "Failed to backfill episodes for show id=$mediaId" },
+        ) {
             val tmdbId =
                 tvShowRepository.findExternalId(mediaId, IdentifierProvider.TMDB)
                     ?: return Resource.Error(
@@ -141,11 +144,6 @@ public class BackfillShowEpisodesUseCase(
                     "${report.mismatches.size} season(s) disagreeing"
             }
             Resource.Success(report)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to backfill episodes for show id=$mediaId" }
-            Resource.Error("Failed to backfill episodes: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 

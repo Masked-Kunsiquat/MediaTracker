@@ -3,12 +3,12 @@ package com.hub.media.features.books.network
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.http.isSuccess
-import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Downloads raw cover image bytes from a [BookMetadata.coverImageUrl]. The resulting bytes are
@@ -31,28 +31,26 @@ public class CoverImageDownloader(
      *   corrupt/missing image per AGENTS.md §7's "corrupt image byte arrays" edge case).
      */
     public suspend fun download(url: String): Resource<ByteArray> {
-        return try {
-            val response = client.get(url)
-            if (!response.status.isSuccess()) {
-                return Resource.Error("Cover image download failed with status ${response.status.value} for $url")
-            }
+        return catchingNonCancellation(
+            block = {
+                val response = client.get(url)
+                if (!response.status.isSuccess()) {
+                    return Resource.Error("Cover image download failed with status ${response.status.value} for $url")
+                }
 
-            val bytes = response.body<ByteArray>()
-            if (bytes.isEmpty()) {
-                return Resource.Error("Cover image download returned an empty body for $url")
-            }
+                val bytes = response.body<ByteArray>()
+                if (bytes.isEmpty()) {
+                    return Resource.Error("Cover image download returned an empty body for $url")
+                }
 
-            Resource.Success(bytes)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious WARN every
-            // time a screen is closed mid-download.
-            throw e
-        } catch (e: Exception) {
-            // The url is a provider cover endpoint, not library content -- the same category as the
-            // isbn it is usually built from.
-            logger.warn(TAG, e) { "Cover image download failed for $url" }
-            Resource.Error("Cover image download failed for $url: ${e.message}", e)
-        }
+                Resource.Success(bytes)
+            },
+            onException = { e ->
+                // The url is a provider cover endpoint, not library content -- the same category as the
+                // isbn it is usually built from.
+                logger.warn(TAG, e) { "Cover image download failed for $url" }
+                Resource.Error("Cover image download failed for $url: ${e.message}", e)
+            },
+        )
     }
 }

@@ -4,6 +4,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.portability.csv.ArchiveReadResult
@@ -17,7 +18,6 @@ import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setWeekStartDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.cancellation.CancellationException
 
 /** Imports the one-file export. An interface so ViewModel tests can fake it without Room. */
 public interface ArchiveImporter {
@@ -105,15 +105,16 @@ public class ImportArchiveUseCase(
                 // Each setting on its own: the library is already imported, so one failing write must
                 // cost that setting, not the whole result.
                 val applied =
-                    try {
-                        restoreSetting(key, value)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn(TAG, e) { "Restoring setting $key failed" }
-                        notes += "Setting \"$key\" could not be saved and was not restored"
-                        continue
-                    }
+                    catchingNonCancellation(
+                        block = {
+                            restoreSetting(key, value)
+                        },
+                        onException = { e ->
+                            logger.warn(TAG, e) { "Restoring setting $key failed" }
+                            notes += "Setting \"$key\" could not be saved and was not restored"
+                            continue
+                        },
+                    )
                 if (!applied) {
                     notes += "Setting \"$key\" had an invalid value and was not restored"
                 } else {

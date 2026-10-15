@@ -2,6 +2,7 @@ package com.hub.media.features.books.network
 
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import io.ktor.client.HttpClient
 import io.ktor.client.request.head
@@ -165,39 +166,39 @@ public class OpenLibraryIsbnCoverProbe(
         }
 
         val url = "$OPEN_LIBRARY_COVERS_ISBN_URL/$isbn-L.jpg?default=false"
-        return try {
-            val response = client.head(url)
-            when {
-                response.status.isSuccess() -> CoverProbeResult.Found(url)
-                response.status == HttpStatusCode.TooManyRequests -> {
-                    val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
-                    rateLimiter.recordServerRefusal(retryAfter)
-                    CoverProbeResult.RateLimited(retryAfter)
+        // Cancellation is rethrown, never swallowed: coroutine cancellation propagates as an
+        // exception, so swallowing it would break structured concurrency -- a caller whose scope was
+        // cancelled mid-probe would carry on as though the probe had simply found no cover.
+        return catchingNonCancellation(
+            block = {
+                val response = client.head(url)
+                when {
+                    response.status.isSuccess() -> CoverProbeResult.Found(url)
+                    response.status == HttpStatusCode.TooManyRequests -> {
+                        val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
+                        rateLimiter.recordServerRefusal(retryAfter)
+                        CoverProbeResult.RateLimited(retryAfter)
+                    }
+                    response.status.value >= 500 -> {
+                        // Same as the 429 branch above: a 5xx is the server telling us it's not
+                        // healthy right now, so the shared limiter must learn about it too -- without
+                        // this, the very next probe (for a different ISBN, possibly milliseconds
+                        // later) would sail straight through local rate limiting and hit a server we
+                        // already know is refusing.
+                        val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
+                        rateLimiter.recordServerRefusal(retryAfter)
+                        CoverProbeResult.RateLimited(retryAfter)
+                    }
+                    else -> CoverProbeResult.NotFound
                 }
-                response.status.value >= 500 -> {
-                    // Same as the 429 branch above: a 5xx is the server telling us it's not
-                    // healthy right now, so the shared limiter must learn about it too -- without
-                    // this, the very next probe (for a different ISBN, possibly milliseconds
-                    // later) would sail straight through local rate limiting and hit a server we
-                    // already know is refusing.
-                    val retryAfter = parseRetryAfter(response, clock) ?: DEFAULT_RETRY_AFTER
-                    rateLimiter.recordServerRefusal(retryAfter)
-                    CoverProbeResult.RateLimited(retryAfter)
-                }
-                else -> CoverProbeResult.NotFound
-            }
-        } catch (e: CancellationException) {
-            // Must be caught before the broad `Exception` below and rethrown: coroutine
-            // cancellation propagates as an exception, so swallowing it would break structured
-            // concurrency -- a caller whose scope was cancelled mid-probe would carry on as though
-            // the probe had simply found no cover.
-            throw e
-        } catch (e: Exception) {
-            // See "On the network-failure branch being silent" above -- the return value stays
-            // NotFound, but the failure is now diagnosable via logger, unlike before ROADMAP Task 15.
-            logger.warn(TAG, e) { "cover probe request failed for isbn=$isbn" }
-            CoverProbeResult.NotFound
-        }
+            },
+            onException = { e ->
+                // See "On the network-failure branch being silent" above -- the return value stays
+                // NotFound, but the failure is now diagnosable via logger, unlike before ROADMAP Task 15.
+                logger.warn(TAG, e) { "cover probe request failed for isbn=$isbn" }
+                CoverProbeResult.NotFound
+            },
+        )
     }
 }
 

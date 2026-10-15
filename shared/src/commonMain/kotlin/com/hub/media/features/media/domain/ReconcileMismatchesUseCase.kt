@@ -5,7 +5,7 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.info
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.ShowSeasonMismatch
@@ -14,7 +14,6 @@ import com.hub.media.features.settings.data.observeTmdbBackfillMismatches
 import com.hub.media.features.settings.data.saveTmdbBackfillMismatches
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.flow.Flow
-import kotlin.coroutines.cancellation.CancellationException
 
 private const val TAG = "ReconcileMismatches"
 
@@ -149,7 +148,11 @@ public class ReconcileMismatchesUseCase(
             return Resource.Error("This season already holds at least as many episodes as TMDB lists.")
         }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to add the missing episodes",
+            logMessage = { "Failed to reconcile season ${row.seasonNumber}" },
+        ) {
             when (
                 val result =
                     tvShowRepository.addMissingEpisodes(
@@ -167,11 +170,6 @@ public class ReconcileMismatchesUseCase(
                     result
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to reconcile season ${row.seasonNumber}" }
-            Resource.Error("Failed to add the missing episodes: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 

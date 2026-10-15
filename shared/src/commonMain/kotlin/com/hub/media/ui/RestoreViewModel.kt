@@ -3,10 +3,10 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.hasAnyStoredCredential
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,13 +72,14 @@ public class RestoreViewModel(
             // can't be deferred to any later point in the restore flow. Presence only; no
             // credential value is read here or held by this ViewModel.
             val keyCheckResult: Resource<Boolean> =
-                try {
-                    Resource.Success(settingsRepository.hasAnyStoredCredential())
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Resource.Error("Failed to check existing provider credentials")
-                }
+                catchingNonCancellation(
+                    block = {
+                        Resource.Success(settingsRepository.hasAnyStoredCredential())
+                    },
+                    onException = {
+                        Resource.Error("Failed to check existing provider credentials")
+                    },
+                )
 
             _uiState.value =
                 when (keyCheckResult) {

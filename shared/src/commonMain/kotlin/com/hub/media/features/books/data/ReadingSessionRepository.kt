@@ -5,11 +5,10 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.ReadingSessionValidation
 import kotlinx.coroutines.flow.Flow
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
 
 /**
@@ -78,7 +77,11 @@ public class ReadingSessionRepository(
         ReadingSessionValidation.validateTimestamps(timestampStart, timestampEnd)?.let { return Resource.Error(it) }
         ReadingSessionValidation.validateDuration(durationSeconds)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to log reading session",
+            logMessage = { "Failed to log reading session: mediaId=$mediaId" },
+        ) {
             val sessionId = newId()
             val session =
                 ReadingSessionEntity(
@@ -95,16 +98,6 @@ public class ReadingSessionRepository(
 
             db.readingSessionDao().insert(session)
             Resource.Success(sessionId)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to log reading session: mediaId=$mediaId" }
-            Resource.Error(
-                message = "Failed to log reading session: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
     }
 
@@ -156,7 +149,11 @@ public class ReadingSessionRepository(
         ReadingSessionValidation.validateTimestamps(timestampStart, timestampEnd)?.let { return Resource.Error(it) }
         ReadingSessionValidation.validateDuration(durationSeconds)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update reading session",
+            logMessage = { "Failed to update reading session: sessionId=$sessionId" },
+        ) {
             val existing =
                 db.readingSessionDao().getById(sessionId)
                     ?: return Resource.Error("Reading session not found: $sessionId")
@@ -177,16 +174,6 @@ public class ReadingSessionRepository(
                 return Resource.Error("Reading session not found: $sessionId")
             }
             Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update reading session: sessionId=$sessionId" }
-            Resource.Error(
-                message = "Failed to update reading session: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
     }
 
@@ -197,18 +184,12 @@ public class ReadingSessionRepository(
      * @return [Resource.Success] if deleted, or [Resource.Error] on failure.
      */
     public suspend fun deleteSession(id: String): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to delete reading session",
+            logMessage = { "Failed to delete reading session: sessionId=$id" },
+        ) {
             db.readingSessionDao().deleteById(id)
             Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to delete reading session: sessionId=$id" }
-            Resource.Error(
-                message = "Failed to delete reading session: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 }

@@ -4,9 +4,8 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import kotlinx.datetime.TimeZone
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 /**
@@ -25,7 +24,11 @@ public class RecordRewatchUseCase(
         episodeId: String,
         watchedWhen: WatchedWhen,
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to record the viewing",
+            logMessage = { "Failed to record a rewatch of episode $episodeId" },
+        ) {
             val episode = db.episodeDao().getById(episodeId)
             val at = episode?.let { resolveWatchedAt(watchedWhen, it.airDate, clock.now(), zone()) }
             when {
@@ -34,11 +37,6 @@ public class RecordRewatchUseCase(
                 !db.tvWriteDao().addViewing(episodeId, at) -> Resource.Error("Episode with id=$episodeId not found")
                 else -> Resource.Success(Unit)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to record a rewatch of episode $episodeId" }
-            Resource.Error("Failed to record the viewing: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     private companion object {

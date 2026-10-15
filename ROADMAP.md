@@ -73,14 +73,19 @@ single list below and reordering is a one-line edit there.
    check-circles. Watch history followed in `v0.24.0`: "Watched again", a viewing history with edit
    and delete, and viewings in the CSV, for episodes
    ([#90](https://github.com/Masked-Kunsiquat/MediaTracker/issues/90)) and films
-   ([#192](https://github.com/Masked-Kunsiquat/MediaTracker/issues/192)). Since then, unreleased on
-   `main`: [#162](https://github.com/Masked-Kunsiquat/MediaTracker/issues/162) (the backup picker's
+   ([#192](https://github.com/Masked-Kunsiquat/MediaTracker/issues/192)). `v0.25.0` shipped
+   [#162](https://github.com/Masked-Kunsiquat/MediaTracker/issues/162) (the backup picker's
    lost state and a startup sweep of leaked temp files),
    [#196](https://github.com/Masked-Kunsiquat/MediaTracker/issues/196) (one `.zip` instead of four
    CSV files and four pickers) and
    [#173](https://github.com/Masked-Kunsiquat/MediaTracker/issues/173) (an edit screen for TV
-   shows). **Next:** [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81)'s remaining
-   refactors. #122 is unblocked by #88 and small now.
+   shows). [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81) is complete: its last
+   item put the catches around suspending code in `shared/` behind one cancellation-safe helper,
+   leaving five hand-written where the cancellation branch has work to do.
+   **Next:** its two follow-ups — making the restore swap non-cancellable on its own rather than
+   relying on its caller ([#203](https://github.com/Masked-Kunsiquat/MediaTracker/issues/203)), and splitting
+   `TVShowDetailScreen.kt` and `BookSessionDialogs.kt`, which outgrew #81's size bar after it was
+   written ([#204](https://github.com/Masked-Kunsiquat/MediaTracker/issues/204)). #122 is unblocked by #88 and small now.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
 

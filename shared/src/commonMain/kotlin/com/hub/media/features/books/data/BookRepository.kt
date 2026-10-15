@@ -12,13 +12,12 @@ import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.domain.BookMetadataValidation
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -154,7 +153,11 @@ public class BookRepository(
         trackingMode: TrackingMode = if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT,
         authors: String? = null,
     ): Resource<String> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to add book",
+            logMessage = { "Failed to add a book" },
+        ) {
             val mediaId = newId()
             val now = Clock.System.now()
 
@@ -192,17 +195,6 @@ public class BookRepository(
             db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities)
 
             Resource.Success(mediaId)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious ERROR every
-            // time a screen is closed mid-write.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to add a book" }
-            Resource.Error(
-                message = "Failed to add book: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 
     /**
@@ -210,7 +202,11 @@ public class BookRepository(
      * Returns [Resource.Success] with null if [mediaId] is missing or is not a book.
      */
     public suspend fun getBookWithDetails(mediaId: String): Resource<MediaWithDetails.Book?> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to fetch book",
+            logMessage = { "Failed to get book with details: id=$mediaId" },
+        ) {
             val mediaItem = db.mediaItemDao().getById(mediaId)
             if (mediaItem == null || mediaItem.type != MediaType.BOOK) {
                 Resource.Success(null)
@@ -218,14 +214,6 @@ public class BookRepository(
                 val details = db.bookDetailsDao().getByMediaId(mediaId)
                 Resource.Success(MediaWithDetails.Book(item = mediaItem, details = details))
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to get book with details: id=$mediaId" }
-            Resource.Error(
-                message = "Failed to fetch book: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 
     /**
@@ -320,7 +308,11 @@ public class BookRepository(
         BookMetadataValidation.validateTotalPages(totalPages)?.let { return Resource.Error(it) }
         BookMetadataValidation.validateReleaseYear(releaseYear)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update book metadata",
+            logMessage = { "Failed to update metadata for book: id=$mediaId" },
+        ) {
             // Only read for resolveFinishedAt's transition decision (old status/finishedAt) --
             // NOT to build a full-row copy to write back. The actual write below is a targeted
             // UPDATE of just the requested columns, so this read being taken outside the
@@ -351,17 +343,6 @@ public class BookRepository(
                 return Resource.Error("Book with id=$mediaId not found")
             }
             Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious ERROR every
-            // time a screen is closed mid-write.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update metadata for book: id=$mediaId" }
-            Resource.Error(
-                message = "Failed to update book metadata: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
     }
 
@@ -403,7 +384,11 @@ public class BookRepository(
         workKey: String? = null,
     ): Resource<Unit> {
         if (coverImageHash == null && authors == null && workKey == null) return Resource.Success(Unit)
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to apply backfilled metadata",
+            logMessage = { "Failed to apply backfilled metadata to book: id=$mediaId" },
+        ) {
             val rowsAffected =
                 db.bookWriteDao().applyBackfilledMetadata(mediaId, coverImageHash, authors, workKey)
             if (rowsAffected == 0) {
@@ -411,17 +396,6 @@ public class BookRepository(
             } else {
                 Resource.Success(Unit)
             }
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious ERROR every
-            // time a screen is closed mid-write.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to apply backfilled metadata to book: id=$mediaId" }
-            Resource.Error(
-                message = "Failed to apply backfilled metadata: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
     }
 
@@ -448,7 +422,11 @@ public class BookRepository(
         mediaId: String,
         status: ReadingStatus,
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update reading status",
+            logMessage = { "Failed to update reading status for book: id=$mediaId" },
+        ) {
             val existingDetails =
                 db.bookDetailsDao().getByMediaId(mediaId)
                     ?: return Resource.Error("No book details found for id=$mediaId")
@@ -462,17 +440,6 @@ public class BookRepository(
                 )
             db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
             Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception, so
-            // swallowing it here would both break structured concurrency and log a spurious ERROR every
-            // time a screen is closed mid-write.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update reading status for book: id=$mediaId" }
-            Resource.Error(
-                message = "Failed to update reading status: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 
     public companion object {

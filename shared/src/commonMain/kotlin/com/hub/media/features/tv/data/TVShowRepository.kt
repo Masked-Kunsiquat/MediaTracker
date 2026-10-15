@@ -14,14 +14,13 @@ import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.newId
 import com.hub.media.core.util.warn
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -290,7 +289,11 @@ public class TVShowRepository(
             return Resource.Error("Season $duplicateSeason is listed more than once")
         }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to add TV show",
+            logMessage = { "Failed to add a TV show" },
+        ) {
             val mediaId = newId()
             val now = clock.now()
             val episodes = seasons.flatMap { season -> episodeRowsFor(mediaId, season) }
@@ -329,11 +332,6 @@ public class TVShowRepository(
                     },
             )
             Resource.Success(mediaId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to add a TV show" }
-            Resource.Error("Failed to add TV show: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -448,7 +446,11 @@ public class TVShowRepository(
         TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateEpisodeCount(episodeCount)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update season",
+            logMessage = { "Failed to set the length of season $seasonNumber for show: id=$mediaId" },
+        ) {
             val show = db.mediaItemDao().getById(mediaId)
             if (show == null || show.type != MediaType.TV_SHOW) {
                 return Resource.Error("TV show with id=$mediaId not found")
@@ -468,11 +470,6 @@ public class TVShowRepository(
                 }
             val removed = db.tvWriteDao().setSeasonLength(mediaId, seasonNumber, episodeCount, candidates)
             Resource.Success(SeasonLengthChange(episodesRemoved = removed))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to set the length of season $seasonNumber for show: id=$mediaId" }
-            Resource.Error("Failed to update season: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -509,7 +506,11 @@ public class TVShowRepository(
         TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateEpisodeCount(episodeCount)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to add the missing episodes",
+            logMessage = { "Failed to add missing episodes to season $seasonNumber of show: id=$mediaId" },
+        ) {
             val show = db.mediaItemDao().getById(mediaId)
             if (show == null || show.type != MediaType.TV_SHOW) {
                 return Resource.Error("TV show with id=$mediaId not found")
@@ -524,11 +525,6 @@ public class TVShowRepository(
                     )
                 }
             Resource.Success(db.tvWriteDao().insertMissingEpisodes(mediaId, seasonNumber, candidates))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to add missing episodes to season $seasonNumber of show: id=$mediaId" }
-            Resource.Error("Failed to add the missing episodes: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -553,7 +549,11 @@ public class TVShowRepository(
     ): Resource<SeasonLengthChange> {
         TVMetadataValidation.validateSeasonNumber(seasonNumber)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to remove season",
+            logMessage = { "Failed to remove season $seasonNumber for show: id=$mediaId" },
+        ) {
             val removed = db.tvWriteDao().deleteSeason(mediaId, seasonNumber)
             if (removed == 0) {
                 // The id belongs in the log, not in front of the user. Reaching here means the
@@ -564,11 +564,6 @@ public class TVShowRepository(
             } else {
                 Resource.Success(SeasonLengthChange(episodesRemoved = removed))
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to remove season $seasonNumber for show: id=$mediaId" }
-            Resource.Error("Failed to remove season: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -595,7 +590,11 @@ public class TVShowRepository(
         episodeId: String,
         watched: Boolean,
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update episode",
+            logMessage = { "Failed to update watched state for episode: id=$episodeId" },
+        ) {
             // Existence is checked directly: the viewing-aware write (#90) reports 0 for an episode
             // that is already watched, which is a success here, not "not found".
             val rows =
@@ -610,11 +609,6 @@ public class TVShowRepository(
                     1
                 }
             if (rows == 0) Resource.Error("Episode with id=$episodeId not found") else Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update watched state for episode: id=$episodeId" }
-            Resource.Error("Failed to update episode: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /**
@@ -640,7 +634,11 @@ public class TVShowRepository(
         seasonNumber: Int,
         watched: Boolean,
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update season",
+            logMessage = { "Failed to bulk-update season $seasonNumber for show: id=$mediaId" },
+        ) {
             if (db.episodeDao().getByMediaIdAndSeason(mediaId, seasonNumber).isEmpty()) {
                 Resource.Error("Season $seasonNumber of show id=$mediaId has no episodes")
             } else {
@@ -663,11 +661,6 @@ public class TVShowRepository(
                 }
                 Resource.Success(Unit)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to bulk-update season $seasonNumber for show: id=$mediaId" }
-            Resource.Error("Failed to update season: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /**
@@ -678,17 +671,16 @@ public class TVShowRepository(
      *   [Resource.Error] if the episode does not exist.
      */
     public suspend fun untickEpisode(episodeId: String): Resource<List<WatchLogEntity>> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update episode",
+            logMessage = { "Failed to untick episode: id=$episodeId" },
+        ) {
             if (db.episodeDao().getById(episodeId) == null) {
                 Resource.Error("Episode with id=$episodeId not found")
             } else {
                 Resource.Success(db.tvWriteDao().clearEpisodeReturningPrevious(episodeId))
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to untick episode: id=$episodeId" }
-            Resource.Error("Failed to update episode: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /** [untickEpisode] for a whole season -- Clear season's Undo restores each episode's own date. */
@@ -696,13 +688,12 @@ public class TVShowRepository(
         mediaId: String,
         seasonNumber: Int,
     ): Resource<List<WatchLogEntity>> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update season",
+            logMessage = { "Failed to clear season $seasonNumber for show: id=$mediaId" },
+        ) {
             Resource.Success(db.tvWriteDao().clearSeasonReturningPrevious(mediaId, seasonNumber))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to clear season $seasonNumber for show: id=$mediaId" }
-            Resource.Error("Failed to update season: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /**
@@ -712,13 +703,12 @@ public class TVShowRepository(
      * @return How many episodes were restored.
      */
     public suspend fun restoreWatched(previous: List<WatchLogEntity>): Resource<Int> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to undo",
+            logMessage = { "Failed to restore ${previous.size} watched date(s)" },
+        ) {
             Resource.Success(db.tvWriteDao().restoreAll(previous))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to restore ${previous.size} watched date(s)" }
-            Resource.Error("Failed to undo: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /**
@@ -755,13 +745,12 @@ public class TVShowRepository(
         what: String,
         block: suspend () -> T,
     ): Resource<T> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update viewing",
+            logMessage = { "Failed to $what" },
+        ) {
             Resource.Success(block())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to $what" }
-            Resource.Error("Failed to update viewing: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     /**
@@ -788,7 +777,11 @@ public class TVShowRepository(
         TVMetadataValidation.validatePurchasePrice(purchasePrice)?.let { return Resource.Error(it) }
         TVMetadataValidation.validateTotalSeasons(totalSeasons)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update show metadata",
+            logMessage = { "Failed to update metadata for show: id=$mediaId" },
+        ) {
             val rows =
                 db.tvWriteDao().updateShowMetadataAtomically(
                     mediaId = mediaId,
@@ -798,11 +791,6 @@ public class TVShowRepository(
                     totalSeasons = totalSeasons,
                 )
             if (rows == 0) Resource.Error("TV show with id=$mediaId not found") else Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update metadata for show: id=$mediaId" }
-            Resource.Error("Failed to update show metadata: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -828,13 +816,12 @@ public class TVShowRepository(
         mediaId: String,
         status: WatchStatus,
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update show status",
+            logMessage = { "Failed to update status for show: id=$mediaId" },
+        ) {
             val rows = db.tvWriteDao().updateStatusFields(mediaId, status)
             if (rows == 0) Resource.Error("TV show with id=$mediaId not found") else Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update status for show: id=$mediaId" }
-            Resource.Error("Failed to update show status: ${e.message ?: "Unknown error"}", cause = e)
         }
 }

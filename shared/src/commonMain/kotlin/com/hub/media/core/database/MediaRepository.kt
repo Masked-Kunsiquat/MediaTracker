@@ -8,12 +8,11 @@ import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.features.media.data.MediaWithDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlin.coroutines.cancellation.CancellationException
 
 /** Log tag for [MediaRepository] (ROADMAP Task 15 Phase C). */
 private const val TAG = "MediaRepository"
@@ -109,17 +108,13 @@ public class MediaRepository(
      * @return [Resource.Success] if deleted, or [Resource.Error] on failure.
      */
     public suspend fun deleteMediaItem(id: String): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to delete item",
+            logMessage = { "Failed to delete media item: id=$id" },
+        ) {
             db.mediaItemDao().deleteById(id)
             Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to delete media item: id=$id" }
-            Resource.Error(
-                message = "Failed to delete item: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 
     /**
@@ -134,20 +129,16 @@ public class MediaRepository(
         mediaId: String,
         coverImageHash: String,
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update cover image",
+            logMessage = { "Failed to update cover hash for item: id=$mediaId" },
+        ) {
             val rowsAffected = db.mediaItemDao().updateCoverImageHash(mediaId, coverImageHash)
             if (rowsAffected == 0) {
                 Resource.Error("Media item with id=$mediaId not found")
             } else {
                 Resource.Success(Unit)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update cover hash for item: id=$mediaId" }
-            Resource.Error(
-                message = "Failed to update cover image: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 }

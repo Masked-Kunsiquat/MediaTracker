@@ -5,10 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.error
 import com.hub.media.features.media.domain.MismatchReviewRow
 import com.hub.media.features.media.domain.ReconcileMismatchesUseCase
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -90,18 +90,19 @@ public class MismatchReviewViewModel(
      * screen permanently unresponsive to further changes.
      */
     private suspend fun loadRows() {
-        try {
-            _uiState.value = _uiState.value.copy(rows = reconcile.review(), isLoading = false)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to read recorded episode-count disagreements" }
-            _uiState.value =
-                _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = "Could not read the recorded differences.",
-                )
-        }
+        catchingNonCancellation(
+            block = {
+                _uiState.value = _uiState.value.copy(rows = reconcile.review(), isLoading = false)
+            },
+            onException = { e ->
+                logger.error(TAG, e) { "Failed to read recorded episode-count disagreements" }
+                _uiState.value =
+                    _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "Could not read the recorded differences.",
+                    )
+            },
+        )
     }
 
     /**
@@ -119,16 +120,19 @@ public class MismatchReviewViewModel(
             _uiState.value.copy(busyKeys = _uiState.value.busyKeys + key, errorMessage = null)
         viewModelScope.launch {
             try {
-                when (val result = reconcile.addMissingEpisodes(row)) {
-                    is Resource.Error ->
-                        _uiState.value = _uiState.value.copy(errorMessage = result.message)
-                    is Resource.Success -> Unit
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.error(TAG, e) { "Failed to add missing episodes" }
-                _uiState.value = _uiState.value.copy(errorMessage = "Could not add the missing episodes.")
+                catchingNonCancellation(
+                    block = {
+                        when (val result = reconcile.addMissingEpisodes(row)) {
+                            is Resource.Error ->
+                                _uiState.value = _uiState.value.copy(errorMessage = result.message)
+                            is Resource.Success -> Unit
+                        }
+                    },
+                    onException = { e ->
+                        logger.error(TAG, e) { "Failed to add missing episodes" }
+                        _uiState.value = _uiState.value.copy(errorMessage = "Could not add the missing episodes.")
+                    },
+                )
             } finally {
                 // Only this row's key, so a second action still in flight keeps its own spinner. The
                 // list reload is not triggered here: a successful action writes to the store, and

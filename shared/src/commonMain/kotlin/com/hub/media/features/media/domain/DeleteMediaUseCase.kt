@@ -6,7 +6,7 @@ import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
-import kotlin.coroutines.cancellation.CancellationException
+import com.hub.media.core.util.guardResource
 
 /**
  * Outcome of a bulk delete.
@@ -43,7 +43,11 @@ public class DeleteMediaUseCase(
      */
     public override suspend fun execute(ids: List<String>): Resource<DeleteMediaSummary> {
         if (ids.isEmpty()) return Resource.Success(DeleteMediaSummary(0, 0, 0))
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to delete items",
+            logMessage = { "Bulk delete failed for ${ids.size} items" },
+        ) {
             val dao = database.mediaItemDao()
             // Read the candidate hashes before the rows go.
             val candidateHashes = dao.getCoverHashesForIds(ids)
@@ -66,11 +70,6 @@ public class DeleteMediaUseCase(
             Resource.Success(
                 DeleteMediaSummary(itemsDeleted = itemsDeleted, coversRemoved = removed, coversKept = kept),
             )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Bulk delete failed for ${ids.size} items" }
-            Resource.Error(message = "Failed to delete items: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 

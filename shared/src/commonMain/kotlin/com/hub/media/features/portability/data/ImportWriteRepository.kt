@@ -9,8 +9,7 @@ import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
-import kotlin.coroutines.cancellation.CancellationException
+import com.hub.media.core.util.guardResource
 
 /** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "ImportWriteRepository"
@@ -49,7 +48,11 @@ public class ImportWriteRepository(
         filmViewingDeletes: Collection<String> = emptyList(),
         touchedFilmIds: Collection<String> = emptyList(),
     ): Resource<Unit> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Import failed -- nothing was written",
+            logMessage = { "Import write failed" },
+        ) {
             db.importWriteDao().importAtomically(
                 mediaInserts,
                 mediaUpdates,
@@ -64,15 +67,5 @@ public class ImportWriteRepository(
                 touchedFilmIds,
             )
             Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Import write failed" }
-            Resource.Error(
-                message = "Import failed -- nothing was written: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 }
