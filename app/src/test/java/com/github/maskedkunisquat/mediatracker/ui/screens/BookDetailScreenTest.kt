@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -91,6 +92,16 @@ class BookDetailScreenTest {
         deltaPages = (endUnit - startUnit).toInt(),
         notes = null,
     )
+
+    /** #172: Delete and Re-fetch cover live behind the shared "More options" menu. */
+    private fun openMoreOptions() {
+        composeRule.onNodeWithContentDescription(context.getString(R.string.detail_more_options)).performClick()
+    }
+
+    private fun chooseFromMoreOptions(itemText: String) {
+        openMoreOptions()
+        composeRule.onNode(hasText(itemText) and hasClickAction()).performClick()
+    }
 
     private fun setContent(
         uiState: BookDetailUiState,
@@ -178,6 +189,9 @@ class BookDetailScreenTest {
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
             .assertDoesNotExist()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
+            .assertDoesNotExist()
     }
 
     @Test
@@ -189,6 +203,9 @@ class BookDetailScreenTest {
             .assertDoesNotExist()
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
+            .assertDoesNotExist()
+        composeRule
+            .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
             .assertDoesNotExist()
     }
 
@@ -224,9 +241,7 @@ class BookDetailScreenTest {
             onDeleteBook = { deletes++ },
         )
 
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
-            .performClick()
+        chooseFromMoreOptions(context.getString(R.string.delete_book_content_description))
 
         // Unlike Movie/TV's dialogs, Book's confirm button is labelled plain "Delete"
         // (delete_button), not a reuse of the icon's own content description -- so the body text
@@ -241,9 +256,7 @@ class BookDetailScreenTest {
         var deletes = 0
         setContent(BookDetailUiState.Ready(book = book(), details = details()), onDeleteBook = { deletes++ })
 
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
-            .performClick()
+        chooseFromMoreOptions(context.getString(R.string.delete_book_content_description))
         composeRule.onNodeWithText(context.getString(R.string.delete_button)).performClick()
 
         assertEquals(1, deletes)
@@ -254,9 +267,7 @@ class BookDetailScreenTest {
         var deletes = 0
         setContent(BookDetailUiState.Ready(book = book(), details = details()), onDeleteBook = { deletes++ })
 
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.delete_book_content_description))
-            .performClick()
+        chooseFromMoreOptions(context.getString(R.string.delete_book_content_description))
         composeRule.onNodeWithText(context.getString(R.string.cancel_button)).performClick()
 
         assertEquals(0, deletes)
@@ -520,9 +531,7 @@ class BookDetailScreenTest {
             onRefetchCover = { refetches++ },
         )
 
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
-            .performClick()
+        openMoreOptions()
         composeRule.onNodeWithText(context.getString(R.string.refetch_cover_button)).performClick()
 
         assertEquals(1, refetches)
@@ -536,9 +545,7 @@ class BookDetailScreenTest {
             onRefetchCover = { refetches++ },
         )
 
-        composeRule
-            .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
-            .performClick()
+        openMoreOptions()
         // Both halves: that the item is disabled, and that it does nothing. The click alone would pass
         // for an item that was enabled but wired to nothing, which is not what this test's name claims.
         val item = composeRule.onNodeWithText(context.getString(R.string.refetch_cover_no_isbn))
@@ -549,15 +556,28 @@ class BookDetailScreenTest {
     }
 
     @Test
-    fun refetchingCover_showsProgressInTopBar_insteadOfOverflowIcon() {
-        setContent(BookDetailUiState.Ready(book = book(), details = details(), isRefetchingCover = true))
+    fun refetchingCover_keepsMoreOptions_withRefetchInProgress_andDeleteReachable() {
+        // #172: the spinner used to replace the overflow icon, which was fine while the menu held
+        // only Re-fetch cover. With Delete in the same menu that would hide Delete for the whole
+        // refetch, so the menu stays and the refetch item carries the progress instead.
+        var deletes = 0
+        setContent(
+            BookDetailUiState.Ready(book = book(), details = details(), isRefetchingCover = true),
+            onDeleteBook = { deletes++ },
+        )
 
+        openMoreOptions()
+        val refetching = composeRule.onNodeWithText(context.getString(R.string.refetch_cover_in_progress))
+        refetching.assertIsNotEnabled()
         composeRule
-            .onNodeWithContentDescription(context.getString(R.string.refetch_cover_in_progress))
-            .assertIsDisplayed()
+            .onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo), useUnmergedTree = true)
+            .assertExists()
         composeRule
-            .onNodeWithContentDescription(context.getString(R.string.book_detail_overflow_menu_content_description))
-            .assertDoesNotExist()
+            .onNode(hasText(context.getString(R.string.delete_book_content_description)) and hasClickAction())
+            .performClick()
+
+        composeRule.onNodeWithText(context.getString(R.string.delete_book_body, "The Great Gatsby")).assertIsDisplayed()
+        assertEquals("choosing Delete must ask, not act", 0, deletes)
     }
 
     private companion object {

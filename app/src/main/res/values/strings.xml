@@ -75,7 +75,6 @@
     <!-- DetailHeader (#141 step 3): shared header adopted by BookDetailScreen -->
     <string name="book_detail_kind">Book</string>
     <string name="book_detail_finished_note">Finished %1$s</string>
-    <string name="book_detail_overflow_menu_content_description">More options</string>
 
     <!-- BookDetailScreen: Reading history timeline (books-polish pass revamp) -->
     <string name="timeline_today">Today</string>
