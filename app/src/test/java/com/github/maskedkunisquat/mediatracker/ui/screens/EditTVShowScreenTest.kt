@@ -18,12 +18,15 @@ import com.hub.media.ui.EditTVShowUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for the Edit Show screen (#173), driving the stateless [EditTVShowScreen] the
  * way [EditMovieScreenTest] drives the film form. Both halves of the save control are asserted:
  * a form that never enabled Save would pass a disabled-only check while being useless.
  */
+@RunWith(RobolectricTestRunner::class)
 class EditTVShowScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
