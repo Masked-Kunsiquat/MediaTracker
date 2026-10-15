@@ -59,6 +59,8 @@
     <string name="refetch_cover_button">Re-fetch cover</string>
     <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
     <string name="refetch_cover_in_progress">Re-fetching cover…</string>
+    <!-- #172: the shared "⋮" on the film, show and book detail screens -->
+    <string name="detail_more_options">More options</string>
     <string name="cover_view_action_label">View enlarged cover</string>
 
     <!-- BookDetailScreen: Details tab (books-polish pass revamp) -->
