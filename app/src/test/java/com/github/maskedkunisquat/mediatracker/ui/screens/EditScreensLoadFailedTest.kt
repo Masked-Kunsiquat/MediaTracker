@@ -80,6 +80,7 @@ class EditScreensLoadFailedTest {
     @Composable
     private fun EditBook() =
         EditBookScreen(
+            coverStorageDir = "",
             uiState = EditBookUiState.LoadFailed,
             onNavigateBack = { backs++ },
             onRetry = { retries++ },

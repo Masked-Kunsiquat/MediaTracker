@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -56,15 +54,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
 import com.github.maskedkunisquat.mediatracker.ui.components.EditBottomBar
+import com.github.maskedkunisquat.mediatracker.ui.components.EditHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
 import com.github.maskedkunisquat.mediatracker.ui.components.FormSection
+import com.github.maskedkunisquat.mediatracker.ui.components.StatusDropdownChip
 import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
 import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.domain.BookMetadataValidation
@@ -91,6 +93,7 @@ import com.hub.media.ui.parseOptionalNumber
 fun EditBookScreenRoute(
     appContainer: AppContainer,
     bookId: String,
+    coverStorageDir: String,
     onNavigateBack: () -> Unit,
 ) {
     val viewModel: EditBookViewModel =
@@ -108,6 +111,7 @@ fun EditBookScreenRoute(
 
     EditBookScreen(
         uiState = uiState,
+        coverStorageDir = coverStorageDir,
         onNavigateBack = onNavigateBack,
         onRetry = viewModel::retry,
         onSave = { title, releaseYear, purchasePrice, totalPages, format, status, trackingMode ->
@@ -146,6 +150,7 @@ fun EditBookScreenRoute(
 @Composable
 fun EditBookScreen(
     uiState: EditBookUiState,
+    coverStorageDir: String,
     onNavigateBack: () -> Unit,
     onRetry: () -> Unit,
     onSave: (
@@ -209,6 +214,7 @@ fun EditBookScreen(
                 is EditBookUiState.Ready -> {
                     EditBookForm(
                         state = uiState,
+                        coverStorageDir = coverStorageDir,
                         scaffoldPadding = innerPadding,
                         onSave = onSave,
                         onCancel = onNavigateBack,
@@ -249,10 +255,10 @@ fun EditBookScreen(
  *   dominated the old layout's vertical space for a field edited far less often than title/pages;
  *   collapsing it to one closed field (open only on demand) fits a longer, less-frequently-changed
  *   option set better than either radios or a chip row would.
- * - [ReadingStatus] (4 values): a [FilterChip] row, mirroring `LibraryScreen`'s existing
- *   `StatusFilterRow` convention for the exact same enum — four options is few enough to show
- *   side-by-side with one tap each, and reusing the chip-row shape keeps this screen visually
- *   consistent with how the same enum already renders elsewhere in the app.
+ * - [ReadingStatus] (4 values): the detail screens' [StatusDropdownChip] (#174). It began as a
+ *   [FilterChip] row like `LibraryScreen`'s `StatusFilterRow`, but four labels did not fit a phone's
+ *   width -- "Did not finish" was cut off at the edge -- and the same enum is chosen through this
+ *   chip on Book Detail, so the edit form now matches the screen it was opened from.
  *
  * ### Field state seeding
  * Each field's local `remember`ed text/selection state is seeded from [state] only on this
@@ -291,6 +297,7 @@ fun EditBookScreen(
 @Composable
 private fun EditBookForm(
     state: EditBookUiState.Ready,
+    coverStorageDir: String,
     scaffoldPadding: PaddingValues,
     onSave: (
         title: String,
@@ -351,6 +358,14 @@ private fun EditBookForm(
                     .testTag(TestTags.EditBook.FORM),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            // The saved title, not titleText: the header names the book being edited while its
+            // title field is retyped (#174).
+            EditHeader(
+                kind = stringResource(R.string.book_detail_kind),
+                year = state.releaseYear,
+                title = state.title,
+                artwork = state.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.BOOK) },
+            )
             FormSection(title = stringResource(R.string.edit_section_book_details)) {
                 OutlinedTextField(
                     value = titleText,
@@ -565,10 +580,9 @@ private fun TrackingModeRow(
 }
 
 /**
- * Reading-status picker (ROADMAP Task 7 Phase D): a [FilterChip] row over all four [ReadingStatus]
- * values, mirroring `LibraryScreen`'s existing `StatusFilterRow` shape for the same enum — see
- * [EditBookForm]'s KDoc "Picking a control per enum" section for why a chip row (not a dropdown or
- * radios) fits this field.
+ * Reading-status picker (ROADMAP Task 7 Phase D): a labelled [StatusDropdownChip] over all four
+ * [ReadingStatus] values -- see [EditBookForm]'s KDoc "Picking a control per enum" section for why
+ * it replaced a chip row in #174.
  */
 @Composable
 private fun StatusChipRow(
@@ -583,16 +597,14 @@ private fun StatusChipRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(ReadingStatus.entries.toList()) { option ->
-                FilterChip(
-                    selected = status == option,
-                    onClick = { onStatusChange(option) },
-                    label = { Text(option.displayLabel()) },
-                    enabled = enabled,
-                )
-            }
-        }
+        StatusDropdownChip(
+            value = status,
+            options = ReadingStatus.entries.toList(),
+            label = { it.displayLabel() },
+            onSelect = onStatusChange,
+            onClickLabel = stringResource(R.string.detail_status_change_action_label),
+            enabled = enabled,
+        )
     }
 }
 
@@ -611,6 +623,7 @@ private val PREVIEW_READY_STATE =
 private fun EditBookScreenReadyPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE,
             onRetry = {},
             onNavigateBack = {},
@@ -625,6 +638,7 @@ private fun EditBookScreenReadyPreview() {
 private fun EditBookScreenReadyDarkPreview() {
     MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE,
             onRetry = {},
             onNavigateBack = {},
@@ -639,6 +653,7 @@ private fun EditBookScreenReadyDarkPreview() {
 private fun EditBookScreenErrorPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE.copy(errorMessage = "Total pages must be a positive number"),
             onRetry = {},
             onNavigateBack = {},
@@ -653,6 +668,7 @@ private fun EditBookScreenErrorPreview() {
 private fun EditBookScreenSavingPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE.copy(isSaving = true),
             onRetry = {},
             onNavigateBack = {},
@@ -667,6 +683,7 @@ private fun EditBookScreenSavingPreview() {
 private fun EditBookScreenUnknownTotalPagesPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE.copy(totalPages = null, purchasePrice = null),
             onRetry = {},
             onNavigateBack = {},
@@ -681,6 +698,7 @@ private fun EditBookScreenUnknownTotalPagesPreview() {
 private fun EditBookScreenLongTitlePreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState =
                 PREVIEW_READY_STATE.copy(
                     title =
@@ -700,6 +718,7 @@ private fun EditBookScreenLongTitlePreview() {
 private fun EditBookScreenLoadingPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = EditBookUiState.Loading,
             onRetry = {},
             onNavigateBack = {},

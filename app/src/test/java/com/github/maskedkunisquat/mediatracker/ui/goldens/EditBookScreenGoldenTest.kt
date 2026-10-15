@@ -54,6 +54,7 @@ class EditBookScreenGoldenTest {
     @Composable
     private fun Fixture() {
         EditBookScreen(
+            coverStorageDir = "",
             uiState =
                 EditBookUiState.Ready(
                     title = "The Great Gatsby",

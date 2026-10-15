@@ -279,6 +279,7 @@ fun AppNavigation(
                 }
             EditBookScreenRoute(
                 appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
                 bookId = bookId,
                 onNavigateBack = {
                     navController.navigateUp()
