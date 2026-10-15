@@ -27,6 +27,8 @@ import com.hub.media.ui.BookDetailUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -35,6 +37,7 @@ import kotlin.time.Instant
  * surface a shared detail-screen scaffold now supplies most of.
  */
 @OptIn(ExperimentalTime::class)
+@RunWith(RobolectricTestRunner::class)
 class BookDetailScreenTest {
     @get:Rule
     val composeRule = createComposeRule()

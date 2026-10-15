@@ -11,6 +11,8 @@ import com.hub.media.ui.entryKey
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for [ChangelogScreen] (ROADMAP: Compose UI test harness). See
@@ -20,6 +22,7 @@ import org.junit.Test
  * ViewModel test cannot see: the state transitions are unit-tested in `ChangelogViewModelTest`,
  * but whether collapsed content is actually *hidden* is a rendering question.
  */
+@RunWith(RobolectricTestRunner::class)
 class ChangelogScreenTest {
     @get:Rule
     val composeRule = createComposeRule()

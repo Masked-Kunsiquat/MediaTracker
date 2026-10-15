@@ -20,6 +20,8 @@ import com.hub.media.ui.EditMovieUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for the Edit Movie screen (ROADMAP Task 13 Phase B).
@@ -39,6 +41,7 @@ import org.junit.Test
  * back as a new value unless the test re-fed the state itself. Constructing the state directly
  * states the case being tested without that round trip.
  */
+@RunWith(RobolectricTestRunner::class)
 class EditMovieScreenTest {
     @get:Rule
     val composeRule = createComposeRule()

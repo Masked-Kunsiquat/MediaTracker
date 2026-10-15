@@ -12,12 +12,15 @@ import com.hub.media.ui.UpNextUiState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * The stateless [UpNextScreen] (#89) with fabricated state and fake callbacks: proves the card and
  * its check button each reach the right callback, and that the empty state renders.
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
+@RunWith(RobolectricTestRunner::class)
 class UpNextScreenTest {
     @get:Rule
     val composeRule = createComposeRule()

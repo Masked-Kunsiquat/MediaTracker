@@ -23,6 +23,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for the Add Movie screen (ROADMAP Task 13 Phase B).
@@ -39,6 +41,7 @@ import org.junit.Test
  * one layer up, in `AddMovieViewModel.save()`. Asserting a trim at this layer would be testing a
  * contract the stateless screen does not actually have.
  */
+@RunWith(RobolectricTestRunner::class)
 class AddMovieScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
