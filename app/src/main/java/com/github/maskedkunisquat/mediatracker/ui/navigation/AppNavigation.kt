@@ -15,6 +15,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.EditTVShowScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MismatchReviewScreenRoute
@@ -202,6 +203,25 @@ fun AppNavigation(
             TVShowDetailScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
+                showId = showId,
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToEdit = { navController.navigate(Route.EditTVShow.createRoute(showId)) },
+            )
+        }
+
+        composable(
+            route = Route.EditTVShow.route,
+            arguments =
+                listOf(
+                    navArgument(Route.EditTVShow.ARG_SHOW_ID) { type = NavType.StringType },
+                ),
+        ) { backStackEntry ->
+            val showId =
+                requireNotNull(backStackEntry.arguments?.getString(Route.EditTVShow.ARG_SHOW_ID)) {
+                    "Missing required argument: ${Route.EditTVShow.ARG_SHOW_ID}"
+                }
+            EditTVShowScreenRoute(
+                appContainer = appContainer,
                 showId = showId,
                 onNavigateBack = { navController.navigateUp() },
             )

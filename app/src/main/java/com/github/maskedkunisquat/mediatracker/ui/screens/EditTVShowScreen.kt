@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,14 +36,50 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.EditTVShowViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.hub.media.features.tv.data.TVMetadataValidation
+import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditTVShowUiState
+import com.hub.media.ui.EditTVShowViewModel
 import com.hub.media.ui.filterIntegerInput
 import com.hub.media.ui.parseOptionalNumber
+
+/** Route wrapper: owns the [EditTVShowViewModel] and leaves once the save lands or the show is gone. */
+@Composable
+fun EditTVShowScreenRoute(
+    appContainer: AppContainer,
+    showId: String,
+    onNavigateBack: () -> Unit,
+) {
+    val viewModel: EditTVShowViewModel =
+        viewModel(factory = EditTVShowViewModelFactory(appContainer, showId))
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val saved = (uiState as? EditTVShowUiState.Editing)?.saved == true
+    LaunchedEffect(saved) {
+        if (saved) onNavigateBack()
+    }
+    LaunchedEffect(uiState) {
+        if (uiState is EditTVShowUiState.NotFound) onNavigateBack()
+    }
+
+    EditTVShowScreen(
+        uiState = uiState,
+        onTitleChange = viewModel::onTitleChange,
+        onReleaseYearChange = viewModel::onReleaseYearChange,
+        onTotalSeasonsChange = viewModel::onTotalSeasonsChange,
+        onPurchasePriceChange = viewModel::onPurchasePriceChange,
+        onSave = viewModel::save,
+        onErrorShown = viewModel::consumeSaveError,
+        onNavigateBack = onNavigateBack,
+    )
+}
 
 /**
  * Stateless edit-show form (#173): title, release year, total seasons, purchase price.

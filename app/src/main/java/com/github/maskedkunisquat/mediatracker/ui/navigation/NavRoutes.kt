@@ -76,6 +76,20 @@ sealed interface Route {
     }
 
     /**
+     * Edit an existing show's title, year, total seasons and price (#173). A hand-entered show has
+     * no provider to correct a typo from, so this is the only path that can fix one.
+     */
+    data object EditTVShow : Route {
+        const val ARG_SHOW_ID: String = "showId"
+
+        private const val PATH: String = "edit_tv_show"
+
+        override val route: String = "$PATH/{$ARG_SHOW_ID}"
+
+        fun createRoute(showId: String): String = "$PATH/$showId"
+    }
+
+    /**
      * Edit an existing movie's metadata (Task 13 Phase B). Manual entry has no provider to correct
      * a typo from, so this is the only path that can fix one.
      */
