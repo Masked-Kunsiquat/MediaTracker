@@ -28,6 +28,8 @@ import com.hub.media.ui.AddSearchState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for the Add Book screen (ROADMAP Task 9 Phase B2).
@@ -36,6 +38,7 @@ import org.junit.Test
  * interactions (typing, clicking tabs, selecting results) correctly invoke the ViewModel's
  * hooks.
  */
+@RunWith(RobolectricTestRunner::class)
 class AddBookScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
