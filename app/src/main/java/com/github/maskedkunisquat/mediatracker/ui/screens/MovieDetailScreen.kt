@@ -11,8 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,6 +44,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
 import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedDatePickerDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
@@ -236,19 +235,16 @@ fun MovieDetailScreen(
                     }
                 },
                 actions = {
+                    // #172: the bar every detail screen shares. A film has no secondary actions,
+                    // so More options holds only Delete.
                     if (uiState is MovieDetailUiState.Ready) {
-                        IconButton(onClick = onNavigateToEditMovie) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = stringResource(R.string.edit_movie_content_description),
-                            )
-                        }
-                        IconButton(onClick = { showDeleteConfirmation = true }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = stringResource(R.string.movie_detail_delete),
-                            )
-                        }
+                        DetailTopBarActions(
+                            editContentDescription = stringResource(R.string.edit_movie_content_description),
+                            onEdit = onNavigateToEditMovie,
+                            secondary = emptyList(),
+                            deleteLabel = stringResource(R.string.movie_detail_delete),
+                            onDelete = { showDeleteConfirmation = true },
+                        )
                     }
                 },
             )
