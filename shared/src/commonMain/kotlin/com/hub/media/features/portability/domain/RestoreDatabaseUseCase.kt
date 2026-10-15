@@ -17,6 +17,8 @@ import com.hub.media.core.util.Resource
 import com.hub.media.core.util.error
 import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** [Logger] tag for every log call [DefaultRestoreDatabaseUseCase] makes. */
 private const val TAG = "RestoreDatabaseUseCase"
@@ -126,9 +128,11 @@ public data class StagedRestoreInfo(
  * At the point [commit] is called, the app layer has already closed
  * [com.hub.media.ui.AppContainer] (its database connection and HTTP client) -- see
  * [com.hub.media.ui.AppContainer]'s "Ownership" section and the Settings route composable for
- * where that happens. [commit] itself only ever renames/deletes files; every step below is a single
- * filesystem call with **no** intervening suspension point, so the *practical* window for a process
- * death mid-sequence is a single native syscall's duration, not this whole function's.
+ * where that happens. [commit] itself only ever renames/deletes files. Each step below is a single
+ * filesystem call made on an IO hop (`withContext(Dispatchers.IO)`), and every hop is a
+ * cancellation check -- so [commit] runs the whole sequence, marker included, under
+ * `NonCancellable` (#203): a cancelled caller cannot stop it between steps. A *process death* still
+ * can, and the steps below say what that leaves behind at each point.
  *
  * **The main `.db` file moves first; its `-wal`/`-shm` sidecars move only afterward** -- the mirror
  * image of [com.hub.media.core.database.selfHealDatabaseIfNeeded]'s "sidecars first, main file
@@ -262,16 +266,24 @@ public class DefaultRestoreDatabaseUseCase(
         )
     }
 
-    override suspend fun commit(staged: StagedRestoreInfo): Resource<Unit> {
-        val result = swap(staged)
-        val marker =
-            when (result) {
-                is Resource.Success -> RestoreMarker.Success
-                is Resource.Error -> RestoreMarker.Failure(result.message)
-            }
-        writeRestoreMarker(liveDatabaseFilePath, marker)
-        return result
-    }
+    override suspend fun commit(staged: StagedRestoreInfo): Resource<Unit> =
+        // NonCancellable: once a restore has started it must finish -- the swap (or its rollback)
+        // and the marker recording its outcome. Every step below is a withContext(IO) hop, and so
+        // a cancellation check; without this, a caller cancelled mid-swap could leave the live
+        // database moved aside and the candidate not yet activated. The Settings caller also wraps
+        // this in NonCancellable (for close() and restartApp), but this method's safety must not
+        // depend on every caller remembering to. Only the Job is replaced: the caller's dispatcher
+        // still applies.
+        withContext(NonCancellable) {
+            val result = swap(staged)
+            val marker =
+                when (result) {
+                    is Resource.Success -> RestoreMarker.Success
+                    is Resource.Error -> RestoreMarker.Failure(result.message)
+                }
+            writeRestoreMarker(liveDatabaseFilePath, marker)
+            result
+        }
 
     private suspend fun swap(staged: StagedRestoreInfo): Resource<Unit> {
         val walPath = "$liveDatabaseFilePath-wal"
@@ -381,6 +393,14 @@ public class DefaultRestoreDatabaseUseCase(
             logger.info(TAG) { "Restore completed: database replaced from a staged backup" }
             Resource.Success(Unit)
         } catch (e: Exception) {
+            // Deliberately a bare catch, and deliberately no rollback (#203). What can reach it: a
+            // SecurityException from File.exists()/delete() inside fileExists/deleteFileIfExists --
+            // renameFile catches its own failures and returns false, which takes the rollback paths
+            // above, and cancellation cannot arrive because commit runs this under NonCancellable
+            // (so there is nothing for catchingNonCancellation to rethrow). A rollback here could
+            // not know which step threw; it is also unnecessary, because a full restart follows
+            // every commit and selfHealDatabaseIfNeeded restores the backup whenever the live file
+            // is missing.
             logger.error(TAG, e) { "restore failed with an unexpected exception during the swap" }
             Resource.Error("Restore failed: ${e.message ?: "Unknown error"}", e)
         }

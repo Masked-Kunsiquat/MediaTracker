@@ -14,12 +14,15 @@ import com.hub.media.core.database.SQLITE_HEADER_SIZE
 import com.hub.media.core.database.buildAppDatabase
 import com.hub.media.core.database.consumeRestoreMarker
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.preRestoreBackupPath
 import com.hub.media.core.database.selfHealDatabaseIfNeeded
 import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import java.io.File
@@ -550,6 +553,38 @@ class RestoreDatabaseUseCaseTest {
             assertIs<Resource.Success<Unit>>(useCase.commit(staged))
 
             assertTrue(File(livePath).exists())
+        }
+
+    @Test
+    fun commit_callerCancelledBeforeCommit_stillSwapsIn_andRecordsSuccess() =
+        runTest {
+            // #203: commit's safety must not be borrowed from its caller's NonCancellable. A caller
+            // already cancelled when it reaches commit must still get a whole swap and a marker --
+            // a restore abandoned between "live moved aside" and "staged activated" is the one
+            // state this use case exists to prevent.
+            val livePath = path("live.db")
+            createFreshDatabaseFile(livePath)
+            val candidatePath = path("candidate.db")
+            createFreshDatabaseFile(candidatePath)
+            val useCase = DefaultRestoreDatabaseUseCase(livePath)
+            val staged = assertIs<Resource.Success<StagedRestoreInfo>>(useCase.stage(candidatePath)).data
+            val backupPath = preRestoreBackupPath(livePath)
+            assertFalse(File(backupPath).exists(), "precondition: no backup before the swap")
+
+            var reachedCommit = false
+            val job =
+                launch {
+                    cancel()
+                    reachedCommit = true
+                    useCase.commit(staged)
+                }
+            job.join()
+
+            assertTrue(reachedCommit, "positive control: commit must actually have been called")
+            assertTrue(File(backupPath).exists(), "the live database must have been moved aside")
+            assertTrue(File(livePath).exists(), "the staged database must have been activated")
+            assertFalse(File(staged.stagedFilePath).exists(), "the staged file must have been consumed")
+            assertEquals(RestoreMarker.Success, consumeRestoreMarker(livePath))
         }
 
     // ==========================================================================================
