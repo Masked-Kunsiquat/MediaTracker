@@ -55,6 +55,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
+import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.timer.ReadingTimerResult
@@ -488,7 +489,7 @@ internal fun PendingSessionDialog(
 
         SessionFormSection(title = stringResource(R.string.manual_entry_section_progress)) {
             OutlinedTextField(
-                value = startUnitText,
+                value = startUnitText.toDisplayDecimal(),
                 onValueChange = { startUnitText = it.filterDecimalInput() },
                 label = { Text(stringResource(R.string.start_position_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -504,7 +505,7 @@ internal fun PendingSessionDialog(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
-                value = endUnitText,
+                value = endUnitText.toDisplayDecimal(),
                 onValueChange = { endUnitText = it.filterDecimalInput() },
                 label = { Text(stringResource(R.string.end_position_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -955,7 +956,7 @@ internal fun ManualSessionDialog(
 
         SessionFormSection(title = stringResource(R.string.manual_entry_section_progress)) {
             OutlinedTextField(
-                value = startUnitText,
+                value = startUnitText.toDisplayDecimal(),
                 onValueChange = { startUnitText = it.filterDecimalInput() },
                 label = { Text(stringResource(R.string.start_position_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -971,7 +972,7 @@ internal fun ManualSessionDialog(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
-                value = endUnitText,
+                value = endUnitText.toDisplayDecimal(),
                 onValueChange = { endUnitText = it.filterDecimalInput() },
                 label = { Text(stringResource(R.string.end_position_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

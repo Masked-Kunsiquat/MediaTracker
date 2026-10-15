@@ -48,6 +48,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
+import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.movies.data.MovieMetadataValidation
 import com.hub.media.features.tv.domain.WatchedWhen
@@ -256,7 +257,7 @@ fun AddMovieScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
-                value = purchasePrice,
+                value = purchasePrice.toDisplayDecimal(),
                 // Filtered the same way EditBookScreen filters its price field: an unfiltered box
                 // accepts "12,50" or "1.2.3", neither of which toDoubleOrNull can read.
                 onValueChange = { purchasePrice = it.filterDecimalInput() },

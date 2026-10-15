@@ -47,6 +47,7 @@ import com.github.maskedkunisquat.mediatracker.ui.AddTVShowViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
+import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.hub.media.features.tv.data.TVMetadataValidation
 import com.hub.media.ui.AddTVShowUiState
 import com.hub.media.ui.AddTVShowViewModel
@@ -237,7 +238,7 @@ fun AddTVShowScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
-                value = uiState.purchasePrice,
+                value = uiState.purchasePrice.toDisplayDecimal(),
                 onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
                 label = { Text(stringResource(R.string.add_tv_show_field_price)) },
                 singleLine = true,

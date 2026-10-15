@@ -44,6 +44,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
+import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.hub.media.features.tv.data.TVMetadataValidation
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.EditTVShowUiState
@@ -211,7 +212,7 @@ fun EditTVShowScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
-                value = form.purchasePrice,
+                value = form.purchasePrice.toDisplayDecimal(),
                 // Filtered as EditMovieScreen does: an unfiltered box accepts "12,50" or "1.2.3",
                 // neither of which toDoubleOrNull can read.
                 onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
