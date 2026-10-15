@@ -12,7 +12,7 @@ its caller and its file operations narrowed it considerably:
 | #203 said | The code |
 | --- | --- |
 | Cancellation mid-swap lands in the bare `catch (e: Exception)` and is reported as a failure | The only caller (`SettingsBackupRestoreFlows.kt`, restore confirm) runs `appContainer.close()` → `commit` → `restartApp` inside `withContext(Dispatchers.IO + NonCancellable)`, so a cancellation cannot reach the swap today. |
-| An exception mid-swap skips the rollback | `renameFile` (jvm and android actuals) catches its own exceptions and returns `false`, which takes the rollback paths. `fileExists` / `deleteFileIfExists` can throw only a `SecurityException` from `File.exists()` / `delete()` in app-private storage. |
+| An exception mid-swap skips the rollback | `renameFile` (jvm and android actuals) catches its move failures and returns `false`, which takes the rollback paths. What can still throw is a `SecurityException` from a `File.exists()` / `delete()` call (in `fileExists`, `deleteFileIfExists`, or `renameFile`'s leading `exists()` check) in app-private storage. |
 | The live file may be missing until the next launch | `restartApp` runs unconditionally after `commit`; `selfHealDatabaseIfNeeded` then restores the pre-restore backup before Room opens anything. |
 
 So the bare catch is unreachable defence-in-depth, not a live bug. What is actually wrong:

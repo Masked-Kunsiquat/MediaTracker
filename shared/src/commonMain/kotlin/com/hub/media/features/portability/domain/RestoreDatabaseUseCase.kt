@@ -266,6 +266,17 @@ public class DefaultRestoreDatabaseUseCase(
         )
     }
 
+    /**
+     * Swaps [staged] in as the live database and records the outcome marker -- see the class KDoc's
+     * "The swap" section for the exact sequence and what a process death leaves at each step.
+     *
+     * Runs under `NonCancellable` (#203): a caller cancelled before or during this call still gets
+     * a completed swap (or its rollback) and a written marker. It does **not** get the returned
+     * [Resource]: under `withContext`'s prompt-cancellation guarantee a cancelled caller resumes
+     * with `CancellationException` instead, after the work is done. So anything the caller must do
+     * *after* a restore -- above all the process restart this class's KDoc requires -- belongs in
+     * the caller's own `NonCancellable` block alongside this call, as the Settings flow does.
+     */
     override suspend fun commit(staged: StagedRestoreInfo): Resource<Unit> =
         // NonCancellable: once a restore has started it must finish -- the swap (or its rollback)
         // and the marker recording its outcome. Every step below is a withContext(IO) hop, and so
@@ -394,13 +405,14 @@ public class DefaultRestoreDatabaseUseCase(
             Resource.Success(Unit)
         } catch (e: Exception) {
             // Deliberately a bare catch, and deliberately no rollback (#203). What can reach it: a
-            // SecurityException from File.exists()/delete() inside fileExists/deleteFileIfExists --
-            // renameFile catches its own failures and returns false, which takes the rollback paths
-            // above, and cancellation cannot arrive because commit runs this under NonCancellable
-            // (so there is nothing for catchingNonCancellation to rethrow). A rollback here could
-            // not know which step threw; it is also unnecessary, because a full restart follows
-            // every commit and selfHealDatabaseIfNeeded restores the backup whenever the live file
-            // is missing.
+            // SecurityException from a File.exists()/delete() call -- inside fileExists and
+            // deleteFileIfExists, or renameFile's own leading exists() check. renameFile catches
+            // its move failures and returns false, which takes the rollback paths above, and
+            // cancellation cannot arrive because commit runs this under NonCancellable (so there is
+            // nothing for catchingNonCancellation to rethrow). A rollback here could not know which
+            // step threw; it is also unnecessary: any throw leaves either nothing moved or the live
+            // file missing with the backup present, and the process restart the caller owes every
+            // commit (see commit's KDoc) runs selfHealDatabaseIfNeeded, which restores the latter.
             logger.error(TAG, e) { "restore failed with an unexpected exception during the swap" }
             Resource.Error("Restore failed: ${e.message ?: "Unknown error"}", e)
         }
