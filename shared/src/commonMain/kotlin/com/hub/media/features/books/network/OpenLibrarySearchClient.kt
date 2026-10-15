@@ -7,6 +7,7 @@ import com.hub.media.core.network.openLibraryIdentifiedPacer
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.dto.OpenLibraryEditionDto
 import com.hub.media.features.books.network.dto.OpenLibrarySearchDocDto
@@ -118,36 +119,40 @@ public class OpenLibrarySearchClient(
             return Resource.Error("Edition key cannot be empty")
         }
 
-        return try {
-            val response = client.get("$OPEN_LIBRARY_BASE_URL/books/$trimmed.json")
-            if (!response.status.isSuccess()) {
-                logger.warn(
-                    TAG_EDITION,
-                ) { "Open Library edition lookup returned ${response.status.value} for edition_key=$trimmed" }
-                return Resource.Error("Open Library edition lookup failed with status ${response.status.value}")
-            }
-
-            val dto =
-                try {
-                    response.body<OpenLibraryEditionDto>()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
+        return catchingNonCancellation(
+            block = {
+                val response = client.get("$OPEN_LIBRARY_BASE_URL/books/$trimmed.json")
+                if (!response.status.isSuccess()) {
                     logger.warn(
                         TAG_EDITION,
-                    ) { "Open Library returned malformed JSON for edition_key=$trimmed (${e.typeName()})" }
-                    return Resource.Error("Open Library returned malformed JSON for edition $trimmed")
+                    ) { "Open Library edition lookup returned ${response.status.value} for edition_key=$trimmed" }
+                    return Resource.Error("Open Library edition lookup failed with status ${response.status.value}")
                 }
 
-            // Try ISBN-13 first, then ISBN-10, then null if neither is present.
-            val isbn = dto.isbn13?.firstOrNull() ?: dto.isbn10?.firstOrNull()
-            Resource.Success(isbn)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(TAG_EDITION) { "Open Library edition lookup failed for edition_key=$trimmed (${e.typeName()})" }
-            Resource.Error("Open Library edition lookup failed for edition $trimmed")
-        }
+                val dto =
+                    catchingNonCancellation(
+                        block = {
+                            response.body<OpenLibraryEditionDto>()
+                        },
+                        onException = { e ->
+                            logger.warn(
+                                TAG_EDITION,
+                            ) { "Open Library returned malformed JSON for edition_key=$trimmed (${e.typeName()})" }
+                            return Resource.Error("Open Library returned malformed JSON for edition $trimmed")
+                        },
+                    )
+
+                // Try ISBN-13 first, then ISBN-10, then null if neither is present.
+                val isbn = dto.isbn13?.firstOrNull() ?: dto.isbn10?.firstOrNull()
+                Resource.Success(isbn)
+            },
+            onException = { e ->
+                logger.warn(
+                    TAG_EDITION,
+                ) { "Open Library edition lookup failed for edition_key=$trimmed (${e.typeName()})" }
+                Resource.Error("Open Library edition lookup failed for edition $trimmed")
+            },
+        )
     }
 
     override suspend fun fetchEditionsForWork(workKey: String): Resource<List<BookEditionSearchResult>> {
@@ -156,52 +161,60 @@ public class OpenLibrarySearchClient(
             return Resource.Error("Work key cannot be empty")
         }
 
-        return try {
-            val allEditions = mutableListOf<BookEditionSearchResult>()
-            var offset = 0
-            val limit = 50
+        return catchingNonCancellation(
+            block = {
+                val allEditions = mutableListOf<BookEditionSearchResult>()
+                var offset = 0
+                val limit = 50
 
-            do {
-                // The first page goes out at once (RequestPacer never makes a first call wait), so
-                // a work with one page of editions -- most of them -- pays no latency at all.
-                editionPagePacer.acquire()
-                val response =
-                    client.get("$OPEN_LIBRARY_BASE_URL$trimmed/editions.json") {
-                        parameter("limit", limit)
-                        parameter("offset", offset)
-                    }
-                if (!response.status.isSuccess()) {
-                    logger.warn(
-                        TAG_EDITION,
-                    ) { "Open Library editions lookup returned ${response.status.value} for work_key=$trimmed" }
-                    return Resource.Error("Open Library editions lookup failed with status ${response.status.value}")
-                }
-
-                val dto =
-                    try {
-                        response.body<OpenLibraryWorkEditionsResponseDto>()
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
+                do {
+                    // The first page goes out at once (RequestPacer never makes a first call wait), so
+                    // a work with one page of editions -- most of them -- pays no latency at all.
+                    editionPagePacer.acquire()
+                    val response =
+                        client.get("$OPEN_LIBRARY_BASE_URL$trimmed/editions.json") {
+                            parameter("limit", limit)
+                            parameter("offset", offset)
+                        }
+                    if (!response.status.isSuccess()) {
                         logger.warn(
                             TAG_EDITION,
-                        ) { "Open Library returned malformed JSON for editions of work_key=$trimmed (${e.typeName()})" }
-                        return Resource.Error("Open Library returned malformed JSON for editions of $trimmed")
+                        ) { "Open Library editions lookup returned ${response.status.value} for work_key=$trimmed" }
+                        return Resource.Error(
+                            "Open Library editions lookup failed with status ${response.status.value}",
+                        )
                     }
 
-                val entries = dto.entries.orEmpty()
-                allEditions.addAll(entries.mapNotNull { it.toEditionSearchResult() })
-                offset += limit
-                val totalSize = dto.size ?: 0
-            } while (offset < totalSize)
+                    val dto =
+                        catchingNonCancellation(
+                            block = {
+                                response.body<OpenLibraryWorkEditionsResponseDto>()
+                            },
+                            onException = { e ->
+                                logger.warn(
+                                    TAG_EDITION,
+                                ) {
+                                    "Open Library returned malformed JSON for editions of work_key=$trimmed (${e.typeName()})"
+                                }
+                                return Resource.Error("Open Library returned malformed JSON for editions of $trimmed")
+                            },
+                        )
 
-            Resource.Success(allEditions)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(TAG_EDITION) { "Open Library editions lookup failed for work_key=$trimmed (${e.typeName()})" }
-            Resource.Error("Open Library editions lookup failed for $trimmed")
-        }
+                    val entries = dto.entries.orEmpty()
+                    allEditions.addAll(entries.mapNotNull { it.toEditionSearchResult() })
+                    offset += limit
+                    val totalSize = dto.size ?: 0
+                } while (offset < totalSize)
+
+                Resource.Success(allEditions)
+            },
+            onException = { e ->
+                logger.warn(
+                    TAG_EDITION,
+                ) { "Open Library editions lookup failed for work_key=$trimmed (${e.typeName()})" }
+                Resource.Error("Open Library editions lookup failed for $trimmed")
+            },
+        )
     }
 
     override suspend fun searchByTitleOrAuthor(
@@ -215,51 +228,53 @@ public class OpenLibrarySearchClient(
             return Resource.Success(emptyList())
         }
 
-        return try {
-            val response =
-                client.get(OPEN_LIBRARY_SEARCH_URL) {
-                    // Ktor URL-encodes these, which matters more here than on the ISBN path: this is
-                    // arbitrary user text, so spaces, ampersands and non-Latin scripts all arrive.
-                    parameter("q", trimmed)
-                    parameter("fields", SEARCH_FIELDS)
-                    parameter("limit", limit)
+        // Cancellation is rethrown, never swallowed: on JVM CancellationException *is* an
+        // Exception, so swallowing it here would both break structured concurrency and report
+        // a provider failure for every keystroke that supersedes an in-flight request.
+        return catchingNonCancellation(
+            block = {
+                val response =
+                    client.get(OPEN_LIBRARY_SEARCH_URL) {
+                        // Ktor URL-encodes these, which matters more here than on the ISBN path: this is
+                        // arbitrary user text, so spaces, ampersands and non-Latin scripts all arrive.
+                        parameter("q", trimmed)
+                        parameter("fields", SEARCH_FIELDS)
+                        parameter("limit", limit)
+                    }
+
+                if (!response.status.isSuccess()) {
+                    // 429 is a genuinely likely status here rather than a theoretical one — a
+                    // type-ahead is the heaviest thing this app does to Open Library. The status code
+                    // is loggable under the identifier rule; the query is user content and is not.
+                    logger.warn(TAG) { "Open Library search returned ${response.status.value}" }
+                    return Resource.Error("Open Library search failed with status ${response.status.value}")
                 }
 
-            if (!response.status.isSuccess()) {
-                // 429 is a genuinely likely status here rather than a theoretical one — a
-                // type-ahead is the heaviest thing this app does to Open Library. The status code
-                // is loggable under the identifier rule; the query is user content and is not.
-                logger.warn(TAG) { "Open Library search returned ${response.status.value}" }
-                return Resource.Error("Open Library search failed with status ${response.status.value}")
-            }
+                val dto =
+                    catchingNonCancellation(
+                        block = {
+                            response.body<OpenLibrarySearchResponseDto>()
+                        },
+                        onException = { e ->
+                            // Exception type only, and no `throwable` argument -- see typeName().
+                            logger.warn(TAG) { "Open Library returned malformed JSON for a search (${e.typeName()})" }
+                            return Resource.Error("Open Library returned a malformed search response")
+                        },
+                    )
 
-            val dto =
-                try {
-                    response.body<OpenLibrarySearchResponseDto>()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Exception type only, and no `throwable` argument -- see typeName().
-                    logger.warn(TAG) { "Open Library returned malformed JSON for a search (${e.typeName()})" }
-                    return Resource.Error("Open Library returned a malformed search response")
-                }
-
-            // An empty docs list is a successful search that found nothing, not a failure: the
-            // distinction is the whole reason the UI can say "no matches" instead of "search
-            // failed", and users type prefixes that legitimately match nothing all the time.
-            Resource.Success(dto.docs.orEmpty().mapNotNull { it.toSearchResult() })
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an
-            // Exception, so swallowing it here would both break structured concurrency and report
-            // a provider failure for every keystroke that supersedes an in-flight request.
-            throw e
-        } catch (e: Exception) {
-            // WARN, not ERROR, for the same reason as OpenLibraryClient.fetchByIsbn: an offline
-            // device is the ordinary case, and the UI recovers by showing nothing rather than
-            // crashing. Exception type only, and no `throwable` argument -- see typeName().
-            logger.warn(TAG) { "Open Library search failed (${e.typeName()})" }
-            Resource.Error("Open Library search failed")
-        }
+                // An empty docs list is a successful search that found nothing, not a failure: the
+                // distinction is the whole reason the UI can say "no matches" instead of "search
+                // failed", and users type prefixes that legitimately match nothing all the time.
+                Resource.Success(dto.docs.orEmpty().mapNotNull { it.toSearchResult() })
+            },
+            onException = { e ->
+                // WARN, not ERROR, for the same reason as OpenLibraryClient.fetchByIsbn: an offline
+                // device is the ordinary case, and the UI recovers by showing nothing rather than
+                // crashing. Exception type only, and no `throwable` argument -- see typeName().
+                logger.warn(TAG) { "Open Library search failed (${e.typeName()})" }
+                Resource.Error("Open Library search failed")
+            },
+        )
     }
 }
 

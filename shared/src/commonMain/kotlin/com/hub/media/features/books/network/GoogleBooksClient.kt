@@ -4,6 +4,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.core.util.warn
 import com.hub.media.features.books.network.dto.GoogleBooksImageLinksDto
 import com.hub.media.features.books.network.dto.GoogleBooksResponseDto
@@ -12,7 +13,6 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
-import kotlin.coroutines.cancellation.CancellationException
 
 private const val GOOGLE_BOOKS_VOLUMES_URL = "https://www.googleapis.com/books/v1/volumes"
 
@@ -59,98 +59,97 @@ public class GoogleBooksClient(
     private val logger: Logger = AppLogger,
 ) : BookMetadataProvider {
     override suspend fun fetchByIsbn(isbn: String): Resource<BookMetadata> {
-        return try {
-            val apiKey = apiKeyProvider()
-            val response =
-                client.get(GOOGLE_BOOKS_VOLUMES_URL) {
-                    parameter("q", "isbn:$isbn")
-                    // Omitted entirely when no key is configured, rather than sent empty: `key=`
-                    // with a blank value is a *rejected* key to Google, so an empty parameter would
-                    // turn the working keyless path into a 400. getGoogleBooksApiKey() already
-                    // collapses blank to null for the same reason.
-                    if (apiKey != null) {
-                        parameter("key", apiKey)
+        return catchingNonCancellation(
+            block = {
+                val apiKey = apiKeyProvider()
+                val response =
+                    client.get(GOOGLE_BOOKS_VOLUMES_URL) {
+                        parameter("q", "isbn:$isbn")
+                        // Omitted entirely when no key is configured, rather than sent empty: `key=`
+                        // with a blank value is a *rejected* key to Google, so an empty parameter would
+                        // turn the working keyless path into a 400. getGoogleBooksApiKey() already
+                        // collapses blank to null for the same reason.
+                        if (apiKey != null) {
+                            parameter("key", apiKey)
+                        }
                     }
-                }
-            if (!response.status.isSuccess()) {
-                // This is the *fallback*, so a status failure here means the add genuinely has no
-                // metadata to offer -- and it was the one failure mode in this class that logged
-                // nothing. Observed for real: with Open Library down, Google Books answered 429 and
-                // the log recorded only the primary's timeout, so two failures left one entry.
-                //
-                // The key-rejection hint matters because the failure is otherwise unattributable: a
-                // user who has just pasted a key into Settings and starts getting 400s has no way to
-                // tell a bad key from a bad ISBN, and the status code alone doesn't say. Only the
-                // *presence* of a key is mentioned; its value is never logged (see the class KDoc).
-                val keyHint =
-                    if (apiKey != null && response.status.value in KEY_REJECTION_STATUS_CODES) {
-                        " (an API key is configured -- Google rejects the request itself when the key is " +
-                            "invalid, restricted, or not enabled for the Books API)"
-                    } else {
-                        ""
+                if (!response.status.isSuccess()) {
+                    // This is the *fallback*, so a status failure here means the add genuinely has no
+                    // metadata to offer -- and it was the one failure mode in this class that logged
+                    // nothing. Observed for real: with Open Library down, Google Books answered 429 and
+                    // the log recorded only the primary's timeout, so two failures left one entry.
+                    //
+                    // The key-rejection hint matters because the failure is otherwise unattributable: a
+                    // user who has just pasted a key into Settings and starts getting 400s has no way to
+                    // tell a bad key from a bad ISBN, and the status code alone doesn't say. Only the
+                    // *presence* of a key is mentioned; its value is never logged (see the class KDoc).
+                    val keyHint =
+                        if (apiKey != null && response.status.value in KEY_REJECTION_STATUS_CODES) {
+                            " (an API key is configured -- Google rejects the request itself when the key is " +
+                                "invalid, restricted, or not enabled for the Books API)"
+                        } else {
+                            ""
+                        }
+                    logger.warn(TAG) {
+                        "Google Books lookup returned ${response.status.value} for isbn=$isbn$keyHint"
                     }
-                logger.warn(TAG) {
-                    "Google Books lookup returned ${response.status.value} for isbn=$isbn$keyHint"
+                    return Resource.Error(
+                        "Google Books request failed with status ${response.status.value} for ISBN $isbn",
+                    )
                 }
-                return Resource.Error(
-                    "Google Books request failed with status ${response.status.value} for ISBN $isbn",
+
+                // Cancellation is rethrown here as in the outer catch below -- a cancelled
+                // deserialization is not a malformed-JSON failure.
+                val dto =
+                    catchingNonCancellation(
+                        block = {
+                            response.body<GoogleBooksResponseDto>()
+                        },
+                        onException = { e ->
+                            logger.warn(TAG, e) { "Google Books returned malformed JSON for isbn=$isbn" }
+                            return Resource.Error("Google Books returned malformed JSON for ISBN $isbn", e)
+                        },
+                    )
+
+                val item =
+                    dto.items?.firstOrNull()
+                        ?: return Resource.Error("Google Books returned no results for ISBN $isbn")
+                val volumeInfo =
+                    item.volumeInfo
+                        ?: return Resource.Error("Google Books result for ISBN $isbn is missing volumeInfo")
+
+                val title = volumeInfo.title
+                if (title.isNullOrBlank()) {
+                    return Resource.Error("Google Books result for ISBN $isbn is missing a title")
+                }
+
+                val coverImageUrl = volumeInfo.imageLinks?.largestAvailableUrl()?.let { toHttps(it) }
+                val releaseYear = volumeInfo.publishedDate?.let { parseYear(it) }
+
+                Resource.Success(
+                    BookMetadata(
+                        title = title,
+                        authors = volumeInfo.authors.orEmpty(),
+                        releaseYear = releaseYear,
+                        pageCount = volumeInfo.pageCount,
+                        isbn = isbn,
+                        coverImageUrl = coverImageUrl,
+                        provider = IdentifierProvider.GOOGLE_BOOKS,
+                        externalId = item.id,
+                    ),
                 )
-            }
-
-            val dto =
-                try {
-                    response.body<GoogleBooksResponseDto>()
-                } catch (e: CancellationException) {
-                    // Same rethrow as the outer catch below -- a cancelled deserialization is not a
-                    // malformed-JSON failure.
-                    throw e
-                } catch (e: Exception) {
-                    logger.warn(TAG, e) { "Google Books returned malformed JSON for isbn=$isbn" }
-                    return Resource.Error("Google Books returned malformed JSON for ISBN $isbn", e)
-                }
-
-            val item =
-                dto.items?.firstOrNull()
-                    ?: return Resource.Error("Google Books returned no results for ISBN $isbn")
-            val volumeInfo =
-                item.volumeInfo
-                    ?: return Resource.Error("Google Books result for ISBN $isbn is missing volumeInfo")
-
-            val title = volumeInfo.title
-            if (title.isNullOrBlank()) {
-                return Resource.Error("Google Books result for ISBN $isbn is missing a title")
-            }
-
-            val coverImageUrl = volumeInfo.imageLinks?.largestAvailableUrl()?.let { toHttps(it) }
-            val releaseYear = volumeInfo.publishedDate?.let { parseYear(it) }
-
-            Resource.Success(
-                BookMetadata(
-                    title = title,
-                    authors = volumeInfo.authors.orEmpty(),
-                    releaseYear = releaseYear,
-                    pageCount = volumeInfo.pageCount,
-                    isbn = isbn,
-                    coverImageUrl = coverImageUrl,
-                    provider = IdentifierProvider.GOOGLE_BOOKS,
-                    externalId = item.id,
-                ),
-            )
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch: on JVM CancellationException *is* an Exception,
-            // so swallowing it here would both break structured concurrency and log a spurious WARN
-            // every time a screen is closed mid-lookup.
-            throw e
-        } catch (e: Exception) {
-            // The fallback provider: when this one fails too, the add/backfill genuinely has no
-            // metadata to offer, so this is the entry that explains an empty result.
-            //
-            // LOGGING: throwable is omitted so a transport-level error (e.g. from Ktor or OkHttp)
-            // cannot leak the API key into the log file if it were to embed the request URL
-            // in its own message or string representation.
-            logger.warn(TAG) { "Google Books lookup failed for isbn=$isbn (transport error)" }
-            return Resource.Error("Google Books lookup failed for ISBN $isbn")
-        }
+            },
+            onException = { e ->
+                // The fallback provider: when this one fails too, the add/backfill genuinely has no
+                // metadata to offer, so this is the entry that explains an empty result.
+                //
+                // LOGGING: throwable is omitted so a transport-level error (e.g. from Ktor or OkHttp)
+                // cannot leak the API key into the log file if it were to embed the request URL
+                // in its own message or string representation.
+                logger.warn(TAG) { "Google Books lookup failed for isbn=$isbn (transport error)" }
+                return Resource.Error("Google Books lookup failed for ISBN $isbn")
+            },
+        )
     }
 }
 
