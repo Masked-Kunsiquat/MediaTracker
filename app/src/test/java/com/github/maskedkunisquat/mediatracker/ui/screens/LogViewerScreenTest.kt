@@ -25,9 +25,8 @@ import org.robolectric.RobolectricTestRunner
  * unmeasured extent — and both are invisible to a ViewModel unit test, because in both cases the
  * ViewModel was correct. These tests assert what a *screen* does, which is the gap.
  *
- * Instrumented, so they need a device or emulator and cannot join the
- * `:shared:jvmTest`/`:shared:testDebugUnitTest` gate AGENTS.md §7 mandates. Run with
- * `./gradlew :app:connectedDebugAndroidTest`.
+ * Since #208 these run in the Robolectric lane (`:app:testDebugUnitTest`), so CI runs them on
+ * every PR; they were instrumented tests before.
  *
  * The stateless [LogViewerScreen] is driven directly with fake callbacks rather than going through
  * the route composable: this asserts the screen honours the contract it is given. Whether the

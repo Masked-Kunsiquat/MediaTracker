@@ -6,9 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
@@ -42,15 +39,13 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 /**
- * Behavioural tests for the TV Show Detail screen's season-length dialog (Issue #83), covering
- * both the numeric-validation refactor and the #83 layout regression it names specifically: a
- * two-digit episode count clipping the season overflow menu's [androidx.compose.material3.IconButton]
- * -- and its content description with it -- off the header row, fixed in 3042a48.
+ * The TV Show Detail tests that type into the season-length (episode-count) dialog (#83), kept on
+ * a device by #208: under Robolectric a text field inside a dialog never lets Compose go idle
+ * (AGENTS.md section 7), and the hang poisons every later test in the JVM. Everything else on this
+ * screen is tested in the Robolectric lane's `TVShowDetailScreenTest`.
  *
- * [SeasonLengthDialog] itself is private, so it can only be reached the way a user reaches it: by
- * opening a season's overflow menu and tapping "Change episode count." There is deliberately no
- * shortcut around that navigation here -- driving the real menu is what proves the menu's content
- * description survives the two-digit case, which is the whole point of the first test.
+ * [SeasonLengthDialog] is private, so each test reaches it the way a user does: a season's overflow
+ * menu, then "Change episode count".
  */
 @OptIn(ExperimentalTime::class)
 class TVShowDetailEpisodeCountDialogTest {
@@ -242,30 +237,12 @@ class TVShowDetailEpisodeCountDialogTest {
         count: Int,
     ) = context.resources.getQuantityString(id, count, count)
 
-    /** A show with no episode rows at all, which [readyState] cannot express: it always builds one season. */
-    private fun emptyShowState(
-        totalSeasons: Int?,
-        seasonFindings: List<SeasonCountMismatch> = emptyList(),
-        addingSeasonNumbers: Set<Int> = emptySet(),
-    ) = TVShowDetailUiState.Ready(
-        show = show(totalSeasons = totalSeasons),
-        seasons = emptyList(),
-        watchedEpisodes = 0,
-        totalEpisodes = 0,
-        isAbandoned = false,
-        seasonFindings = seasonFindings,
-        addingSeasonNumbers = addingSeasonNumbers,
-    )
-
     private companion object {
         /** See [MovieDetailScreenTest]: this class asserts episodes and controls, never artwork. */
         const val NO_COVERS = "no-covers-in-this-fixture"
-
-        /** [MediaType.TV_SHOW]'s placeholder glyph in `CoverImage`'s `CoverPlaceholder`. */
-        const val TV_COVER_PLACEHOLDER_EMOJI = "📺"
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun dialogConfirm_isDisabledWhenEpisodeCountIsBlank() {
         setContent(readyState(episodeCount = 5))
@@ -276,7 +253,7 @@ class TVShowDetailEpisodeCountDialogTest {
         composeRule.onNode(dialogConfirmMatcher()).assertIsNotEnabled()
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun shrinkingASeason_showsConfirmationDialog_andDoesNotCallOnSetSeasonLengthUntilConfirmed() {
         var calls = 0
@@ -292,7 +269,7 @@ class TVShowDetailEpisodeCountDialogTest {
         assertEquals("a shrink must be confirmed before it is applied", 0, calls)
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun cancellingTheShrinkConfirmation_callsOnSetSeasonLengthZeroTimes() {
         var calls = 0
@@ -308,7 +285,7 @@ class TVShowDetailEpisodeCountDialogTest {
         assertEquals(0, calls)
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun growingASeason_callsOnSetSeasonLengthImmediately_withNoConfirmation() {
         var calls = 0
@@ -332,7 +309,7 @@ class TVShowDetailEpisodeCountDialogTest {
         assertEquals(8, capturedCount)
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun reEnteringTheSameCount_appliesImmediately_withNoConfirmation() {
         // The gate is `episodeCount < existingLength`. Equal is the edge a `<=` would get wrong,
@@ -351,7 +328,7 @@ class TVShowDetailEpisodeCountDialogTest {
             ).assertDoesNotExist()
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun shrinkConfirmation_namesHowManyRemovedEpisodesWereWatched() {
         // Five of five watched; shrinking to 3 removes episodes 4 and 5, both watched.
@@ -370,7 +347,7 @@ class TVShowDetailEpisodeCountDialogTest {
         assertEquals(listOf(1 to 3), calls)
     }
 
-    // Device-only: types into the episode-count dialog's text field; under Robolectric Compose never goes idle (AGENTS.md section 7)
+    // Device-only: types into the dialog's text field (see the class KDoc).
     @Test
     fun shrinkConfirmation_whenNoRemovedEpisodeWasWatched_saysOnlyThatItCannotBeUndone() {
         // Episodes 1-3 are watched and survive; 4 and 5 go, unwatched. The warning counts the
@@ -391,13 +368,3 @@ class TVShowDetailEpisodeCountDialogTest {
         composeRule.onNodeWithText(quantity(R.plurals.tv_show_detail_episodes_watched_warning, 0)).assertDoesNotExist()
     }
 }
-
-/**
- * Matches a node carrying [SemanticsProperties.ProgressBarRangeInfo] -- see
- * `MovieDetailScreenTest`'s copy of this matcher for why it exists rather than a
- * contentDescription/testTag lookup.
- */
-private val isProgressIndicator =
-    SemanticsMatcher("has ProgressBarRangeInfo") {
-        it.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo) != null
-    }

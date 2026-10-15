@@ -31,7 +31,7 @@ import kotlin.time.Instant
  *
  * Here, in the Robolectric lane that runs on every PR, because the prompt has no text field. #83's
  * other two gaps (the equal-count edge of the shrink gate, and the shrink prompt's wording) are in
- * the device lane's `TVShowDetailScreenTest`: they go through the episode-count dialog, and under
+ * the device lane's `TVShowDetailEpisodeCountDialogTest`: they go through the episode-count dialog, and under
  * Robolectric a text field inside a dialog never lets Compose go idle (AppNotIdleException), while
  * with the clock stopped the dialog never composes at all.
  *

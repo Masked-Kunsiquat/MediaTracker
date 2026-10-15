@@ -92,4 +92,4 @@ For a class `X` at `app/src/androidTest/java/com/github/maskedkunisquat/mediatra
   | Host lane | 125 tests | |
 
   Then move MT-46 to `review` with the PR URL.
-- [ ] **Outcomes table:** `C:\Users\blain\graphban-outcomes\208-robolectric-migration.md`.
+- [ ] **Outcomes table:** the owner's local outcomes folder (`graphban-outcomes/208-robolectric-migration.md`).

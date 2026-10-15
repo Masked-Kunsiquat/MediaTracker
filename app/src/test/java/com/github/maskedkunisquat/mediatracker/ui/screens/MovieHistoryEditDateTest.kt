@@ -23,8 +23,10 @@ import kotlin.time.Instant
 
 /**
  * Edit date in a film's History (#192): tapping a viewing's Edit opens [WatchedDatePickerDialog] on
- * that viewing's own day, and confirming reports that day. Device-only, because a dialog holding a
- * date input does not go idle under Robolectric (AGENTS.md §7). The host mirrors the route.
+ * that viewing's own day, and confirming reports that day. Runs in the Robolectric lane since #208: Material's date picker
+ * does go idle there (only a *text field* inside a dialog does not, AGENTS.md §7), and making the
+ * picker ignore its initial date fails this test on the host.
+ * The host mirrors the route.
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
 @RunWith(RobolectricTestRunner::class)

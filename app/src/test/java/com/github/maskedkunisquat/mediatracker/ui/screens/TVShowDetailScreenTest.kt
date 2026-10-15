@@ -13,15 +13,12 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextClearance
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -42,6 +39,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -218,25 +216,9 @@ class TVShowDetailScreenTest {
         }
     }
 
-    /** Opens a season's overflow menu and taps "Change episode count," landing on [SeasonLengthDialog]. */
-    private fun openChangeEpisodeCountDialog(seasonNumber: Int) {
-        val menuDesc = context.getString(R.string.tv_show_detail_season_menu_content_description, seasonNumber)
-        composeRule.onNodeWithContentDescription(menuDesc).performClick()
-
-        val changeCountText = context.getString(R.string.tv_show_detail_change_episode_count)
-        composeRule.onNodeWithText(changeCountText).performClick()
-    }
-
-    /** Replaces whatever the episode-count field holds (the season's current length) with [text]. */
-    private fun setEpisodeCountField(text: String) {
-        val label = context.getString(R.string.tv_episode_count_label)
-        val field = composeRule.onNode(hasText(label) and hasSetTextAction())
-        field.performTextClearance()
-        if (text.isNotEmpty()) field.performTextInput(text)
-    }
-
-    private fun dialogConfirmMatcher() = hasText(context.getString(R.string.save_button)) and hasClickAction()
-
+    // NATIVE: this guard needs real text width to overflow the narrow row; under Robolectric's
+    // legacy graphics it passed with the fix removed (#208 review).
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test
     fun seasonMenuButton_hasANonEmptyContentDescription_atATwoDigitEpisodeCount() {
         // #83's regression (fixed in 3042a48): without weight(fill = false) on the header text, the
@@ -257,6 +239,9 @@ class TVShowDetailScreenTest {
      * that happened to use a larger font. Pinning the scale makes the guard device-independent; 2.0
      * is the largest system setting.
      */
+    // NATIVE: this guard needs real text width to overflow the narrow row; under Robolectric's
+    // legacy graphics it passed with the fix removed (#208 review).
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test
     fun seasonMenuButton_isDisplayed_atLargeFontScaleOnANarrowRow() {
         setContent(readyState(episodeCount = 10), narrowWidth = true, fontScale = 2.0f)
@@ -268,11 +253,6 @@ class TVShowDetailScreenTest {
     // The tests that type into the episode-count dialog stay on a device, in
     // TVShowDetailEpisodeCountDialogTest: under Robolectric a text field inside a dialog never lets
     // Compose go idle (AGENTS.md section 7), and the hang poisons every later test in the JVM.
-
-    private fun quantity(
-        id: Int,
-        count: Int,
-    ) = context.resources.getQuantityString(id, count, count)
 
     // --- #141: pinning the chrome/header/status behaviour a shared scaffold would absorb ---
 
