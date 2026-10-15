@@ -13,6 +13,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for [LogViewerScreen] (ROADMAP: Compose UI test harness).
@@ -32,6 +34,7 @@ import org.junit.Test
  * *route* passes real callbacks is a different failure (the one that actually shipped) and is
  * covered separately by the navigation test.
  */
+@RunWith(RobolectricTestRunner::class)
 class LogViewerScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
