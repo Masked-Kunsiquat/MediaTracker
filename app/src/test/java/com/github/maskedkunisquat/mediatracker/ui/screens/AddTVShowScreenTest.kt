@@ -15,6 +15,8 @@ import com.hub.media.ui.AddTVShowUiState
 import com.hub.media.ui.SeasonRow
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Behavioural tests for the Add TV Show screen (Issue #83, filling the coverage gap the numeric-
@@ -31,6 +33,7 @@ import org.junit.Test
  * structural difference: season rows are *required*, not optional, per
  * [com.hub.media.ui.AddTVShowViewModel]'s KDoc on [SeasonRow].
  */
+@RunWith(RobolectricTestRunner::class)
 class AddTVShowScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
