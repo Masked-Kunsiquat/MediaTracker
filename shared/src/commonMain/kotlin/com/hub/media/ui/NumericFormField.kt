@@ -115,7 +115,9 @@ public fun String.filterDecimalInput(decimalSeparator: Char): String {
  * `toDisplayDecimal(sep).filterDecimalInput(sep)` is the identity on anything the filter produced.
  *
  * One character replaces one character, so the displayed string is the same length as the canonical
- * one and a string-based field keeps the cursor where it was.
+ * one: when the filter keeps every character the user typed, a string-based field keeps the cursor
+ * where it was. When the filter drops one (a thousands mark, a second separator) the text shrinks
+ * and the cursor can shift by a character, exactly as it did before this function existed.
  */
 public fun String.toDisplayDecimal(decimalSeparator: Char): String = replace('.', decimalSeparator)
 
