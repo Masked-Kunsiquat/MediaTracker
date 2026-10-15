@@ -24,7 +24,7 @@ been cancelled. The convention holds by discipline alone.
 | `catch (e: CancellationException)` clauses in `shared/src/commonMain` | 52 | **72** |
 | files carrying one | 21 | **34** |
 
-Two private copies of the envelope already exist (`guarded()` in `TVShowRepository` and
+Two private copies of the envelope already exist (`guarded()` in `TVShowRepository`, `write()` in
 `MovieRepository`), and **the discipline has started to slip**: `LocalImageStorageManager.saveImage`
 catches `Exception` around a `withContext(Dispatchers.IO)` with no rethrow, so a cancelled cover or
 poster save becomes `Result.failure`.
@@ -91,14 +91,15 @@ return `"<failure>: <e.message or Unknown error>"` with `cause = e`*. Found mech
 each catch body) and re-checked by eye in the plan:
 
 - `MediaRepository` ×2; `BookRepository` ×5; `ReadingSessionRepository` ×3; `MovieRepository` ×4
-  (one is `guarded()`); `TVShowRepository` ×12 (one is `guarded()`); `ImportWriteRepository` ×1
+  (one is `write()`); `TVShowRepository` ×12 (one is `guarded()`); `ImportWriteRepository` ×1
 - `DeleteMediaUseCase`, `ReconcileMismatchesUseCase`, `ExportArchiveUseCase`, `ExportDataUseCase`,
   `ImportDataUseCase` ×2, `BackfillShowEpisodesUseCase`, `EnsureViewingsUseCase`,
   `MarkEpisodesWatchedUseCase`, `RecordRewatchUseCase`
 
-`MovieRepository.guarded()` and `TVShowRepository.guarded()` are deleted; their callers call
-`logger.guardResource` directly. (Their `failure` strings differ — Movie interpolates `$what`, TV
-says "Failed to update viewing" — and each call keeps its own.)
+`MovieRepository.write()` and `TVShowRepository.guarded()` keep their names, signatures and callers
+and become one-line delegations to `logger.guardResource`, which leaves their call sites untouched.
+(Their `failure` strings differ — Movie interpolates `$what`, TV says "Failed to update viewing" —
+and each keeps its own.)
 
 **`catchingNonCancellation` — 30 sites** with the same rethrow but their own failure handling, kept
 verbatim inside `onException`:
