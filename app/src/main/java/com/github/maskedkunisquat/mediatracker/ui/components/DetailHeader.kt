@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -244,6 +245,8 @@ private fun RatingRow(
  * @param onSelect Invoked with the tapped option; the caller decides what re-selecting the current
  *   value does (Book's equivalent treats it as a harmless no-op re-application).
  * @param onClickLabel The accessibility action label for opening the menu, e.g. "Change status".
+ * @param enabled `false` greys the chip out and stops it opening -- an edit form passes `false` while
+ *   a save is in flight, so a change cannot land after the values being written were read (#174).
  */
 @Composable
 fun <T> StatusDropdownChip(
@@ -253,6 +256,7 @@ fun <T> StatusDropdownChip(
     onSelect: (T) -> Unit,
     onClickLabel: String,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val open = { expanded = true }
@@ -260,6 +264,7 @@ fun <T> StatusDropdownChip(
     Box(modifier = modifier) {
         AssistChip(
             onClick = open,
+            enabled = enabled,
             label = { Text(label(value)) },
             trailingIcon = {
                 Icon(
@@ -278,9 +283,10 @@ fun <T> StatusDropdownChip(
             modifier =
                 Modifier.semantics {
                     onClick(label = onClickLabel) {
-                        open()
-                        true
+                        if (enabled) open()
+                        enabled
                     }
+                    if (!enabled) disabled()
                 },
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

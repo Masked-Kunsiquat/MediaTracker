@@ -3,9 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -22,7 +20,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,13 +32,11 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +56,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.EditBottomBar
 import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
+import com.github.maskedkunisquat.mediatracker.ui.components.FormSection
 import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
@@ -238,7 +235,7 @@ fun EditBookScreen(
  * 4. **Purchase**: purchase price.
  *
  * Save/Cancel move off the bottom of the scrolling content and onto a persistent, non-scrolling
- * action bar ([EditBookBottomBar]) pinned to the bottom of the screen — a "committed action pair"
+ * action bar ([EditBottomBar]) pinned to the bottom of the screen — a "committed action pair"
  * that's always reachable without scrolling, rather than two inline buttons the user could lose
  * track of below four sections of fields.
  *
@@ -465,10 +462,12 @@ private fun EditBookForm(
             )
         }
 
-        EditBookBottomBar(
+        EditBottomBar(
             isSaving = state.isSaving,
             canSave = formIsValid,
             onCancel = onCancel,
+            cancelTag = TestTags.EditBook.CANCEL_BUTTON,
+            saveTag = TestTags.EditBook.SAVE_BUTTON,
             onSave = {
                 onSave(
                     titleText.trim(),
@@ -481,35 +480,6 @@ private fun EditBookForm(
                 )
             },
         )
-    }
-}
-
-/**
- * One titled card-backed group of related fields (ROADMAP Task 7 Phase D), mirroring
- * [SettingsScreen]'s `SettingsSection` convention exactly: a [Text] title above a [Card], with the
- * card's content column spaced by 16dp between fields.
- */
-@Composable
-private fun FormSection(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                content = content,
-            )
-        }
     }
 }
 
@@ -621,62 +591,6 @@ private fun StatusChipRow(
                     label = { Text(option.displayLabel()) },
                     enabled = enabled,
                 )
-            }
-        }
-    }
-}
-
-/**
- * Persistent, non-scrolling Save/Cancel action bar (ROADMAP Task 7 Phase D), pinned to the bottom
- * of [EditBookForm] on an elevated [Surface] (Material 3's default `BottomAppBar` tonal elevation,
- * 3dp) so the pair reads as one committed action group that's always reachable, rather than two
- * inline buttons at the end of a long scroll. [canSave] mirrors the old inline Save button's
- * `enabled` condition exactly (parse-once validation must pass, and no save already in flight);
- * [isSaving] additionally swaps the Save button's label for a small inline
- * [CircularProgressIndicator] so the in-flight state is visible on the action itself, not only via
- * the fields being disabled.
- */
-@Composable
-private fun EditBookBottomBar(
-    isSaving: Boolean,
-    canSave: Boolean,
-    onCancel: () -> Unit,
-    onSave: () -> Unit,
-) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
-        Row(
-            // A pinned control behind the navigation bar is the same bug as a pinned control
-            // behind the keyboard (#95), so this bar takes the bottom and horizontal insets as
-            // real padding. The Surface itself still spans to the window edge, so its elevated
-            // background fills the bar area rather than leaving a strip of list showing under it.
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(barPadding(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedButton(
-                onClick = onCancel,
-                enabled = !isSaving,
-                modifier = Modifier.weight(1f).testTag(TestTags.EditBook.CANCEL_BUTTON),
-            ) {
-                Text(stringResource(R.string.cancel_button))
-            }
-            Button(
-                onClick = onSave,
-                enabled = canSave && !isSaving,
-                modifier = Modifier.weight(1f).testTag(TestTags.EditBook.SAVE_BUTTON),
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text(stringResource(R.string.save_button))
-                }
             }
         }
     }
