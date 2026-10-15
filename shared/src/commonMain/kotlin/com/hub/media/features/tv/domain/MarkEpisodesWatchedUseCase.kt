@@ -4,9 +4,8 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import kotlinx.datetime.TimeZone
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -40,7 +39,11 @@ public class MarkEpisodesWatchedUseCase(
         watchedWhen: WatchedWhen,
         targetIsExplicit: Boolean = true,
     ): Resource<Int> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to mark watched",
+            logMessage = { "Failed to mark ${episodeIds.size} episode(s) watched" },
+        ) {
             val now = clock.now()
             // Chunked under SQLite's historical 999-variable limit: a catch-up across a long-running
             // daily show can name hundreds of episodes in one request.
@@ -62,11 +65,6 @@ public class MarkEpisodesWatchedUseCase(
             } else {
                 Resource.Success(db.tvWriteDao().markEpisodesWatchedAt(resolved))
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to mark ${episodeIds.size} episode(s) watched" }
-            Resource.Error("Failed to mark watched: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     private companion object {

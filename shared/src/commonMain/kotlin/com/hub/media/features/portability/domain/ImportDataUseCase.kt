@@ -17,7 +17,7 @@ import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.info
 import com.hub.media.core.util.newId
 import com.hub.media.core.util.warn
@@ -47,7 +47,6 @@ import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import com.hub.media.features.portability.goodreads.GoodreadsCsvTableReader
 import com.hub.media.features.portability.goodreads.GoodreadsCsvTableResult
 import kotlinx.coroutines.flow.first
-import kotlin.coroutines.cancellation.CancellationException
 
 /** See [ImportDataUseCase.execute] and [ImportDataUseCase.executeGoodreads]. */
 public interface ImportUseCase {
@@ -355,7 +354,11 @@ public class ImportDataUseCase(
                 emptyList()
             }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Import failed",
+            logMessage = { "Import failed" },
+        ) {
             // Every media type, not just books. This read went through
             // BookRepository.observeAllBooksWithDetails() until Issue #106, which filters to
             // MediaType.BOOK at the DAO -- so an existing film was invisible to duplicate matching
@@ -729,13 +732,6 @@ public class ImportDataUseCase(
                     viewingsSkipped = viewingsSkipped,
                 ),
             )
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Import failed" }
-            Resource.Error("Import failed: ${e.message ?: "Unknown error"}", e)
         }
     }
 
@@ -779,7 +775,11 @@ public class ImportDataUseCase(
                     }
             }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Goodreads import failed",
+            logMessage = { "Goodreads import failed" },
+        ) {
             // Every media type, for duplicate-matching reasons rather than because a Goodreads file
             // can contain one: matching is scoped by type (see titleYearKey), so a books-only
             // snapshot would work here -- but reading the same whole-library view execute() reads
@@ -831,13 +831,6 @@ public class ImportDataUseCase(
                     notes = listOf(GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE) + mediaResolution.reviewNotes,
                 ),
             )
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Goodreads import failed" }
-            Resource.Error("Goodreads import failed: ${e.message ?: "Unknown error"}", e)
         }
     }
 

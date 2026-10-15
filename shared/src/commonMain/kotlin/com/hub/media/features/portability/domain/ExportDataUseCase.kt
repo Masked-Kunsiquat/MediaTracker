@@ -4,7 +4,7 @@ import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.info
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
@@ -13,7 +13,6 @@ import com.hub.media.features.portability.csv.LibraryCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.WatchLogCsvExporter
 import kotlinx.coroutines.flow.first
-import kotlin.coroutines.cancellation.CancellationException
 
 /** Log tag for this file's adoption sites (ROADMAP Task 15 Phase C). */
 private const val TAG = "ExportDataUseCase"
@@ -79,7 +78,11 @@ public class ExportDataUseCase(
      *   describing why the read/format step failed. Never throws.
      */
     public override suspend fun execute(): Resource<CsvExportBundle> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to export data",
+            logMessage = { "Export failed" },
+        ) {
             // Every media type, not just books. This read used to go through
             // BookRepository.observeAllBooksWithDetails(), which filters to MediaType.BOOK at the
             // DAO -- so a movie was silently absent from the backup rather than failing loudly.
@@ -134,15 +137,5 @@ public class ExportDataUseCase(
                     "${episodes.size} episode(s)"
             }
             Resource.Success(bundle)
-        } catch (e: CancellationException) {
-            // Rethrown ahead of the Exception catch -- on JVM CancellationException is an Exception, so
-            // swallowing it would break structured concurrency and log a cancelled screen as a failure.
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Export failed" }
-            Resource.Error(
-                message = "Failed to export data: ${e.message ?: "Unknown error"}",
-                cause = e,
-            )
         }
 }
