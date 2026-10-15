@@ -104,6 +104,22 @@ public fun String.filterDecimalInput(decimalSeparator: Char): String {
 }
 
 /**
+ * How a decimal field should DISPLAY its canonical text: [filterDecimalInput]'s `.` shown as the
+ * locale's [decimalSeparator].
+ *
+ * A Compose text field hands the whole displayed text back to `onValueChange` on every keystroke,
+ * so whatever a field displays is what the filter reads next. Displaying the canonical text in a
+ * comma locale made the filter re-read its own `.` as a thousands mark: "14,99" was stored as 1499,
+ * and one backspace on a pre-filled "19.99" stored 199 (#201). Displaying this instead means the
+ * filter only ever sees locale-style text, the one case it was written for, and
+ * `toDisplayDecimal(sep).filterDecimalInput(sep)` is the identity on anything the filter produced.
+ *
+ * One character replaces one character, so the displayed string is the same length as the canonical
+ * one and a string-based field keeps the cursor where it was.
+ */
+public fun String.toDisplayDecimal(decimalSeparator: Char): String = replace('.', decimalSeparator)
+
+/**
  * Reads an optional decimal field whose value must be a **finite** number, treating an overflowing
  * digit string as unreadable rather than as a number.
  *
