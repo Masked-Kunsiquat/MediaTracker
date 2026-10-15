@@ -130,10 +130,8 @@
     <!-- Manual movie entry (Task 13 Phase B) -->
     <string name="add_movie_title">Add movie</string>
     <string name="edit_movie_title">Edit movie</string>
-    <string name="edit_movie_save">Save changes</string>
     <string name="edit_movie_content_description">Edit movie</string>
     <string name="edit_tv_show_title">Edit show</string>
-    <string name="edit_tv_show_save">Save changes</string>
     <string name="tv_show_detail_edit">Edit show</string>
     <string name="edit_load_failed">Couldn\'t load this item.</string>
     <string name="edit_load_retry">Retry</string>

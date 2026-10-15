@@ -37,6 +37,7 @@ class EditTVShowScreenOcclusionTest {
     @Composable
     private fun Fixture() {
         EditTVShowScreen(
+            coverStorageDir = "",
             uiState =
                 EditTVShowUiState.Editing(
                     title = "Chernobyl",
@@ -57,6 +58,11 @@ class EditTVShowScreenOcclusionTest {
 
     private companion object {
         /** Named here rather than centrally so a dropped tag fails the screen that owns it. */
-        val TAGS = listOf(TestTags.EditTVShow.FORM, TestTags.EditTVShow.SAVE_BUTTON)
+        val TAGS =
+            listOf(
+                TestTags.EditTVShow.FORM,
+                TestTags.EditTVShow.SAVE_BUTTON,
+                TestTags.EditTVShow.CANCEL_BUTTON,
+            )
     }
 }

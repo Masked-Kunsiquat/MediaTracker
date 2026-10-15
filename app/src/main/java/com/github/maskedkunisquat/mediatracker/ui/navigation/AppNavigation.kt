@@ -224,6 +224,7 @@ fun AppNavigation(
             EditTVShowScreenRoute(
                 appContainer = appContainer,
                 showId = showId,
+                coverStorageDir = coverStorageDir,
                 onNavigateBack = { navController.navigateUp() },
             )
         }

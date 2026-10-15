@@ -51,6 +51,7 @@ class EditScreensLoadFailedTest {
     @Composable
     private fun EditShow() =
         EditTVShowScreen(
+            coverStorageDir = "",
             uiState = EditTVShowUiState.LoadFailed,
             onTitleChange = {},
             onReleaseYearChange = {},

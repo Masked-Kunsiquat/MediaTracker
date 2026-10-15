@@ -69,6 +69,7 @@ object TestTags {
     object EditTVShow {
         const val FORM = "editTVShow:form"
         const val SAVE_BUTTON = "editTVShow:save"
+        const val CANCEL_BUTTON = "editTVShow:cancel"
     }
 
     object AddTVShow {

@@ -1,18 +1,19 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.ui.EditTVShowUiState
 import org.junit.Assert.assertEquals
@@ -33,10 +34,11 @@ class EditTVShowScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    /** The Save button: a Button with no content description, unlike the top bar's back icon. */
-    private val saveButtonMatcher =
-        SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button) and
-            SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription)
+    /**
+     * Save, by tag. "A button with no content description" told it apart from the back arrow
+     * until #174 put Cancel beside it, which matches that too -- a test could pass by tapping Cancel.
+     */
+    private val saveButtonMatcher = hasTestTag(TestTags.EditTVShow.SAVE_BUTTON)
 
     private fun editing(
         title: String = "Chernobyl",
@@ -58,11 +60,13 @@ class EditTVShowScreenTest {
         onErrorShown: () -> Unit = {},
         onTotalSeasonsChange: (String) -> Unit = {},
         onPurchasePriceChange: (String) -> Unit = {},
+        onNavigateBack: () -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
                 EditTVShowScreen(
                     uiState = uiState,
+                    coverStorageDir = "",
                     onTitleChange = {},
                     onReleaseYearChange = {},
                     onTotalSeasonsChange = onTotalSeasonsChange,
@@ -70,7 +74,7 @@ class EditTVShowScreenTest {
                     onSave = onSave,
                     onErrorShown = onErrorShown,
                     onRetry = {},
-                    onNavigateBack = {},
+                    onNavigateBack = onNavigateBack,
                 )
             }
         }
@@ -142,5 +146,33 @@ class EditTVShowScreenTest {
         composeRule.onNodeWithText("Seasons must be positive").assertExists()
         // onErrorShown fires only once showSnackbar's suspend call returns.
         composeRule.waitUntil(timeoutMillis = 10_000) { acknowledged == 1 }
+    }
+
+    @Test
+    fun header_keepsTheSavedTitle_whileTheFieldSaysSomethingElse() {
+        setContent(editing(title = "Chernobil").copy(savedTitle = "Chernobyl", savedYear = 2019))
+
+        composeRule.onNode(hasText("Chernobyl") and isHeading()).assertExists()
+        composeRule.onNodeWithText("TV show · 2019").assertExists()
+    }
+
+    @Test
+    fun cancel_isInTheBottomBar_andNavigatesBack() {
+        var backs = 0
+        setContent(editing(), onNavigateBack = { backs++ })
+
+        composeRule.onNodeWithTag(TestTags.EditTVShow.CANCEL_BUTTON).performClick()
+
+        assertEquals(1, backs)
+    }
+
+    @Test
+    fun theFieldsAreGroupedUnderDetailsAndPurchase_withNoStatusSection() {
+        setContent(editing())
+
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_details)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_purchase)).assertExists()
+        // The detail screen owns abandoning a show, so this form has no status to group.
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_status)).assertDoesNotExist()
     }
 }
