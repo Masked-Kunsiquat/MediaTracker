@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Importing an export can now also restore your settings (Include specials, week start, log
   detail) — tick *Also restore settings*. API keys are never exported.
+- TV shows can now be edited: the show's page has an Edit button for its title, release year,
+  total seasons and purchase price. A value you type is kept when the show's details are refreshed
+  from TMDB; a field you clear may be filled in again by the next refresh.
 
 ### Changed
 

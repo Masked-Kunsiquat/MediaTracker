@@ -79,7 +79,7 @@ single list below and reordering is a one-line edit there.
    [#196](https://github.com/Masked-Kunsiquat/MediaTracker/issues/196), one `.zip` instead of four
    CSV files and four pickers, which also removes the rest of #162; then
    [#173](https://github.com/Masked-Kunsiquat/MediaTracker/issues/173), an edit screen for TV
-   shows; then [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81)'s remaining
+   shows (in progress on `feat/173-edit-tv-show`); then [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81)'s remaining
    refactors. #122 is unblocked by #88 and small now.
 6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
    the signing half is separable and slightly cheaper to do sooner — see that task's own note.
