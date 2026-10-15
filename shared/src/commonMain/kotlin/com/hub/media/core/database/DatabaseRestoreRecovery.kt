@@ -130,13 +130,14 @@ public suspend fun consumeRestoreMarker(liveDatabaseFilePath: String): RestoreMa
  * file present (sentinel satisfied) with its WAL still stranded at the backup path, forever
  * unreachable once this function's own early-return stops looking for it. So the main-file rename is
  * gated on both sidecar renames having succeeded (or not having been needed in the first place); if
- * either failed, this call leaves the live file still missing -- the exact "not yet healed" state the
- * early-return above knows how to retry -- rather than ever presenting a half-healed database as
- * whole.
+ * either failed, this call leaves the live file still missing rather than ever presenting a
+ * half-healed database as whole, and reports [SelfHealResult.Failed]. (Only a process death between
+ * steps is finished by the next launch; a failure on a live process is followed by Room opening an
+ * empty database -- see `@return`.)
  *
  * @return [SelfHealResult.Healed] when the backup's main file was moved back into place,
  *   [SelfHealResult.NotNeeded] when there was nothing to heal, and [SelfHealResult.Failed] when a heal
- *   was needed but a sidecar move failed. A failure is not retried in practice: the caller goes on to
+ *   was needed but moving a sidecar or the main file back failed. A failure is not retried in practice: the caller goes on to
  *   open Room, which creates an empty database at the live path, so the next launch sees a live file
  *   and stops here. The backup stays where [SelfHealResult.Failed.backupPath] says, for recovery by
  *   hand. All three are logged by [logRestoreRecovery].
@@ -162,8 +163,9 @@ public sealed class SelfHealResult {
     public data object Healed : SelfHealResult()
 
     /**
-     * The live database was missing and a heal was needed, but a sidecar move failed, so the main
-     * backup file was left at [backupPath] rather than presented without its WAL.
+     * The live database was missing and a heal was needed, but moving a `-wal`/`-shm` sidecar or
+     * the main file back failed, so the main backup file is still at [backupPath] (a failed sidecar
+     * move leaves it there deliberately, rather than presenting it without its WAL).
      */
     public data class Failed(
         val backupPath: String,
@@ -196,7 +198,7 @@ internal fun logRestoreRecovery(
             // rule allows the restore backup path), and it is what recovery by hand needs.
             logger.error(RECOVERY_TAG) {
                 "the live database was missing at startup and the pre-restore backup could not be moved " +
-                    "back (a WAL/SHM move failed); it remains at ${heal.backupPath}"
+                    "back (moving it or its WAL/SHM failed); it remains at ${heal.backupPath}"
             }
     }
     when (marker) {

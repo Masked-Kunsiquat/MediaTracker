@@ -9,13 +9,15 @@
 
 **Architecture:**
 - `logRestoreRecovery(healed, marker, logger)` is pure and lives in `DatabaseRestoreRecovery.kt`. `createAppContainer` calls it.
-- `selfHealDatabaseIfNeeded` returns `Boolean`.
+- `selfHealDatabaseIfNeeded` returns `SelfHealResult` (`NotNeeded` / `Healed` / `Failed(backupPath)`). See the amendment below: the steps that follow were written for an earlier `Boolean`.
 - `countStagedDatabaseRows(path, logger)` opens the candidate read-only, beside the validation code.
 - `stage()` logs one INFO line on success.
 
 **Tech Stack:** Kotlin Multiplatform, `androidx.sqlite` `BundledSQLiteDriver`, Room KMP (jvmTest), kotlin.test, `RecordingLogger`.
 
 **Spec:** `docs/superpowers/specs/2026-10-15-restore-logging-design.md`
+
+> **Amendment (after review).** Task 1 below was executed as written, with `selfHealDatabaseIfNeeded` returning `Boolean` and `logRestoreRecovery(healed: Boolean, …)`. The whole-branch review then found that `false` merged "nothing to heal" with "tried and failed", leaving a failed heal unlogged. Commit `e24fb59` replaced it with `SelfHealResult` (`NotNeeded` / `Healed` / `Failed(backupPath)`) and `logRestoreRecovery(heal: SelfHealResult, …)`, which logs `Failed` at ERROR. The tests assert those variants. The Boolean code blocks below are the historical steps, not the current contract; the spec's "Self-heal says what it did" section is current.
 
 ## Global Constraints
 

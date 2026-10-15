@@ -72,12 +72,18 @@ Tag `RestoreRecovery`:
 `AppLogger` already includes the file sink at this point: `MediaTrackerApplication.onCreate`
 configures it before `appContainer` is first touched.
 
-### 3. Self-heal says whether it healed
+### 3. Self-heal says what it did
 
-`selfHealDatabaseIfNeeded(path)` returns `Boolean`: `true` only when it moved the backup's main file
-back into place. Every path that changes nothing returns `false`: the live file is present, there
-is no backup, or a sidecar move failed so the main file was left for the next launch. Its existing
-tests keep passing, and gain assertions on the return value.
+`selfHealDatabaseIfNeeded(path)` returns a `SelfHealResult`:
+- **`NotNeeded`**: the live file is present, or there is no backup.
+- **`Healed`**: the backup's main file was moved back into place. This logs a WARN.
+- **`Failed(backupPath)`**: a heal was needed, but moving a sidecar or the main file back failed.
+  This logs an **ERROR** naming `backupPath`. It is not retried in practice: startup goes on to open
+  Room, which creates an empty database at the live path, so the backup's location is what recovery
+  by hand needs.
+
+(The first draft returned a `Boolean`, which merged "nothing to heal" with "tried and failed" and
+left the failure silent. The #115 review caught it.) The existing self-heal tests assert the result.
 
 ### Unchanged
 
