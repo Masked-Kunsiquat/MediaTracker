@@ -80,7 +80,8 @@ single list below and reordering is a one-line edit there.
    CSV files and four pickers) and
    [#173](https://github.com/Masked-Kunsiquat/MediaTracker/issues/173) (an edit screen for TV
    shows). [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81) is complete: its last
-   item put every catch around suspending code in `shared/` behind one cancellation-safe helper.
+   item put the catches around suspending code in `shared/` behind one cancellation-safe helper,
+   leaving five hand-written where the cancellation branch has work to do.
    **Next:** its two follow-ups — the restore swap's missing rollback on an exception mid-swap, and
    splitting `TVShowDetailScreen.kt` and `BookSessionDialogs.kt`, which outgrew #81's size bar after
    it was written. #122 is unblocked by #88 and small now.

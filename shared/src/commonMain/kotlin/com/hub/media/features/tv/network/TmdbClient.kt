@@ -123,7 +123,7 @@ public class TmdbClient(
     private suspend fun requestStatusOnly(path: String): Resource<Unit> {
         return catchingNonCancellation(
             block = {
-                // Inside the try: reading the credential is a database read, so it can fail like any
+                // Inside the guarded block: reading the credential is a database read, so it can fail like any
                 // other, and every other failure in this class comes back as a Resource. A read that
                 // threw past this point would make the contract "returns a Resource, except sometimes"
                 // -- which only holds while every caller happens to wrap it.
@@ -173,7 +173,7 @@ public class TmdbClient(
     ): Resource<T> {
         return catchingNonCancellation(
             block = {
-                // Read inside the try for the reason [requestStatusOnly] gives. Absence itself is not
+                // Read inside the guarded block for the reason [requestStatusOnly] gives. Absence itself is not
                 // logged as a warning: having no credential is an ordinary state for this app, not a
                 // fault, and the screen that asked is responsible for saying so.
                 val credential =

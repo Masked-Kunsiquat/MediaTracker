@@ -11,7 +11,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * suspending code also catches coroutine cancellation. Swallowing it breaks structured concurrency:
  * a coroutine whose screen was closed carries on as though nothing happened, and the cancellation is
  * reported -- and logged -- as a failure. Every catch around suspending code in `shared/` used to
- * spell this out by hand (72 sites when #81 item 6 replaced them); this function is that clause,
+ * spell this out by hand (72 copies; #81 item 6 replaced 67 of them); this function is that clause,
  * written once.
  *
  * ### What it does not change

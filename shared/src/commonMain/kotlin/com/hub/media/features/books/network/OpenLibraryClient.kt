@@ -82,7 +82,7 @@ public class OpenLibraryClient(
                     )
                 }
 
-                // Cancellation is rethrown here as in the outer catch below -- a cancelled
+                // Cancellation is rethrown here as in the outer handler below -- a cancelled
                 // deserialization is not a malformed-JSON failure.
                 val dto =
                     catchingNonCancellation(
