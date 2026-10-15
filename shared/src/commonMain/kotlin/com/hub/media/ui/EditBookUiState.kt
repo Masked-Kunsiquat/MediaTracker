@@ -52,6 +52,8 @@ public sealed class EditBookUiState {
         val trackingMode: TrackingMode = TrackingMode.PAGES,
         val errorMessage: String? = null,
         val isSaving: Boolean = false,
+        /** The cover shown in the edit screen's header (#174); `null` when the book has none. */
+        val coverImageHash: String? = null,
     ) : EditBookUiState()
 
     /**

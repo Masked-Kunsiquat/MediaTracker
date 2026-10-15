@@ -38,6 +38,15 @@ public sealed class EditTVShowUiState {
         val releaseYear: String,
         val totalSeasons: String,
         val purchasePrice: String,
+        /**
+         * The header's title (#174): the title as loaded, so the header keeps saying which item is
+         * being edited while [title] changes underneath it. No field edit writes it.
+         */
+        val savedTitle: String = title,
+        /** The release year as loaded, for the header's kind line. */
+        val savedYear: Int? = null,
+        /** The cover shown in the header; `null` when the item has none. */
+        val coverImageHash: String? = null,
         val isSaving: Boolean = false,
         val saveError: String? = null,
         val saved: Boolean = false,
@@ -107,6 +116,9 @@ public class EditTVShowViewModel(
                             show.item.purchasePrice
                                 ?.toString()
                                 .orEmpty(),
+                        savedTitle = show.item.title,
+                        savedYear = show.item.releaseYear,
+                        coverImageHash = show.item.coverImageHash,
                     )
                 }
         }

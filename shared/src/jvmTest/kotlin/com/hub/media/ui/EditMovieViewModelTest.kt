@@ -248,4 +248,21 @@ class EditMovieViewModelTest {
             val form = viewModel.uiState.first { it is EditMovieUiState.Editing } as EditMovieUiState.Editing
             assertEquals("Interstellar", form.title, "Retry loads the form once the read works")
         }
+
+    @Test
+    fun editing_snapshotsTheSavedTitleYearAndCover_andTypingLeavesThemAlone() =
+        runTest {
+            val movieId = insertMovie(title = "Interstellar", releaseYear = 2014)
+            db.mediaItemDao().updateCoverImageHash(movieId, "poster1")
+            val viewModel = editingViewModel(movieId)
+
+            viewModel.onTitleChange("Interstellarr")
+
+            val editing =
+                viewModel.uiState.first { (it as? EditMovieUiState.Editing)?.title == "Interstellarr" }
+                    as EditMovieUiState.Editing
+            assertEquals("Interstellar", editing.savedTitle)
+            assertEquals(2014, editing.savedYear)
+            assertEquals("poster1", editing.coverImageHash)
+        }
 }

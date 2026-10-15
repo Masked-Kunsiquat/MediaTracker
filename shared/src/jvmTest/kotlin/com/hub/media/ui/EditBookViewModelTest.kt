@@ -64,6 +64,7 @@ class EditBookViewModelTest {
         format: BookFormat = BookFormat.PHYSICAL,
         status: ReadingStatus = ReadingStatus.TO_READ,
         trackingMode: TrackingMode = TrackingMode.PAGES,
+        coverImageHash: String? = null,
     ) {
         db.mediaItemDao().insert(
             sampleMediaItem(
@@ -72,6 +73,7 @@ class EditBookViewModelTest {
                 title = title,
                 releaseYear = releaseYear,
                 purchasePrice = purchasePrice,
+                coverImageHash = coverImageHash,
             ),
         )
         db.bookDetailsDao().insert(
@@ -407,5 +409,15 @@ class EditBookViewModelTest {
 
             val ready = viewModel.uiState.first { it is EditBookUiState.Ready } as EditBookUiState.Ready
             assertEquals("Project Hail Mary", ready.title, "Retry loads the form once the read works")
+        }
+
+    @Test
+    fun uiState_ready_carriesTheCoverHashForTheHeader() =
+        runTest {
+            insertBook(coverImageHash = "abc123")
+
+            val ready = newViewModel().uiState.first { it is EditBookUiState.Ready } as EditBookUiState.Ready
+
+            assertEquals("abc123", ready.coverImageHash)
         }
 }

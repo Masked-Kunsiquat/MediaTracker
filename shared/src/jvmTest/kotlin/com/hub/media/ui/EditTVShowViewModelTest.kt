@@ -263,4 +263,19 @@ class EditTVShowViewModelTest {
 
             assertEquals("Chernobyl", vm.awaitForm { true }.title, "Retry loads the form once the read works")
         }
+
+    @Test
+    fun editing_snapshotsTheSavedTitleYearAndCover_andTypingLeavesThemAlone() =
+        runTest {
+            val id = insertShow(title = "Chernobyl", releaseYear = 2019)
+            db.mediaItemDao().updateCoverImageHash(id, "poster1")
+            val vm = editing(id)
+
+            vm.onTitleChange("Chernobil")
+
+            val form = vm.awaitForm { it.title == "Chernobil" }
+            assertEquals("Chernobyl", form.savedTitle)
+            assertEquals(2019, form.savedYear)
+            assertEquals("poster1", form.coverImageHash)
+        }
 }

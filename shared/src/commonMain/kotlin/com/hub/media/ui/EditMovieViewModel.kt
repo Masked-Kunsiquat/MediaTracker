@@ -48,6 +48,15 @@ public sealed class EditMovieUiState {
         val runtimeMinutes: String,
         val purchasePrice: String,
         val status: WatchStatus,
+        /**
+         * The header's title (#174): the title as loaded, so the header keeps saying which item is
+         * being edited while [title] changes underneath it. No field edit writes it.
+         */
+        val savedTitle: String = title,
+        /** The release year as loaded, for the header's kind line. */
+        val savedYear: Int? = null,
+        /** The cover shown in the header; `null` when the item has none. */
+        val coverImageHash: String? = null,
         val initialStatus: WatchStatus = status,
         val pendingWatched: Boolean = false,
         val watchedWhen: WatchedWhen? = null,
@@ -127,6 +136,9 @@ public class EditMovieViewModel(
                                 ?.toString()
                                 .orEmpty(),
                         status = movie.details?.status ?: WatchStatus.WATCHLIST,
+                        savedTitle = movie.item.title,
+                        savedYear = movie.item.releaseYear,
+                        coverImageHash = movie.item.coverImageHash,
                     )
                 }
         }
