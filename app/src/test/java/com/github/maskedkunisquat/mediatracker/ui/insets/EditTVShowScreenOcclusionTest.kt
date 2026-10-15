@@ -14,8 +14,9 @@ import org.robolectric.annotation.Config
 /**
  * Occlusion guard for the Edit Show form (#173), shaped like [EditMovieScreenOcclusionTest] and
  * for the same reasons: [EditTVShowUiState.Editing] with every field filled (Loading renders no
- * fields and would pass regardless), measured at the end of the one scroll container, and no
- * navigation-bar test because this short form never reaches the bar.
+ * fields and would pass regardless), measured at the end of the one scroll container. Since #174
+ * Save and Cancel are pinned to the bottom edge, so there is a navigation-bar test too; it was
+ * falsified by zeroing the bar's padding.
  *
  * Rendered on a **landscape** phone (891x411dp), not this lane's default portrait one. In portrait
  * the four fields and Save end at about 477dp -- above a 300dp keyboard on an 891dp screen even at
@@ -32,6 +33,11 @@ class EditTVShowScreenOcclusionTest {
     @Test
     fun withTheKeyboardUp_theFormStaysReachable() {
         composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
+    }
+
+    @Test
+    fun withTheNavigationBarShowing_theSaveCancelBarStaysAboveIt() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
     }
 
     @Composable

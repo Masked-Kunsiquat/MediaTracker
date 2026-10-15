@@ -17,6 +17,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.ui.EditTVShowUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -174,5 +175,16 @@ class EditTVShowScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.edit_section_purchase)).assertExists()
         // The detail screen owns abandoning a show, so this form has no status to group.
         composeRule.onNodeWithText(context.getString(R.string.edit_section_status)).assertDoesNotExist()
+    }
+
+    @Test
+    fun saveError_theSnackbarSitsAboveTheSaveCancelBar_soSaveStaysTappable() {
+        setContent(editing(saveError = "Could not save"))
+
+        // The bar is pinned in the content since #174, so a Scaffold-placed snackbar lands on top of
+        // it -- and a Surface swallows taps, leaving Save unpressable until the snackbar times out.
+        val message = composeRule.onNodeWithText("Could not save").fetchSemanticsNode().boundsInRoot
+        val save = composeRule.onNodeWithTag(TestTags.EditTVShow.SAVE_BUTTON).fetchSemanticsNode().boundsInRoot
+        assertTrue("snackbar $message overlaps Save $save", message.bottom <= save.top)
     }
 }

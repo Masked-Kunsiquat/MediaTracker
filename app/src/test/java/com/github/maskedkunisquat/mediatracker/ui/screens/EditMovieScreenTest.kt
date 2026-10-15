@@ -22,6 +22,7 @@ import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.EditMovieUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -258,5 +259,16 @@ class EditMovieScreenTest {
         composeRule.onNodeWithTag(TestTags.EditMovie.CANCEL_BUTTON).performClick()
 
         assertEquals(1, backs)
+    }
+
+    @Test
+    fun saveError_theSnackbarSitsAboveTheSaveCancelBar_soSaveStaysTappable() {
+        setContent(editing(saveError = "Could not save"))
+
+        // The bar is pinned in the content since #174, so a Scaffold-placed snackbar lands on top of
+        // it -- and a Surface swallows taps, leaving Save unpressable until the snackbar times out.
+        val message = composeRule.onNodeWithText("Could not save").fetchSemanticsNode().boundsInRoot
+        val save = composeRule.onNodeWithTag(TestTags.EditMovie.SAVE_BUTTON).fetchSemanticsNode().boundsInRoot
+        assertTrue("snackbar $message overlaps Save $save", message.bottom <= save.top)
     }
 }

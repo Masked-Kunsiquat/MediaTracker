@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,7 +58,10 @@ class EditFormTest {
             }
         }
 
-        assertEquals(2, composeRule.onNode(isHeading()).textLayout().lineCount)
+        val layout = composeRule.onNode(isHeading()).textLayout()
+        assertEquals(2, layout.lineCount)
+        // Ellipsized, not clipped: the second line ends in "…" so the title reads as cut short.
+        assertTrue(layout.isLineEllipsized(1))
     }
 
     @Test

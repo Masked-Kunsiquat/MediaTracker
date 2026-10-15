@@ -123,13 +123,14 @@ fun FormSection(
 
 /**
  * Persistent, non-scrolling Save/Cancel action bar (ROADMAP Task 7 Phase D; shared by every edit
- * screen since #174), pinned to the bottom of the form on an elevated [Surface] (Material 3's default `BottomAppBar` tonal elevation,
- * 3dp) so the pair reads as one committed action group that's always reachable, rather than two
- * inline buttons at the end of a long scroll. [canSave] mirrors the old inline Save button's
- * `enabled` condition exactly (parse-once validation must pass, and no save already in flight);
- * [isSaving] additionally swaps the Save button's label for a small inline
- * [CircularProgressIndicator] so the in-flight state is visible on the action itself, not only via
- * the fields being disabled. [cancelTag] and [saveTag] are the screen's own `TestTags` constants.
+ * screen since #174), pinned to the bottom of the form on an elevated [Surface] (Material 3's
+ * default `BottomAppBar` tonal elevation, 3dp) so the pair reads as one committed action group
+ * that's always reachable, rather than two inline buttons at the end of a long scroll. [canSave] is
+ * the form's validation alone -- every field must parse -- and the bar adds "no save already in
+ * flight" itself, disabling both buttons while [isSaving]. [isSaving] also swaps the Save button's
+ * label for a small inline [CircularProgressIndicator] so the in-flight state is visible on the
+ * action itself, not only via the fields being disabled. [cancelTag] and [saveTag] are the screen's
+ * own `TestTags` constants.
  */
 @Composable
 fun EditBottomBar(

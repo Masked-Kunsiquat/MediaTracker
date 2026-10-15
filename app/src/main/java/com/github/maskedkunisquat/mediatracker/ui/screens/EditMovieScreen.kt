@@ -141,7 +141,6 @@ fun EditMovieScreen(
         // without safeDrawing the keyboard would sit over these fields instead of the layout
         // resizing.
         contentWindowInsets = WindowInsets.safeDrawing,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.edit_movie_title)) },
@@ -168,7 +167,7 @@ fun EditMovieScreen(
         ) {
             if (form == null) {
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(innerPadding).testTag(TestTags.EditMovie.FORM),
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (uiState is EditMovieUiState.LoadFailed) {
@@ -188,107 +187,113 @@ fun EditMovieScreen(
             val runtimeIsValid = parseOptionalNumber(form.runtimeMinutes, String::toIntOrNull) != null
             val purchasePriceIsValid = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull) != null
 
-            Column(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = innerPadding.calculateTopPadding())
-                        .padding(barPadding(WindowInsetsSides.Horizontal))
-                        .padding(16.dp)
-                        .testTag(TestTags.EditMovie.FORM),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                // The title as loaded, not form.title: the header names the item while it is retyped.
-                EditHeader(
-                    kind = stringResource(R.string.movie_detail_kind),
-                    year = form.savedYear,
-                    title = form.savedTitle,
-                    artwork = form.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.MOVIE) },
-                )
-                FormSection(title = stringResource(R.string.edit_section_details)) {
-                    OutlinedTextField(
-                        value = form.title,
-                        onValueChange = onTitleChange,
-                        label = { Text(stringResource(R.string.add_movie_field_title)) },
-                        singleLine = true,
-                        isError = form.title.isBlank(),
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
+            // The snackbar lives here rather than in Scaffold's slot: Scaffold lifts a snackbar only
+            // above its own bottomBar, and this bar is content, so a Scaffold-placed snackbar would sit
+            // on Save and swallow taps on it until it timed out (#174 review).
+            Box(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(top = innerPadding.calculateTopPadding())
+                            .padding(barPadding(WindowInsetsSides.Horizontal))
+                            .padding(16.dp)
+                            .testTag(TestTags.EditMovie.FORM),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    // The title as loaded, not form.title: the header names the item while it is retyped.
+                    EditHeader(
+                        kind = stringResource(R.string.movie_detail_kind),
+                        year = form.savedYear,
+                        title = form.savedTitle,
+                        artwork = form.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.MOVIE) },
                     )
-                    OutlinedTextField(
-                        value = form.releaseYear,
-                        onValueChange = { onReleaseYearChange(it.filterIntegerInput()) },
-                        label = { Text(stringResource(R.string.add_movie_field_year)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = !releaseYearIsValid,
-                        supportingText =
-                            if (!releaseYearIsValid) {
-                                {
-                                    Text(
-                                        stringResource(
-                                            R.string.edit_release_year_invalid_error,
-                                            MovieMetadataValidation.MIN_RELEASE_YEAR,
-                                            MovieMetadataValidation.MAX_RELEASE_YEAR,
-                                        ),
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = form.runtimeMinutes,
-                        onValueChange = { onRuntimeChange(it.filterIntegerInput()) },
-                        label = { Text(stringResource(R.string.add_movie_field_runtime)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = !runtimeIsValid,
-                        supportingText =
-                            if (!runtimeIsValid) {
-                                { Text(stringResource(R.string.add_movie_runtime_invalid_error)) }
-                            } else {
-                                null
-                            },
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    FormSection(title = stringResource(R.string.edit_section_details)) {
+                        OutlinedTextField(
+                            value = form.title,
+                            onValueChange = onTitleChange,
+                            label = { Text(stringResource(R.string.add_movie_field_title)) },
+                            singleLine = true,
+                            isError = form.title.isBlank(),
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = form.releaseYear,
+                            onValueChange = { onReleaseYearChange(it.filterIntegerInput()) },
+                            label = { Text(stringResource(R.string.add_movie_field_year)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            isError = !releaseYearIsValid,
+                            supportingText =
+                                if (!releaseYearIsValid) {
+                                    {
+                                        Text(
+                                            stringResource(
+                                                R.string.edit_release_year_invalid_error,
+                                                MovieMetadataValidation.MIN_RELEASE_YEAR,
+                                                MovieMetadataValidation.MAX_RELEASE_YEAR,
+                                            ),
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = form.runtimeMinutes,
+                            onValueChange = { onRuntimeChange(it.filterIntegerInput()) },
+                            label = { Text(stringResource(R.string.add_movie_field_runtime)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            isError = !runtimeIsValid,
+                            supportingText =
+                                if (!runtimeIsValid) {
+                                    { Text(stringResource(R.string.add_movie_runtime_invalid_error)) }
+                                } else {
+                                    null
+                                },
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    FormSection(title = stringResource(R.string.edit_section_status)) {
+                        // The detail screens' chip (#174). Choosing Watched still goes through
+                        // onStatusChange, so it still asks when (FilmWatchedDialog) before the form changes.
+                        StatusDropdownChip(
+                            value = form.status,
+                            options = WatchStatus.entries.toList(),
+                            label = { it.displayLabel() },
+                            onSelect = onStatusChange,
+                            onClickLabel = stringResource(R.string.detail_status_change_action_label),
+                            enabled = !form.isSaving,
+                        )
+                    }
+                    FormSection(title = stringResource(R.string.edit_section_purchase)) {
+                        OutlinedTextField(
+                            value = form.purchasePrice.toDisplayDecimal(),
+                            // Filtered the same way EditBookScreen filters its price field: an unfiltered box
+                            // accepts "12,50" or "1.2.3", neither of which toDoubleOrNull can read.
+                            onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
+                            label = { Text(stringResource(R.string.add_movie_field_price)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            isError = !purchasePriceIsValid,
+                            supportingText =
+                                if (!purchasePriceIsValid) {
+                                    { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
+                                } else {
+                                    null
+                                },
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                FormSection(title = stringResource(R.string.edit_section_status)) {
-                    // The detail screens' chip (#174). Choosing Watched still goes through
-                    // onStatusChange, so it still asks when (FilmWatchedDialog) before the form changes.
-                    StatusDropdownChip(
-                        value = form.status,
-                        options = WatchStatus.entries.toList(),
-                        label = { it.displayLabel() },
-                        onSelect = onStatusChange,
-                        onClickLabel = stringResource(R.string.detail_status_change_action_label),
-                        enabled = !form.isSaving,
-                    )
-                }
-                FormSection(title = stringResource(R.string.edit_section_purchase)) {
-                    OutlinedTextField(
-                        value = form.purchasePrice.toDisplayDecimal(),
-                        // Filtered the same way EditBookScreen filters its price field: an unfiltered box
-                        // accepts "12,50" or "1.2.3", neither of which toDoubleOrNull can read.
-                        onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
-                        label = { Text(stringResource(R.string.add_movie_field_price)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        isError = !purchasePriceIsValid,
-                        supportingText =
-                            if (!purchasePriceIsValid) {
-                                { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
-                            } else {
-                                null
-                            },
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
             }
 
             EditBottomBar(

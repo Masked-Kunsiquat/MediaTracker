@@ -95,8 +95,8 @@ fun EditTVShowScreenRoute(
  * Stateless edit-show form (#173): title, release year, total seasons, purchase price.
  *
  * No status control -- abandoning is the detail screen's toggle -- and no per-season episode
- * counts, which stay in the season dialog. Shaped like [EditMovieScreen] so #174's restyle finds
- * the same structure on every edit screen.
+ * counts, which stay in the season dialog. Since #174 it shares Edit Book's shape: a header,
+ * Details and Purchase cards, and the pinned Cancel/Save bar.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,7 +127,6 @@ fun EditTVShowScreen(
         // Scaffold's default insets don't cover the IME; without safeDrawing the keyboard would sit
         // over these fields instead of the layout resizing (same as EditMovieScreen).
         contentWindowInsets = WindowInsets.safeDrawing,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.edit_tv_show_title)) },
@@ -154,7 +153,7 @@ fun EditTVShowScreen(
         ) {
             if (form == null) {
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(innerPadding).testTag(TestTags.EditTVShow.FORM),
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (uiState is EditTVShowUiState.LoadFailed) {
@@ -170,95 +169,101 @@ fun EditTVShowScreen(
             val totalSeasonsIsValid = parseOptionalNumber(form.totalSeasons, String::toIntOrNull) != null
             val purchasePriceIsValid = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull) != null
 
-            Column(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = innerPadding.calculateTopPadding())
-                        .padding(barPadding(WindowInsetsSides.Horizontal))
-                        .padding(16.dp)
-                        .testTag(TestTags.EditTVShow.FORM),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                // The title as loaded, not form.title: the header names the item while it is retyped.
-                EditHeader(
-                    kind = stringResource(R.string.tv_show_detail_kind),
-                    year = form.savedYear,
-                    title = form.savedTitle,
-                    artwork = form.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.TV_SHOW) },
-                )
-                FormSection(title = stringResource(R.string.edit_section_details)) {
-                    OutlinedTextField(
-                        value = form.title,
-                        onValueChange = onTitleChange,
-                        label = { Text(stringResource(R.string.add_tv_show_field_title)) },
-                        singleLine = true,
-                        isError = form.title.isBlank(),
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
+            // The snackbar lives here rather than in Scaffold's slot: Scaffold lifts a snackbar only
+            // above its own bottomBar, and this bar is content, so a Scaffold-placed snackbar would sit
+            // on Save and swallow taps on it until it timed out (#174 review).
+            Box(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(top = innerPadding.calculateTopPadding())
+                            .padding(barPadding(WindowInsetsSides.Horizontal))
+                            .padding(16.dp)
+                            .testTag(TestTags.EditTVShow.FORM),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    // The title as loaded, not form.title: the header names the item while it is retyped.
+                    EditHeader(
+                        kind = stringResource(R.string.tv_show_detail_kind),
+                        year = form.savedYear,
+                        title = form.savedTitle,
+                        artwork = form.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.TV_SHOW) },
                     )
-                    OutlinedTextField(
-                        value = form.releaseYear,
-                        onValueChange = { onReleaseYearChange(it.filterIntegerInput()) },
-                        label = { Text(stringResource(R.string.add_tv_show_field_year)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = !releaseYearIsValid,
-                        supportingText =
-                            if (!releaseYearIsValid) {
-                                {
-                                    Text(
-                                        stringResource(
-                                            R.string.edit_release_year_invalid_error,
-                                            TVMetadataValidation.MIN_RELEASE_YEAR,
-                                            TVMetadataValidation.MAX_RELEASE_YEAR,
-                                        ),
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = form.totalSeasons,
-                        onValueChange = { onTotalSeasonsChange(it.filterIntegerInput()) },
-                        label = { Text(stringResource(R.string.add_tv_show_field_total_seasons)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = !totalSeasonsIsValid,
-                        supportingText =
-                            if (!totalSeasonsIsValid) {
-                                { Text(stringResource(R.string.add_tv_show_total_seasons_invalid_error)) }
-                            } else {
-                                null
-                            },
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    FormSection(title = stringResource(R.string.edit_section_details)) {
+                        OutlinedTextField(
+                            value = form.title,
+                            onValueChange = onTitleChange,
+                            label = { Text(stringResource(R.string.add_tv_show_field_title)) },
+                            singleLine = true,
+                            isError = form.title.isBlank(),
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = form.releaseYear,
+                            onValueChange = { onReleaseYearChange(it.filterIntegerInput()) },
+                            label = { Text(stringResource(R.string.add_tv_show_field_year)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            isError = !releaseYearIsValid,
+                            supportingText =
+                                if (!releaseYearIsValid) {
+                                    {
+                                        Text(
+                                            stringResource(
+                                                R.string.edit_release_year_invalid_error,
+                                                TVMetadataValidation.MIN_RELEASE_YEAR,
+                                                TVMetadataValidation.MAX_RELEASE_YEAR,
+                                            ),
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = form.totalSeasons,
+                            onValueChange = { onTotalSeasonsChange(it.filterIntegerInput()) },
+                            label = { Text(stringResource(R.string.add_tv_show_field_total_seasons)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            isError = !totalSeasonsIsValid,
+                            supportingText =
+                                if (!totalSeasonsIsValid) {
+                                    { Text(stringResource(R.string.add_tv_show_total_seasons_invalid_error)) }
+                                } else {
+                                    null
+                                },
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    FormSection(title = stringResource(R.string.edit_section_purchase)) {
+                        OutlinedTextField(
+                            value = form.purchasePrice.toDisplayDecimal(),
+                            // Filtered as EditMovieScreen does: an unfiltered box accepts "12,50" or "1.2.3",
+                            // neither of which toDoubleOrNull can read.
+                            onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
+                            label = { Text(stringResource(R.string.add_tv_show_field_price)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            isError = !purchasePriceIsValid,
+                            supportingText =
+                                if (!purchasePriceIsValid) {
+                                    { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
+                                } else {
+                                    null
+                                },
+                            enabled = !form.isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                FormSection(title = stringResource(R.string.edit_section_purchase)) {
-                    OutlinedTextField(
-                        value = form.purchasePrice.toDisplayDecimal(),
-                        // Filtered as EditMovieScreen does: an unfiltered box accepts "12,50" or "1.2.3",
-                        // neither of which toDoubleOrNull can read.
-                        onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
-                        label = { Text(stringResource(R.string.add_tv_show_field_price)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        isError = !purchasePriceIsValid,
-                        supportingText =
-                            if (!purchasePriceIsValid) {
-                                { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
-                            } else {
-                                null
-                            },
-                        enabled = !form.isSaving,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
             }
 
             EditBottomBar(
