@@ -12,7 +12,7 @@ import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
-import com.hub.media.core.util.error
+import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.newId
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.tv.domain.WatchedWhen
@@ -20,7 +20,6 @@ import com.hub.media.features.tv.domain.resolveWatchedAt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.datetime.TimeZone
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -130,7 +129,11 @@ public class MovieRepository(
         MovieMetadataValidation.validateRuntimeMinutes(runtimeMinutes)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateCommunityRating(communityRating)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to add movie",
+            logMessage = { "Failed to add a movie" },
+        ) {
             val mediaId = newId()
             val now = clock.now()
             db.movieWriteDao().insertMovieAtomically(
@@ -166,11 +169,6 @@ public class MovieRepository(
                     },
             )
             Resource.Success(mediaId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to add a movie" }
-            Resource.Error("Failed to add movie: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -195,7 +193,11 @@ public class MovieRepository(
         MovieMetadataValidation.validatePurchasePrice(purchasePrice)?.let { return Resource.Error(it) }
         MovieMetadataValidation.validateRuntimeMinutes(runtimeMinutes)?.let { return Resource.Error(it) }
 
-        return try {
+        return logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update movie metadata",
+            logMessage = { "Failed to update metadata for movie: id=$mediaId" },
+        ) {
             val rows =
                 db.movieWriteDao().updateMovieMetadataWithViewing(
                     mediaId = mediaId,
@@ -207,11 +209,6 @@ public class MovieRepository(
                     at = instantFor(watchedWhen),
                 )
             if (rows == 0) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update metadata for movie: id=$mediaId" }
-            Resource.Error("Failed to update movie metadata: ${e.message ?: "Unknown error"}", cause = e)
         }
     }
 
@@ -239,14 +236,13 @@ public class MovieRepository(
         status: WatchStatus,
         watchedWhen: WatchedWhen? = null,
     ): Resource<WatchStatus> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to update movie status",
+            logMessage = { "Failed to update status for movie: id=$mediaId" },
+        ) {
             val previous = db.movieWriteDao().changeStatus(mediaId, status, instantFor(watchedWhen))
             if (previous == null) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(previous)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to update status for movie: id=$mediaId" }
-            Resource.Error("Failed to update movie status: ${e.message ?: "Unknown error"}", cause = e)
         }
 
     // ---- Watch history (#192) -------------------------------------------------------------------
@@ -327,12 +323,11 @@ public class MovieRepository(
         what: String,
         block: () -> Resource<T>,
     ): Resource<T> =
-        try {
+        logger.guardResource(
+            tag = TAG,
+            failure = "Failed to $what",
+            logMessage = { "Failed to $what" },
+        ) {
             block()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error(TAG, e) { "Failed to $what" }
-            Resource.Error("Failed to $what: ${e.message ?: "Unknown error"}", cause = e)
         }
 }
