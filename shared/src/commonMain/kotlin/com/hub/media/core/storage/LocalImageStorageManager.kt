@@ -1,5 +1,7 @@
 package com.hub.media.core.storage
 
+import com.hub.media.core.util.catchingNonCancellation
+
 /**
  * Content-addressable image storage manager.
  *
@@ -11,11 +13,20 @@ package com.hub.media.core.storage
  *
  * @param baseDirectoryPath Absolute or relative path to the storage directory.
  *   Created if it does not exist.
+ * @param writeImage The disk write, [writeImageIfNotExists] outside tests. A seam so a test can make
+ *   the write itself throw: it is the only step inside [saveImage]'s catch, and cancelling the caller
+ *   instead throws from the hash before the catch is ever reached.
  */
-public class LocalImageStorageManager(
+public class LocalImageStorageManager internal constructor(
     internal val baseDirectoryPath: String,
-    private val lockRegistry: FileLockRegistry = FileLockRegistry(),
+    private val lockRegistry: FileLockRegistry,
+    private val writeImage: suspend (basePath: String, filename: String, bytes: ByteArray) -> Boolean,
 ) {
+    public constructor(
+        baseDirectoryPath: String,
+        lockRegistry: FileLockRegistry = FileLockRegistry(),
+    ) : this(baseDirectoryPath, lockRegistry, ::writeImageIfNotExists)
+
     /**
      * Saves an image byte array with content-addressing (SHA-256 hash).
      *
@@ -32,14 +43,15 @@ public class LocalImageStorageManager(
 
         val hash = sha256Hex(bytes)
         return lockRegistry.withLock(hash) {
-            try {
-                val filename = "$hash.jpg"
-                // Returns false when the file already existed — fine for deduplication
-                writeImageIfNotExists(baseDirectoryPath, filename, bytes)
-                Result.success(filename)
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
+            catchingNonCancellation(
+                block = {
+                    val filename = "$hash.jpg"
+                    // Returns false when the file already existed — fine for deduplication
+                    writeImage(baseDirectoryPath, filename, bytes)
+                    Result.success(filename)
+                },
+                onException = { Result.failure(it) },
+            )
         }
     }
 

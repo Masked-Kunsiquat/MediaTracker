@@ -2,11 +2,15 @@ package com.hub.media.core.storage
 
 import kotlinx.coroutines.test.runTest
 import java.io.File
+import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class LocalImageStorageManagerTest {
@@ -114,5 +118,38 @@ class LocalImageStorageManagerTest {
             assertTrue(result.isSuccess)
             val file = File(nonExistentDir, result.getOrNull()!!)
             assertTrue(file.exists(), "File should exist in newly created directory")
+        }
+
+    // The write is the only step inside saveImage's catch -- hashing runs before it -- so these
+    // tests fail the write itself rather than cancelling the caller, which would throw from the hash
+    // first and never reach the catch at all.
+
+    @Test
+    fun cancellationDuringWrite_propagates_insteadOfReturningFailure() =
+        runTest {
+            var writeCalls = 0
+            val cancelledMidWrite =
+                LocalImageStorageManager(tempDir, FileLockRegistry(), writeImage = { _, _, _ ->
+                    writeCalls++
+                    throw CancellationException("screen closed mid-save")
+                })
+            assertFailsWith<CancellationException> { cancelledMidWrite.saveImage("x".encodeToByteArray()) }
+            assertEquals(1, writeCalls, "positive control: the write must actually have been reached")
+        }
+
+    @Test
+    fun ordinaryWriteFailure_isStillReturnedAsFailure() =
+        runTest {
+            val diskFull = IOException("disk full")
+            val failingWrite =
+                LocalImageStorageManager(tempDir, FileLockRegistry(), writeImage = {
+                    _,
+                    _,
+                    _,
+                    ->
+                    throw diskFull
+                })
+            val result = failingWrite.saveImage("x".encodeToByteArray())
+            assertSame(diskFull, result.exceptionOrNull())
         }
 }
