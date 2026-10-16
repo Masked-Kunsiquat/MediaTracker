@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.MediaRepository
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.settings.data.SettingsRepository
@@ -27,11 +28,15 @@ import kotlin.time.Duration.Companion.seconds
  * @param deleteMediaUseCase Bulk delete with reference-aware cover cleanup.
  * @param settingsRepository Source of the include-specials setting (#88), which decides which of a
  *   show's episode counts the library displays and filters by.
+ * @param domain The one media type this library shows (#126): the hub's Books, Films and Shows cards
+ *   each open a library scoped this way. `null` is All media, every type -- the library as it was
+ *   before the hub.
  */
 public class LibraryViewModel(
     private val mediaRepository: MediaRepository,
     private val deleteMediaUseCase: BulkDeleteUseCase,
     private val settingsRepository: SettingsRepository,
+    private val domain: MediaType? = null,
 ) : ViewModel() {
     private val statusFilter = MutableStateFlow<LibraryStatusFilter?>(null)
     private val searchQuery = MutableStateFlow("")
@@ -55,7 +60,11 @@ public class LibraryViewModel(
             mediaRepository.observeTVProgressByMediaId(),
             settingsRepository.observeIncludeSpecials(),
         ) { media, progress, includeSpecials ->
-            media to progress.mapValues { (_, counts) -> counts.counted(includeSpecials) }
+            // The domain narrows `media` itself, before anything else reads it (#126): search, the
+            // status filter, `isEmpty` and the selection intersect all inherit the scope, so an empty
+            // Films library shows its empty state, and a selection can never hold a row the user cannot see.
+            val scoped = if (domain == null) media else media.filter { it.item.type == domain }
+            scoped to progress.mapValues { (_, counts) -> counts.counted(includeSpecials) }
         }
 
     public val uiState: StateFlow<LibraryUiState> =

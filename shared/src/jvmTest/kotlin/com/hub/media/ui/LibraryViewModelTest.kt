@@ -599,4 +599,72 @@ class LibraryViewModelTest {
             val notStarted = viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.NOT_STARTED }
             assertEquals(listOf("Not Filled In Yet"), notStarted.filteredMedia.map { it.item.title })
         }
+
+    // --- Domain scope (#126) ---------------------------------------------------------------------
+
+    /** A second, scoped view model over the same database as [viewModel]. */
+    private fun scoped(domain: MediaType): LibraryViewModel =
+        viewModels.track(
+            LibraryViewModel(
+                mediaRepository = mediaRepository,
+                deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
+                settingsRepository = settingsRepository,
+                domain = domain,
+            ),
+        )
+
+    @Test
+    fun aDomain_showsOnlyItsOwnType() =
+        runTest {
+            insertBook("Dune")
+            insertMovie("Solaris", WatchStatus.WATCHLIST)
+
+            val films = scoped(MediaType.MOVIE).uiState.first { it.media.isNotEmpty() }
+
+            assertEquals(listOf("Solaris"), films.media.map { it.item.title })
+        }
+
+    @Test
+    fun anEmptyDomain_isEmpty_whileOtherKindsExist() =
+        runTest {
+            insertBook("Dune")
+            // Positive control: the book is in the database, and the unscoped library sees it.
+            viewModel.uiState.first { it.media.isNotEmpty() }
+            val films = scoped(MediaType.MOVIE)
+            // An empty loaded state equals the initial one, so wait on something only a loaded state
+            // can carry: the search query arrives through the same combine as the media.
+            films.setSearchQuery("anything")
+
+            val state = films.uiState.first { it.searchQuery == "anything" }
+
+            assertTrue(state.media.isEmpty())
+            assertTrue(state.isEmpty)
+        }
+
+    @Test
+    fun searchWithinADomain_matchesOnlyThatDomain() =
+        runTest {
+            insertBook("Solaris")
+            insertMovie("Solaris", WatchStatus.WATCHLIST)
+            val books = scoped(MediaType.BOOK)
+            books.setSearchQuery("Solaris")
+
+            val state = books.uiState.first { it.searchQuery == "Solaris" && it.media.isNotEmpty() }
+
+            assertEquals(listOf(MediaType.BOOK), state.filteredMedia.map { it.item.type })
+        }
+
+    @Test
+    fun aSelectionInADomain_neverHoldsAnotherDomainsRow() =
+        runTest {
+            val book = insertBook("Dune")
+            val film = insertMovie("Solaris", WatchStatus.WATCHLIST)
+            val books = scoped(MediaType.BOOK)
+            books.uiState.first { it.media.isNotEmpty() }
+
+            books.toggleSelection(book)
+            books.toggleSelection(film)
+
+            assertEquals(setOf(book), books.uiState.first { it.selectedIds.isNotEmpty() }.selectedIds)
+        }
 }
