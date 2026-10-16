@@ -62,6 +62,8 @@ class StatsScreenGoldenTest {
                     currentStreakDays = 12,
                 ),
             onSelectPeriod = {},
+            onSetGoal = {},
+            onClearGoal = {},
             onNavigateBack = {},
         )
     }

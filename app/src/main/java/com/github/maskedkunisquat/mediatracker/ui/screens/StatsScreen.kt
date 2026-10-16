@@ -24,13 +24,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,9 +48,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.MonthBarChart
+import com.github.maskedkunisquat.mediatracker.ui.components.ReadingGoalDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.features.stats.data.GoalProgress
+import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.StatsUiState
@@ -73,6 +81,8 @@ fun StatsScreenRoute(
     StatsScreen(
         uiState = uiState,
         onSelectPeriod = viewModel::selectPeriod,
+        onSetGoal = viewModel::setGoal,
+        onClearGoal = viewModel::clearGoal,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -82,7 +92,8 @@ fun StatsScreenRoute(
  *
  * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator]; otherwise the period
  * picker ([StatsPeriodRow]), one [PeriodCard] for the chosen [StatsUiState.period], and the current
- * reading streak ([StreakCard]) (#91).
+ * reading streak ([StreakCard]) (#91). Since #219 the Year view adds a [MonthChartCard], and every
+ * period shows this year's reading goal ([GoalCard]), which opens [ReadingGoalDialog] when tapped.
  *
  * A `null` [StatsUiState.Period.timeReadSeconds]/[StatsUiState.Period.pagesRead] means no session
  * in the period has a known value at all (schema v2 — see that class's KDoc) and is rendered as
@@ -94,14 +105,35 @@ fun StatsScreenRoute(
  * @param onNavigateBack Called when the back icon is pressed.
  *
  * @param onSelectPeriod Called with the chip the user picked; the view model remembers it.
+ * @param onSetGoal Called with the books the user saved in [ReadingGoalDialog] (#219).
+ * @param onClearGoal Called when the user removes the goal in [ReadingGoalDialog].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
     uiState: StatsUiState,
     onSelectPeriod: (StatsPeriod) -> Unit,
+    onSetGoal: (Int) -> Unit,
+    onClearGoal: () -> Unit,
     onNavigateBack: () -> Unit,
 ) {
+    // Whether the goal dialog is open is the screen's own concern; the goal itself is the view model's.
+    var showGoalDialog by rememberSaveable { mutableStateOf(false) }
+    if (showGoalDialog && !uiState.isLoading) {
+        ReadingGoalDialog(
+            year = uiState.goalYear,
+            currentGoal = uiState.goal?.goal,
+            onSave = {
+                onSetGoal(it)
+                showGoalDialog = false
+            },
+            onRemove = {
+                onClearGoal()
+                showGoalDialog = false
+            },
+            onDismiss = { showGoalDialog = false },
+        )
+    }
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -146,6 +178,14 @@ fun StatsScreen(
                     }
                     item {
                         PeriodCard(title = stringResource(uiState.period.cardTitle()), period = uiState.stats)
+                    }
+                    uiState.finishesByMonth?.let { months ->
+                        item {
+                            MonthChartCard(months)
+                        }
+                    }
+                    item {
+                        GoalCard(goal = uiState.goal, goalYear = uiState.goalYear, onClick = { showGoalDialog = true })
                     }
                     item {
                         StreakCard(streakDays = uiState.currentStreakDays)
@@ -198,6 +238,106 @@ private fun PeriodCard(
                 text = stringResource(R.string.stats_books_finished_label, period.booksFinished),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Text(
+                text =
+                    stringResource(
+                        R.string.stats_speed_label,
+                        period.pagesPerHour?.let { stringResource(R.string.stats_pages_per_hour, it) }
+                            ?: stringResource(R.string.stats_unknown_value),
+                    ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text =
+                    stringResource(
+                        R.string.stats_average_session_label,
+                        formatTimeReadOrUnknown(period.averageSessionSeconds),
+                    ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text =
+                    stringResource(
+                        R.string.stats_longest_session_label,
+                        formatTimeReadOrUnknown(period.longestSessionSeconds),
+                    ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+/** The Year view's chart of books finished each month (#219). */
+@Composable
+private fun MonthChartCard(months: List<Int>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = stringResource(R.string.stats_month_chart_title), style = MaterialTheme.typography.titleMedium)
+            MonthBarChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
+        }
+    }
+}
+
+/**
+ * This year's reading goal (#219): an offer to set one, or progress against it and whether it is on
+ * pace. The whole card is the control that opens [ReadingGoalDialog], whichever state it is in.
+ */
+@Composable
+private fun GoalCard(
+    goal: GoalProgress?,
+    goalYear: Int,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.Stats.GOAL_CARD),
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (goal == null) {
+                Text(
+                    text = stringResource(R.string.stats_goal_set_prompt, goalYear),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(text = stringResource(R.string.stats_goal_set_hint), style = MaterialTheme.typography.bodyMedium)
+            } else {
+                Text(
+                    text = stringResource(R.string.stats_goal_title, goalYear),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = pluralStringResource(R.plurals.stats_goal_progress, goal.goal, goal.finished, goal.goal),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                LinearProgressIndicator(
+                    progress = { (goal.finished.toFloat() / goal.goal).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text =
+                        when (val status = goal.status) {
+                            GoalStatus.OnPace -> stringResource(R.string.stats_goal_on_pace)
+                            GoalStatus.Reached -> stringResource(R.string.stats_goal_reached)
+                            is GoalStatus.Behind ->
+                                pluralStringResource(R.plurals.stats_goal_behind, status.books, status.books)
+                        },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
@@ -318,6 +458,8 @@ private fun StatsScreenLoadingPreview() {
         StatsScreen(
             uiState = StatsUiState(isLoading = true),
             onSelectPeriod = {},
+            onSetGoal = {},
+            onClearGoal = {},
             onNavigateBack = {},
         )
     }
@@ -337,6 +479,8 @@ private fun StatsScreenPopulatedPreview() {
                     currentStreakDays = 5,
                 ),
             onSelectPeriod = {},
+            onSetGoal = {},
+            onClearGoal = {},
             onNavigateBack = {},
         )
     }
@@ -358,6 +502,8 @@ private fun StatsScreenEmptyPreview() {
                     currentStreakDays = 0,
                 ),
             onSelectPeriod = {},
+            onSetGoal = {},
+            onClearGoal = {},
             onNavigateBack = {},
         )
     }

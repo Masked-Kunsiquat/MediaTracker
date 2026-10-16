@@ -237,6 +237,32 @@
     <string name="stats_period_all">All time</string>
     <string name="stats_unknown_value">—</string>
     <string name="stats_no_streak">No current streak</string>
+    <string name="stats_speed_label">Speed: %1$s</string>
+    <string name="stats_pages_per_hour">%1$d pages/hour</string>
+    <string name="stats_average_session_label">Average session: %1$s</string>
+    <string name="stats_longest_session_label">Longest session: %1$s</string>
+    <string name="stats_goal_title">%1$d reading goal</string>
+    <string name="stats_goal_set_prompt">Set a reading goal for %1$d</string>
+    <string name="stats_goal_set_hint">Tap to choose how many books to finish this year</string>
+    <plurals name="stats_goal_progress">
+        <item quantity="one">%1$d of %2$d book</item>
+        <item quantity="other">%1$d of %2$d books</item>
+    </plurals>
+    <string name="stats_goal_on_pace">On pace</string>
+    <plurals name="stats_goal_behind">
+        <item quantity="one">%1$d book behind</item>
+        <item quantity="other">%1$d books behind</item>
+    </plurals>
+    <string name="stats_goal_reached">Goal reached</string>
+    <string name="stats_goal_dialog_title">Reading goal for %1$d</string>
+    <string name="stats_goal_dialog_field">Books to finish</string>
+    <string name="stats_goal_remove">Remove goal</string>
+    <string name="stats_month_chart_title">Books finished by month</string>
+    <string name="stats_month_chart_empty">No books finished yet this year</string>
+    <plurals name="stats_month_chart_entry">
+        <item quantity="one">%1$s: %2$d book</item>
+        <item quantity="other">%1$s: %2$d books</item>
+    </plurals>
     <plurals name="stats_streak_days">
         <item quantity="one">%1$d day streak</item>
         <item quantity="other">%1$d day streak</item>

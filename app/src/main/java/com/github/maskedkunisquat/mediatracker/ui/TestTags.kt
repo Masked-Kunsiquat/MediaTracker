@@ -50,6 +50,8 @@ object TestTags {
     object Stats {
         const val LIST = "stats:list"
         const val PERIODS = "stats:periods"
+        const val GOAL_CARD = "stats:goal"
+        const val MONTH_CHART = "stats:monthChart"
     }
 
     object Library {
