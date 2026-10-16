@@ -3,6 +3,8 @@ package com.github.maskedkunisquat.mediatracker.ui.goldens
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreen
+import com.hub.media.features.stats.data.GoalProgress
+import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.StatsUiState
 import org.junit.Rule
@@ -14,9 +16,9 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * Baseline golden for stats — the screen the occlusion lane cannot say anything about.
  *
- * It has no interactive node inside its scroller at all, only top-bar buttons, so the navigation
- * bar rule was written for it and then deleted as a guaranteed pass (see `Occlusion.kt`'s exemption
- * list). What #99 actually risks here is a last card clipped by the bar, which is visual by
+ * Its only interactive nodes inside the scroller -- the period chips and the reading-goal card --
+ * can never reach the navigation bar, so the navigation bar rule was written for it and then deleted
+ * as a guaranteed pass (see `Occlusion.kt`'s exemption list). What #99 actually risks here is a last card clipped by the bar, which is visual by
  * definition. This golden is the assertion that lane could not make, and the reason #102 exists
  * alongside #96 rather than instead of it.
  *
@@ -44,6 +46,47 @@ class StatsScreenGoldenTest {
         ) { Fixture() }
     }
 
+    /**
+     * The Year view (#219): the month chart, every period-card line known, and a goal on pace. The
+     * chart is drawn on a Canvas, so this is the only lane that sees its bars at all.
+     */
+    @Test
+    fun statsYear() {
+        composeRule.captureGolden(
+            name = "stats-year",
+            alsoAssert = { assertTextIsShown("This year", "Books finished by month", "Speed") },
+        ) { YearFixture() }
+    }
+
+    @Composable
+    private fun YearFixture() {
+        StatsScreen(
+            uiState =
+                StatsUiState(
+                    isLoading = false,
+                    period = StatsPeriod.YEAR,
+                    stats =
+                        StatsUiState.Period(
+                            timeReadSeconds = 82_080,
+                            sessionCount = 61,
+                            pagesRead = 2_140,
+                            booksFinished = 9,
+                            averageSessionSeconds = 1_345,
+                            longestSessionSeconds = 7_260,
+                            pagesPerHour = 94,
+                        ),
+                    currentStreakDays = 4,
+                    goal = GoalProgress(goal = 20, finished = 9, expected = 9, status = GoalStatus.OnPace),
+                    goalYear = 2026,
+                    finishesByMonth = listOf(1, 2, 0, 1, 3, 0, 2, 0, 0, 0, 0, 0),
+                ),
+            onSelectPeriod = {},
+            onSetGoal = {},
+            onClearGoal = {},
+            onNavigateBack = {},
+        )
+    }
+
     @Composable
     private fun Fixture() {
         StatsScreen(
@@ -60,6 +103,8 @@ class StatsScreenGoldenTest {
                             booksFinished = 4,
                         ),
                     currentStreakDays = 12,
+                    // No goal: the card's offer to set one.
+                    goalYear = 2026,
                 ),
             onSelectPeriod = {},
             onSetGoal = {},
