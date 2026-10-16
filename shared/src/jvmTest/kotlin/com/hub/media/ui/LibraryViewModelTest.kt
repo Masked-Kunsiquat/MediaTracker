@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -706,5 +707,28 @@ class LibraryViewModelTest {
 
             // Positive control: the loaded state is the genuinely empty library.
             assertTrue(loaded.isEmpty)
+        }
+
+    @Test
+    fun deleteSelectedInADomain_whenTheScopeCannotBeRead_reportsItAndKeepsTheSelection() =
+        runTest {
+            val book = insertBook("Dune")
+            val books = scoped(MediaType.BOOK)
+            // Keep uiState collected throughout: a fresh subscription after the close below would
+            // re-run the list query against the closed database, which is not what this test is about.
+            backgroundScope.launch { books.uiState.collect {} }
+            books.uiState.first { it.media.isNotEmpty() }
+            books.toggleSelection(book)
+            books.uiState.first { it.selectedIds == setOf(book) }
+            // The domain's rows are read from the database at delete time; make that read fail, for
+            // real (LoadFailureSupport -- closing the database makes the read hang rather than throw).
+            db.breakMediaItems()
+
+            books.deleteSelected()
+
+            // Reported rather than escaping viewModelScope (a crash), and the selection survives so
+            // the delete can be retried.
+            val failed = books.uiState.first { it.deleteError != null }
+            assertEquals(setOf(book), failed.selectedIds)
         }
 }

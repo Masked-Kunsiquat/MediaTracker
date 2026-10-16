@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
+import com.hub.media.core.util.catchingNonCancellation
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.observeIncludeSpecials
@@ -134,7 +135,23 @@ public class LibraryViewModel(
                 if (domain == null) {
                     selected
                 } else {
-                    val inDomain = mediaRepository.observeMediaByType(domain).first().mapTo(mutableSetOf()) { it.id }
+                    val inDomain =
+                        catchingNonCancellation(
+                            block = {
+                                mediaRepository
+                                    .observeMediaByType(
+                                        domain,
+                                    ).first()
+                                    .mapTo(mutableSetOf()) { it.id }
+                            },
+                            onException = { e ->
+                                // Uncaught, this would escape viewModelScope and crash the app. Reported
+                                // like a failed delete, with the selection kept so it can be retried.
+                                deleteError.value =
+                                    DeleteErrorEvent(++deleteErrorSeq, e.message ?: "Could not read the library")
+                                return@launch
+                            },
+                        )
                     selected.filter { it in inDomain }
                 }
             if (ids.isEmpty()) {
