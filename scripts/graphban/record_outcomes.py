@@ -42,6 +42,12 @@ Usage:
 
 Re-running is safe: before posting, it fetches the lesson and skips any
 outcome whose kind and detail are already recorded.
+
+Linking outcomes to their slice: pass --item MT-50 and every outcome in the
+file is recorded with that item as its related_item_id, so Graphban shows which
+piece of work it came from. One file is one slice, so the flag is per file. If
+the server's reply comes back without the link, the script says so rather than
+assuming it was stored.
 """
 
 from __future__ import annotations
@@ -73,6 +79,9 @@ KINDS = {
     "contradict": "contradicted",
 }
 
+# A Graphban item key, e.g. MT-50.
+ITEM = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+
 # | shard | outcome | reason |   (backticks around the shard id are allowed)
 ROW = re.compile(r"^\s*\|\s*`?(m_[0-9a-f]{6,})`?\s*\|\s*([^|]+?)\s*\|\s*(.+?)\s*\|\s*$")
 
@@ -99,6 +108,14 @@ def parse(text: str) -> tuple[list[dict], list[str]]:
             continue
         rows.append({"shard": shard, "kind": kind, "detail": detail})
     return rows, skipped
+
+
+def outcome_body(row: dict, item: str | None) -> dict:
+    """The POST body for one outcome: kind and detail, plus the slice's item when one is given."""
+    body = {"kind": row["kind"], "detail": row["detail"]}
+    if item:
+        body["related_item_id"] = item
+    return body
 
 
 def call(url: str, token: str, method: str, path: str, body: dict | None = None):
@@ -198,11 +215,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--op-email", help=f"1Password reference for the Graphban email (default: GRAPHBAN_EMAIL_REF, else {OP_EMAIL})")
     ap.add_argument("--op-password", help=f"1Password reference for the password (default: GRAPHBAN_PASSWORD_REF, else {OP_PASSWORD})")
     ap.add_argument("--url", help="Graphban base URL (default: from .mcp.json)")
+    ap.add_argument("--item", help="Graphban item these outcomes came from, e.g. MT-50 (sent as related_item_id)")
     ap.add_argument("--project", default=DEFAULT_PROJECT, help="project id the lessons belong to (default: %(default)s)")
     args = ap.parse_args(argv)
 
     url = args.url or default_url()
     project = args.project
+    if args.item and not ITEM.match(args.item):
+        print(f"error: --item {args.item!r} is not an item key like MT-50", file=sys.stderr)
+        return 2
+    if args.item:
+        print(f"linking every outcome to {args.item}")
 
     with open(args.file, encoding="utf-8") as fh:
         rows, skipped = parse(fh.read())
@@ -264,9 +287,13 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         status, body = call(url, token, "POST", f"/api/memory/lessons/{r['shard']}/outcomes",
-                            {"kind": r["kind"], "detail": r["detail"]})
+                            outcome_body(r, args.item))
         if status == 200:
             print(f"posted {label}")
+            stored = body.get("related_item_id") if isinstance(body, dict) else None
+            if args.item and stored != args.item:
+                print(f"       note: the reply does not show related_item_id={args.item} "
+                      f"(got {stored!r}); the outcome is recorded, but its link may not be")
             posted += 1
             cache[r["shard"]].add((r["kind"], r["detail"]))
         else:
