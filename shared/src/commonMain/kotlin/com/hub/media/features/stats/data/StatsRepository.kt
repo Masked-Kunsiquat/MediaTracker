@@ -1,6 +1,7 @@
 package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.PeriodStatsRow
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.coroutines.flow.Flow
@@ -62,6 +63,24 @@ import kotlin.time.Instant
 public class StatsRepository(
     private val db: AppDatabase,
 ) {
+    /**
+     * Everything [period] shows, as one consistent snapshot (#91): one query, so the four numbers
+     * arrive together rather than as four flows that publish a halfway mix after each write. The
+     * period's bounds come from [StatsPeriod.bounds]; All time passes no bounds at all.
+     *
+     * Returns the row as the data layer has it; mapping it to the screen's shape is the view
+     * model's job, so this repository stays free of UI types.
+     */
+    public fun observePeriodStats(
+        period: StatsPeriod,
+        timeZone: TimeZone,
+        clock: Clock,
+        weekStartDay: WeekStartDay,
+    ): Flow<PeriodStatsRow> {
+        val bounds = period.bounds(timeZone, clock, weekStartDay)
+        return db.statsDao().observePeriodStats(bounds?.first, bounds?.second, ReadingStatus.FINISHED)
+    }
+
     /**
      * Total known reading time (seconds) for sessions whose `timestampStart` falls in
      * `[from, to)`. `null` means no session in range has a known duration (including an empty

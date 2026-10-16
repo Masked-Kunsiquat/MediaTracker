@@ -136,4 +136,41 @@ interface StatsDao {
         from: Instant,
         to: Instant,
     ): Flow<Int>
+
+    /**
+     * Everything a stats period shows, in one query (#91). The four numbers used to come from four
+     * independent flows, so one write published every halfway mix (a session counted before its
+     * pages arrived) before settling. One `SELECT` of four scalar subqueries is one emission per
+     * write, with the numbers already consistent; Room re-runs it when either table changes.
+     *
+     * `SUM` over no rows is `NULL` in SQLite, which is exactly the null-versus-zero rule: no known
+     * duration in range means time read is unknown, not zero. [from] / [to] are a half-open range;
+     * either may be `null` for unbounded, and with both `null` (All time) a FINISHED book with no
+     * `finishedAt` still counts, as the lifetime count always did, while no dated range can match it.
+     */
+    @Query(
+        """
+        SELECT
+          (SELECT SUM(durationSeconds) FROM reading_sessions
+             WHERE durationSeconds IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS timeReadSeconds,
+          (SELECT COUNT(*) FROM reading_sessions
+             WHERE (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS sessionCount,
+          (SELECT SUM(deltaPages) FROM reading_sessions
+             WHERE deltaPages IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS pagesRead,
+          (SELECT COUNT(*) FROM book_details
+             WHERE status = :finished
+               AND (:from IS NULL OR finishedAt >= :from)
+               AND (:to IS NULL OR finishedAt < :to)) AS booksFinished
+        """,
+    )
+    fun observePeriodStats(
+        from: Instant?,
+        to: Instant?,
+        finished: ReadingStatus,
+    ): Flow<PeriodStatsRow>
 }

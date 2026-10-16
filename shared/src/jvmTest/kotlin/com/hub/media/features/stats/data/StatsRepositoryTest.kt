@@ -417,4 +417,38 @@ class StatsRepositoryTest {
         assertEquals(LocalDate(2024, 12, 1).atStartOfDayIn(TimeZone.UTC), from)
         assertEquals(LocalDate(2025, 1, 1).atStartOfDayIn(TimeZone.UTC), to)
     }
+
+    // --- observePeriodStats (#91) ---------------------------------------------------------------
+
+    private val june19: Clock =
+        object : Clock {
+            override fun now(): Instant = LocalDateTime(2024, 6, 19, 15, 0).toInstant(TimeZone.UTC)
+        }
+
+    private suspend fun periodStats(period: StatsPeriod) =
+        repo.observePeriodStats(period, TimeZone.UTC, june19, WeekStartDay.MONDAY).first()
+
+    @Test
+    fun observePeriodStats_readsThePeriodsBounds() =
+        runTest {
+            insertBook()
+            insertSession(LocalDateTime(2024, 6, 18, 9, 0).toInstant(TimeZone.UTC), durationSeconds = 600)
+            insertSession(LocalDateTime(2024, 3, 2, 9, 0).toInstant(TimeZone.UTC), durationSeconds = 900)
+
+            assertEquals(600L, periodStats(StatsPeriod.WEEK).timeReadSeconds)
+            assertEquals(1500L, periodStats(StatsPeriod.YEAR).timeReadSeconds)
+            assertEquals(1, periodStats(StatsPeriod.LAST_30_DAYS).sessionCount)
+        }
+
+    @Test
+    fun observePeriodStats_anUndatedFinish_isInAllTime_notInYear() =
+        runTest {
+            insertBook()
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
+            )
+
+            assertEquals(1, periodStats(StatsPeriod.ALL_TIME).booksFinished)
+            assertEquals(0, periodStats(StatsPeriod.YEAR).booksFinished)
+        }
 }
