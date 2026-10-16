@@ -57,7 +57,7 @@
 - `StatsDao.observePeriodStats`: four more scalar subqueries with the same range clause.
   - `COUNT(*) … durationSeconds IS NOT NULL`
   - `MAX(durationSeconds)`
-  - `SUM(durationSeconds)` with `durationSeconds > 0 AND deltaPages IS NOT NULL`
+  - `SUM(durationSeconds)` with `durationSeconds > 0 AND deltaPages > 0` (corrected after review: was `deltaPages IS NOT NULL`, which let a backwards session make speed negative)
   - `SUM(deltaPages)` with the same condition
 - `StatsUiState.Period`: add `averageSessionSeconds: Long?`, `longestSessionSeconds: Long?` and `pagesPerHour: Int?`.
 - `StatsViewModel.toPeriod()`:
@@ -84,7 +84,7 @@
   - `setReadingGoal(year, books)` and `clearReadingGoal()`.
 - Create: `shared/.../features/stats/data/GoalPace.kt`, with `fun goalProgress(goal: Int, finished: Int, today: LocalDate): GoalProgress`:
   - `GoalProgress(goal, finished, expected: Int, status: OnPace | Behind(n) | Reached)`;
-  - expected = `floor(goal * dayOfYear / daysInYear)`; Behind n = `ceil(goal * dayOfYear / daysInYear) - finished`.
+  - expected = `floor(goal * dayOfYear / daysInYear)`; Behind n = `expected - finished`, so n is the books still needed to be on pace (corrected after review: was the ceiling, which overstated n by one).
 - Modify: `ExportManifest.EXPORTABLE_SETTING_KEYS` (add `"reading_goal"`), and `ImportArchiveUseCase.restoreSetting` (validate `^\d{4}:\d{1,3}$` with books 1..999).
 - Tests:
   - `shared/src/jvmTest/.../settings/ReadingGoalTest.kt`;
