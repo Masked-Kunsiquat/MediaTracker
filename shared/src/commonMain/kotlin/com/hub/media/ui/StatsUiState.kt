@@ -1,5 +1,6 @@
 package com.hub.media.ui
 
+import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.StatsPeriod
 
 /**
@@ -15,12 +16,20 @@ import com.hub.media.features.stats.data.StatsPeriod
  * @property currentStreakDays Current consecutive-reading-day streak -- see
  *   [com.hub.media.features.stats.data.StatsRepository.observeReadingStreak] for the exact rule
  *   (today-without-a-session-yet does not break yesterday's streak). Independent of [period].
+ * @property goal This year's reading goal and how it is doing, or `null` when none is set for this
+ *   year (#219). Counts this year's finishes whatever [period] is showing.
+ * @property goalYear The year a goal set now would apply to, for the card's "Set a goal for 2026".
+ * @property finishesByMonth Books finished in each month of this year, January first, on the Year
+ *   view only; `null` on every other period, which draws no chart (#219).
  */
 public data class StatsUiState(
     val isLoading: Boolean = true,
     val period: StatsPeriod = StatsPeriod.WEEK,
     val stats: Period = Period(),
     val currentStreakDays: Int = 0,
+    val goal: GoalProgress? = null,
+    val goalYear: Int = 0,
+    val finishesByMonth: List<Int>? = null,
 ) {
     /**
      * One period's aggregate numbers.

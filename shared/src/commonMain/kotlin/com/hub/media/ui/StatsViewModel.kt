@@ -3,21 +3,29 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.dao.PeriodStatsRow
+import com.hub.media.features.settings.data.MAX_READING_GOAL
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.clearReadingGoal
+import com.hub.media.features.settings.data.observeReadingGoal
 import com.hub.media.features.settings.data.observeStatsPeriod
 import com.hub.media.features.settings.data.observeWeekStartDay
+import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.settings.data.setStatsPeriod
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.features.stats.data.StatsRepository
+import com.hub.media.features.stats.data.bounds
+import com.hub.media.features.stats.data.goalProgress
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -64,11 +72,35 @@ public class StatsViewModel(
         }.flatMapLatest { (period, weekStart) ->
             // The streak is re-derived here too, so it reads the same "today" as the period's bounds:
             // created once outside, it froze on the day the screen opened.
+            // The goal and the months read the same "today" too (#219). The goal counts this year's
+            // finishes whatever period is showing, so it needs the Year snapshot of its own; the
+            // months are read only while the Year view is showing, the one place they are drawn.
+            val today = clock.now().toLocalDateTime(timeZone).date
+            val yearBounds = StatsPeriod.YEAR.bounds(timeZone, clock, weekStart)!!
             combine(
                 statsRepository.observePeriodStats(period, timeZone, clock, weekStart),
                 statsRepository.observeReadingStreak(timeZone, clock),
-            ) { stats, streak ->
-                StatsUiState(isLoading = false, period = period, stats = stats.toPeriod(), currentStreakDays = streak)
+                settingsRepository.observeReadingGoal(),
+                statsRepository.observePeriodStats(StatsPeriod.YEAR, timeZone, clock, weekStart),
+                if (period == StatsPeriod.YEAR) {
+                    statsRepository.observeFinishesByMonth(yearBounds, timeZone)
+                } else {
+                    flowOf(null)
+                },
+            ) { stats, streak, goal, yearStats, months ->
+                StatsUiState(
+                    isLoading = false,
+                    period = period,
+                    stats = stats.toPeriod(),
+                    currentStreakDays = streak,
+                    // A goal set for another year is not this year's goal: January starts fresh.
+                    goal =
+                        goal?.takeIf { it.year == today.year }?.let {
+                            goalProgress(goal = it.books, finished = yearStats.booksFinished, today = today)
+                        },
+                    goalYear = today.year,
+                    finishesByMonth = months,
+                )
             }
         }
 
@@ -82,6 +114,19 @@ public class StatsViewModel(
     /** Shows [period], and remembers it for the next visit; the screen follows the stored value. */
     public fun selectPeriod(period: StatsPeriod) {
         viewModelScope.launch { settingsRepository.setStatsPeriod(period) }
+    }
+
+    /** Sets this year's reading goal to [books]; values outside 1..[MAX_READING_GOAL] are ignored. */
+    public fun setGoal(books: Int) {
+        if (books !in 1..MAX_READING_GOAL) return
+        viewModelScope.launch {
+            settingsRepository.setReadingGoal(clock.now().toLocalDateTime(timeZone).year, books)
+        }
+    }
+
+    /** Removes the reading goal. */
+    public fun clearGoal() {
+        viewModelScope.launch { settingsRepository.clearReadingGoal() }
     }
 }
 
