@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Stats shows when you read (time of day and weekday), your top authors and the formats you read, by time read in the chosen period. Under All time it also shows how many books you didn't finish. (#219)
 - Stats shows your reading speed, average and longest session, a yearly reading goal you can set by tapping, and a chart of books finished per month in the Year view. Time read now reads like "22h 48m". (#219)
 
 ### Changed
