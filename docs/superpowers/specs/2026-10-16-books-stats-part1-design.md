@@ -44,7 +44,8 @@ zero. Unknown stays "—". The same formatter is used for the new session-length
   which is `timeReadSeconds / timedSessionCount`.
 - `longestSessionSeconds`: `MAX(durationSeconds)`, or `NULL` when none is known.
 - `speedSeconds` and `speedPages`: `SUM(durationSeconds)` and `SUM(deltaPages)` over sessions where
-  **both** are known and the duration is > 0. Pages per hour = `speedPages * 3600 / speedSeconds`.
+  **both** are known and **both** are > 0 (a session that moved backwards or nowhere says nothing
+  about speed; added after review). Pages per hour = `speedPages * 3600 / speedSeconds`.
   It's `null` when there is no such session, so a session with no duration can never inflate the
   speed.
 
@@ -66,7 +67,9 @@ zero. Unknown stays "—". The same formatter is used for the new session-length
     number as the Year view.
   - **Expected so far** = goal × (day of the year / days in the year).
   - **The status** is "on pace" when finished ≥ expected (rounded down), otherwise "N behind", where
-    N = expected (rounded up) − finished. It's "goal reached" when finished ≥ goal.
+    N = expected (rounded down) − finished, so "N behind" always means "N more books and you're on
+    pace". It's "goal reached" when finished ≥ goal. (Corrected after review: the first draft counted
+    N against the rounded-up share, which said "2 behind" one book short of on pace.)
 - **UI:** a goal card above the streak card, always visible whatever the period:
   - with no goal, it shows "Set a 2026 reading goal";
   - with a goal, it shows "5 of 12 books · on pace", with a `LinearProgressIndicator`.

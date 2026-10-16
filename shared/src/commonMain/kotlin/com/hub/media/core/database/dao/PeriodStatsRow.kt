@@ -9,9 +9,10 @@ package com.hub.media.core.database.dao
  * the same single read and can never disagree with the totals above:
  * @property timedSessionCount Sessions with a known duration -- the average's denominator.
  * @property longestSessionSeconds The longest known duration, or `null` when none is known.
- * @property speedSeconds / [speedPages] Time and pages over sessions where BOTH are known and the
- *   duration is above zero, or `null` when there is no such session. A session missing either
- *   value would otherwise inflate or deflate the speed.
+ * @property speedSeconds / [speedPages] Time and pages over sessions where both are known and both
+ *   are above zero, or `null` when there is no such session. A session missing either value would
+ *   otherwise inflate or deflate the speed, and one that moved backwards (a corrected page) or
+ *   nowhere says nothing about how fast anyone reads.
  */
 public data class PeriodStatsRow(
     val timeReadSeconds: Long?,

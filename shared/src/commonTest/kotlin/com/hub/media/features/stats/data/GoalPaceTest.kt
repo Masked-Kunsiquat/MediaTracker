@@ -20,10 +20,23 @@ class GoalPaceTest {
 
     @Test
     fun behind_saysByHowMany() {
-        // 12 * 183 / 365 = 6.02, rounded up to 7 needed for the "behind" count: 7 - 4 = 3.
+        // 12 * 183 / 365 = 6.02, so 6 are expected: with 4 finished, 2 more put you on pace.
         val p = goalProgress(goal = 12, finished = 4, today = LocalDate(2025, 7, 2))
 
-        assertEquals(GoalStatus.Behind(3), p.status)
+        assertEquals(GoalStatus.Behind(2), p.status)
+    }
+
+    /**
+     * "N behind" must mean "N more books and you're on pace". Counting against the rounded-UP share
+     * said "2 behind" here, and then one book later said "on pace" -- seen on the phone (#219 review).
+     */
+    @Test
+    fun oneBookBehind_isOneBookFromOnPace() {
+        val behind = goalProgress(goal = 12, finished = 5, today = LocalDate(2025, 7, 2))
+        val oneMore = goalProgress(goal = 12, finished = 6, today = LocalDate(2025, 7, 2))
+
+        assertEquals(GoalStatus.Behind(1), behind.status)
+        assertEquals(GoalStatus.OnPace, oneMore.status)
     }
 
     @Test

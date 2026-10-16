@@ -84,11 +84,11 @@ interface StatsDao {
                AND (:from IS NULL OR timestampStart >= :from)
                AND (:to IS NULL OR timestampStart < :to)) AS longestSessionSeconds,
           (SELECT SUM(durationSeconds) FROM reading_sessions
-             WHERE durationSeconds > 0 AND deltaPages IS NOT NULL
+             WHERE durationSeconds > 0 AND deltaPages > 0
                AND (:from IS NULL OR timestampStart >= :from)
                AND (:to IS NULL OR timestampStart < :to)) AS speedSeconds,
           (SELECT SUM(deltaPages) FROM reading_sessions
-             WHERE durationSeconds > 0 AND deltaPages IS NOT NULL
+             WHERE durationSeconds > 0 AND deltaPages > 0
                AND (:from IS NULL OR timestampStart >= :from)
                AND (:to IS NULL OR timestampStart < :to)) AS speedPages
         """,

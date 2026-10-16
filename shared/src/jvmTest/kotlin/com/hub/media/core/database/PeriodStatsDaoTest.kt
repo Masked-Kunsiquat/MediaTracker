@@ -176,6 +176,27 @@ class PeriodStatsDaoTest {
             assertEquals(30, row.speedPages)
         }
 
+    /**
+     * A session can move backwards (a corrected page, a bookmark moved back to re-read): its pages
+     * are negative. It says nothing about reading speed, and counting it dragged speed down -- alone
+     * in a week, to "-100 pages/hour". A session with no forward progress is left out the same way.
+     */
+    @Test
+    fun speed_ignoresSessionsThatMovedBackwardsOrNowhere() =
+        runTest {
+            insertBook()
+            session(1_100, durationSeconds = 3_600, deltaPages = 60) // counts
+            session(1_200, durationSeconds = 1_800, deltaPages = -50) // backwards: excluded
+            session(1_300, durationSeconds = 900, deltaPages = 0) // nowhere: excluded
+
+            val row = stats(1_000, 2_000)
+
+            assertEquals(3_600L, row.speedSeconds)
+            assertEquals(60, row.speedPages)
+            // Positive control: all three sessions are in the period and timed.
+            assertEquals(3, row.timedSessionCount)
+        }
+
     @Test
     fun speed_isUnknown_whenNoSessionHasBoth() =
         runTest {
