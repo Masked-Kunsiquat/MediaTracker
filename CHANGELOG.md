@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-16
+
 ### Changed
 - The film, show and book screens now share one top bar: Edit, then a More options menu holding the screen's other actions (refreshing a show, re-fetching a book's cover), with Delete last. Delete is no longer offered before a show has loaded, and stays reachable while a book's cover is being re-fetched. (#172)
 - The Edit book, Edit film and Edit show screens now match the detail screens: a header showing what you're editing, fields grouped into cards, status picked from the same dropdown, and Cancel / Save pinned at the bottom. Edit book's status no longer cuts off "Did not finish". (#174)
