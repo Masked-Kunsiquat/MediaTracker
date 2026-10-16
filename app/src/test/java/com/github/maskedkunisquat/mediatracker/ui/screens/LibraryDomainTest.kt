@@ -154,4 +154,19 @@ class LibraryDomainTest {
 
         composeRule.onNodeWithText(string(R.string.library_search_placeholder_books)).assertExists()
     }
+
+    @Test
+    fun anEmptyDomain_saysThatKindIsEmpty_notTheWholeLibrary() {
+        setContent(MediaType.MOVIE)
+
+        composeRule.onNodeWithText(string(R.string.library_empty_title_films)).assertExists()
+        composeRule.onNodeWithText(string(R.string.library_empty_title)).assertDoesNotExist()
+    }
+
+    @Test
+    fun anEmptyAllMedia_stillSaysTheLibraryIsEmpty() {
+        setContent(null)
+
+        composeRule.onNodeWithText(string(R.string.library_empty_title)).assertExists()
+    }
 }

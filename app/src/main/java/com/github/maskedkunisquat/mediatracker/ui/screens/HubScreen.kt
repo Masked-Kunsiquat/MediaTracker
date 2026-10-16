@@ -35,7 +35,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -94,6 +97,8 @@ fun HubScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             CenterAlignedTopAppBar(
+                // Its own string, not app_name: the debug build renames the app ("MediaTracker Debug"),
+                // and the hub's title is copy, not the launcher label.
                 title = { Text(stringResource(R.string.hub_title)) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
@@ -179,7 +184,8 @@ private fun DomainCard(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().testTag(tag),
+        // Card(onClick) is clickable but sets no role, so TalkBack would not call it a button.
+        modifier = Modifier.fillMaxWidth().testTag(tag).semantics { role = Role.Button },
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -216,6 +222,7 @@ private fun HubRow(
         trailingContent = {
             Icon(imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
         },
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag(tag),
+        // A button to TalkBack, as the cards are, so all five ways out of the hub announce alike.
+        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).testTag(tag),
     )
 }

@@ -33,6 +33,9 @@ sealed interface Route {
         /** `null` is All media. The domain travels as the [MediaType]'s name. */
         fun createRoute(domain: MediaType?): String =
             if (domain == null) "library" else "library?$ARG_DOMAIN=${domain.name}"
+
+        /** The domain from a route argument; an absent or unknown value is All media, never a crash. */
+        fun parseDomain(arg: String?): MediaType? = MediaType.entries.firstOrNull { it.name == arg }
     }
 
     /**

@@ -182,6 +182,9 @@
     <string name="library_filter_abandoned">Abandoned</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_empty_subtitle">Add your first item to get started</string>
+    <string name="library_empty_title_books">No books yet</string>
+    <string name="library_empty_title_films">No films yet</string>
+    <string name="library_empty_title_shows">No shows yet</string>
     <string name="library_released_label">Released: %1$s</string>
     <string name="library_year_label">Year: %1$s</string>
 

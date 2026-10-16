@@ -36,7 +36,12 @@ class HubNavigationTest {
 
         composeRule.onNodeWithTag(TestTags.Hub.BOOKS).performClick()
         composeRule.waitForIdle()
+        // The hub card is also titled "Books", so the title alone would match a dead tap: assert the
+        // card is gone too, and that this library is the Books one (Stats in its bar, no Up next).
+        composeRule.onNodeWithTag(TestTags.Hub.BOOKS).assertDoesNotExist()
         composeRule.onNodeWithText(string(R.string.library_title_books)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.stats_content_description)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(string(R.string.up_next_content_description)).assertDoesNotExist()
 
         composeRule.onNodeWithContentDescription(string(R.string.navigate_back)).performClick()
         composeRule.waitForIdle()

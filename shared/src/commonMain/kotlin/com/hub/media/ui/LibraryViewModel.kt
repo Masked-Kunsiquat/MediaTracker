@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
@@ -121,12 +122,25 @@ public class LibraryViewModel(
      */
     public fun deleteSelected() {
         // Reads the selection source of truth, NOT uiState.value.
-        val ids = selectedIds.value.toList()
-        if (ids.isEmpty()) {
+        val selected = selectedIds.value.toList()
+        if (selected.isEmpty()) {
             clearSelection()
             return
         }
         viewModelScope.launch {
+            // In a domain, only that domain's rows may reach the delete (#126). Read from the
+            // database at delete time rather than from uiState, which nothing need be collecting.
+            val ids =
+                if (domain == null) {
+                    selected
+                } else {
+                    val inDomain = mediaRepository.observeMediaByType(domain).first().mapTo(mutableSetOf()) { it.id }
+                    selected.filter { it in inDomain }
+                }
+            if (ids.isEmpty()) {
+                clearSelection()
+                return@launch
+            }
             // Selection is cleared only on success.
             when (val result = deleteMediaUseCase.execute(ids)) {
                 is Resource.Success -> clearSelection()

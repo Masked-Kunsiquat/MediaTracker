@@ -79,7 +79,7 @@ fun AppNavigation(
                     },
                 ),
         ) { backStackEntry ->
-            val domain = backStackEntry.arguments?.getString(Route.Library.ARG_DOMAIN)?.let(MediaType::valueOf)
+            val domain = Route.Library.parseDomain(backStackEntry.arguments?.getString(Route.Library.ARG_DOMAIN))
             LibraryScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,

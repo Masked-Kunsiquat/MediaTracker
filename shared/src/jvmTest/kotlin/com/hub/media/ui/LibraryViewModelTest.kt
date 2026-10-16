@@ -24,11 +24,14 @@ import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -39,6 +42,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * [LibraryViewModel] tests against a real in-memory [AppDatabase] (via [testAppDatabase], the
@@ -666,5 +670,29 @@ class LibraryViewModelTest {
             books.toggleSelection(film)
 
             assertEquals(setOf(book), books.uiState.first { it.selectedIds.isNotEmpty() }.selectedIds)
+        }
+
+    @Test
+    fun deleteSelectedInADomain_neverDeletesAnotherDomainsRow() =
+        runTest {
+            val book = insertBook("Dune")
+            val film = insertMovie("Solaris", WatchStatus.WATCHLIST)
+            val recorder = RecordingBulkDelete()
+            val books =
+                viewModels.track(
+                    LibraryViewModel(mediaRepository, recorder, settingsRepository, domain = MediaType.BOOK),
+                )
+            books.toggleSelection(book)
+            books.toggleSelection(film)
+
+            books.deleteSelected()
+            // The scope is read from the database before the delete, off the test's virtual clock, so
+            // wait in real time (bounded) for the delete to be called at all.
+            withContext(Dispatchers.Default) {
+                withTimeout(5.seconds) { while (recorder.calls.isEmpty()) delay(10) }
+            }
+
+            // Exactly the book reached the delete -- which is also the positive control that it ran.
+            assertEquals(listOf(listOf(book)), recorder.calls)
         }
 }

@@ -57,10 +57,7 @@ open class AppViewModelFactory<VM : ViewModel>(
     }
 }
 
-/**
- * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
- * and bulk-delete dependencies from the [AppContainer].
- */
+/** Factory for [HubViewModel], the hub's three live numbers (#126). */
 class HubViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<HubViewModel>(
@@ -74,6 +71,10 @@ class HubViewModelFactory(
         },
     )
 
+/**
+ * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
+ * and bulk-delete dependencies from the [AppContainer].
+ */
 class LibraryViewModelFactory(
     appContainer: AppContainer,
     domain: MediaType? = null,

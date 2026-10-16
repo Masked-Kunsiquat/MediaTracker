@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.error
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.observeIncludeSpecials
@@ -47,12 +50,15 @@ public data class HubUiState(
  *
  * A failed read becomes [HubUiState.loadFailed] instead of escaping `stateIn` and crashing the app.
  * Flow's `catch` never swallows cancellation, so this needs no separate rethrow.
+ *
+ * @param logger Where a failed read is recorded. Defaults to [AppLogger].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 public class HubViewModel(
     mediaRepository: MediaRepository,
     tvShowRepository: TVShowRepository,
     settingsRepository: SettingsRepository,
+    private val logger: Logger = AppLogger,
 ) : ViewModel() {
     public val uiState: StateFlow<HubUiState> =
         combine(
@@ -67,10 +73,15 @@ public class HubViewModel(
                     media.count { it is MediaWithDetails.Movie && it.details?.status == WatchStatus.WATCHLIST },
                 showsUpNext = upNext.size,
             )
-        }.catch { emit(HubUiState(isLoading = false, loadFailed = true)) }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5.seconds),
-                initialValue = HubUiState(),
-            )
+        }.catch { e ->
+            // Logged, so blank cards leave a trace in the log viewer rather than no clue at all.
+            logger.error(TAG, e) { "Could not read the hub's counts" }
+            emit(HubUiState(isLoading = false, loadFailed = true))
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5.seconds),
+            initialValue = HubUiState(),
+        )
 }
+
+private const val TAG = "HubViewModel"

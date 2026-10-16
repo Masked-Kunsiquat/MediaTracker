@@ -1,6 +1,9 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -101,5 +104,14 @@ class HubScreenTest {
                 .getOrElse(SemanticsProperties.Text) { emptyList() }
                 .map { it.text }
         assertTrue("merged text was $text", text.containsAll(listOf("Books", "3 reading")))
+    }
+
+    @Test
+    fun theRows_areButtons_likeTheCards() {
+        setContent()
+
+        for (tag in listOf(TestTags.Hub.ALL_MEDIA, TestTags.Hub.STATS, TestTags.Hub.BOOKS)) {
+            composeRule.onNodeWithTag(tag).assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        }
     }
 }

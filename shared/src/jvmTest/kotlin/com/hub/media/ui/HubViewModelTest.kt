@@ -6,6 +6,8 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.movies.data.MovieRepository
@@ -53,7 +55,9 @@ class HubViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun newViewModel() = viewModels.track(HubViewModel(MediaRepository(db), tv, settings))
+    private val logger = RecordingLogger()
+
+    private fun newViewModel() = viewModels.track(HubViewModel(MediaRepository(db), tv, settings, logger))
 
     private suspend fun book(
         title: String,
@@ -156,5 +160,7 @@ class HubViewModelTest {
             db.close()
 
             assertTrue(vm.uiState.first { it.loadFailed }.loadFailed)
+            // Blank cards with nothing in the log viewer would leave no way to find out why.
+            assertTrue(logger.entries.any { it.level == LogLevel.ERROR && it.throwable != null })
         }
 }

@@ -100,7 +100,7 @@ import kotlin.time.Instant
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
  * @param onNavigateToUpNext Callback to navigate to the Up next queue (#89).
  * @param domain The one media type this library shows, from a hub card (#126); `null` is All media.
- * @param onNavigateBack Back to the hub.
+ * @param onNavigateBack Called by the top bar's back arrow; the hub is what the app's routes lead back to.
  */
 @Composable
 fun LibraryScreenRoute(
@@ -115,8 +115,8 @@ fun LibraryScreenRoute(
     domain: MediaType?,
     onNavigateBack: () -> Unit,
 ) {
-    // Keyed by domain: Books, Films, Shows and All media are separate destinations, each with its
-    // own search text and selection, so each gets its own view model rather than sharing one.
+    // Each library is its own back-stack entry and so already has its own view model; the key only
+    // makes that explicit if this route is ever hosted outside navigation.
     val viewModel: LibraryViewModel =
         viewModel(
             key = "library-${domain?.name ?: "all"}",
@@ -147,7 +147,8 @@ fun LibraryScreenRoute(
 /**
  * Stateless library screen composable (AGENTS.md §5 State Hoisting).
  *
- * Displays a list of all media items in the library. Consolidated from book-only version per Issue #67.
+ * Displays the library's media -- every type for All media, or one domain's (#126). Consolidated from
+ * the book-only version per Issue #67.
  *
  * @param uiState [LibraryUiState] containing the list of media, status filter, and isEmpty flag.
  * @param coverStorageDir Absolute path to the cover image storage directory.
@@ -341,7 +342,17 @@ fun LibraryScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = stringResource(R.string.library_empty_title),
+                        // In a domain, "Your library is empty" would be false for someone whose other
+                        // kinds are full (#126): name the kind instead.
+                        text =
+                            stringResource(
+                                when (domain) {
+                                    MediaType.BOOK -> R.string.library_empty_title_books
+                                    MediaType.MOVIE -> R.string.library_empty_title_films
+                                    MediaType.TV_SHOW -> R.string.library_empty_title_shows
+                                    null -> R.string.library_empty_title
+                                },
+                            ),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(

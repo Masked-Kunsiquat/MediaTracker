@@ -26,4 +26,11 @@ class RoutesTest {
     fun theLibraryPattern_acceptsTheOptionalDomain() {
         assertEquals("library?domain={domain}", Route.Library.route)
     }
+
+    @Test
+    fun parsingTheDomain_toleratesAbsentAndUnknownValues() {
+        assertEquals(MediaType.MOVIE, Route.Library.parseDomain("MOVIE"))
+        assertEquals(null, Route.Library.parseDomain(null))
+        assertEquals(null, Route.Library.parseDomain("PODCAST"))
+    }
 }
