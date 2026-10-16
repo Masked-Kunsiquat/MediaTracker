@@ -1,7 +1,9 @@
 package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.PeriodStatsRow
+import com.hub.media.core.database.dao.TimedSessionRow
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.coroutines.flow.Flow
@@ -80,6 +82,25 @@ public class StatsRepository(
         val bounds = period.bounds(timeZone, clock, weekStartDay)
         return db.statsDao().observePeriodStats(bounds?.first, bounds?.second, ReadingStatus.FINISHED)
     }
+
+    /**
+     * The timed sessions of [period] with their books' format and authors (#219), bounded exactly as
+     * [observePeriodStats] bounds the period, so the breakdowns describe the same sessions as the
+     * card's time read.
+     */
+    public fun observeTimedSessions(
+        period: StatsPeriod,
+        timeZone: TimeZone,
+        clock: Clock,
+        weekStartDay: WeekStartDay,
+    ): Flow<List<TimedSessionRow>> {
+        val bounds = period.bounds(timeZone, clock, weekStartDay)
+        return db.statsDao().observeTimedSessions(bounds?.first, bounds?.second)
+    }
+
+    /** Finished and did-not-finish counts across the whole library (#219), for All time. */
+    public fun observeFinishOutcomes(): Flow<FinishOutcomes> =
+        db.statsDao().observeFinishOutcomes(ReadingStatus.FINISHED, ReadingStatus.DNF)
 
     /**
      * Books finished in each month of [yearBounds] (#219): twelve counts, January first, for the Year

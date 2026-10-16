@@ -1,0 +1,122 @@
+package com.hub.media.core.database
+
+import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.dao.TimedSessionRow
+import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.ReadingStatus
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.time.Instant
+
+/**
+ * The two reads behind Books stats part 2 (#219): the period's timed sessions with each book's
+ * format and authors (one read for all three breakdowns), and the finished and DNF counts.
+ */
+class TimedSessionsDaoTest {
+    private lateinit var db: AppDatabase
+
+    @BeforeTest
+    fun setUp() {
+        db = testAppDatabase()
+    }
+
+    @AfterTest
+    fun tearDown() {
+        db.close()
+    }
+
+    private fun at(epochSeconds: Long) = Instant.fromEpochSeconds(epochSeconds)
+
+    private suspend fun book(
+        id: String,
+        format: BookFormat = BookFormat.PAPERBACK,
+        authors: String? = "Ursula K. Le Guin",
+        status: ReadingStatus = ReadingStatus.READING,
+    ) {
+        db.mediaItemDao().insert(sampleMediaItem(id = id))
+        db.bookDetailsDao().insert(
+            sampleBookDetails(mediaId = id, format = format, status = status).copy(authors = authors),
+        )
+    }
+
+    private suspend fun session(
+        mediaId: String,
+        start: Long,
+        durationSeconds: Long?,
+    ) {
+        db.readingSessionDao().insert(
+            sampleReadingSession(mediaId = mediaId, timestampStart = at(start), durationSeconds = durationSeconds),
+        )
+    }
+
+    private suspend fun timed(
+        from: Long?,
+        to: Long?,
+    ) = db.statsDao().observeTimedSessions(from?.let(::at), to?.let(::at)).first()
+
+    @Test
+    fun keepsTimedSessionsInsideTheBounds_withTheirBooksFormatAndAuthors() =
+        runTest {
+            book("b1", format = BookFormat.EBOOK, authors = "A; B")
+            session("b1", start = 999, durationSeconds = 300) // before: out
+            session("b1", start = 1_000, durationSeconds = 600) // first instant: in
+            session("b1", start = 2_000, durationSeconds = 900) // the end is exclusive: out
+
+            assertEquals(
+                listOf(TimedSessionRow(at(1_000), 600, BookFormat.EBOOK, "A; B")),
+                timed(1_000, 2_000),
+            )
+        }
+
+    @Test
+    fun aMissingOrZeroDuration_isLeftOut() =
+        runTest {
+            book("b1")
+            session("b1", start = 1_100, durationSeconds = null)
+            session("b1", start = 1_200, durationSeconds = 0)
+            session("b1", start = 1_300, durationSeconds = 60) // positive control
+
+            assertEquals(listOf(60L), timed(1_000, 2_000).map { it.durationSeconds })
+        }
+
+    @Test
+    fun allTime_hasNoBounds() =
+        runTest {
+            book("b1", authors = null)
+            session("b1", start = 10, durationSeconds = 60)
+            session("b1", start = 9_000_000, durationSeconds = 120)
+
+            val rows = timed(null, null)
+
+            assertEquals(listOf(60L, 120L), rows.map { it.durationSeconds }.sorted())
+            assertEquals(null, rows.first().authors)
+        }
+
+    @Test
+    fun finishOutcomes_countFinishedAndDnf_only() =
+        runTest {
+            book("f1", status = ReadingStatus.FINISHED)
+            book("f2", status = ReadingStatus.FINISHED)
+            book("d1", status = ReadingStatus.DNF)
+            book("r1", status = ReadingStatus.READING)
+            book("t1", status = ReadingStatus.TO_READ)
+
+            assertEquals(
+                FinishOutcomes(finished = 2, dnf = 1),
+                db.statsDao().observeFinishOutcomes(ReadingStatus.FINISHED, ReadingStatus.DNF).first(),
+            )
+        }
+
+    @Test
+    fun finishOutcomes_onAnEmptyLibrary_areZero() =
+        runTest {
+            assertEquals(
+                FinishOutcomes(0, 0),
+                db.statsDao().observeFinishOutcomes(ReadingStatus.FINISHED, ReadingStatus.DNF).first(),
+            )
+        }
+}
