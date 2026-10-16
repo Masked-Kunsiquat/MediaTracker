@@ -48,7 +48,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.components.MonthBarChart
+import com.github.maskedkunisquat.mediatracker.ui.components.MonthChart
 import com.github.maskedkunisquat.mediatracker.ui.components.ReadingGoalDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
@@ -279,7 +279,7 @@ private fun MonthChartCard(months: List<Int>) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(text = stringResource(R.string.stats_month_chart_title), style = MaterialTheme.typography.titleMedium)
-            MonthBarChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
+            MonthChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
         }
     }
 }
