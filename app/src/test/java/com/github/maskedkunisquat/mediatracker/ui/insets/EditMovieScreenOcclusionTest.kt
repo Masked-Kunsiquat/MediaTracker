@@ -25,12 +25,10 @@ import org.robolectric.RobolectricTestRunner
  * save button will ever get -- still under the keyboard there means unreachable however far you
  * scroll. Confirmed by deleting `contentWindowInsets` from this screen and watching this fail.
  *
- * There is deliberately **no navigation bar test** on this screen. Its form does not reach the
- * bottom of the display without a keyboard, so nothing measurable is ever near the bar: the rule
- * was tried here and passed with `barPadding` returning zero, which makes it a green no-op of the
- * kind AGENTS.md section 7 rejects. The keyboard is the inset that actually squeezes this screen,
- * and the test above is falsified against it. If the form grows past the display, add it back --
- * and prove it fails first.
+ * Since #174 Save and Cancel sit in a bar pinned to the bottom edge, so the navigation bar is now
+ * an inset this screen can actually lose a control behind. Before that the form ended well short
+ * of the bar and a navigation-bar test here passed with `barPadding` returning zero -- a green
+ * no-op -- so there was none. The one below was falsified by zeroing the bar's padding.
  */
 @RunWith(RobolectricTestRunner::class)
 class EditMovieScreenOcclusionTest {
@@ -42,9 +40,15 @@ class EditMovieScreenOcclusionTest {
         composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
     }
 
+    @Test
+    fun withTheNavigationBarShowing_theSaveCancelBarStaysAboveIt() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
+    }
+
     @Composable
     private fun Fixture() {
         EditMovieScreen(
+            coverStorageDir = "",
             uiState =
                 EditMovieUiState.Editing(
                     title = "Interstellar",
@@ -71,6 +75,7 @@ class EditMovieScreenOcclusionTest {
             listOf(
                 TestTags.EditMovie.FORM,
                 TestTags.EditMovie.SAVE_BUTTON,
+                TestTags.EditMovie.CANCEL_BUTTON,
             )
     }
 }

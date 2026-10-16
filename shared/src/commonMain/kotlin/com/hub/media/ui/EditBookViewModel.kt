@@ -133,6 +133,7 @@ public class EditBookViewModel(
                         trackingMode = bookDetail.details?.trackingMode ?: TrackingMode.PAGES,
                         errorMessage = local.errorMessage,
                         isSaving = local.isSaving,
+                        coverImageHash = bookDetail.item.coverImageHash,
                     )
             }
         }.stateIn(

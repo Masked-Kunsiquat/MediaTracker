@@ -65,6 +65,7 @@ class DecimalFieldLocaleTest {
             }
             storedPrice = state.purchasePrice
             EditMovieScreen(
+                coverStorageDir = "",
                 uiState = state,
                 onTitleChange = {},
                 onReleaseYearChange = {},

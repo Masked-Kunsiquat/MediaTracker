@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -244,6 +246,8 @@ private fun RatingRow(
  * @param onSelect Invoked with the tapped option; the caller decides what re-selecting the current
  *   value does (Book's equivalent treats it as a harmless no-op re-application).
  * @param onClickLabel The accessibility action label for opening the menu, e.g. "Change status".
+ * @param enabled `false` greys the chip out and stops it opening -- an edit form passes `false` while
+ *   a save is in flight, so a change cannot land after the values being written were read (#174).
  */
 @Composable
 fun <T> StatusDropdownChip(
@@ -253,6 +257,7 @@ fun <T> StatusDropdownChip(
     onSelect: (T) -> Unit,
     onClickLabel: String,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val open = { expanded = true }
@@ -260,6 +265,7 @@ fun <T> StatusDropdownChip(
     Box(modifier = modifier) {
         AssistChip(
             onClick = open,
+            enabled = enabled,
             label = { Text(label(value)) },
             trailingIcon = {
                 Icon(
@@ -278,18 +284,25 @@ fun <T> StatusDropdownChip(
             modifier =
                 Modifier.semantics {
                     onClick(label = onClickLabel) {
-                        open()
-                        true
+                        if (enabled) open()
+                        enabled
                     }
+                    if (!enabled) disabled()
                 },
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        // Disabled mid-open (a save started with the menu up) closes it and drops `expanded`, so the
+        // menu neither offers a choice that would land after the save read its values nor reappears
+        // when the chip is enabled again.
+        LaunchedEffect(enabled) {
+            if (!enabled) expanded = false
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(label(option)) },
                     onClick = {
                         expanded = false
-                        onSelect(option)
+                        if (enabled) onSelect(option)
                     },
                 )
             }

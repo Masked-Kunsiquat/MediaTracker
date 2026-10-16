@@ -3,9 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -15,14 +13,11 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,13 +30,11 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,13 +54,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
+import com.github.maskedkunisquat.mediatracker.ui.components.EditBottomBar
+import com.github.maskedkunisquat.mediatracker.ui.components.EditHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
+import com.github.maskedkunisquat.mediatracker.ui.components.FormSection
+import com.github.maskedkunisquat.mediatracker.ui.components.StatusDropdownChip
 import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
 import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.domain.BookMetadataValidation
@@ -94,6 +93,7 @@ import com.hub.media.ui.parseOptionalNumber
 fun EditBookScreenRoute(
     appContainer: AppContainer,
     bookId: String,
+    coverStorageDir: String,
     onNavigateBack: () -> Unit,
 ) {
     val viewModel: EditBookViewModel =
@@ -111,6 +111,7 @@ fun EditBookScreenRoute(
 
     EditBookScreen(
         uiState = uiState,
+        coverStorageDir = coverStorageDir,
         onNavigateBack = onNavigateBack,
         onRetry = viewModel::retry,
         onSave = { title, releaseYear, purchasePrice, totalPages, format, status, trackingMode ->
@@ -149,6 +150,7 @@ fun EditBookScreenRoute(
 @Composable
 fun EditBookScreen(
     uiState: EditBookUiState,
+    coverStorageDir: String,
     onNavigateBack: () -> Unit,
     onRetry: () -> Unit,
     onSave: (
@@ -212,6 +214,7 @@ fun EditBookScreen(
                 is EditBookUiState.Ready -> {
                     EditBookForm(
                         state = uiState,
+                        coverStorageDir = coverStorageDir,
                         scaffoldPadding = innerPadding,
                         onSave = onSave,
                         onCancel = onNavigateBack,
@@ -238,7 +241,7 @@ fun EditBookScreen(
  * 4. **Purchase**: purchase price.
  *
  * Save/Cancel move off the bottom of the scrolling content and onto a persistent, non-scrolling
- * action bar ([EditBookBottomBar]) pinned to the bottom of the screen — a "committed action pair"
+ * action bar ([EditBottomBar]) pinned to the bottom of the screen — a "committed action pair"
  * that's always reachable without scrolling, rather than two inline buttons the user could lose
  * track of below four sections of fields.
  *
@@ -252,10 +255,10 @@ fun EditBookScreen(
  *   dominated the old layout's vertical space for a field edited far less often than title/pages;
  *   collapsing it to one closed field (open only on demand) fits a longer, less-frequently-changed
  *   option set better than either radios or a chip row would.
- * - [ReadingStatus] (4 values): a [FilterChip] row, mirroring `LibraryScreen`'s existing
- *   `StatusFilterRow` convention for the exact same enum — four options is few enough to show
- *   side-by-side with one tap each, and reusing the chip-row shape keeps this screen visually
- *   consistent with how the same enum already renders elsewhere in the app.
+ * - [ReadingStatus] (4 values): the detail screens' [StatusDropdownChip] (#174). It began as a
+ *   [FilterChip] row like `LibraryScreen`'s `StatusFilterRow`, but four labels did not fit a phone's
+ *   width -- "Did not finish" was cut off at the edge -- and the same enum is chosen through this
+ *   chip on Book Detail, so the edit form now matches the screen it was opened from.
  *
  * ### Field state seeding
  * Each field's local `remember`ed text/selection state is seeded from [state] only on this
@@ -294,6 +297,7 @@ fun EditBookScreen(
 @Composable
 private fun EditBookForm(
     state: EditBookUiState.Ready,
+    coverStorageDir: String,
     scaffoldPadding: PaddingValues,
     onSave: (
         title: String,
@@ -354,6 +358,14 @@ private fun EditBookForm(
                     .testTag(TestTags.EditBook.FORM),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            // The saved title, not titleText: the header names the book being edited while its
+            // title field is retyped (#174).
+            EditHeader(
+                kind = stringResource(R.string.book_detail_kind),
+                year = state.releaseYear,
+                title = state.title,
+                artwork = state.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.BOOK) },
+            )
             FormSection(title = stringResource(R.string.edit_section_book_details)) {
                 OutlinedTextField(
                     value = titleText,
@@ -465,10 +477,12 @@ private fun EditBookForm(
             )
         }
 
-        EditBookBottomBar(
+        EditBottomBar(
             isSaving = state.isSaving,
             canSave = formIsValid,
             onCancel = onCancel,
+            cancelTag = TestTags.EditBook.CANCEL_BUTTON,
+            saveTag = TestTags.EditBook.SAVE_BUTTON,
             onSave = {
                 onSave(
                     titleText.trim(),
@@ -481,35 +495,6 @@ private fun EditBookForm(
                 )
             },
         )
-    }
-}
-
-/**
- * One titled card-backed group of related fields (ROADMAP Task 7 Phase D), mirroring
- * [SettingsScreen]'s `SettingsSection` convention exactly: a [Text] title above a [Card], with the
- * card's content column spaced by 16dp between fields.
- */
-@Composable
-private fun FormSection(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                content = content,
-            )
-        }
     }
 }
 
@@ -595,10 +580,9 @@ private fun TrackingModeRow(
 }
 
 /**
- * Reading-status picker (ROADMAP Task 7 Phase D): a [FilterChip] row over all four [ReadingStatus]
- * values, mirroring `LibraryScreen`'s existing `StatusFilterRow` shape for the same enum — see
- * [EditBookForm]'s KDoc "Picking a control per enum" section for why a chip row (not a dropdown or
- * radios) fits this field.
+ * Reading-status picker (ROADMAP Task 7 Phase D): a labelled [StatusDropdownChip] over all four
+ * [ReadingStatus] values -- see [EditBookForm]'s KDoc "Picking a control per enum" section for why
+ * it replaced a chip row in #174.
  */
 @Composable
 private fun StatusChipRow(
@@ -613,72 +597,14 @@ private fun StatusChipRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(ReadingStatus.entries.toList()) { option ->
-                FilterChip(
-                    selected = status == option,
-                    onClick = { onStatusChange(option) },
-                    label = { Text(option.displayLabel()) },
-                    enabled = enabled,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Persistent, non-scrolling Save/Cancel action bar (ROADMAP Task 7 Phase D), pinned to the bottom
- * of [EditBookForm] on an elevated [Surface] (Material 3's default `BottomAppBar` tonal elevation,
- * 3dp) so the pair reads as one committed action group that's always reachable, rather than two
- * inline buttons at the end of a long scroll. [canSave] mirrors the old inline Save button's
- * `enabled` condition exactly (parse-once validation must pass, and no save already in flight);
- * [isSaving] additionally swaps the Save button's label for a small inline
- * [CircularProgressIndicator] so the in-flight state is visible on the action itself, not only via
- * the fields being disabled.
- */
-@Composable
-private fun EditBookBottomBar(
-    isSaving: Boolean,
-    canSave: Boolean,
-    onCancel: () -> Unit,
-    onSave: () -> Unit,
-) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
-        Row(
-            // A pinned control behind the navigation bar is the same bug as a pinned control
-            // behind the keyboard (#95), so this bar takes the bottom and horizontal insets as
-            // real padding. The Surface itself still spans to the window edge, so its elevated
-            // background fills the bar area rather than leaving a strip of list showing under it.
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(barPadding(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedButton(
-                onClick = onCancel,
-                enabled = !isSaving,
-                modifier = Modifier.weight(1f).testTag(TestTags.EditBook.CANCEL_BUTTON),
-            ) {
-                Text(stringResource(R.string.cancel_button))
-            }
-            Button(
-                onClick = onSave,
-                enabled = canSave && !isSaving,
-                modifier = Modifier.weight(1f).testTag(TestTags.EditBook.SAVE_BUTTON),
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text(stringResource(R.string.save_button))
-                }
-            }
-        }
+        StatusDropdownChip(
+            value = status,
+            options = ReadingStatus.entries.toList(),
+            label = { it.displayLabel() },
+            onSelect = onStatusChange,
+            onClickLabel = stringResource(R.string.detail_status_change_action_label),
+            enabled = enabled,
+        )
     }
 }
 
@@ -697,6 +623,7 @@ private val PREVIEW_READY_STATE =
 private fun EditBookScreenReadyPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE,
             onRetry = {},
             onNavigateBack = {},
@@ -711,6 +638,7 @@ private fun EditBookScreenReadyPreview() {
 private fun EditBookScreenReadyDarkPreview() {
     MediaTrackerTheme(darkTheme = true, dynamicColor = false) {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE,
             onRetry = {},
             onNavigateBack = {},
@@ -725,6 +653,7 @@ private fun EditBookScreenReadyDarkPreview() {
 private fun EditBookScreenErrorPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE.copy(errorMessage = "Total pages must be a positive number"),
             onRetry = {},
             onNavigateBack = {},
@@ -739,6 +668,7 @@ private fun EditBookScreenErrorPreview() {
 private fun EditBookScreenSavingPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE.copy(isSaving = true),
             onRetry = {},
             onNavigateBack = {},
@@ -753,6 +683,7 @@ private fun EditBookScreenSavingPreview() {
 private fun EditBookScreenUnknownTotalPagesPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = PREVIEW_READY_STATE.copy(totalPages = null, purchasePrice = null),
             onRetry = {},
             onNavigateBack = {},
@@ -767,6 +698,7 @@ private fun EditBookScreenUnknownTotalPagesPreview() {
 private fun EditBookScreenLongTitlePreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState =
                 PREVIEW_READY_STATE.copy(
                     title =
@@ -786,6 +718,7 @@ private fun EditBookScreenLongTitlePreview() {
 private fun EditBookScreenLoadingPreview() {
     MediaTrackerTheme {
         EditBookScreen(
+            coverStorageDir = "",
             uiState = EditBookUiState.Loading,
             onRetry = {},
             onNavigateBack = {},

@@ -51,6 +51,7 @@ class EditScreensLoadFailedTest {
     @Composable
     private fun EditShow() =
         EditTVShowScreen(
+            coverStorageDir = "",
             uiState = EditTVShowUiState.LoadFailed,
             onTitleChange = {},
             onReleaseYearChange = {},
@@ -65,6 +66,7 @@ class EditScreensLoadFailedTest {
     @Composable
     private fun EditFilm() =
         EditMovieScreen(
+            coverStorageDir = "",
             uiState = EditMovieUiState.LoadFailed,
             onTitleChange = {},
             onReleaseYearChange = {},
@@ -80,6 +82,7 @@ class EditScreensLoadFailedTest {
     @Composable
     private fun EditBook() =
         EditBookScreen(
+            coverStorageDir = "",
             uiState = EditBookUiState.LoadFailed,
             onNavigateBack = { backs++ },
             onRetry = { retries++ },

@@ -6,18 +6,22 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.domain.BookMetadataValidation
 import com.hub.media.ui.EditBookUiState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -76,6 +80,7 @@ class EditBookScreenTest {
         composeRule.setContent {
             MediaTrackerTheme {
                 EditBookScreen(
+                    coverStorageDir = "",
                     uiState = uiState,
                     onRetry = {},
                     onNavigateBack = {},
@@ -173,5 +178,28 @@ class EditBookScreenTest {
         composeRule.onNode(saveButtonMatcher()).assertIsEnabled().performClick()
 
         assertNull("blank purchase price must arrive as null, not 0.0", capturedPrice)
+    }
+
+    @Test
+    fun header_showsTheSavedTitleAndKindLine() {
+        setContent(readyState(title = "Dune", releaseYear = 1965))
+
+        composeRule.onNode(hasText("Dune") and isHeading()).assertExists()
+        composeRule.onNodeWithText("Book · 1965").assertExists()
+    }
+
+    @Test
+    fun status_isChosenFromTheDropdown_andTheChoiceIsSaved() {
+        var saved: ReadingStatus? = null
+        setContent(readyState(), onSave = { _, _, _, _, _, status, _ -> saved = status })
+        val dnf = context.getString(R.string.reading_status_dnf)
+        // Positive control for the dropdown: the option is not on screen until the chip is opened.
+        composeRule.onNodeWithText(dnf).assertDoesNotExist()
+
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_to_read)).performClick()
+        composeRule.onNodeWithText(dnf).performClick()
+        composeRule.onNodeWithTag(TestTags.EditBook.SAVE_BUTTON).performClick()
+
+        assertEquals(ReadingStatus.DNF, saved)
     }
 }
