@@ -5,9 +5,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -21,8 +23,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.features.stats.data.AuthorTime
+import com.hub.media.features.stats.data.FormatTime
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
+import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.StatsUiState
 import org.junit.Assert.assertEquals
@@ -64,6 +71,8 @@ class StatsScreenTest {
         stats: StatsUiState.Period = StatsUiState.Period(3600L, 4, 120, 1),
         goal: GoalProgress? = null,
         finishesByMonth: List<Int>? = null,
+        breakdown: ReadingBreakdown = ReadingBreakdown(),
+        finishOutcomes: FinishOutcomes? = null,
     ) = StatsUiState(
         isLoading = false,
         period = period,
@@ -72,6 +81,8 @@ class StatsScreenTest {
         goal = goal,
         goalYear = 2024,
         finishesByMonth = finishesByMonth,
+        breakdown = breakdown,
+        finishOutcomes = finishOutcomes,
     )
 
     private fun scrollTo(text: String) {
@@ -313,5 +324,114 @@ class StatsScreenTest {
         composeRule.onNodeWithTag(TestTags.Stats.PERIODS).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.MONTH_CHART).assertDoesNotExist()
         composeRule.onNodeWithText(string(R.string.stats_month_chart_title)).assertDoesNotExist()
+    }
+
+    // --- Part 2 (#219): when you read, top authors, formats, did not finish ----------------------
+
+    private val week = List(7) { it + 1 } // ISO day numbers, Monday first
+
+    private fun breakdown(
+        dayParts: List<Long> = listOf(3_600L, 0L, 1_800L, 0L),
+        authors: List<AuthorTime> = listOf(AuthorTime("Ursula K. Le Guin", 3_600)),
+        formats: List<FormatTime> = listOf(FormatTime(BookFormat.PAPERBACK, 5_400)),
+    ) = ReadingBreakdown(
+        dayParts = dayParts,
+        weekdays = week,
+        weekdaySeconds = listOf(dayParts.sum(), 0L, 0L, 0L, 0L, 0L, 0L),
+        topAuthors = authors,
+        formats = formats,
+        totalSeconds = dayParts.sum(),
+    )
+
+    private fun inCard(
+        cardTag: String,
+        text: String,
+    ): SemanticsNodeInteraction {
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(cardTag))
+        return composeRule.onNode(hasText(text) and hasAnyAncestor(hasTestTag(cardTag)))
+    }
+
+    @Test
+    fun aPopulatedBreakdown_fillsTheThreeCards() {
+        setContent(loaded(breakdown = breakdown()))
+
+        inCard(TestTags.Stats.WHEN_CARD, string(R.string.stats_when_title)).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.WEEKDAY_CHART).assertExists()
+        inCard(TestTags.Stats.AUTHORS_CARD, "Ursula K. Le Guin").assertExists()
+        inCard(TestTags.Stats.AUTHORS_CARD, "1h 0m").assertExists()
+        inCard(TestTags.Stats.FORMATS_CARD, string(R.string.book_format_paperback)).assertExists()
+        inCard(TestTags.Stats.FORMATS_CARD, "100%").assertExists()
+    }
+
+    @Test
+    fun noTimedReading_eachCardSaysSo_andDrawsNoChart() {
+        setContent(loaded(breakdown = ReadingBreakdown(weekdays = week)))
+        val none = string(R.string.stats_no_timed_reading)
+
+        inCard(TestTags.Stats.WHEN_CARD, none).assertExists()
+        inCard(TestTags.Stats.AUTHORS_CARD, none).assertExists()
+        inCard(TestTags.Stats.FORMATS_CARD, none).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertDoesNotExist()
+        composeRule.onNodeWithTag(TestTags.Stats.WEEKDAY_CHART).assertDoesNotExist()
+    }
+
+    @Test
+    fun aLongAuthorName_keepsItsTimeOnTheRow() {
+        val long = "Sir Terence David John Pratchett, with a name long enough to run off the edge"
+        setContent(loaded(breakdown = breakdown(authors = listOf(AuthorTime(long, 7_200)))))
+
+        inCard(TestTags.Stats.AUTHORS_CARD, long).assertExists()
+        inCard(TestTags.Stats.AUTHORS_CARD, "2h 0m").assertExists()
+    }
+
+    @Test
+    fun aSliverOfTime_isUnderOnePercent_notZero() {
+        val formats = listOf(FormatTime(BookFormat.PAPERBACK, 9_990), FormatTime(BookFormat.EBOOK, 10))
+        setContent(loaded(breakdown = breakdown(dayParts = listOf(10_000L, 0L, 0L, 0L), formats = formats)))
+
+        inCard(TestTags.Stats.FORMATS_CARD, string(R.string.stats_percent_under_one)).assertExists()
+        inCard(TestTags.Stats.FORMATS_CARD, "0%").assertDoesNotExist()
+    }
+
+    @Test
+    fun didNotFinish_showsOnAllTime() {
+        setContent(loaded(period = StatsPeriod.ALL_TIME, finishOutcomes = FinishOutcomes(finished = 12, dnf = 2)))
+        val value = context.resources.getQuantityString(R.plurals.stats_dnf_value, 14, 2, 14, 14)
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_dnf_label, value)).assertExists()
+    }
+
+    @Test
+    fun didNotFinish_withNothingToCount_isUnknown() {
+        setContent(loaded(period = StatsPeriod.ALL_TIME, finishOutcomes = FinishOutcomes(0, 0)))
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.stats_dnf_label, string(R.string.stats_unknown_value)))
+            .assertExists()
+    }
+
+    @Test
+    fun didNotFinish_isNotShownOffAllTime() {
+        setContent(loaded(period = StatsPeriod.WEEK, finishOutcomes = null))
+
+        // Positive control: the period card is drawn.
+        composeRule.onNode(hasText(string(R.string.stats_this_week_title)) and !hasClickAction()).assertExists()
+        composeRule.onNode(hasText("Did not finish", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun thePartOfDayChart_namesOnlyThePartsWithTime() {
+        setContent(loaded(breakdown = breakdown(dayParts = listOf(3_600L, 0L, 0L, 0L))))
+
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.DAYPART_CHART))
+        val description =
+            composeRule
+                .onNodeWithTag(TestTags.Stats.DAYPART_CHART)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.ContentDescription]
+                .joinToString()
+        assertTrue(description, string(R.string.stats_daypart_morning) in description)
+        assertTrue(description, string(R.string.stats_daypart_afternoon) !in description)
     }
 }

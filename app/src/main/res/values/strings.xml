@@ -263,6 +263,23 @@
         <item quantity="one">%1$s: %2$d book</item>
         <item quantity="other">%1$s: %2$d books</item>
     </plurals>
+    <string name="stats_when_title">When you read</string>
+    <string name="stats_daypart_morning">Morning</string>
+    <string name="stats_daypart_afternoon">Afternoon</string>
+    <string name="stats_daypart_evening">Evening</string>
+    <string name="stats_daypart_night">Night</string>
+    <string name="stats_authors_title">Top authors</string>
+    <string name="stats_formats_title">Formats</string>
+    <string name="stats_no_timed_reading">No timed reading in this period</string>
+    <!-- One slot of a chart, read aloud: "Morning: 2h 10m". -->
+    <string name="stats_chart_entry">%1$s: %2$s</string>
+    <string name="stats_percent">%1$d%%</string>
+    <string name="stats_percent_under_one">&lt;1%</string>
+    <string name="stats_dnf_label">Did not finish: %1$s</string>
+    <plurals name="stats_dnf_value">
+        <item quantity="one">%1$d of %2$d book (%3$d%%)</item>
+        <item quantity="other">%1$d of %2$d books (%3$d%%)</item>
+    </plurals>
     <plurals name="stats_streak_days">
         <item quantity="one">%1$d day streak</item>
         <item quantity="other">%1$d day streak</item>

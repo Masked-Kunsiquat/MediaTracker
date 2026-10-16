@@ -52,6 +52,11 @@ object TestTags {
         const val PERIODS = "stats:periods"
         const val GOAL_CARD = "stats:goal"
         const val MONTH_CHART = "stats:monthChart"
+        const val WHEN_CARD = "stats:when"
+        const val DAYPART_CHART = "stats:daypartChart"
+        const val WEEKDAY_CHART = "stats:weekdayChart"
+        const val AUTHORS_CARD = "stats:authors"
+        const val FORMATS_CARD = "stats:formats"
     }
 
     object Library {
