@@ -32,11 +32,18 @@ public data class StatsUiState(
      * @property pagesRead Sum of known page deltas, or `null` when none is known.
      * @property booksFinished Books whose status is FINISHED with a finish date in the period; All
      *   time also counts finished books that have no finish date.
+     * @property averageSessionSeconds Known time read over sessions with a known duration, or `null`.
+     * @property longestSessionSeconds The longest known session, or `null` (#219).
+     * @property pagesPerHour Reading speed over sessions with both a duration and pages, rounded,
+     *   or `null` when no session has both (#219).
      */
     public data class Period(
         val timeReadSeconds: Long? = null,
         val sessionCount: Int = 0,
         val pagesRead: Int? = null,
         val booksFinished: Int = 0,
+        val averageSessionSeconds: Long? = null,
+        val longestSessionSeconds: Long? = null,
+        val pagesPerHour: Int? = null,
     )
 }

@@ -125,7 +125,18 @@ class StatsViewModelTest {
             val state = newViewModel().uiState.first { !it.isLoading }
 
             assertEquals(StatsPeriod.WEEK, state.period)
-            assertEquals(StatsUiState.Period(600L, 1, 10, 0), state.stats)
+            assertEquals(
+                StatsUiState.Period(
+                    600L,
+                    1,
+                    10,
+                    0,
+                    averageSessionSeconds = 600L,
+                    longestSessionSeconds = 600L,
+                    pagesPerHour = 60,
+                ),
+                state.stats,
+            )
             assertEquals(1, state.currentStreakDays, "a single session on \"today\" is a 1-day streak")
         }
 
@@ -159,7 +170,19 @@ class StatsViewModelTest {
             viewModel.selectPeriod(StatsPeriod.MONTH)
 
             val month = viewModel.uiState.first { it.period == StatsPeriod.MONTH }
-            assertEquals(StatsUiState.Period(500L, 2, 13, 0), month.stats)
+            // 13 pages in 500 s is 93.6 pages/hour, rounded to 94.
+            assertEquals(
+                StatsUiState.Period(
+                    500L,
+                    2,
+                    13,
+                    0,
+                    averageSessionSeconds = 250L,
+                    longestSessionSeconds = 300L,
+                    pagesPerHour = 94,
+                ),
+                month.stats,
+            )
             assertEquals(StatsPeriod.MONTH, settingsRepository.observeStatsPeriod().first())
             // A fresh screen opens where the user left it.
             assertEquals(StatsPeriod.MONTH, newViewModel().uiState.first { !it.isLoading }.period)
@@ -214,7 +237,22 @@ class StatsViewModelTest {
 
             // Waits for any change, then names the expected whole period, so a regression fails on
             // the comparison rather than by a minute-long timeout.
-            assertEquals(StatsUiState.Period(400L, 1, 7, 0), viewModel.uiState.first { it.stats != monday }.stats)
+            assertEquals(
+                StatsUiState.Period(
+                    400L,
+                    1,
+                    7,
+                    0,
+                    averageSessionSeconds = 400L,
+                    longestSessionSeconds = 400L,
+                    pagesPerHour = 63,
+                ),
+                viewModel.uiState
+                    .first {
+                        it.stats !=
+                            monday
+                    }.stats,
+            )
         }
 
     /**
@@ -233,7 +271,16 @@ class StatsViewModelTest {
                 viewModel.uiState.collect { if (!it.isLoading) seen += it.stats }
             }
             val before = viewModel.uiState.first { !it.isLoading }.stats
-            val after = StatsUiState.Period(300L, 1, 5, 0)
+            val after =
+                StatsUiState.Period(
+                    300L,
+                    1,
+                    5,
+                    0,
+                    averageSessionSeconds = 300L,
+                    longestSessionSeconds = 300L,
+                    pagesPerHour = 60,
+                )
 
             session(now, durationSeconds = 300, deltaPages = 5)
             viewModel.uiState.first { it.stats == after && it.currentStreakDays == 1 }

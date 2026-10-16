@@ -74,7 +74,23 @@ interface StatsDao {
           (SELECT COUNT(*) FROM book_details
              WHERE status = :finished
                AND (:from IS NULL OR finishedAt >= :from)
-               AND (:to IS NULL OR finishedAt < :to)) AS booksFinished
+               AND (:to IS NULL OR finishedAt < :to)) AS booksFinished,
+          (SELECT COUNT(*) FROM reading_sessions
+             WHERE durationSeconds IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS timedSessionCount,
+          (SELECT MAX(durationSeconds) FROM reading_sessions
+             WHERE durationSeconds IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS longestSessionSeconds,
+          (SELECT SUM(durationSeconds) FROM reading_sessions
+             WHERE durationSeconds > 0 AND deltaPages IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS speedSeconds,
+          (SELECT SUM(deltaPages) FROM reading_sessions
+             WHERE durationSeconds > 0 AND deltaPages IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS speedPages
         """,
     )
     fun observePeriodStats(

@@ -63,7 +63,7 @@ class PeriodStatsDaoTest {
     @Test
     fun anEmptyRange_isUnknownTimeAndPages_andZeroCounts() =
         runTest {
-            assertEquals(PeriodStatsRow(null, 0, null, 0), stats(1_000, 2_000))
+            assertEquals(PeriodStatsRow(null, 0, null, 0, 0, null, null, null), stats(1_000, 2_000))
         }
 
     @Test
@@ -74,7 +74,7 @@ class PeriodStatsDaoTest {
             session(1_200, durationSeconds = null, deltaPages = null)
             session(1_300, durationSeconds = 500, deltaPages = 5)
 
-            assertEquals(PeriodStatsRow(800L, 3, 15, 0), stats(1_000, 2_000))
+            assertEquals(PeriodStatsRow(800L, 3, 15, 0, 2, 500L, 800L, 15), stats(1_000, 2_000))
         }
 
     @Test
@@ -84,7 +84,7 @@ class PeriodStatsDaoTest {
             session(1_100, durationSeconds = null, deltaPages = null)
             session(1_200, durationSeconds = null, deltaPages = null)
 
-            assertEquals(PeriodStatsRow(null, 2, null, 0), stats(1_000, 2_000))
+            assertEquals(PeriodStatsRow(null, 2, null, 0, 0, null, null, null), stats(1_000, 2_000))
         }
 
     @Test
@@ -141,7 +141,7 @@ class PeriodStatsDaoTest {
             session(1, durationSeconds = 60, deltaPages = 1)
             session(999_999_999, durationSeconds = 60, deltaPages = 1)
 
-            assertEquals(PeriodStatsRow(120L, 2, 2, 0), stats(null, null))
+            assertEquals(PeriodStatsRow(120L, 2, 2, 0, 2, 60L, 120L, 2), stats(null, null))
         }
 
     @Test
@@ -157,5 +157,51 @@ class PeriodStatsDaoTest {
 
             // The query observes book_details as well as reading_sessions.
             assertEquals(1, flow.first { it.booksFinished == 1 }.booksFinished)
+        }
+
+    // --- Speed and session lengths (#219) -----------------------------------------------------
+
+    @Test
+    fun speed_countsOnlySessionsWithBothAKnownDurationAndKnownPages() =
+        runTest {
+            insertBook()
+            session(1_100, durationSeconds = 1_800, deltaPages = 30) // counts
+            session(1_200, durationSeconds = 600, deltaPages = null) // time but no pages: excluded
+            session(1_300, durationSeconds = null, deltaPages = 40) // pages but no time: excluded
+            session(1_400, durationSeconds = 0, deltaPages = 5) // zero time: excluded, never a division by zero
+
+            val row = stats(1_000, 2_000)
+
+            assertEquals(1_800L, row.speedSeconds)
+            assertEquals(30, row.speedPages)
+        }
+
+    @Test
+    fun speed_isUnknown_whenNoSessionHasBoth() =
+        runTest {
+            insertBook()
+            session(1_100, durationSeconds = 600, deltaPages = null)
+
+            val row = stats(1_000, 2_000)
+
+            assertEquals(null, row.speedSeconds)
+            assertEquals(null, row.speedPages)
+            // Positive control: the session is there, and timed.
+            assertEquals(1, row.timedSessionCount)
+        }
+
+    @Test
+    fun longestSession_andTimedCount_ignoreSessionsWithoutADuration() =
+        runTest {
+            insertBook()
+            session(1_100, durationSeconds = 900)
+            session(1_200, durationSeconds = 2_400)
+            session(1_300, durationSeconds = null)
+
+            val row = stats(1_000, 2_000)
+
+            assertEquals(2_400L, row.longestSessionSeconds)
+            assertEquals(2, row.timedSessionCount)
+            assertEquals(3, row.sessionCount)
         }
 }

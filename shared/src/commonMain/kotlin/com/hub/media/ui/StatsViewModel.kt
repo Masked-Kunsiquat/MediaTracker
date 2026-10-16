@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
+import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 
@@ -84,10 +85,22 @@ public class StatsViewModel(
     }
 }
 
+/**
+ * The screen's shape of one period. Average and speed are derived here from the row's sums, so they
+ * come from the same single read as everything else (#219): unknown stays `null`, never 0.
+ */
 private fun PeriodStatsRow.toPeriod() =
     StatsUiState.Period(
         timeReadSeconds = timeReadSeconds,
         sessionCount = sessionCount,
         pagesRead = pagesRead,
         booksFinished = booksFinished,
+        averageSessionSeconds = timeReadSeconds?.takeIf { timedSessionCount > 0 }?.let { it / timedSessionCount },
+        longestSessionSeconds = longestSessionSeconds,
+        pagesPerHour =
+            if (speedSeconds != null && speedPages != null && speedSeconds > 0) {
+                ((speedPages * 3_600.0) / speedSeconds).roundToInt()
+            } else {
+                null
+            },
     )
