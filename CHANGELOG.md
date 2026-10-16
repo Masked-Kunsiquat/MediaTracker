@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-16
+
 ### Changed
 - The app now opens on a hub with a card each for Books, Films and Shows, each showing a live number: books you're reading, films on your watchlist, shows with an episode up next. A card opens a library of just that kind, where search covers only that kind and + adds it directly. Everything together is still there as All media, Stats is on the hub too, and Settings has moved to the hub's ⚙. (#126)
 
