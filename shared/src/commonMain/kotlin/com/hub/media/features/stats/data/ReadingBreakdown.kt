@@ -6,6 +6,7 @@ import com.hub.media.core.database.entities.splitAuthors
 import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toLocalDateTime
 
 /** The four parts of the day "when you read" is split into (#219); see [dayPartOf] for the hours. */
@@ -28,15 +29,17 @@ public data class FormatTime(
  * here is the same number: `dayParts.sum() == weekdaySeconds.sum() == formats' sum == totalSeconds`.
  *
  * @property dayParts Seconds per [DayPart], in its declaration order.
- * @property weekdays The seven days, starting on the week-start setting; [weekdaySeconds] follows
- *   the same order. Empty only in the default value used while the screen is loading.
+ * @property weekdays The seven days as ISO day numbers (1 = Monday … 7 = Sunday), starting on the
+ *   week-start setting; [weekdaySeconds] follows the same order. Numbers rather than [DayOfWeek]:
+ *   the app module does not depend on kotlinx-datetime, whose `DayOfWeek` is not `java.time`'s.
+ *   Empty only in the default value used while the screen is loading.
  * @property topAuthors At most [TOP_AUTHORS], most time first, ties by name. A co-author gets the
  *   whole session's time.
  * @property formats Every format with time, most first, ties in [BookFormat]'s order.
  */
 public data class ReadingBreakdown(
     val dayParts: List<Long> = List(DayPart.entries.size) { 0L },
-    val weekdays: List<DayOfWeek> = emptyList(),
+    val weekdays: List<Int> = emptyList(),
     val weekdaySeconds: List<Long> = List(7) { 0L },
     val topAuthors: List<AuthorTime> = emptyList(),
     val formats: List<FormatTime> = emptyList(),
@@ -72,7 +75,7 @@ public fun readingBreakdown(
     timeZone: TimeZone,
     weekStart: WeekStartDay,
 ): ReadingBreakdown {
-    val weekdays = List(7) { DayOfWeek((weekStart.isoDayNumber - 1 + it) % 7 + 1) }
+    val weekdays = List(7) { (weekStart.isoDayNumber - 1 + it) % 7 + 1 }
     val dayParts = LongArray(DayPart.entries.size)
     val weekdaySeconds = LongArray(7)
     val formatSeconds = mutableMapOf<BookFormat, Long>()
@@ -82,7 +85,7 @@ public fun readingBreakdown(
     for (row in rows) {
         val local = row.timestampStart.toLocalDateTime(timeZone)
         dayParts[dayPartOf(local.hour).ordinal] += row.durationSeconds
-        weekdaySeconds[weekdays.indexOf(local.dayOfWeek)] += row.durationSeconds
+        weekdaySeconds[weekdays.indexOf(local.dayOfWeek.isoDayNumber)] += row.durationSeconds
         formatSeconds[row.format] = (formatSeconds[row.format] ?: 0L) + row.durationSeconds
         for (name in splitAuthors(row.authors)) {
             val key = authorKey(name)

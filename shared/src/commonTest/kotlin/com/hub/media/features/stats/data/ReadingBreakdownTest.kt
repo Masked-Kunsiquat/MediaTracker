@@ -6,6 +6,7 @@ import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toInstant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,15 +63,15 @@ class ReadingBreakdownTest {
         val b = breakdown(row(june17(3, 30), 600), zone = newYork)
 
         assertEquals(600L, b.dayParts[DayPart.NIGHT.ordinal])
-        assertEquals(600L, b.weekdaySeconds[b.weekdays.indexOf(DayOfWeek.SUNDAY)])
-        assertEquals(0L, b.weekdaySeconds[b.weekdays.indexOf(DayOfWeek.MONDAY)])
+        assertEquals(600L, b.weekdaySeconds[b.weekdays.indexOf(DayOfWeek.SUNDAY.isoDayNumber)])
+        assertEquals(0L, b.weekdaySeconds[b.weekdays.indexOf(DayOfWeek.MONDAY.isoDayNumber)])
     }
 
     @Test
     fun theWeekdaysStartOnTheWeekStart() {
-        assertEquals(DayOfWeek.MONDAY, breakdown(weekStart = WeekStartDay.MONDAY).weekdays.first())
+        assertEquals(DayOfWeek.MONDAY.isoDayNumber, breakdown(weekStart = WeekStartDay.MONDAY).weekdays.first())
         val sunday = breakdown(row(june17(10), 60), weekStart = WeekStartDay.SUNDAY)
-        assertEquals(DayOfWeek.SUNDAY, sunday.weekdays.first())
+        assertEquals(DayOfWeek.SUNDAY.isoDayNumber, sunday.weekdays.first())
         assertEquals(7, sunday.weekdays.distinct().size)
         // Monday is the second slot when the week starts on Sunday.
         assertEquals(listOf(0L, 60L, 0L, 0L, 0L, 0L, 0L), sunday.weekdaySeconds)
