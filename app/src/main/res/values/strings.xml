@@ -59,6 +59,8 @@
     <string name="refetch_cover_button">Re-fetch cover</string>
     <string name="refetch_cover_no_isbn">This book has no ISBN on record, so a cover can\'t be looked up.</string>
     <string name="refetch_cover_in_progress">Re-fetching cover…</string>
+    <!-- #172: the shared "⋮" on the film, show and book detail screens -->
+    <string name="detail_more_options">More options</string>
     <string name="cover_view_action_label">View enlarged cover</string>
 
     <!-- BookDetailScreen: Details tab (books-polish pass revamp) -->
@@ -73,7 +75,6 @@
     <!-- DetailHeader (#141 step 3): shared header adopted by BookDetailScreen -->
     <string name="book_detail_kind">Book</string>
     <string name="book_detail_finished_note">Finished %1$s</string>
-    <string name="book_detail_overflow_menu_content_description">More options</string>
 
     <!-- BookDetailScreen: Reading history timeline (books-polish pass revamp) -->
     <string name="timeline_today">Today</string>

@@ -18,12 +18,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,10 +66,12 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFact
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailMenuAction
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailProgressCard
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
 import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedCircle
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedDatePickerDialog
@@ -476,38 +475,34 @@ fun TVShowDetailScreen(
                     }
                 },
                 actions = {
-                    // First, as on the film and book screens (#173). Gated on Ready like theirs:
-                    // there is nothing to edit until the show has loaded. Not inside the refresh
-                    // guard -- a hand-entered show, which cannot refresh, is the one that most
-                    // needs editing.
+                    // #172: the bar every detail screen shares, gated on Ready like the film and
+                    // book screens -- there is nothing to edit, refresh or delete until the show has
+                    // loaded. (Delete used to show while loading; settled here.) Edit is not tied to
+                    // refresh: a hand-entered show, which cannot refresh, is the one that most needs
+                    // editing, and every show can be deleted, including one typed in by hand.
                     if (uiState is TVShowDetailUiState.Ready) {
-                        IconButton(onClick = onNavigateToEdit) {
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = stringResource(R.string.tv_show_detail_edit),
-                            )
-                        }
-                    }
-                    // Only for a show that records where it came from. A hand-entered show has
-                    // nothing to refresh against, and a control that always fails is worse than one
-                    // that is absent.
-                    if (uiState is TVShowDetailUiState.Ready && uiState.canRefreshMetadata) {
-                        IconButton(
-                            onClick = onRefreshMetadata,
-                            enabled = !uiState.isRefreshingMetadata,
-                        ) {
-                            Icon(
-                                Icons.Filled.Refresh,
-                                contentDescription =
-                                    stringResource(R.string.tv_show_detail_refresh_metadata),
-                            )
-                        }
-                    }
-                    // Outside that guard: every show can be deleted, including one typed in by hand.
-                    IconButton(onClick = { showDeleteConfirmation = true }) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = stringResource(R.string.tv_show_detail_delete),
+                        val refreshLabel = stringResource(R.string.tv_show_detail_refresh_metadata)
+                        DetailTopBarActions(
+                            editContentDescription = stringResource(R.string.tv_show_detail_edit),
+                            onEdit = onNavigateToEdit,
+                            // Refresh only for a show that records where it came from: a hand-entered
+                            // show has nothing to refresh against, and a control that always fails is
+                            // worse than one that is absent.
+                            secondary =
+                                if (uiState.canRefreshMetadata) {
+                                    listOf(
+                                        DetailMenuAction(
+                                            label = refreshLabel,
+                                            onClick = onRefreshMetadata,
+                                            enabled = !uiState.isRefreshingMetadata,
+                                            inProgress = uiState.isRefreshingMetadata,
+                                        ),
+                                    )
+                                } else {
+                                    emptyList()
+                                },
+                            deleteLabel = stringResource(R.string.tv_show_detail_delete),
+                            onDelete = { showDeleteConfirmation = true },
                         )
                     }
                 },

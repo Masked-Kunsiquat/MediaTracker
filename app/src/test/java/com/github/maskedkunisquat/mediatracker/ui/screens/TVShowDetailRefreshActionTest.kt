@@ -3,8 +3,11 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -44,9 +47,10 @@ class TVShowDetailRefreshActionTest {
         // always fails is worse than one that is not there.
         setContent(canRefresh = false)
 
-        composeRule
-            .onNodeWithContentDescription("Refresh episode details from TMDB")
-            .assertDoesNotExist()
+        openMoreOptions()
+        composeRule.onNodeWithText("Refresh episode details from TMDB").assertDoesNotExist()
+        // Positive control: the menu is open, so the absence above is real.
+        menuItem("Delete show").assertExists()
     }
 
     @Test
@@ -56,16 +60,16 @@ class TVShowDetailRefreshActionTest {
         // should not be the thing that notices a missing control.
         setContent(canRefresh = false)
 
-        composeRule.onNodeWithContentDescription("Delete show").assertIsEnabled()
+        openMoreOptions()
+        menuItem("Delete show").assertIsEnabled()
     }
 
     @Test
     fun aShowAddedFromTmdbOffersTheAction() {
         setContent(canRefresh = true)
 
-        composeRule
-            .onNodeWithContentDescription("Refresh episode details from TMDB")
-            .assertIsEnabled()
+        openMoreOptions()
+        menuItem("Refresh episode details from TMDB").assertIsEnabled()
     }
 
     @Test
@@ -73,9 +77,8 @@ class TVShowDetailRefreshActionTest {
         // Two taps would issue two requests for the same show and report twice.
         setContent(canRefresh = true, refreshing = true)
 
-        composeRule
-            .onNodeWithContentDescription("Refresh episode details from TMDB")
-            .assertIsNotEnabled()
+        openMoreOptions()
+        menuItem("Refresh episode details from TMDB").assertIsNotEnabled()
     }
 
     @Test
@@ -83,10 +86,18 @@ class TVShowDetailRefreshActionTest {
         var refreshes = 0
         setContent(canRefresh = true, onRefresh = { refreshes++ })
 
-        composeRule.onNodeWithContentDescription("Refresh episode details from TMDB").performClick()
+        openMoreOptions()
+        menuItem("Refresh episode details from TMDB").performClick()
 
         assertEquals(1, refreshes)
     }
+
+    /** #172: Refresh and Delete are items in the shared "More options" menu. */
+    private fun openMoreOptions() {
+        composeRule.onNodeWithContentDescription("More options").performClick()
+    }
+
+    private fun menuItem(text: String) = composeRule.onNode(hasText(text) and hasClickAction())
 
     private fun setContent(
         canRefresh: Boolean,

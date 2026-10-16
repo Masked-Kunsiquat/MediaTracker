@@ -156,6 +156,16 @@ class TVShowDetailScreenTest {
         )
     }
 
+    /** #172: Delete and Refresh live behind the shared "More options" menu. */
+    private fun openMoreOptions() {
+        composeRule.onNodeWithContentDescription(context.getString(R.string.detail_more_options)).performClick()
+    }
+
+    private fun chooseFromMoreOptions(itemText: String) {
+        openMoreOptions()
+        composeRule.onNode(hasText(itemText) and hasClickAction()).performClick()
+    }
+
     private fun setContent(
         uiState: TVShowDetailUiState,
         onSetSeasonLength: (Int, Int) -> Unit = { _, _ -> },
@@ -277,13 +287,12 @@ class TVShowDetailScreenTest {
 
     @Test
     fun refreshAction_presentWhenCanRefreshMetadata_andInvokesOnRefreshMetadata() {
-        // Refresh is Ready-gated like Edit, and unlike delete (below) it is additionally gated on
-        // uiState.canRefreshMetadata, per the "nothing to refresh against" comment at its call site.
+        // Refresh lives in More options (#172), and only for a show with a TMDB id
+        // (uiState.canRefreshMetadata): a hand-entered show has nothing to refresh against.
         var refreshes = 0
         setContent(readyState(episodeCount = 3, canRefreshMetadata = true), onRefreshMetadata = { refreshes++ })
 
-        val refreshDesc = context.getString(R.string.tv_show_detail_refresh_metadata)
-        composeRule.onNodeWithContentDescription(refreshDesc).performClick()
+        chooseFromMoreOptions(context.getString(R.string.tv_show_detail_refresh_metadata))
 
         assertEquals(1, refreshes)
     }
@@ -292,8 +301,22 @@ class TVShowDetailScreenTest {
     fun refreshAction_absentWhenCannotRefreshMetadata() {
         setContent(readyState(episodeCount = 3, canRefreshMetadata = false))
 
-        val refreshDesc = context.getString(R.string.tv_show_detail_refresh_metadata)
-        composeRule.onNodeWithContentDescription(refreshDesc).assertDoesNotExist()
+        openMoreOptions()
+        composeRule.onNodeWithText(context.getString(R.string.tv_show_detail_refresh_metadata)).assertDoesNotExist()
+        // Positive control: the menu really is open.
+        composeRule
+            .onNode(hasText(context.getString(R.string.tv_show_detail_delete)) and hasClickAction())
+            .assertExists()
+    }
+
+    @Test
+    fun refreshAction_disabledWhileRefreshing() {
+        setContent(readyState(episodeCount = 3, canRefreshMetadata = true, isRefreshingMetadata = true))
+
+        openMoreOptions()
+        composeRule
+            .onNode(hasText(context.getString(R.string.tv_show_detail_refresh_metadata)) and hasClickAction())
+            .assertIsNotEnabled()
     }
 
     @Test
@@ -307,16 +330,13 @@ class TVShowDetailScreenTest {
     }
 
     @Test
-    fun deleteAction_isShownEvenDuringLoading_unlikeMovieAndBook() {
-        // Deliberate divergence pinned here for the unification: TVShowDetailScreen's delete
-        // IconButton sits outside the `uiState is Ready` guard that gates refresh (and that gates
-        // both actions on MovieDetailScreen/BookDetailScreen) -- see the "Outside that guard: every
-        // show can be deleted, including one typed in by hand" comment at its call site.
+    fun loading_hidesOverflowMenu() {
+        // #172 settled the old divergence: TV's Delete used to show even while loading. Like the
+        // film and book screens, nothing is offered until the show has loaded, so a delete always
+        // acts on a show the user has seen.
         setContent(TVShowDetailUiState.Loading)
 
-        val deleteDesc = context.getString(R.string.tv_show_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).assertIsDisplayed()
-        // Edit, unlike Delete, waits for Ready (#173), as it does on the film and book screens.
+        composeRule.onNodeWithContentDescription(context.getString(R.string.detail_more_options)).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(context.getString(R.string.tv_show_detail_edit)).assertDoesNotExist()
     }
 
@@ -326,7 +346,7 @@ class TVShowDetailScreenTest {
         setContent(readyState(episodeCount = 3), onDelete = { deletes++ })
 
         val deleteDesc = context.getString(R.string.tv_show_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).performClick()
+        chooseFromMoreOptions(deleteDesc)
 
         val confirmMessage = context.getString(R.string.tv_show_detail_delete_confirm)
         composeRule.onNodeWithText(confirmMessage).assertIsDisplayed()
@@ -339,7 +359,7 @@ class TVShowDetailScreenTest {
         setContent(readyState(episodeCount = 3), onDelete = { deletes++ })
 
         val deleteDesc = context.getString(R.string.tv_show_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).performClick()
+        chooseFromMoreOptions(deleteDesc)
 
         // The dialog's confirm button reuses R.string.tv_show_detail_delete ("Delete show") as its
         // label, same trick MovieDetailScreenTest uses to disambiguate it from the dialog's title.
@@ -354,7 +374,7 @@ class TVShowDetailScreenTest {
         setContent(readyState(episodeCount = 3), onDelete = { deletes++ })
 
         val deleteDesc = context.getString(R.string.tv_show_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).performClick()
+        chooseFromMoreOptions(deleteDesc)
 
         val cancelText = context.getString(R.string.cancel_button)
         composeRule.onNodeWithText(cancelText).performClick()

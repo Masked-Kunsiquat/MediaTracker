@@ -31,6 +31,12 @@ package com.github.maskedkunisquat.mediatracker.ui
  * test that silently matches nothing, and every use of a tag is greppable from its declaration.
  */
 object TestTags {
+    /** The shared detail-screen top bar (#172). */
+    object DetailTopBar {
+        const val OVERFLOW = "detail-top-bar:overflow"
+        const val DELETE = "detail-top-bar:delete"
+    }
+
     object Library {
         const val ADD_BUTTON = "library:add"
         const val SEARCH_FIELD = "library:search"

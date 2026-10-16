@@ -4,25 +4,17 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.content.ClipData
 import android.os.Build
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,7 +36,6 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -53,7 +44,9 @@ import com.github.maskedkunisquat.mediatracker.ui.BookDetailViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFact
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFactAction
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailMenuAction
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
+import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
@@ -188,7 +181,7 @@ fun BookDetailScreenRoute(
  * @param coverStorageDir Absolute path to the cover image storage directory.
  * @param onNavigateBack Called when the back icon is pressed.
  * @param onDeleteBook Called after the delete-book confirmation dialog (opened from the TopAppBar
- *   delete icon, only shown for [BookDetailUiState.Ready]) is confirmed. Wired by
+ *   "Delete book" item in More options, only shown for [BookDetailUiState.Ready]) is confirmed. Wired by
  *   [BookDetailScreenRoute] to [BookDetailViewModel.deleteBook], whose [Resource.Error][com.hub.media.core.util.Resource.Error]
  *   surfaces via [BookDetailUiState.Ready.errorMessage] the same way a failed
  *   [BookDetailViewModel.saveSession]/[BookDetailViewModel.deleteSession] does.
@@ -280,8 +273,6 @@ fun BookDetailScreen(
         }
     }
 
-    var showOverflowMenu by remember { mutableStateOf(false) }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -298,68 +289,35 @@ fun BookDetailScreen(
                     }
                 },
                 actions = {
+                    // #172: the bar every detail screen shares. "Re-fetch cover" moved into the
+                    // overflow menu from the cover's long-press in #141 step 3 -- it was unreachable
+                    // exactly when it was most wanted: with no cover, there was only a placeholder to
+                    // long-press. While a refetch runs, the item shows progress rather than a spinner
+                    // replacing the menu, which would have hidden Delete for the whole refetch.
                     if (uiState is BookDetailUiState.Ready) {
-                        IconButton(onClick = onEditBook) {
-                            Icon(
-                                imageVector = Icons.Filled.Edit,
-                                contentDescription = stringResource(R.string.edit_book_content_description),
-                            )
-                        }
-                        IconButton(onClick = { showDeleteBookDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Filled.Delete,
-                                contentDescription = stringResource(R.string.delete_book_content_description),
-                            )
-                        }
-                        // "Re-fetch cover" moved here from the cover's long-press (#141 step 3) --
-                        // it was unreachable exactly when it was most wanted: with no cover, there
-                        // was only a placeholder to long-press, and that placeholder is gone now
-                        // that the header draws artwork only when a hash exists.
-                        if (uiState.isRefetchingCover) {
-                            val refetchingDescription = stringResource(R.string.refetch_cover_in_progress)
-                            CircularProgressIndicator(
-                                modifier =
-                                    Modifier
-                                        .padding(horizontal = 12.dp)
-                                        .size(24.dp)
-                                        .semantics { contentDescription = refetchingDescription },
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Box {
-                                IconButton(onClick = { showOverflowMenu = true }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.MoreVert,
-                                        contentDescription =
-                                            stringResource(
-                                                R.string.book_detail_overflow_menu_content_description,
-                                            ),
-                                    )
-                                }
-                                DropdownMenu(
-                                    expanded = showOverflowMenu,
-                                    onDismissRequest = { showOverflowMenu = false },
-                                ) {
-                                    val hasIsbn = !uiState.details?.isbn.isNullOrBlank()
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                if (hasIsbn) {
-                                                    stringResource(R.string.refetch_cover_button)
-                                                } else {
-                                                    stringResource(R.string.refetch_cover_no_isbn)
-                                                },
-                                            )
-                                        },
-                                        onClick = {
-                                            showOverflowMenu = false
-                                            onRefetchCover()
-                                        },
+                        val hasIsbn = !uiState.details?.isbn.isNullOrBlank()
+                        DetailTopBarActions(
+                            editContentDescription = stringResource(R.string.edit_book_content_description),
+                            onEdit = onEditBook,
+                            secondary =
+                                listOf(
+                                    DetailMenuAction(
+                                        label =
+                                            if (uiState.isRefetchingCover) {
+                                                stringResource(R.string.refetch_cover_in_progress)
+                                            } else {
+                                                stringResource(R.string.refetch_cover_button)
+                                            },
+                                        onClick = onRefetchCover,
                                         enabled = hasIsbn,
-                                    )
-                                }
-                            }
-                        }
+                                        supportingText =
+                                            if (hasIsbn) null else stringResource(R.string.refetch_cover_no_isbn),
+                                        inProgress = uiState.isRefetchingCover,
+                                    ),
+                                ),
+                            deleteLabel = stringResource(R.string.delete_book_content_description),
+                            onDelete = { showDeleteBookDialog = true },
+                        )
                     }
                 },
             )
@@ -563,7 +521,7 @@ fun BookDetailScreen(
 }
 
 /**
- * Delete-book confirmation dialog (Task4 Phase E), opened from the TopAppBar delete icon.
+ * Delete-book confirmation dialog (Task4 Phase E), opened from the "Delete book" item in the top bar's More options menu (#172).
  * Mirrors the wording of the confirmation dialog that used to live on `LibraryScreen`'s book
  * cards before deletion moved here.
  */

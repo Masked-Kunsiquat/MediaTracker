@@ -75,6 +75,12 @@ class MovieDetailScreenTest {
             ),
     )
 
+    /** #172: Delete (and any secondary action) lives behind the shared "More options" menu. */
+    private fun chooseFromMoreOptions(itemText: String) {
+        composeRule.onNodeWithContentDescription(context.getString(R.string.detail_more_options)).performClick()
+        composeRule.onNode(hasText(itemText) and hasClickAction()).performClick()
+    }
+
     private fun setContent(
         uiState: MovieDetailUiState,
         onStatusChange: (WatchStatus) -> Unit = {},
@@ -177,7 +183,7 @@ class MovieDetailScreenTest {
         setContent(MovieDetailUiState.Ready(movie()), onDelete = { deletes++ })
 
         val deleteDesc = context.getString(R.string.movie_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).performClick()
+        chooseFromMoreOptions(deleteDesc)
 
         val confirmMessage = context.getString(R.string.movie_detail_delete_confirm)
         composeRule.onNodeWithText(confirmMessage).assertIsDisplayed()
@@ -190,7 +196,7 @@ class MovieDetailScreenTest {
         setContent(MovieDetailUiState.Ready(movie()), onDelete = { deletes++ })
 
         val deleteDesc = context.getString(R.string.movie_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).performClick()
+        chooseFromMoreOptions(deleteDesc)
 
         // The dialog's confirm button reuses R.string.movie_detail_delete ("Delete movie") as its
         // label; hasClickAction() disambiguates it from the dialog's (non-clickable) title Text
@@ -206,7 +212,7 @@ class MovieDetailScreenTest {
         setContent(MovieDetailUiState.Ready(movie()), onDelete = { deletes++ })
 
         val deleteDesc = context.getString(R.string.movie_detail_delete)
-        composeRule.onNodeWithContentDescription(deleteDesc).performClick()
+        chooseFromMoreOptions(deleteDesc)
 
         val cancelText = context.getString(R.string.cancel_button)
         composeRule.onNodeWithText(cancelText).performClick()
@@ -257,7 +263,7 @@ class MovieDetailScreenTest {
             .onNodeWithContentDescription(context.getString(R.string.edit_movie_content_description))
             .assertDoesNotExist()
         composeRule
-            .onNodeWithContentDescription(context.getString(R.string.movie_detail_delete))
+            .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
             .assertDoesNotExist()
     }
 
@@ -269,7 +275,7 @@ class MovieDetailScreenTest {
             .onNodeWithContentDescription(context.getString(R.string.edit_movie_content_description))
             .assertDoesNotExist()
         composeRule
-            .onNodeWithContentDescription(context.getString(R.string.movie_detail_delete))
+            .onNodeWithContentDescription(context.getString(R.string.detail_more_options))
             .assertDoesNotExist()
     }
 
