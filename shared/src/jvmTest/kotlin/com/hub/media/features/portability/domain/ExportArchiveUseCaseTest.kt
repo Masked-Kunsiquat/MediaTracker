@@ -16,6 +16,7 @@ import com.hub.media.features.settings.data.getGoogleBooksApiKey
 import com.hub.media.features.settings.data.setGoogleBooksApiKey
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
+import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.settings.data.setTmdbCredential
 import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.tv.data.SeasonQuickFill
@@ -117,13 +118,19 @@ class ExportArchiveUseCaseTest {
             settings.setIncludeSpecials(false)
             settings.setWeekStartDay(WeekStartDay.MONDAY)
             settings.setLogVerbosity(LogLevel.WARN)
+            settings.setReadingGoal(year = 2026, books = 12)
             settings.setGoogleBooksApiKey("secret-key")
             settings.setTmdbCredential("secret-token")
             assertEquals("secret-key", settings.getGoogleBooksApiKey(), "positive control: the credential is stored")
 
             val m = manifestOf()
             assertEquals(
-                mapOf("include_specials" to "false", "week_start_day" to "MONDAY", "log_verbosity" to "WARN"),
+                mapOf(
+                    "include_specials" to "false",
+                    "week_start_day" to "MONDAY",
+                    "log_verbosity" to "WARN",
+                    "reading_goal" to "2026:12",
+                ),
                 m.settings,
             )
             assertFalse(m.settings.values.any { "secret" in it })
