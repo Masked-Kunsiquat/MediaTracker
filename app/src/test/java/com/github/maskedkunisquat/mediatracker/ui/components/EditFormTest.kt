@@ -1,5 +1,8 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -81,6 +84,33 @@ class EditFormTest {
 
         composeRule.onNodeWithText("Watchlist").assertIsNotEnabled().performClick()
         composeRule.onNodeWithText("Watched").assertDoesNotExist()
+    }
+
+    @Test
+    fun statusChip_disabledWhileItsMenuIsOpen_closesTheMenu() {
+        var enabled by mutableStateOf(true)
+        val selected = mutableListOf<String>()
+        composeRule.setContent {
+            MediaTrackerTheme(dynamicColor = false) {
+                StatusDropdownChip(
+                    value = "Watchlist",
+                    options = listOf("Watchlist", "Watched"),
+                    label = { it },
+                    onSelect = { selected += it },
+                    onClickLabel = "Change status",
+                    enabled = enabled,
+                )
+            }
+        }
+        composeRule.onNodeWithText("Watchlist").performClick()
+        // Positive control: the menu really is open before the save starts.
+        composeRule.onNodeWithText("Watched").assertExists()
+
+        enabled = false
+
+        // A save started with the menu up must not leave a choice that lands after the values were read.
+        composeRule.onNodeWithText("Watched").assertDoesNotExist()
+        assertEquals(emptyList<String>(), selected)
     }
 
     @Test

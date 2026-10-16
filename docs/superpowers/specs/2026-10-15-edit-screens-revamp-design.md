@@ -94,7 +94,8 @@ detail headers already use.
 
 TDD throughout, with each test red first.
 
-- **Shared (commonTest):** the Film and TV view models expose the saved title, year and cover
+- **Shared (`shared/src/jvmTest/kotlin/`, since these tests touch Room through `testAppDatabase()`):**
+  the Film and TV view models expose the saved title, year and cover
   hash. Editing the title field leaves `savedTitle` unchanged. Book's `Ready` carries the cover hash.
 - **Robolectric screen tests (`app/src/test`):**
   - The header shows the saved title and kind line.

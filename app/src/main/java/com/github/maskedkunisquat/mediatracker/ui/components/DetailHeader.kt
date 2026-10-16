@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -289,13 +290,19 @@ fun <T> StatusDropdownChip(
                     if (!enabled) disabled()
                 },
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        // Disabled mid-open (a save started with the menu up) closes it and drops `expanded`, so the
+        // menu neither offers a choice that would land after the save read its values nor reappears
+        // when the chip is enabled again.
+        LaunchedEffect(enabled) {
+            if (!enabled) expanded = false
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(label(option)) },
                     onClick = {
                         expanded = false
-                        onSelect(option)
+                        if (enabled) onSelect(option)
                     },
                 )
             }
