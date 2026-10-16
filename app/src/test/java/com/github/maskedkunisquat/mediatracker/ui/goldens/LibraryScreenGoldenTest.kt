@@ -93,7 +93,6 @@ class LibraryScreenGoldenTest {
             onNavigateToAddTVShow = {},
             onMediaClick = { _, _ -> },
             onNavigateToStats = {},
-            onNavigateToSettings = {},
             onNavigateToUpNext = {},
             onStatusFilterChange = {},
             onSearchQueryChange = {},

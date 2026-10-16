@@ -205,6 +205,12 @@
         <item quantity="other">%d up next</item>
     </plurals>
     <string name="hub_all_media">All media</string>
+    <string name="library_title_books">Books</string>
+    <string name="library_title_films">Films</string>
+    <string name="library_title_shows">Shows</string>
+    <string name="library_search_placeholder_books">Search books by title or author</string>
+    <string name="library_search_placeholder_films">Search films</string>
+    <string name="library_search_placeholder_shows">Search shows</string>
     <string name="library_search_content_description">Search library</string>
     <string name="library_search_clear_content_description">Clear search</string>
     <string name="library_filtered_empty">No items match the current filters</string>

@@ -82,9 +82,8 @@ fun AppNavigation(
                 onNavigateToStats = {
                     navController.navigate(Route.Stats.route)
                 },
-                onNavigateToSettings = {
-                    navController.navigate(Route.Settings.route)
-                },
+                domain = null,
+                onNavigateBack = { navController.navigateUp() },
                 onNavigateToUpNext = {
                     navController.navigate(Route.UpNext.route)
                 },

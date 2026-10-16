@@ -3,6 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.github.maskedkunisquat.mediatracker.BuildConfig
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AddTVShowViewModel
@@ -75,6 +76,7 @@ class HubViewModelFactory(
 
 class LibraryViewModelFactory(
     appContainer: AppContainer,
+    domain: MediaType? = null,
 ) : AppViewModelFactory<LibraryViewModel>(
         LibraryViewModel::class.java,
         {
@@ -82,6 +84,7 @@ class LibraryViewModelFactory(
                 mediaRepository = appContainer.mediaRepository,
                 deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 settingsRepository = appContainer.settingsRepository,
+                domain = domain,
             )
         },
     )
