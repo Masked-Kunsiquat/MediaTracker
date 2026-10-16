@@ -45,6 +45,7 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
+import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.AppContainer
@@ -289,16 +290,14 @@ private fun StreakCard(streakDays: Int) {
 }
 
 /**
- * Formats a period's known-duration total as `H:MM` (hours unpadded, minutes zero-padded), or
+ * Formats a known duration as "22h 48m" ([formatDuration], #219), or
  * [R.string.stats_unknown_value] when `null` -- see [StatsScreen]'s KDoc on why `null` must never
  * be coerced to a real value here.
  */
 @Composable
 private fun formatTimeReadOrUnknown(totalSeconds: Long?): String {
     if (totalSeconds == null) return stringResource(R.string.stats_unknown_value)
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    return "%d:%02d".format(java.util.Locale.ROOT, hours, minutes)
+    return formatDuration(totalSeconds)
 }
 
 /**
