@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Stats shows your reading speed, average and longest session, a yearly reading goal you can set by tapping, and a chart of books finished per month in the Year view. Time read now reads like "22h 48m". (#219)
+
 ### Changed
 - Stats has a period picker: this week, this month, the last 30 days, this year, or all time. It remembers your choice. The separate "books finished (lifetime)" card is now the All time view. (#91)
 
