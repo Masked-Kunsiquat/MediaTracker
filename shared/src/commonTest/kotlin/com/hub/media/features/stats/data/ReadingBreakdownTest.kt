@@ -67,6 +67,26 @@ class ReadingBreakdownTest {
         assertEquals(0L, b.weekdaySeconds[b.weekdays.indexOf(DayOfWeek.MONDAY.isoDayNumber)])
     }
 
+    /**
+     * The edges, through [readingBreakdown] itself, in a half-hour zone: reading the hour in UTC
+     * would move each of these five and a half hours, onto a different part of the day.
+     */
+    @Test
+    fun theEdgesOfEachPart_inAHalfHourZone() {
+        val kolkata = TimeZone.of("Asia/Kolkata")
+        val cases =
+            listOf(
+                june17(4, 59) to DayPart.NIGHT,
+                june17(5, 0) to DayPart.MORNING,
+                june17(20, 59) to DayPart.EVENING,
+                june17(21, 0) to DayPart.NIGHT,
+            )
+        for ((at, part) in cases) {
+            val b = breakdown(row(at, 60, zone = kolkata), zone = kolkata)
+            assertEquals(60L, b.dayParts[part.ordinal], "$at")
+        }
+    }
+
     @Test
     fun theWeekdaysStartOnTheWeekStart() {
         assertEquals(DayOfWeek.MONDAY.isoDayNumber, breakdown(weekStart = WeekStartDay.MONDAY).weekdays.first())

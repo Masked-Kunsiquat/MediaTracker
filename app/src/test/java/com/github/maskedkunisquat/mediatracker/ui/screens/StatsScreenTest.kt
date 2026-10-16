@@ -19,6 +19,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.width
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
@@ -376,13 +378,62 @@ class StatsScreenTest {
         composeRule.onNodeWithTag(TestTags.Stats.WEEKDAY_CHART).assertDoesNotExist()
     }
 
+    /**
+     * The time must stay on the row, visibly, however long the name: bounds, not mere existence, since
+     * a squeezed-out time Text is still in the semantics tree. NATIVE graphics, because Robolectric's
+     * legacy text measures too narrow for a long name to overflow anything (AGENTS.md section 7).
+     */
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun aLongAuthorName_keepsItsTimeOnTheRow() {
         val long = "Sir Terence David John Pratchett, with a name long enough to run off the edge"
         setContent(loaded(breakdown = breakdown(authors = listOf(AuthorTime(long, 7_200)))))
 
         inCard(TestTags.Stats.AUTHORS_CARD, long).assertExists()
-        inCard(TestTags.Stats.AUTHORS_CARD, "2h 0m").assertExists()
+        val card = composeRule.onNodeWithTag(TestTags.Stats.AUTHORS_CARD).getUnclippedBoundsInRoot()
+        val time = inCard(TestTags.Stats.AUTHORS_CARD, "2h 0m").getUnclippedBoundsInRoot()
+        assertTrue("time $time has no width", time.width > 0.dp)
+        assertTrue("time $time runs past the card $card", time.right <= card.right)
+    }
+
+    /** Real data: every timed book has no author on record. The card says so instead of standing empty. */
+    @Test
+    fun timedReadingWithNoAuthorsOnRecord_saysSo() {
+        setContent(loaded(breakdown = breakdown(authors = emptyList())))
+
+        inCard(TestTags.Stats.AUTHORS_CARD, string(R.string.stats_no_authors)).assertExists()
+    }
+
+    /** Next to a sliver shown as "<1%", the big share must not claim all of it. */
+    @Test
+    fun aShareBesideASliver_isNeverAHundredPercent() {
+        val formats = listOf(FormatTime(BookFormat.PAPERBACK, 9_960), FormatTime(BookFormat.EBOOK, 40))
+        setContent(loaded(breakdown = breakdown(dayParts = listOf(10_000L, 0L, 0L, 0L), formats = formats)))
+
+        inCard(TestTags.Stats.FORMATS_CARD, string(R.string.stats_percent_over_99)).assertExists()
+        inCard(TestTags.Stats.FORMATS_CARD, "100%").assertDoesNotExist()
+    }
+
+    @Test
+    fun aSingleFormat_isAHundredPercent() {
+        setContent(loaded(breakdown = breakdown()))
+
+        inCard(TestTags.Stats.FORMATS_CARD, "100%").assertExists()
+    }
+
+    @Test
+    fun oneDnfInThreeHundred_isUnderOnePercent_notZero() {
+        setContent(loaded(period = StatsPeriod.ALL_TIME, finishOutcomes = FinishOutcomes(finished = 299, dnf = 1)))
+        val value =
+            context.resources.getQuantityString(
+                R.plurals.stats_dnf_value,
+                300,
+                1,
+                300,
+                string(R.string.stats_percent_under_one),
+            )
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_dnf_label, value)).assertExists()
     }
 
     @Test
@@ -396,8 +447,9 @@ class StatsScreenTest {
 
     @Test
     fun didNotFinish_showsOnAllTime() {
-        setContent(loaded(period = StatsPeriod.ALL_TIME, finishOutcomes = FinishOutcomes(finished = 12, dnf = 2)))
-        val value = context.resources.getQuantityString(R.plurals.stats_dnf_value, 14, 2, 14, 14)
+        // 1 of 4 is 25%: the percent and the total differ, so swapping them in the string fails.
+        setContent(loaded(period = StatsPeriod.ALL_TIME, finishOutcomes = FinishOutcomes(finished = 3, dnf = 1)))
+        val value = context.resources.getQuantityString(R.plurals.stats_dnf_value, 4, 1, 4, "25%")
 
         composeRule.onNodeWithText(context.getString(R.string.stats_dnf_label, value)).assertExists()
     }

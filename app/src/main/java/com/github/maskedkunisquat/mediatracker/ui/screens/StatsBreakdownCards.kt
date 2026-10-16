@@ -71,6 +71,10 @@ internal fun TopAuthorsCard(
         isEmpty = isEmpty,
         tag = TestTags.Stats.AUTHORS_CARD,
     ) {
+        if (authors.isEmpty()) {
+            // Time was read, but none of those books has an author on record.
+            Text(text = stringResource(R.string.stats_no_authors), style = MaterialTheme.typography.bodyMedium)
+        }
         for (author in authors) {
             BreakdownRow(label = author.name, values = listOf(formatDuration(author.seconds)))
         }
@@ -95,12 +99,7 @@ internal fun FormatsCard(
                 values =
                     listOf(
                         formatDuration(format.seconds),
-                        // A sliver of time is not "0%": the format was read, just briefly.
-                        if (percent == 0) {
-                            stringResource(R.string.stats_percent_under_one)
-                        } else {
-                            stringResource(R.string.stats_percent, percent)
-                        },
+                        shareLabel(percent, hasPart = true, hasRest = format.seconds < totalSeconds),
                     ),
             )
         }
@@ -153,6 +152,23 @@ private fun BreakdownRow(
         }
     }
 }
+
+/**
+ * A share as a whole percent, never rounding a sliver away: "<1%" when there is some of it but it
+ * rounds to 0, ">99%" when it rounds to 100 but something else remains. Without that, a format read
+ * for a minute shows "0%" and the format beside it "100%" (#219 review).
+ */
+@Composable
+internal fun shareLabel(
+    percent: Int,
+    hasPart: Boolean,
+    hasRest: Boolean,
+): String =
+    when {
+        percent == 0 && hasPart -> stringResource(R.string.stats_percent_under_one)
+        percent == 100 && hasRest -> stringResource(R.string.stats_percent_over_99)
+        else -> stringResource(R.string.stats_percent, percent)
+    }
 
 /** "Morning: 2h 10m, Evening: 5h 30m": the slots with time, read aloud; empty slots are left out. */
 @Composable

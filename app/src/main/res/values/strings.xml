@@ -275,10 +275,12 @@
     <string name="stats_chart_entry">%1$s: %2$s</string>
     <string name="stats_percent">%1$d%%</string>
     <string name="stats_percent_under_one">&lt;1%</string>
+    <string name="stats_percent_over_99">&gt;99%</string>
+    <string name="stats_no_authors">No authors on record for this period</string>
     <string name="stats_dnf_label">Did not finish: %1$s</string>
     <plurals name="stats_dnf_value">
-        <item quantity="one">%1$d of %2$d book (%3$d%%)</item>
-        <item quantity="other">%1$d of %2$d books (%3$d%%)</item>
+        <item quantity="one">%1$d of %2$d book (%3$s)</item>
+        <item quantity="other">%1$d of %2$d books (%3$s)</item>
     </plurals>
     <plurals name="stats_streak_days">
         <item quantity="one">%1$d day streak</item>

@@ -298,7 +298,11 @@ private fun PeriodCard(
                                     decided,
                                     finishOutcomes.dnf,
                                     decided,
-                                    percent,
+                                    shareLabel(
+                                        percent,
+                                        hasPart = finishOutcomes.dnf > 0,
+                                        hasRest = finishOutcomes.finished > 0,
+                                    ),
                                 )
                             },
                         ),
