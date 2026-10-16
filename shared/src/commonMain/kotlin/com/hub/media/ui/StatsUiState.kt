@@ -1,6 +1,8 @@
 package com.hub.media.ui
 
+import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.features.stats.data.GoalProgress
+import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
 
 /**
@@ -30,6 +32,8 @@ public data class StatsUiState(
     val goal: GoalProgress? = null,
     val goalYear: Int = 0,
     val finishesByMonth: List<Int>? = null,
+    val breakdown: ReadingBreakdown = ReadingBreakdown(),
+    val finishOutcomes: FinishOutcomes? = null,
 ) {
     /**
      * One period's aggregate numbers.

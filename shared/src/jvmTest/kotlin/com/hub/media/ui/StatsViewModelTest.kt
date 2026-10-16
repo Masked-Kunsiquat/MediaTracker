@@ -1,6 +1,7 @@
 package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
@@ -413,5 +414,49 @@ class StatsViewModelTest {
 
             val state = viewModel.uiState.first { it.goalYear == 2025 }
             assertEquals(null, state.goal)
+        }
+
+    // --- Part 2: the breakdown and the finish outcomes (#219) -----------------------------------
+
+    @Test
+    fun theBreakdown_followsThePeriod() =
+        runTest {
+            insertBook()
+            db.bookDetailsDao().insert(sampleBookDetails(mediaId = mediaId))
+            session(june(19), durationSeconds = 600) // this week
+            session(june(3), durationSeconds = 900) // this month, an earlier week
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+
+            assertEquals(
+                600L,
+                viewModel.uiState
+                    .first { !it.isLoading && it.breakdown.totalSeconds > 0 }
+                    .breakdown.totalSeconds,
+            )
+
+            viewModel.selectPeriod(StatsPeriod.MONTH)
+
+            assertEquals(
+                1_500L,
+                viewModel.uiState
+                    .first { it.period == StatsPeriod.MONTH && it.breakdown.totalSeconds == 1_500L }
+                    .breakdown.totalSeconds,
+            )
+        }
+
+    @Test
+    fun theFinishOutcomes_appearOnlyOnAllTime() =
+        runTest {
+            finishBooks(1, at = june(3))
+            db.mediaItemDao().insert(sampleMediaItem(id = "dnf-1"))
+            db.bookDetailsDao().insert(sampleBookDetails(mediaId = "dnf-1", status = ReadingStatus.DNF))
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            assertEquals(null, viewModel.uiState.first { !it.isLoading }.finishOutcomes, "not on Week")
+
+            viewModel.selectPeriod(StatsPeriod.ALL_TIME)
+
+            assertEquals(FinishOutcomes(1, 1), viewModel.uiState.first { it.finishOutcomes != null }.finishOutcomes)
         }
 }
