@@ -88,7 +88,7 @@ public class LibraryViewModel(
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5.seconds),
-            initialValue = LibraryUiState(),
+            initialValue = LibraryUiState(isLoading = true),
         )
 
     /**

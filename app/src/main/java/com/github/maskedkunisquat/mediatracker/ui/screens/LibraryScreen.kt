@@ -331,7 +331,11 @@ fun LibraryScreen(
                     .consumeWindowInsets(innerPadding)
                     .padding(innerPadding.exceptBottom()),
         ) {
-            if (uiState.isEmpty) {
+            if (uiState.isLoading) {
+                // Nothing until the first reading: an empty-state message here would be a claim
+                // that is not yet known to be true (#126).
+                Box(modifier = Modifier.fillMaxSize())
+            } else if (uiState.isEmpty) {
                 // Empty state
                 Column(
                     modifier =

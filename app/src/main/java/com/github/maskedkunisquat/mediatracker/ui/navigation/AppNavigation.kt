@@ -1,6 +1,9 @@
 package com.github.maskedkunisquat.mediatracker.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.navigation.NamedNavArgument
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -58,7 +61,7 @@ fun AppNavigation(
         navController = navController,
         startDestination = Route.Hub.route,
     ) {
-        composable(Route.Hub.route) {
+        guardedComposable(Route.Hub.route) {
             HubScreenRoute(
                 appContainer = appContainer,
                 onOpenDomain = { navController.navigate(Route.Library.createRoute(it)) },
@@ -68,7 +71,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.Library.route,
             arguments =
                 listOf(
@@ -114,7 +117,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.AddMovie.route) {
+        guardedComposable(Route.AddMovie.route) {
             MovieSearchScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = { navController.navigateUp() },
@@ -129,7 +132,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.AddMovieManual.route) {
+        guardedComposable(Route.AddMovieManual.route) {
             AddMovieScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = { navController.navigateUp() },
@@ -143,7 +146,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.MovieDetail.route,
             arguments =
                 listOf(
@@ -165,7 +168,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.EditMovie.route,
             arguments =
                 listOf(
@@ -184,7 +187,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.AddTVShow.route) {
+        guardedComposable(Route.AddTVShow.route) {
             TVShowSearchScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = { navController.navigateUp() },
@@ -199,7 +202,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.AddTVShowManual.route) {
+        guardedComposable(Route.AddTVShowManual.route) {
             AddTVShowScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = { navController.navigateUp() },
@@ -213,7 +216,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.TVShowDetail.route,
             arguments =
                 listOf(
@@ -233,7 +236,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.EditTVShow.route,
             arguments =
                 listOf(
@@ -252,7 +255,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.AddBook.route) {
+        guardedComposable(Route.AddBook.route) {
             AddBookScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = {
@@ -264,7 +267,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.BookDetail.route,
             arguments =
                 listOf(
@@ -291,7 +294,7 @@ fun AppNavigation(
             )
         }
 
-        composable(
+        guardedComposable(
             route = Route.EditBook.route,
             arguments =
                 listOf(
@@ -312,7 +315,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.Stats.route) {
+        guardedComposable(Route.Stats.route) {
             StatsScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = {
@@ -321,7 +324,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.Settings.route) {
+        guardedComposable(Route.Settings.route) {
             SettingsScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = {
@@ -345,7 +348,7 @@ fun AppNavigation(
         // No `AboutScreenRoute` wrapper: the screen has no ViewModel and one parameter, so a
         // wrapper would exist only to read BuildConfig one call earlier. Passing the version from
         // here is also what keeps the screen itself testable at a pinned version -- see its KDoc.
-        composable(Route.About.route) {
+        guardedComposable(Route.About.route) {
             AboutScreen(
                 versionName = BuildConfig.VERSION_NAME,
                 onNavigateBack = {
@@ -354,7 +357,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.UpNext.route) {
+        guardedComposable(Route.UpNext.route) {
             UpNextScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
@@ -365,7 +368,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.MismatchReview.route) {
+        guardedComposable(Route.MismatchReview.route) {
             MismatchReviewScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
@@ -375,7 +378,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.Changelog.route) {
+        guardedComposable(Route.Changelog.route) {
             ChangelogScreenRoute(
                 onNavigateBack = {
                     navController.navigateUp()
@@ -383,7 +386,7 @@ fun AppNavigation(
             )
         }
 
-        composable(Route.LogViewer.route) {
+        guardedComposable(Route.LogViewer.route) {
             LogViewerScreenRoute(
                 appContainer = appContainer,
                 onNavigateBack = {
@@ -391,5 +394,20 @@ fun AppNavigation(
                 },
             )
         }
+    }
+}
+
+/**
+ * [composable], with the destination's content behind [BlockInputUntilResumed]: a screen that is
+ * still arriving or already leaving takes no taps (#126). Every destination in [AppNavigation] uses
+ * it, so the mis-tap cannot come back between any pair of screens.
+ */
+private fun NavGraphBuilder.guardedComposable(
+    route: String,
+    arguments: List<NamedNavArgument> = emptyList(),
+    content: @Composable (NavBackStackEntry) -> Unit,
+) {
+    composable(route = route, arguments = arguments) { entry ->
+        BlockInputUntilResumed(entry) { content(entry) }
     }
 }

@@ -169,4 +169,14 @@ class LibraryDomainTest {
 
         composeRule.onNodeWithText(string(R.string.library_empty_title)).assertExists()
     }
+
+    @Test
+    fun whileLoading_noEmptyMessageFlashes() {
+        // Opening a card used to show "No films yet" for a beat before the films arrived.
+        setContent(MediaType.MOVIE, LibraryUiState(isLoading = true))
+
+        // Positive control: the screen itself is drawn.
+        composeRule.onNodeWithText(string(R.string.library_title_films)).assertExists()
+        composeRule.onNodeWithText(string(R.string.library_empty_title_films)).assertDoesNotExist()
+    }
 }

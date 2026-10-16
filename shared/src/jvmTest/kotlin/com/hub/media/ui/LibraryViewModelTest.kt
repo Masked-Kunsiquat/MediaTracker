@@ -695,4 +695,16 @@ class LibraryViewModelTest {
             // Exactly the book reached the delete -- which is also the positive control that it ran.
             assertEquals(listOf(listOf(book)), recorder.calls)
         }
+
+    @Test
+    fun uiState_isLoading_untilTheFirstReadArrives() =
+        runTest {
+            // The initial value, before anything asynchronous: reading .value is safe here only.
+            assertTrue(scoped(MediaType.MOVIE).uiState.value.isLoading)
+
+            val loaded = viewModel.uiState.first { !it.isLoading }
+
+            // Positive control: the loaded state is the genuinely empty library.
+            assertTrue(loaded.isEmpty)
+        }
 }
