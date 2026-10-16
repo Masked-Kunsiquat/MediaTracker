@@ -100,6 +100,17 @@ internal class ViewModelRegistry {
     }
 
     /**
+     * Moves `Dispatchers.Main`'s virtual time on by [duration] and runs what is then due: for a
+     * `ViewModel` that waits on a timer in its `viewModelScope` (the stats screen's midnight wake-up,
+     * #219). `runTest`'s own scheduler is a different one, so its `advanceTimeBy` never reaches Main.
+     */
+    fun advanceMainTimeBy(duration: kotlin.time.Duration) {
+        val scheduler = checkNotNull(mainScheduler) { "installMain() first" }
+        scheduler.advanceTimeBy(duration)
+        scheduler.runCurrent()
+    }
+
+    /**
      * Calls `onCleared()` on every [track]-ed `ViewModel` (cancelling its `viewModelScope`), then
      * waits until each of those scopes' jobs has fully finished unwinding — draining
      * [installMain]'s [TestCoroutineScheduler] (for a cancelled coroutine's own resumption, if the

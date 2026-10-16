@@ -34,6 +34,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
@@ -391,5 +392,26 @@ class StatsViewModelTest {
             val months = viewModel.uiState.first { it.finishesByMonth != null }.finishesByMonth!!
             assertEquals(12, months.size)
             assertEquals(2, months[5], "June")
+        }
+
+    /**
+     * Left open across New Year, the screen moves on by itself: last year's goal is no longer this
+     * year's, and the card offers the new year (#219 review). Before, "today" was re-read only when
+     * the user picked a period, changed the week start or came back to the screen.
+     */
+    @Test
+    fun openAcrossNewYear_theGoalCardMovesToTheNewYear() =
+        runTest {
+            clockNow = LocalDateTime(2024, 12, 31, 23, 59).toInstant(timeZone)
+            settingsRepository.setReadingGoal(year = 2024, books = 12)
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            assertEquals(2024, viewModel.uiState.first { it.goal != null }.goalYear)
+
+            clockNow = LocalDateTime(2025, 1, 1, 0, 0, 30).toInstant(timeZone)
+            viewModels.advanceMainTimeBy(2.minutes)
+
+            val state = viewModel.uiState.first { it.goalYear == 2025 }
+            assertEquals(null, state.goal)
         }
 }

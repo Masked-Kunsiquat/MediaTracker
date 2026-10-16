@@ -15,6 +15,7 @@ import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.stats.data.bounds
 import com.hub.media.features.stats.data.goalProgress
+import com.hub.media.features.stats.data.localDateChanges
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,11 +41,11 @@ import kotlin.time.Duration.Companion.seconds
  * "0 sessions, 5 pages read" -- before settling. `aWrite_neverPublishesAHalfwayState` pins this.
  *
  * ### Reactive inputs, and when "today" is read
- * The remembered period and the week-start preference both feed [flatMapLatest], and both the
- * period's bounds and the streak are resolved against [clock] inside it. So "today" is re-read
- * whenever the user picks a period, changes the week start, or returns to the screen after it was
- * unsubscribed for more than five seconds (`WhileSubscribed`); a screen left open and untouched
- * across midnight keeps yesterday's "today" until one of those happens.
+ * The remembered period, the week-start preference and the local date ([localDateChanges]) all feed
+ * [flatMapLatest], and everything inside it is resolved against one reading of [clock]. So "today"
+ * is re-read whenever the user picks a period, changes the week start, returns to the screen after
+ * it was unsubscribed for more than five seconds (`WhileSubscribed`), or local midnight passes --
+ * a screen left open across New Year moves to the new year's goal by itself (#219 review).
  *
  * The streak is a separate query (distinct days, not a sum), so a write can update the streak a
  * moment apart from the period card. That is not the internal inconsistency #91 is about, which is
@@ -67,21 +68,30 @@ public class StatsViewModel(
         combine(
             settingsRepository.observeStatsPeriod(),
             settingsRepository.observeWeekStartDay(),
-        ) { period, weekStart ->
+            // Only a trigger: the date it carries is re-read below, with everything else.
+            localDateChanges(clock, timeZone),
+        ) { period, weekStart, _ ->
             period to weekStart
         }.flatMapLatest { (period, weekStart) ->
-            // The streak is re-derived here too, so it reads the same "today" as the period's bounds:
-            // created once outside, it froze on the day the screen opened.
-            // The goal and the months read the same "today" too (#219). The goal counts this year's
-            // finishes whatever period is showing, so it needs the Year snapshot of its own; the
-            // months are read only while the Year view is showing, the one place they are drawn.
-            val today = clock.now().toLocalDateTime(timeZone).date
-            val yearBounds = StatsPeriod.YEAR.bounds(timeZone, clock, weekStart)!!
+            // "Now" is read once per restart and every query below is given that same instant, so
+            // the period's bounds, the streak, the goal's year and the months can never straddle a
+            // midnight between them. The streak is re-derived here too: created once outside, it
+            // froze on the day the screen opened.
+            // The goal counts this year's finishes whatever period is showing, so it needs the Year
+            // snapshot of its own (#219); the months are read only while the Year view is showing,
+            // the one place they are drawn.
+            val now = clock.now()
+            val at =
+                object : Clock {
+                    override fun now() = now
+                }
+            val today = now.toLocalDateTime(timeZone).date
+            val yearBounds = StatsPeriod.YEAR.bounds(timeZone, at, weekStart)!!
             combine(
-                statsRepository.observePeriodStats(period, timeZone, clock, weekStart),
-                statsRepository.observeReadingStreak(timeZone, clock),
+                statsRepository.observePeriodStats(period, timeZone, at, weekStart),
+                statsRepository.observeReadingStreak(timeZone, at),
                 settingsRepository.observeReadingGoal(),
-                statsRepository.observePeriodStats(StatsPeriod.YEAR, timeZone, clock, weekStart),
+                statsRepository.observePeriodStats(StatsPeriod.YEAR, timeZone, at, weekStart),
                 if (period == StatsPeriod.YEAR) {
                     statsRepository.observeFinishesByMonth(yearBounds, timeZone)
                 } else {

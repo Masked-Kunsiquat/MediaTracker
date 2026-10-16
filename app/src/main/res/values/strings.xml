@@ -369,7 +369,7 @@
     <string name="export_success_message">Export saved successfully</string>
     <string name="export_expired_message">The export expired before it was saved — please start it again</string>
     <string name="import_restore_settings">Also restore settings</string>
-    <string name="import_restore_settings_description">Include specials, week start and log detail, if the export has them. Never API keys.</string>
+    <string name="import_restore_settings_description">Include specials, week start, log detail and your reading goal, if the export has them. Never API keys.</string>
     <plurals name="import_summary_settings_restored">
         <item quantity="one">%d setting restored</item>
         <item quantity="other">%d settings restored</item>
