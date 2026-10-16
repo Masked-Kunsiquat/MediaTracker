@@ -23,12 +23,12 @@ import kotlin.time.Instant
  *
  * 1. **Sum only known durations.** A `null` [com.hub.media.core.database.entities.ReadingSessionEntity.durationSeconds]
  *    (schema v2 — "duration unknown") contributes nothing to time-read totals, but a session with
- *    an unknown duration still happened and is still counted by [observeSessionCountInRange] and
+ *    an unknown duration still happened and is still counted in a period's session count, and
  *    still contributes its [com.hub.media.core.database.entities.ReadingSessionEntity.deltaPages]
- *    (if known) to [observePagesReadInRange]. This is the entire point of schema v2: an unknown
+ *    (if known) to its pages read. This is the entire point of schema v2: an unknown
  *    duration must not silently become a zero that corrupts a time-read total.
  * 2. **No gap reconciliation.** Sessions are independent recorded facts (start/end position
- *    pairs), not a continuous log. [observePagesReadInRange] sums each session's own
+ *    pairs), not a continuous log. Pages read sums each session's own
  *    `deltaPages` — it never infers pages from the gap between one session's end position and the
  *    next session's start position, even though the manual-entry UI's start-position autofill
  *    (Task 4 Phase E) makes such gaps less common in practice.
@@ -45,17 +45,17 @@ import kotlin.time.Instant
  * ships in — so unlike the session-based stats above, "books finished this week/month" is not
  * derivable from data that predates this phase. Two different, individually-honest queries cover
  * this rather than one query stretched to answer both:
- * - [observeBooksFinishedTotal] needs no timestamp at all — it counts the current
+ * - All time ([StatsPeriod.ALL_TIME]) needs no timestamp at all — it counts the current
  *   [com.hub.media.core.database.entities.BookDetailsEntity.status], which is exact and meaningful
  *   from the moment schema v3 exists, independent of whether [finishedAt] happens to be known.
- * - [observeBooksFinishedInRange] uses [finishedAt] and is therefore only ever honest about
+ * - Every dated period uses [finishedAt] and is therefore only ever honest about
  *   finishes recorded *after* this phase ships: every pre-v3 row's [finishedAt] is `NULL` by
  *   construction (`MIGRATION_2_3` never derives [com.hub.media.core.database.entities.ReadingStatus.FINISHED]
  *   for a pre-existing row — see that migration's KDoc), so a period query run today can only ever
  *   undercount relative to some hypothetical "true" historical total; it never overcounts or
- *   fabricates a period-scoped number from data that can't support one. `StatsViewModel` wires this
- *   into the same `week`/`month` [StatsUiState.Period] shape as the session-based stats, but the
- *   caveat above is inherent to the data, not something the UI layer can paper over.
+ *   fabricates a period-scoped number from data that can't support one. Both are the same query since #91
+ *   ([observePeriodStats]), with or without bounds; the caveat is inherent to the data, not
+ *   something the UI layer can paper over.
  *
  * @param db The shared [AppDatabase], matching [com.hub.media.features.books.data.BookRepository]/
  *   [com.hub.media.features.books.data.ReadingSessionRepository]'s constructor shape.
@@ -80,58 +80,6 @@ public class StatsRepository(
         val bounds = period.bounds(timeZone, clock, weekStartDay)
         return db.statsDao().observePeriodStats(bounds?.first, bounds?.second, ReadingStatus.FINISHED)
     }
-
-    /**
-     * Total known reading time (seconds) for sessions whose `timestampStart` falls in
-     * `[from, to)`. `null` means no session in range has a known duration (including an empty
-     * range) — never coerced to `0` (see class KDoc, point 1).
-     */
-    public fun observeTimeReadInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Long?> = db.statsDao().observeTotalKnownDurationInRange(from, to)
-
-    /**
-     * Count of ALL sessions (null-duration sessions included) whose `timestampStart` falls in
-     * `[from, to)`. Always a real, non-null count — `0` for an empty range is genuine, not a
-     * sentinel.
-     */
-    public fun observeSessionCountInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Int> = db.statsDao().observeSessionCountInRange(from, to)
-
-    /**
-     * Total pages read (sum of per-session `deltaPages`) for sessions whose `timestampStart`
-     * falls in `[from, to)`. `null` means no session in range has a known `deltaPages` — never
-     * coerced to `0` (see class KDoc, point 1). Never inferred from position continuity between
-     * sessions (see class KDoc, point 2).
-     */
-    public fun observePagesReadInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Int?> = db.statsDao().observePagesReadInRange(from, to)
-
-    /**
-     * Lifetime count of books currently [ReadingStatus.FINISHED] — see class KDoc ("Books-finished
-     * stat") for why this coexists with [observeBooksFinishedInRange] instead of one query
-     * answering both.
-     */
-    public fun observeBooksFinishedTotal(): Flow<Int> = db.statsDao().observeBooksFinishedTotal(ReadingStatus.FINISHED)
-
-    /**
-     * Count of books whose [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt]
-     * falls in `[from, to)` and whose status is [ReadingStatus.FINISHED] (a book can only have a
-     * non-null `finishedAt` while finished, per [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt]'s
-     * KDoc, so the status filter is technically redundant with a non-null-in-range `finishedAt` —
-     * it is kept explicit here anyway so this query's intent reads the same as
-     * [observeBooksFinishedTotal]'s, rather than relying on that invariant silently). See class
-     * KDoc for why this necessarily undercounts relative to any pre-v3 history.
-     */
-    public fun observeBooksFinishedInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Int> = db.statsDao().observeBooksFinishedInRange(ReadingStatus.FINISHED, from, to)
 
     /**
      * Current reading streak: the number of consecutive calendar days — counting backward from
