@@ -15,6 +15,7 @@ import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.EditMovieViewModel
 import com.hub.media.ui.EditTVShowViewModel
 import com.hub.media.ui.ExportViewModel
+import com.hub.media.ui.HubViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.LogViewerViewModel
@@ -59,6 +60,19 @@ open class AppViewModelFactory<VM : ViewModel>(
  * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
  * and bulk-delete dependencies from the [AppContainer].
  */
+class HubViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<HubViewModel>(
+        HubViewModel::class.java,
+        {
+            HubViewModel(
+                mediaRepository = appContainer.mediaRepository,
+                tvShowRepository = appContainer.tvShowRepository,
+                settingsRepository = appContainer.settingsRepository,
+            )
+        },
+    )
+
 class LibraryViewModelFactory(
     appContainer: AppContainer,
 ) : AppViewModelFactory<LibraryViewModel>(

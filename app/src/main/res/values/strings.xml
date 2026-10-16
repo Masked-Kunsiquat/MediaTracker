@@ -187,6 +187,24 @@
 
     <!-- LibraryScreen local search (ROADMAP Task 9 Phase A) -->
     <string name="library_search_placeholder">Search by title or author</string>
+    <!-- The hub (#126): the home screen's domain cards and their live numbers. -->
+    <string name="hub_title">Media Tracker</string>
+    <string name="hub_books">Books</string>
+    <string name="hub_films">Films</string>
+    <string name="hub_shows">Shows</string>
+    <plurals name="hub_books_count">
+        <item quantity="one">%d reading</item>
+        <item quantity="other">%d reading</item>
+    </plurals>
+    <plurals name="hub_films_count">
+        <item quantity="one">%d on watchlist</item>
+        <item quantity="other">%d on watchlist</item>
+    </plurals>
+    <plurals name="hub_shows_count">
+        <item quantity="one">%d up next</item>
+        <item quantity="other">%d up next</item>
+    </plurals>
+    <string name="hub_all_media">All media</string>
     <string name="library_search_content_description">Search library</string>
     <string name="library_search_clear_content_description">Clear search</string>
     <string name="library_filtered_empty">No items match the current filters</string>
