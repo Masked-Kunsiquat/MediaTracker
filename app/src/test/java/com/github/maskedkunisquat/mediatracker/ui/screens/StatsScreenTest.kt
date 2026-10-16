@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -19,6 +21,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.features.stats.data.GoalProgress
+import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.StatsUiState
 import org.junit.Assert.assertEquals
@@ -44,7 +48,13 @@ class StatsScreenTest {
     private fun setContent(state: StatsUiState) {
         composeRule.setContent {
             MediaTrackerTheme(dynamicColor = false) {
-                StatsScreen(uiState = state, onSelectPeriod = { picked += it }, onNavigateBack = {})
+                StatsScreen(
+                    uiState = state,
+                    onSelectPeriod = { picked += it },
+                    onSetGoal = {},
+                    onClearGoal = {},
+                    onNavigateBack = {},
+                )
             }
         }
     }
@@ -52,7 +62,21 @@ class StatsScreenTest {
     private fun loaded(
         period: StatsPeriod = StatsPeriod.WEEK,
         stats: StatsUiState.Period = StatsUiState.Period(3600L, 4, 120, 1),
-    ) = StatsUiState(isLoading = false, period = period, stats = stats, currentStreakDays = 3)
+        goal: GoalProgress? = null,
+        finishesByMonth: List<Int>? = null,
+    ) = StatsUiState(
+        isLoading = false,
+        period = period,
+        stats = stats,
+        currentStreakDays = 3,
+        goal = goal,
+        goalYear = 2024,
+        finishesByMonth = finishesByMonth,
+    )
+
+    private fun scrollTo(text: String) {
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasText(text))
+    }
 
     private fun chip(id: Int) = composeRule.onNode(hasText(string(id)) and hasClickAction())
 
@@ -96,7 +120,13 @@ class StatsScreenTest {
         var period by mutableStateOf(StatsPeriod.WEEK)
         composeRule.setContent {
             MediaTrackerTheme(dynamicColor = false) {
-                StatsScreen(uiState = loaded(period = period), onSelectPeriod = {}, onNavigateBack = {})
+                StatsScreen(
+                    uiState = loaded(period = period),
+                    onSelectPeriod = {},
+                    onSetGoal = {},
+                    onClearGoal = {},
+                    onNavigateBack = {},
+                )
             }
         }
 
@@ -164,5 +194,124 @@ class StatsScreenTest {
             "All time chip $all is not fully inside the row $row",
             all.left >= row.left && all.right <= row.right,
         )
+    }
+
+    // --- #219: speed and session lines, the goal card, the month chart -------------------------
+
+    @Test
+    fun theSpeedAndSessionLines_showTheirValues() {
+        setContent(
+            loaded(
+                stats =
+                    StatsUiState.Period(
+                        timeReadSeconds = 7_200,
+                        sessionCount = 3,
+                        pagesRead = 90,
+                        booksFinished = 0,
+                        averageSessionSeconds = 2_400,
+                        longestSessionSeconds = 4_500,
+                        pagesPerHour = 45,
+                    ),
+            ),
+        )
+
+        val speed = context.getString(R.string.stats_speed_label, context.getString(R.string.stats_pages_per_hour, 45))
+        composeRule.onNodeWithText(speed).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.stats_average_session_label, "40m")).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.stats_longest_session_label, "1h 15m")).assertExists()
+    }
+
+    @Test
+    fun unknownSpeedAndSessions_areShownAsUnknown_notZero() {
+        setContent(loaded(stats = StatsUiState.Period(null, 2, null, 0)))
+        val unknown = string(R.string.stats_unknown_value)
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_speed_label, unknown)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.stats_average_session_label, unknown)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.stats_longest_session_label, unknown)).assertExists()
+    }
+
+    @Test
+    fun withNoGoal_theCardOffersOneForThisYear_andCanBeTapped() {
+        setContent(loaded())
+        val offer = context.getString(R.string.stats_goal_set_prompt, 2024)
+
+        scrollTo(offer)
+        composeRule.onNodeWithTag(TestTags.Stats.GOAL_CARD).assert(hasClickAction())
+        composeRule.onNodeWithText(offer).assertExists()
+    }
+
+    @Test
+    fun aGoalOnPace_showsProgressAndPace() {
+        setContent(loaded(goal = GoalProgress(goal = 12, finished = 5, expected = 5, status = GoalStatus.OnPace)))
+        val progress = context.resources.getQuantityString(R.plurals.stats_goal_progress, 12, 5, 12)
+
+        scrollTo(progress)
+        composeRule.onNodeWithText(progress).assertExists()
+        composeRule.onNodeWithText(string(R.string.stats_goal_on_pace)).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.GOAL_CARD).assert(hasClickAction())
+    }
+
+    @Test
+    fun aGoalBehind_saysByHowMany() {
+        setContent(loaded(goal = GoalProgress(goal = 12, finished = 2, expected = 5, status = GoalStatus.Behind(4))))
+        val behind = context.resources.getQuantityString(R.plurals.stats_goal_behind, 4, 4)
+
+        scrollTo(behind)
+        composeRule.onNodeWithText(behind).assertExists()
+    }
+
+    @Test
+    fun aGoalReached_saysSo() {
+        setContent(loaded(goal = GoalProgress(goal = 3, finished = 4, expected = 1, status = GoalStatus.Reached)))
+        val reached = string(R.string.stats_goal_reached)
+
+        scrollTo(reached)
+        composeRule.onNodeWithText(reached).assertExists()
+    }
+
+    @Test
+    fun theMonthChart_isDrawnOnTheYearView_andListsTheMonthsAloud() {
+        val months =
+            List(12) {
+                if (it == 5) {
+                    2
+                } else if (it == 0) {
+                    1
+                } else {
+                    0
+                }
+            }
+        setContent(loaded(period = StatsPeriod.YEAR, finishesByMonth = months))
+
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.MONTH_CHART))
+        val description =
+            composeRule
+                .onNodeWithTag(TestTags.Stats.MONTH_CHART)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.ContentDescription]
+                .joinToString()
+        assertTrue(description, "January" in description && "June" in description)
+        assertTrue(description, "March" !in description)
+    }
+
+    @Test
+    fun anEmptyYear_saysNoBooksFinishedYet() {
+        setContent(loaded(period = StatsPeriod.YEAR, finishesByMonth = List(12) { 0 }))
+
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.MONTH_CHART))
+        composeRule
+            .onNodeWithTag(TestTags.Stats.MONTH_CHART)
+            .assert(hasContentDescription(string(R.string.stats_month_chart_empty)))
+    }
+
+    @Test
+    fun noMonthChart_offTheYearView() {
+        setContent(loaded(period = StatsPeriod.WEEK))
+
+        // Positive control: the screen is drawn.
+        composeRule.onNodeWithTag(TestTags.Stats.PERIODS).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.MONTH_CHART).assertDoesNotExist()
+        composeRule.onNodeWithText(string(R.string.stats_month_chart_title)).assertDoesNotExist()
     }
 }

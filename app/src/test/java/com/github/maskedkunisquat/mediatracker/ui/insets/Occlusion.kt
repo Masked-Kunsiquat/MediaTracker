@@ -153,8 +153,12 @@ fun ComposeContentTestRule.assertNoInteractiveNodeIsBehindTheKeyboard(
  * - **Add book, add film, add show, edit film.** Their forms do not reach the bottom of the display
  *   without a keyboard, so no control is ever near the bar. The keyboard is the inset that squeezes
  *   these screens and each is falsified against it.
- * - **Stats, the log viewer.** Neither has a single interactive node inside its scroller -- only
- *   top-bar buttons -- and this rule measures interactive nodes. What #99 risks on those two is a
+ * - **Stats, the log viewer.** The log viewer has no interactive node inside its scroller -- only
+ *   top-bar buttons -- and this rule measures interactive nodes. Stats has two now, the period chips
+ *   (#91) at the top and the reading-goal card (#219), but the goal card always has the streak card
+ *   beneath it, and that card plus the list's spacing is taller than the bar. Written and run in
+ *   #219 on the Year view with its chart, the tallest stats screen there is: it passed with
+ *   `scrollingContentPadding` deleted outright, so it was deleted. What #99 risks on those two is a
  *   last card clipped by the bar, which is visual, and belongs to #96 Phase B.
  * - **About (#137).** Same shape as the forms above, and it was written, run and deleted rather
  *   than reasoned about. Its content is fixed -- three provider cards -- so unlike the changelog it

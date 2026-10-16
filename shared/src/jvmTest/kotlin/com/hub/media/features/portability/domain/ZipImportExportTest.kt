@@ -17,13 +17,16 @@ import com.hub.media.features.portability.csv.ExportManifest
 import com.hub.media.features.portability.csv.unzipEntries
 import com.hub.media.features.portability.csv.zipEntries
 import com.hub.media.features.portability.data.ImportWriteRepository
+import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.getLogVerbosity
 import com.hub.media.features.settings.data.getWeekStartDay
+import com.hub.media.features.settings.data.observeReadingGoal
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
+import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
@@ -172,13 +175,15 @@ class ZipImportExportTest {
         }
 
     @Test
-    fun restoreSettings_true_appliesAllThree() =
+    fun restoreSettings_true_appliesAllFour() =
         runTest {
             settings(source).setIncludeSpecials(false)
             settings(source).setWeekStartDay(WeekStartDay.MONDAY)
             settings(source).setLogVerbosity(LogLevel.WARN)
+            settings(source).setReadingGoal(year = 2026, books = 12)
             val summary = ok(importer(target).import(zip(), DuplicatePolicy.SKIP, restoreSettings = true))
-            assertEquals(3, summary.settingsRestored)
+            assertEquals(4, summary.settingsRestored)
+            assertEquals(ReadingGoal(2026, 12), settings(target).observeReadingGoal().first())
             assertEquals(false, settings(target).getIncludeSpecials())
             assertEquals(WeekStartDay.MONDAY, settings(target).getWeekStartDay())
             assertEquals(LogLevel.WARN, settings(target).getLogVerbosity())
@@ -192,6 +197,18 @@ class ZipImportExportTest {
             assertEquals(0, summary.settingsRestored)
             assertNull(settings(target).getString("log_verbosity"))
             assertTrue(summary.notes.any { "log_verbosity" in it }, "notes: ${summary.notes}")
+        }
+
+    @Test
+    fun anInvalidReadingGoal_isSkipped_andNoted() =
+        runTest {
+            for (bad in listOf("2026:0", "abc")) {
+                val zipWithBadGoal = rewrite(zip(), manifest = { it.copy(settings = mapOf("reading_goal" to bad)) })
+                val summary = ok(importer(target).import(zipWithBadGoal, DuplicatePolicy.SKIP, restoreSettings = true))
+                assertEquals(0, summary.settingsRestored, "\"$bad\" must not be restored")
+                assertNull(settings(target).getString("reading_goal"))
+                assertTrue(summary.notes.any { "reading_goal" in it }, "notes: ${summary.notes}")
+            }
         }
 
     @Test

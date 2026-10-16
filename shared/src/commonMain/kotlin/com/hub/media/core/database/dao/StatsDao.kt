@@ -74,7 +74,23 @@ interface StatsDao {
           (SELECT COUNT(*) FROM book_details
              WHERE status = :finished
                AND (:from IS NULL OR finishedAt >= :from)
-               AND (:to IS NULL OR finishedAt < :to)) AS booksFinished
+               AND (:to IS NULL OR finishedAt < :to)) AS booksFinished,
+          (SELECT COUNT(*) FROM reading_sessions
+             WHERE durationSeconds IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS timedSessionCount,
+          (SELECT MAX(durationSeconds) FROM reading_sessions
+             WHERE durationSeconds IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS longestSessionSeconds,
+          (SELECT SUM(durationSeconds) FROM reading_sessions
+             WHERE durationSeconds > 0 AND deltaPages > 0
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS speedSeconds,
+          (SELECT SUM(deltaPages) FROM reading_sessions
+             WHERE durationSeconds > 0 AND deltaPages > 0
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS speedPages
         """,
     )
     fun observePeriodStats(
@@ -82,4 +98,20 @@ interface StatsDao {
         to: Instant?,
         finished: ReadingStatus,
     ): Flow<PeriodStatsRow>
+
+    /**
+     * Finish dates of FINISHED books within `[from, to)`, for the books-per-month chart (#219). Raw
+     * instants rather than a SQL `strftime` grouping: SQLite's `'localtime'` is the device's zone, not
+     * the injected one, so the month a late-evening finish belongs to is decided in Kotlin instead --
+     * the same reason the streak reads raw session starts.
+     */
+    @Query(
+        "SELECT finishedAt FROM book_details " +
+            "WHERE status = :finished AND finishedAt >= :from AND finishedAt < :to",
+    )
+    fun observeFinishedAtInRange(
+        from: Instant,
+        to: Instant,
+        finished: ReadingStatus,
+    ): Flow<List<Instant>>
 }

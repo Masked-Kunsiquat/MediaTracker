@@ -6,10 +6,15 @@ import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
+import com.hub.media.features.settings.data.observeReadingGoal
 import com.hub.media.features.settings.data.observeStatsPeriod
+import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.settings.data.setWeekStartDay
+import com.hub.media.features.stats.data.GoalProgress
+import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.features.stats.data.StatsRepository
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +34,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
@@ -125,7 +131,18 @@ class StatsViewModelTest {
             val state = newViewModel().uiState.first { !it.isLoading }
 
             assertEquals(StatsPeriod.WEEK, state.period)
-            assertEquals(StatsUiState.Period(600L, 1, 10, 0), state.stats)
+            assertEquals(
+                StatsUiState.Period(
+                    600L,
+                    1,
+                    10,
+                    0,
+                    averageSessionSeconds = 600L,
+                    longestSessionSeconds = 600L,
+                    pagesPerHour = 60,
+                ),
+                state.stats,
+            )
             assertEquals(1, state.currentStreakDays, "a single session on \"today\" is a 1-day streak")
         }
 
@@ -159,7 +176,19 @@ class StatsViewModelTest {
             viewModel.selectPeriod(StatsPeriod.MONTH)
 
             val month = viewModel.uiState.first { it.period == StatsPeriod.MONTH }
-            assertEquals(StatsUiState.Period(500L, 2, 13, 0), month.stats)
+            // 13 pages in 500 s is 93.6 pages/hour, rounded to 94.
+            assertEquals(
+                StatsUiState.Period(
+                    500L,
+                    2,
+                    13,
+                    0,
+                    averageSessionSeconds = 250L,
+                    longestSessionSeconds = 300L,
+                    pagesPerHour = 94,
+                ),
+                month.stats,
+            )
             assertEquals(StatsPeriod.MONTH, settingsRepository.observeStatsPeriod().first())
             // A fresh screen opens where the user left it.
             assertEquals(StatsPeriod.MONTH, newViewModel().uiState.first { !it.isLoading }.period)
@@ -214,7 +243,22 @@ class StatsViewModelTest {
 
             // Waits for any change, then names the expected whole period, so a regression fails on
             // the comparison rather than by a minute-long timeout.
-            assertEquals(StatsUiState.Period(400L, 1, 7, 0), viewModel.uiState.first { it.stats != monday }.stats)
+            assertEquals(
+                StatsUiState.Period(
+                    400L,
+                    1,
+                    7,
+                    0,
+                    averageSessionSeconds = 400L,
+                    longestSessionSeconds = 400L,
+                    pagesPerHour = 63,
+                ),
+                viewModel.uiState
+                    .first {
+                        it.stats !=
+                            monday
+                    }.stats,
+            )
         }
 
     /**
@@ -233,7 +277,16 @@ class StatsViewModelTest {
                 viewModel.uiState.collect { if (!it.isLoading) seen += it.stats }
             }
             val before = viewModel.uiState.first { !it.isLoading }.stats
-            val after = StatsUiState.Period(300L, 1, 5, 0)
+            val after =
+                StatsUiState.Period(
+                    300L,
+                    1,
+                    5,
+                    0,
+                    averageSessionSeconds = 300L,
+                    longestSessionSeconds = 300L,
+                    pagesPerHour = 60,
+                )
 
             session(now, durationSeconds = 300, deltaPages = 5)
             viewModel.uiState.first { it.stats == after && it.currentStreakDays == 1 }
@@ -258,5 +311,107 @@ class StatsViewModelTest {
 
             val after = viewModel.uiState.first { it.period == StatsPeriod.MONTH }
             assertEquals(2, after.currentStreakDays, "the 19th and the 20th")
+        }
+
+    // --- The goal and the months (#219) ---------------------------------------------------------
+
+    /** Finishes [count] books, each on its own media item, at [at]. */
+    private suspend fun finishBooks(
+        count: Int,
+        at: Instant,
+    ) {
+        repeat(count) { i ->
+            val id = "finished-$i-${at.toEpochMilliseconds()}"
+            db.mediaItemDao().insert(sampleMediaItem(id = id))
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = id, status = ReadingStatus.FINISHED, finishedAt = at),
+            )
+        }
+    }
+
+    @Test
+    fun withNoGoal_theCardOffersThisYear() =
+        runTest {
+            val state = newViewModel().uiState.first { !it.isLoading }
+
+            assertEquals(null, state.goal)
+            assertEquals(2024, state.goalYear)
+        }
+
+    @Test
+    fun settingAGoal_showsProgressAgainstThisYearsFinishes() =
+        runTest {
+            finishBooks(5, at = june(3))
+            finishBooks(2, at = LocalDateTime(2023, 12, 30, 12, 0).toInstant(timeZone)) // last year: not counted
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            viewModel.uiState.first { !it.isLoading }
+
+            viewModel.setGoal(12)
+
+            // 19 June 2024 is day 171 of a 366-day year: 12 * 171 / 366 = 5.6, so 5 are expected.
+            val goal = viewModel.uiState.first { it.goal != null }.goal
+            assertEquals(GoalProgress(goal = 12, finished = 5, expected = 5, status = GoalStatus.OnPace), goal)
+        }
+
+    @Test
+    fun lastYearsGoal_isNotShown() =
+        runTest {
+            settingsRepository.setReadingGoal(year = 2023, books = 20)
+
+            val state = newViewModel().uiState.first { !it.isLoading }
+
+            assertEquals(null, state.goal)
+            // Positive control: the goal really is stored.
+            assertEquals(ReadingGoal(2023, 20), settingsRepository.observeReadingGoal().first())
+        }
+
+    @Test
+    fun clearingTheGoal_removesIt() =
+        runTest {
+            settingsRepository.setReadingGoal(year = 2024, books = 12)
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            viewModel.uiState.first { it.goal != null }
+
+            viewModel.clearGoal()
+
+            assertEquals(null, viewModel.uiState.first { !it.isLoading && it.goal == null }.goal)
+        }
+
+    @Test
+    fun theMonthsAppearOnlyOnTheYearView() =
+        runTest {
+            finishBooks(2, at = june(3))
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            assertEquals(null, viewModel.uiState.first { !it.isLoading }.finishesByMonth, "not on Week")
+
+            viewModel.selectPeriod(StatsPeriod.YEAR)
+
+            val months = viewModel.uiState.first { it.finishesByMonth != null }.finishesByMonth!!
+            assertEquals(12, months.size)
+            assertEquals(2, months[5], "June")
+        }
+
+    /**
+     * Left open across New Year, the screen moves on by itself: last year's goal is no longer this
+     * year's, and the card offers the new year (#219 review). Before, "today" was re-read only when
+     * the user picked a period, changed the week start or came back to the screen.
+     */
+    @Test
+    fun openAcrossNewYear_theGoalCardMovesToTheNewYear() =
+        runTest {
+            clockNow = LocalDateTime(2024, 12, 31, 23, 59).toInstant(timeZone)
+            settingsRepository.setReadingGoal(year = 2024, books = 12)
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            assertEquals(2024, viewModel.uiState.first { it.goal != null }.goalYear)
+
+            clockNow = LocalDateTime(2025, 1, 1, 0, 0, 30).toInstant(timeZone)
+            viewModels.advanceMainTimeBy(2.minutes)
+
+            val state = viewModel.uiState.first { it.goalYear == 2025 }
+            assertEquals(null, state.goal)
         }
 }

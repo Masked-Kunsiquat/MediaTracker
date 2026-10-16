@@ -335,4 +335,37 @@ class StatsRepositoryTest {
             assertEquals(1, periodStats(StatsPeriod.ALL_TIME).booksFinished)
             assertEquals(0, periodStats(StatsPeriod.YEAR).booksFinished)
         }
+
+    // --- Finishes by month (#219) ------------------------------------------------------------------
+
+    @Test
+    fun finishesByMonth_areBucketedInTheLocalZone_notUtc() =
+        runTest {
+            val newYork = TimeZone.of("America/New_York")
+            insertBook()
+            // 23:30 on 31 May in New York is already 1 June in UTC; it must count as May.
+            db.bookDetailsDao().insert(
+                sampleBookDetails(
+                    mediaId = mediaId,
+                    status = ReadingStatus.FINISHED,
+                    finishedAt = LocalDateTime(2024, 5, 31, 23, 30).toInstant(newYork),
+                ),
+            )
+            db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
+            db.bookDetailsDao().insert(
+                sampleBookDetails(
+                    mediaId = "media-2",
+                    status = ReadingStatus.FINISHED,
+                    finishedAt = LocalDateTime(2024, 1, 2, 10, 0).toInstant(newYork),
+                ),
+            )
+            val year = LocalDate(2024, 1, 1).atStartOfDayIn(newYork) to LocalDate(2025, 1, 1).atStartOfDayIn(newYork)
+
+            val months = repo.observeFinishesByMonth(year, newYork).first()
+
+            assertEquals(12, months.size)
+            assertEquals(1, months[0], "January")
+            assertEquals(1, months[4], "May")
+            assertEquals(0, months[5], "June must not get the 31 May finish")
+        }
 }

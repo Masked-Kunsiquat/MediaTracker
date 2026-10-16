@@ -15,7 +15,8 @@ public const val EXPORT_FORMAT_VERSION: Int = 1
  * The only `app_settings` keys an export carries. An allowlist rather than a denylist, so a setting
  * added later -- above all a credential -- stays out until someone decides it belongs.
  */
-public val EXPORTABLE_SETTING_KEYS: List<String> = listOf("include_specials", "week_start_day", "log_verbosity")
+public val EXPORTABLE_SETTING_KEYS: List<String> =
+    listOf("include_specials", "week_start_day", "log_verbosity", "reading_goal")
 
 /** One CSV inside the archive, as the export recorded it. [rows] counts data rows, not the header. */
 @Serializable
