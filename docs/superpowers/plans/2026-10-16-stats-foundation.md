@@ -68,7 +68,7 @@
 **Files:**
 - Modify: `shared/src/commonMain/kotlin/com/hub/media/core/database/dao/StatsDao.kt`: add `observePeriodStats`; later remove the four per-field queries and both books-finished queries.
 - Create: `shared/src/commonMain/kotlin/com/hub/media/core/database/dao/PeriodStatsRow.kt` (the projection)
-- Modify: `shared/src/commonMain/kotlin/com/hub/media/features/stats/data/StatsRepository.kt`: add `observePeriodStats(period, timeZone, clock, weekStartDay): Flow<StatsUiState.Period>`; remove the per-field methods.
+- Modify: `shared/src/commonMain/kotlin/com/hub/media/features/stats/data/StatsRepository.kt`: add `observePeriodStats(period, timeZone, clock, weekStartDay): Flow<PeriodStatsRow>`; remove the per-field methods. (Ruled during execution: the repository returns the data-layer row, not a UI type, so `features` stays free of `ui`.)
 - Test: `shared/src/jvmTest/kotlin/com/hub/media/core/database/StatsDaoTest.kt`, and `…/features/stats/data/StatsRepositoryTest.kt`
 
 **Interfaces:**
@@ -106,7 +106,7 @@
 
   `SUM` over zero rows is `NULL` in SQLite, which is the null-versus-zero rule for free.
   - A null bound with the type converter has to bind as `NULL`. Confirm the `Instant` converter accepts nulls, and if it doesn't, pass epoch-millis `Long?` parameters.
-  - The repository maps the row to `StatsUiState.Period` and computes the bounds from `period.bounds(…)`.
+  - The repository computes the bounds from `period.bounds(…)` and returns the `PeriodStatsRow` as is; `StatsViewModel` maps it with `toPeriod()`.
 - [ ] **Step 4:** run the same command. Expected: PASS.
 - [ ] **Step 5: Remove the old per-field queries** and repository methods, and their now-ported tests. Then grep for any remaining caller; `StatsViewModel` is migrated in Task 3, so keep the old methods until then. Done here means "ported tests pass", and the removal happens in Task 3's final step.
 - [ ] **Step 6: Commit** as `One query per stats period (#91)`.
