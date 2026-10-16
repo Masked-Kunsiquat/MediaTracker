@@ -47,6 +47,11 @@ object TestTags {
         const val STATS = "hub:stats"
     }
 
+    object Stats {
+        const val LIST = "stats:list"
+        const val PERIODS = "stats:periods"
+    }
+
     object Library {
         const val ADD_BUTTON = "library:add"
         const val SEARCH_FIELD = "library:search"

@@ -3,6 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui.goldens
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreen
+import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.StatsUiState
 import org.junit.Rule
 import org.junit.Test
@@ -39,7 +40,7 @@ class StatsScreenGoldenTest {
     fun stats() {
         composeRule.captureGolden(
             name = "stats",
-            alsoAssert = { assertTextIsShown("Streak", "Books finished") },
+            alsoAssert = { assertTextIsShown("This month", "Streak", "Books finished") },
         ) { Fixture() }
     }
 
@@ -49,15 +50,9 @@ class StatsScreenGoldenTest {
             uiState =
                 StatsUiState(
                     isLoading = false,
-                    week =
-                        StatsUiState.Period(
-                            timeReadSeconds = 5 * 3600L + 20 * 60L,
-                            sessionCount = 7,
-                            pagesRead = 214,
-                            booksFinished = 1,
-                        ),
+                    period = StatsPeriod.MONTH,
                     // timeReadSeconds left null: "unknown", not "zero" -- see this class's KDoc.
-                    month =
+                    stats =
                         StatsUiState.Period(
                             timeReadSeconds = null,
                             sessionCount = 23,
@@ -65,8 +60,8 @@ class StatsScreenGoldenTest {
                             booksFinished = 4,
                         ),
                     currentStreakDays = 12,
-                    lifetimeBooksFinished = 87,
                 ),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }

@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -32,8 +36,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.StatsUiState
 import com.hub.media.ui.StatsViewModel
@@ -58,6 +64,7 @@ fun StatsScreenRoute(
 
     StatsScreen(
         uiState = uiState,
+        onSelectPeriod = viewModel::selectPeriod,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -82,6 +89,7 @@ fun StatsScreenRoute(
 @Composable
 fun StatsScreen(
     uiState: StatsUiState,
+    onSelectPeriod: (StatsPeriod) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     Scaffold(
@@ -119,27 +127,18 @@ fun StatsScreen(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag(TestTags.Stats.LIST),
                     contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {
-                        PeriodCard(
-                            title = stringResource(R.string.stats_this_week_title),
-                            period = uiState.week,
-                        )
+                        StatsPeriodRow(selected = uiState.period, onSelect = onSelectPeriod)
                     }
                     item {
-                        PeriodCard(
-                            title = stringResource(R.string.stats_this_month_title),
-                            period = uiState.month,
-                        )
+                        PeriodCard(title = stringResource(uiState.period.cardTitle()), period = uiState.stats)
                     }
                     item {
                         StreakCard(streakDays = uiState.currentStreakDays)
-                    }
-                    item {
-                        LifetimeBooksFinishedCard(count = uiState.lifetimeBooksFinished)
                     }
                 }
             }
@@ -201,31 +200,49 @@ private fun PeriodCard(
  * from the moment schema v3 exists, unlike [StatsUiState.Period.booksFinished] which can only ever
  * reflect finishes recorded after this phase shipped.
  */
+
+/**
+ * The period picker (#91): a scrollable row of chips, in the library status filter's style. Chips
+ * rather than a segmented control because five labels do not fit a phone's width as fixed segments,
+ * least of all at a large font scale; a chip row scrolls instead.
+ */
 @Composable
-private fun LifetimeBooksFinishedCard(count: Int) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = stringResource(R.string.stats_books_finished_lifetime_title),
-                style = MaterialTheme.typography.titleMedium,
+private fun StatsPeriodRow(
+    selected: StatsPeriod,
+    onSelect: (StatsPeriod) -> Unit,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().testTag(TestTags.Stats.PERIODS),
+    ) {
+        items(StatsPeriod.entries) { period ->
+            FilterChip(
+                selected = period == selected,
+                onClick = { onSelect(period) },
+                label = { Text(stringResource(period.chipLabel())) },
             )
-            Text(text = count.toString(), style = MaterialTheme.typography.headlineMedium)
         }
     }
 }
 
-/**
- * Current reading streak card. A `0`-day streak renders [R.string.stats_no_streak] ("No current
- * streak") rather than "0 day streak" -- see
- * [com.hub.media.features.stats.data.StatsRepository.observeReadingStreak] for the exact streak
- * rule. A positive streak renders via the [R.plurals.stats_streak_days] plurals resource.
- */
+private fun StatsPeriod.chipLabel(): Int =
+    when (this) {
+        StatsPeriod.WEEK -> R.string.stats_period_week
+        StatsPeriod.MONTH -> R.string.stats_period_month
+        StatsPeriod.LAST_30_DAYS -> R.string.stats_period_30_days
+        StatsPeriod.YEAR -> R.string.stats_period_year
+        StatsPeriod.ALL_TIME -> R.string.stats_period_all
+    }
+
+private fun StatsPeriod.cardTitle(): Int =
+    when (this) {
+        StatsPeriod.WEEK -> R.string.stats_this_week_title
+        StatsPeriod.MONTH -> R.string.stats_this_month_title
+        StatsPeriod.LAST_30_DAYS -> R.string.stats_last_30_days_title
+        StatsPeriod.YEAR -> R.string.stats_this_year_title
+        StatsPeriod.ALL_TIME -> R.string.stats_all_time_title
+    }
+
 @Composable
 private fun StreakCard(streakDays: Int) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -279,12 +296,13 @@ private fun StatsScreenLoadingPreview() {
     MediaTrackerTheme {
         StatsScreen(
             uiState = StatsUiState(isLoading = true),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }
 }
 
-/** Preview of the stats screen with populated week/month totals and an active streak. */
+/** Preview of the stats screen on This month, with populated totals and an active streak. */
 @Preview(showBackground = true)
 @Composable
 private fun StatsScreenPopulatedPreview() {
@@ -293,10 +311,11 @@ private fun StatsScreenPopulatedPreview() {
             uiState =
                 StatsUiState(
                     isLoading = false,
-                    week = StatsUiState.Period(timeReadSeconds = 5_400, sessionCount = 4, pagesRead = 120),
-                    month = StatsUiState.Period(timeReadSeconds = 27_000, sessionCount = 15, pagesRead = 640),
+                    period = StatsPeriod.MONTH,
+                    stats = StatsUiState.Period(timeReadSeconds = 27_000, sessionCount = 15, pagesRead = 640),
                     currentStreakDays = 5,
                 ),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }
@@ -314,10 +333,10 @@ private fun StatsScreenEmptyPreview() {
             uiState =
                 StatsUiState(
                     isLoading = false,
-                    week = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
-                    month = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
+                    stats = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
                     currentStreakDays = 0,
                 ),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }
