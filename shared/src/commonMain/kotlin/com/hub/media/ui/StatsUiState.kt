@@ -1,57 +1,37 @@
 package com.hub.media.ui
 
+import com.hub.media.features.stats.data.StatsPeriod
+
 /**
- * UI state for the stats screen (ROADMAP Task 5; the screen itself lands in Phase C — this state
- * shape is consumed by it).
+ * UI state for the stats screen: one period at a time (#91).
  *
- * @property isLoading True until the first emission from every combined
- *   [com.hub.media.features.stats.data.StatsRepository] flow has arrived. `true` initially
- *   (before any DB read completes), matching the "Loading initial state" requirement without a
- *   separate sealed `Loading` state — every field already has a sensible zero/null default, so a
- *   single flag is enough for the screen to show a loading affordance without needing a distinct
- *   state type to destructure.
- * @property week Aggregate stats for the current calendar week, whose start day is the
- *   user's [com.hub.media.features.settings.data.WeekStartDay] preference (ROADMAP Task 7 Phase B;
- *   defaults to Monday, ISO-8601 — see
- *   [com.hub.media.features.stats.data.StatsRepository.thisWeekBounds]).
- * @property month Aggregate stats for the current calendar month (1st of month start — see
- *   [com.hub.media.features.stats.data.StatsRepository.thisMonthBounds]).
- * @property currentStreakDays Current consecutive-reading-day streak — see
+ * @property isLoading True until the first snapshot arrives; every field has a sensible default,
+ *   so one flag is enough for the screen to show a loading affordance.
+ * @property period The period the picker has selected -- remembered across visits via
+ *   [com.hub.media.features.settings.data.observeStatsPeriod].
+ * @property stats [period]'s numbers, read as one consistent snapshot (see
+ *   [com.hub.media.core.database.dao.StatsDao.observePeriodStats]). All time replaces the former
+ *   separate "books finished (lifetime)" figure.
+ * @property currentStreakDays Current consecutive-reading-day streak -- see
  *   [com.hub.media.features.stats.data.StatsRepository.observeReadingStreak] for the exact rule
- *   (today-without-a-session-yet does not break yesterday's streak).
- * @property lifetimeBooksFinished Total count of books currently
- *   [com.hub.media.core.database.entities.ReadingStatus.FINISHED] (ROADMAP Task 6 Phase C), across
- *   all time — see [com.hub.media.features.stats.data.StatsRepository]'s "Books-finished stat" KDoc
- *   for why this lifetime total is shown alongside, not instead of, [week]/[month]'s period-scoped
- *   [Period.booksFinished].
+ *   (today-without-a-session-yet does not break yesterday's streak). Independent of [period].
  */
 public data class StatsUiState(
     val isLoading: Boolean = true,
-    val week: Period = Period(),
-    val month: Period = Period(),
+    val period: StatsPeriod = StatsPeriod.WEEK,
+    val stats: Period = Period(),
     val currentStreakDays: Int = 0,
-    val lifetimeBooksFinished: Int = 0,
 ) {
     /**
-     * One period's (week or month) aggregate stats. Reused for both [week] and [month] rather
-     * than duplicating three near-identical properties twice.
+     * One period's aggregate numbers.
      *
-     * @property timeReadSeconds Sum of known session durations in the period, or `null` if no
-     *   session in the period has a known duration (schema v2 — "unknown", not "zero"; see
-     *   [com.hub.media.features.stats.data.StatsRepository] KDoc point 1). Never coerced to `0`
-     *   here — the screen decides how to render "unknown" (e.g. "--" vs "0m").
-     * @property sessionCount Count of ALL sessions in the period, null-duration sessions
-     *   included. Always a real, non-negative count.
-     * @property pagesRead Sum of known per-session `deltaPages` in the period, or `null` if no
-     *   session in the period has a known `deltaPages`. Never inferred from position continuity
-     *   between sessions ("no gap reconciliation" — see
-     *   [com.hub.media.features.stats.data.StatsRepository] KDoc point 2).
-     * @property booksFinished Count of books whose
-     *   [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] falls in this period
-     *   (ROADMAP Task 6 Phase C). Always a real, non-negative count (never `null`) — an empty
-     *   period genuinely has `0`, same as [sessionCount] — but see
-     *   [com.hub.media.features.stats.data.StatsRepository]'s "Books-finished stat" KDoc for why
-     *   this specific count necessarily undercounts anything finished before schema v3 shipped.
+     * @property timeReadSeconds Sum of known session durations, or `null` when no session in the
+     *   period has one -- unknown, never zero (an unknown duration must not silently become a zero
+     *   that corrupts a time-read total).
+     * @property sessionCount Every session in the period, including those without a duration.
+     * @property pagesRead Sum of known page deltas, or `null` when none is known.
+     * @property booksFinished Books whose status is FINISHED with a finish date in the period; All
+     *   time also counts finished books that have no finish date.
      */
     public data class Period(
         val timeReadSeconds: Long? = null,

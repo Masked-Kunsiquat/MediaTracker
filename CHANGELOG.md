@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Stats has a period picker: this week, this month, the last 30 days, this year, or all time. It remembers your choice. The separate "books finished (lifetime)" card is now the All time view. (#91)
+
+### Fixed
+- Stats numbers now update together after you log a session, instead of briefly disagreeing with each other. (#91)
+
 ## [0.27.0] - 2026-10-16
 
 ### Changed

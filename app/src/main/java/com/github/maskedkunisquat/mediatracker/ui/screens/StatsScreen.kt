@@ -1,29 +1,40 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -32,8 +43,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.AppContainer
 import com.hub.media.ui.StatsUiState
 import com.hub.media.ui.StatsViewModel
@@ -58,6 +71,7 @@ fun StatsScreenRoute(
 
     StatsScreen(
         uiState = uiState,
+        onSelectPeriod = viewModel::selectPeriod,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -65,9 +79,9 @@ fun StatsScreenRoute(
 /**
  * Stateless stats screen composable (AGENTS.md §5 State Hoisting).
  *
- * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator], otherwise three
- * cards: "This week" and "This month" (each showing time read, session count, and pages read via
- * [PeriodCard]), and the current reading streak (via [StreakCard]).
+ * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator]; otherwise the period
+ * picker ([StatsPeriodRow]), one [PeriodCard] for the chosen [StatsUiState.period], and the current
+ * reading streak ([StreakCard]) (#91).
  *
  * A `null` [StatsUiState.Period.timeReadSeconds]/[StatsUiState.Period.pagesRead] means no session
  * in the period has a known value at all (schema v2 — see that class's KDoc) and is rendered as
@@ -77,11 +91,14 @@ fun StatsScreenRoute(
  *
  * @param uiState Current [StatsUiState].
  * @param onNavigateBack Called when the back icon is pressed.
+ *
+ * @param onSelectPeriod Called with the chip the user picked; the view model remembers it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
     uiState: StatsUiState,
+    onSelectPeriod: (StatsPeriod) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     Scaffold(
@@ -119,27 +136,18 @@ fun StatsScreen(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag(TestTags.Stats.LIST),
                     contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {
-                        PeriodCard(
-                            title = stringResource(R.string.stats_this_week_title),
-                            period = uiState.week,
-                        )
+                        StatsPeriodRow(selected = uiState.period, onSelect = onSelectPeriod)
                     }
                     item {
-                        PeriodCard(
-                            title = stringResource(R.string.stats_this_month_title),
-                            period = uiState.month,
-                        )
+                        PeriodCard(title = stringResource(uiState.period.cardTitle()), period = uiState.stats)
                     }
                     item {
                         StreakCard(streakDays = uiState.currentStreakDays)
-                    }
-                    item {
-                        LifetimeBooksFinishedCard(count = uiState.lifetimeBooksFinished)
                     }
                 }
             }
@@ -148,8 +156,8 @@ fun StatsScreen(
 }
 
 /**
- * A single period ("This week"/"This month") stats card: time read, session count, and pages
- * read. See [StatsScreen]'s KDoc for the null-vs-zero rendering rule.
+ * The chosen period's card: time read, sessions, pages read and books finished. See
+ * [StatsScreen]'s KDoc for the null-vs-zero rendering rule.
  */
 @Composable
 private fun PeriodCard(
@@ -194,38 +202,69 @@ private fun PeriodCard(
 }
 
 /**
- * Lifetime books-finished total (ROADMAP Task 6 Phase C) — see
- * [com.hub.media.features.stats.data.StatsRepository]'s "Books-finished stat" KDoc for why this
- * lifetime count is shown as its own card rather than folded into [PeriodCard]: it needs no
- * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] timestamp and so is exact
- * from the moment schema v3 exists, unlike [StatsUiState.Period.booksFinished] which can only ever
- * reflect finishes recorded after this phase shipped.
+ * The period picker (#91): a scrollable row of chips, in the library status filter's style. Chips
+ * rather than a segmented control because five labels do not fit a phone's width as fixed segments,
+ * least of all at a large font scale; a chip row scrolls instead.
  */
 @Composable
-private fun LifetimeBooksFinishedCard(count: Int) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = stringResource(R.string.stats_books_finished_lifetime_title),
-                style = MaterialTheme.typography.titleMedium,
+private fun StatsPeriodRow(
+    selected: StatsPeriod,
+    onSelect: (StatsPeriod) -> Unit,
+) {
+    // On a narrow phone the last chips start off the edge, so a remembered All time opened with its
+    // own chip hidden. The selected chip asks to be brought into view once, on first composition:
+    // that scrolls only if it is not already fully visible, and only as far as needed, so a row
+    // that already shows it is left alone and later taps never make it jump.
+    val bringSelectedIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(Unit) {
+        // After the first frame: before the row is laid out there is nothing to scroll.
+        withFrameNanos { }
+        bringSelectedIntoView.bringIntoView()
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // One choice, not five toggles: a FilterChip alone announces as an independent checkbox.
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .selectableGroup()
+                .testTag(TestTags.Stats.PERIODS),
+    ) {
+        StatsPeriod.entries.forEach { period ->
+            FilterChip(
+                selected = period == selected,
+                onClick = { onSelect(period) },
+                label = { Text(stringResource(period.chipLabel())) },
+                modifier =
+                    if (period == selected) {
+                        Modifier.bringIntoViewRequester(bringSelectedIntoView)
+                    } else {
+                        Modifier
+                    },
             )
-            Text(text = count.toString(), style = MaterialTheme.typography.headlineMedium)
         }
     }
 }
 
-/**
- * Current reading streak card. A `0`-day streak renders [R.string.stats_no_streak] ("No current
- * streak") rather than "0 day streak" -- see
- * [com.hub.media.features.stats.data.StatsRepository.observeReadingStreak] for the exact streak
- * rule. A positive streak renders via the [R.plurals.stats_streak_days] plurals resource.
- */
+private fun StatsPeriod.chipLabel(): Int =
+    when (this) {
+        StatsPeriod.WEEK -> R.string.stats_period_week
+        StatsPeriod.MONTH -> R.string.stats_period_month
+        StatsPeriod.LAST_30_DAYS -> R.string.stats_period_30_days
+        StatsPeriod.YEAR -> R.string.stats_period_year
+        StatsPeriod.ALL_TIME -> R.string.stats_period_all
+    }
+
+private fun StatsPeriod.cardTitle(): Int =
+    when (this) {
+        StatsPeriod.WEEK -> R.string.stats_this_week_title
+        StatsPeriod.MONTH -> R.string.stats_this_month_title
+        StatsPeriod.LAST_30_DAYS -> R.string.stats_last_30_days_title
+        StatsPeriod.YEAR -> R.string.stats_this_year_title
+        StatsPeriod.ALL_TIME -> R.string.stats_all_time_title
+    }
+
 @Composable
 private fun StreakCard(streakDays: Int) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -279,12 +318,13 @@ private fun StatsScreenLoadingPreview() {
     MediaTrackerTheme {
         StatsScreen(
             uiState = StatsUiState(isLoading = true),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }
 }
 
-/** Preview of the stats screen with populated week/month totals and an active streak. */
+/** Preview of the stats screen on This month, with populated totals and an active streak. */
 @Preview(showBackground = true)
 @Composable
 private fun StatsScreenPopulatedPreview() {
@@ -293,10 +333,11 @@ private fun StatsScreenPopulatedPreview() {
             uiState =
                 StatsUiState(
                     isLoading = false,
-                    week = StatsUiState.Period(timeReadSeconds = 5_400, sessionCount = 4, pagesRead = 120),
-                    month = StatsUiState.Period(timeReadSeconds = 27_000, sessionCount = 15, pagesRead = 640),
+                    period = StatsPeriod.MONTH,
+                    stats = StatsUiState.Period(timeReadSeconds = 27_000, sessionCount = 15, pagesRead = 640),
                     currentStreakDays = 5,
                 ),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }
@@ -314,10 +355,10 @@ private fun StatsScreenEmptyPreview() {
             uiState =
                 StatsUiState(
                     isLoading = false,
-                    week = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
-                    month = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
+                    stats = StatsUiState.Period(timeReadSeconds = null, sessionCount = 0, pagesRead = null),
                     currentStreakDays = 0,
                 ),
+            onSelectPeriod = {},
             onNavigateBack = {},
         )
     }

@@ -227,7 +227,14 @@
     <string name="stats_sessions_label">Sessions: %1$d</string>
     <string name="stats_pages_read_label">Pages read: %1$s</string>
     <string name="stats_books_finished_label">Books finished: %1$d</string>
-    <string name="stats_books_finished_lifetime_title">Books finished (lifetime)</string>
+    <string name="stats_last_30_days_title">Last 30 days</string>
+    <string name="stats_this_year_title">This year</string>
+    <string name="stats_all_time_title">All time</string>
+    <string name="stats_period_week">Week</string>
+    <string name="stats_period_month">Month</string>
+    <string name="stats_period_30_days">30 days</string>
+    <string name="stats_period_year">Year</string>
+    <string name="stats_period_all">All time</string>
     <string name="stats_unknown_value">—</string>
     <string name="stats_no_streak">No current streak</string>
     <plurals name="stats_streak_days">

@@ -7,85 +7,28 @@ import kotlinx.coroutines.flow.Flow
 import kotlin.time.Instant
 
 /**
- * Reactive aggregate queries for ROADMAP Task 5 (stats): originally `reading_sessions`-only, joined
- * by ROADMAP Task 6 Phase C with two `book_details`-based "books finished" queries
- * ([observeBooksFinishedTotal]/[observeBooksFinishedInRange]). Adding this interface and
- * registering it on `AppDatabase` does not alter the schema (schema hashes are derived from
- * `@Entity`-annotated tables, not DAO surface), so no Room version bump accompanied its original
- * addition — see `AppDatabase`'s KDoc. (The Phase C `book_details` columns those two new queries
- * read *did* require a version bump, to schema v3 — that bump came from the columns themselves,
- * not from this DAO gaining new methods.)
+ * Reactive aggregate queries for the stats screen (ROADMAP Task 5, reworked in #91).
+ *
+ * Since #91 a stats period is ONE query, [observePeriodStats], instead of four per-field queries
+ * that each emitted on their own and so published halfway mixes after a write. The only other
+ * query is [observeSessionStartTimestampsInRange], the streak's raw input. Adding or reshaping DAO
+ * methods does not alter the schema (schema hashes come from `@Entity` tables), so none of this
+ * needed a Room version bump.
  *
  * ### Range semantics: "falls in [from, to)"
- * Every range query below buckets by [com.hub.media.core.database.entities.ReadingSessionEntity.timestampStart]
- * only, using a half-open interval: `timestampStart >= from AND timestampStart < to`. A session
- * starting exactly at `to` is excluded (it belongs to the *next* bucket); one starting exactly at
- * `from` is included. Bucketing is by a session's *start*, never its end -- a session that starts
- * inside a window but finishes after it (e.g. started 11:58pm on the last day of a month) is
- * counted whole in the window its start falls into. This deliberately never splits one session's
- * contribution across two buckets, consistent with the ROADMAP Task 5 note that sessions are
- * independent recorded facts, not a continuous log to be reconciled.
+ * Ranges bucket sessions by [com.hub.media.core.database.entities.ReadingSessionEntity.timestampStart]
+ * only, half-open: a session starting exactly at `to` belongs to the next bucket, one starting at
+ * `from` is in. A session that starts inside a window but ends after it counts whole in the window
+ * its start falls into -- sessions are independent recorded facts, never split across buckets.
  *
  * ### SUM-over-empty-set nullability (SQLite semantics)
- * SQLite's `SUM()` returns `NULL` — not `0` — when zero rows match the `WHERE` clause, or when
- * every matching row's summed column is itself `NULL`. [observeTotalKnownDurationInRange] and
- * [observePagesReadInRange] surface that faithfully as `Flow<Long?>`/`Flow<Int?>` rather than
- * coalescing to `0` here: collapsing "nothing known" into "a known zero" at the DAO layer would
- * destroy information a caller might legitimately want (e.g. distinguishing "no sessions in this
- * range at all" from "sessions exist but every one has a null duration/deltaPages", both of which
- * produce `NULL` here). [com.hub.media.features.stats.data.StatsRepository] is the layer that
- * documents any further 0-coalescing for UI display; the DAO stays faithful to the raw SQL result.
- * [observeSessionCountInRange]'s `COUNT(*)` is different: it always returns a real integer, so an
- * empty range legitimately yields `0`, not `null`.
+ * `SUM()` is `NULL`, not `0`, when no row matches or every matching value is `NULL`. The DAO keeps
+ * that faithfully (time read and pages read are nullable): collapsing "nothing known" into "a known
+ * zero" here would destroy information. `COUNT(*)` always returns a real integer, so an empty range
+ * legitimately yields `0`.
  */
 @Dao
 interface StatsDao {
-    /**
-     * Sum of `durationSeconds` for sessions whose `timestampStart` falls in `[from, to)` and
-     * whose duration is *known* (`durationSeconds IS NOT NULL`) -- null-duration sessions
-     * contribute nothing to this total (schema v2 / ROADMAP Task 5 note: "sum only known
-     * durations"). Returns `null` when no matching session has a known duration in range
-     * (including an empty range); never coerced to `0` here (see class KDoc).
-     */
-    @Query(
-        "SELECT SUM(durationSeconds) FROM reading_sessions " +
-            "WHERE durationSeconds IS NOT NULL AND timestampStart >= :from AND timestampStart < :to",
-    )
-    fun observeTotalKnownDurationInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Long?>
-
-    /**
-     * Count of ALL sessions whose `timestampStart` falls in `[from, to)`, null-duration sessions
-     * included -- a session with unknown duration still happened and still counts as a session
-     * (per the ROADMAP Task 5 note: a null duration "does not otherwise affect session counts or
-     * page progress"). `COUNT(*)` always yields a real non-null integer, so an empty range
-     * legitimately returns `0`.
-     */
-    @Query("SELECT COUNT(*) FROM reading_sessions WHERE timestampStart >= :from AND timestampStart < :to")
-    fun observeSessionCountInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Int>
-
-    /**
-     * Sum of `deltaPages` for sessions whose `timestampStart` falls in `[from, to)` and whose
-     * `deltaPages` is known (`deltaPages IS NOT NULL`). Mirrors
-     * [observeTotalKnownDurationInRange]'s null/`0` handling for the same SQLite `SUM()` reason
-     * (see class KDoc): `null` means "no known page progress in range", not "zero pages read".
-     * Per the ROADMAP Task 5 note, this sums per-session deltas only -- it never infers pages from
-     * position continuity between sessions ("no gap reconciliation").
-     */
-    @Query(
-        "SELECT SUM(deltaPages) FROM reading_sessions " +
-            "WHERE deltaPages IS NOT NULL AND timestampStart >= :from AND timestampStart < :to",
-    )
-    fun observePagesReadInRange(
-        from: Instant,
-        to: Instant,
-    ): Flow<Int?>
-
     /**
      * Distinct `timestampStart` values for every session whose `timestampStart` falls in `[from, to)`.
      * Deliberately NOT bucketed into calendar days in SQL: SQLite has no timezone-aware date
@@ -104,36 +47,39 @@ interface StatsDao {
     ): Flow<List<Instant>>
 
     /**
-     * Lifetime count of `book_details` rows currently at [status] (ROADMAP Task 6 Phase C —
-     * "books finished" stat). Reads the current [status] column directly rather than
-     * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt], so this total is exact
-     * from the moment this column exists, independent of whether any [finishedAt] value is known
-     * for a given row (e.g. a book whose `MIGRATION_2_3` derivation never set one — see that
-     * migration's KDoc). Not scoped to a time range — see
-     * [observeBooksFinishedInRange] for the period-scoped count and
-     * [com.hub.media.features.stats.data.StatsRepository]'s KDoc for why the two coexist.
-     */
-    @Query("SELECT COUNT(*) FROM book_details WHERE status = :status")
-    fun observeBooksFinishedTotal(status: ReadingStatus): Flow<Int>
-
-    /**
-     * Count of `book_details` rows at [status] whose
-     * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] falls in `[from, to)`
-     * (same half-open convention as every other range query on this interface). Rows with a `NULL`
-     * `finishedAt` — every row that predates schema v3, plus any row `MIGRATION_2_3` derived to
-     * [ReadingStatus.READING] rather than [ReadingStatus.FINISHED] — never match any range,
-     * including an unbounded one, since `finishedAt >= :from` is never true against `NULL` in SQL.
-     * That is intentional, not a bug to work around: a period-scoped "books finished this
-     * week/month" total can only ever be honest about finishes recorded *after* this column started
-     * being populated (see [com.hub.media.features.stats.data.StatsRepository]'s KDoc).
+     * Everything a stats period shows, in one query (#91). The four numbers used to come from four
+     * independent flows, so one write published every halfway mix (a session counted before its
+     * pages arrived) before settling. One `SELECT` of four scalar subqueries is one emission per
+     * write, with the numbers already consistent; Room re-runs it when either table changes.
+     *
+     * `SUM` over no rows is `NULL` in SQLite, which is exactly the null-versus-zero rule: no known
+     * duration in range means time read is unknown, not zero. [from] / [to] are a half-open range;
+     * either may be `null` for unbounded, and with both `null` (All time) a FINISHED book with no
+     * `finishedAt` still counts, as the lifetime count always did, while no dated range can match it.
      */
     @Query(
-        "SELECT COUNT(*) FROM book_details WHERE status = :status " +
-            "AND finishedAt >= :from AND finishedAt < :to",
+        """
+        SELECT
+          (SELECT SUM(durationSeconds) FROM reading_sessions
+             WHERE durationSeconds IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS timeReadSeconds,
+          (SELECT COUNT(*) FROM reading_sessions
+             WHERE (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS sessionCount,
+          (SELECT SUM(deltaPages) FROM reading_sessions
+             WHERE deltaPages IS NOT NULL
+               AND (:from IS NULL OR timestampStart >= :from)
+               AND (:to IS NULL OR timestampStart < :to)) AS pagesRead,
+          (SELECT COUNT(*) FROM book_details
+             WHERE status = :finished
+               AND (:from IS NULL OR finishedAt >= :from)
+               AND (:to IS NULL OR finishedAt < :to)) AS booksFinished
+        """,
     )
-    fun observeBooksFinishedInRange(
-        status: ReadingStatus,
-        from: Instant,
-        to: Instant,
-    ): Flow<Int>
+    fun observePeriodStats(
+        from: Instant?,
+        to: Instant?,
+        finished: ReadingStatus,
+    ): Flow<PeriodStatsRow>
 }

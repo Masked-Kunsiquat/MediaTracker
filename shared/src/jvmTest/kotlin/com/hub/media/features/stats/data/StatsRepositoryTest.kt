@@ -18,7 +18,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -73,82 +72,6 @@ class StatsRepositoryTest {
     }
 
     private fun instant(epochSeconds: Long): Instant = Instant.fromEpochSeconds(epochSeconds)
-
-    // ---- observeTimeReadInRange -------------------------------------------------------------
-
-    @Test
-    fun observeTimeReadInRange_excludesNullDurationSessions() =
-        runTest {
-            insertBook()
-            insertSession(instant(1_100), durationSeconds = 100)
-            insertSession(instant(1_200), durationSeconds = null)
-
-            val total = repo.observeTimeReadInRange(instant(1_000), instant(2_000)).first()
-
-            assertEquals(100L, total, "a null-duration session must not contribute to the time-read total")
-        }
-
-    @Test
-    fun observeTimeReadInRange_emptyRange_isNullNotZero() =
-        runTest {
-            insertBook()
-
-            val total = repo.observeTimeReadInRange(instant(1_000), instant(2_000)).first()
-
-            assertNull(total, "no known-duration data in range must surface as null, not a misleading 0")
-        }
-
-    // ---- observeSessionCountInRange ----------------------------------------------------------
-
-    @Test
-    fun observeSessionCountInRange_countsNullDurationSessionsToo() =
-        runTest {
-            insertBook()
-            insertSession(instant(1_100), durationSeconds = 100)
-            insertSession(instant(1_200), durationSeconds = null)
-
-            val count = repo.observeSessionCountInRange(instant(1_000), instant(2_000)).first()
-
-            assertEquals(2, count, "a null-duration session still happened and must still be counted")
-        }
-
-    // ---- observePagesReadInRange -------------------------------------------------------------
-
-    @Test
-    fun observePagesReadInRange_ignoresNullDeltaPages() =
-        runTest {
-            insertBook()
-            insertSession(instant(1_100), deltaPages = 20)
-            insertSession(instant(1_200), deltaPages = null)
-
-            val pages = repo.observePagesReadInRange(instant(1_000), instant(2_000)).first()
-
-            assertEquals(20, pages)
-        }
-
-    @Test
-    fun observePagesReadInRange_emptyRange_isNullNotZero() =
-        runTest {
-            insertBook()
-
-            val pages = repo.observePagesReadInRange(instant(1_000), instant(2_000)).first()
-
-            assertNull(pages)
-        }
-
-    // ---- range boundary ([from, to)) ---------------------------------------------------------
-
-    @Test
-    fun rangeBoundary_fromInclusive_toExclusive() =
-        runTest {
-            insertBook()
-            insertSession(instant(1_000)) // exactly at `from` -> included
-            insertSession(instant(2_000)) // exactly at `to` -> excluded
-
-            val count = repo.observeSessionCountInRange(instant(1_000), instant(2_000)).first()
-
-            assertEquals(1, count)
-        }
 
     // ---- observeReadingStreak ----------------------------------------------------------------
 
@@ -370,45 +293,6 @@ class StatsRepositoryTest {
     // ---- books-finished stat (ROADMAP Task 6 Phase C) ----------------------------------------
 
     @Test
-    fun observeBooksFinishedTotal_countsFinishedBooksAcrossAllTime() =
-        runTest {
-            insertBook()
-            db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
-            )
-
-            val total = repo.observeBooksFinishedTotal().first()
-
-            assertEquals(1, total)
-        }
-
-    @Test
-    fun observeBooksFinishedTotal_zeroWhenNoBookIsFinished() =
-        runTest {
-            insertBook()
-            db.bookDetailsDao().insert(sampleBookDetails(mediaId = mediaId, status = ReadingStatus.READING))
-
-            val total = repo.observeBooksFinishedTotal().first()
-
-            assertEquals(0, total)
-        }
-
-    @Test
-    fun observeBooksFinishedInRange_onlyCountsFinishesWithinBounds() =
-        runTest {
-            insertBook()
-            db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
-            )
-
-            val inRange = repo.observeBooksFinishedInRange(instant(1_000), instant(2_000)).first()
-            val outOfRange = repo.observeBooksFinishedInRange(instant(2_000), instant(3_000)).first()
-
-            assertEquals(1, inRange)
-            assertEquals(0, outOfRange)
-        }
-
-    @Test
     fun thisMonthBounds_decemberYieldsUpperBoundInJanuaryOfFollowingYear() {
         val decemberDate = LocalDateTime(2024, 12, 15, 15, 0).toInstant(TimeZone.UTC)
 
@@ -417,4 +301,38 @@ class StatsRepositoryTest {
         assertEquals(LocalDate(2024, 12, 1).atStartOfDayIn(TimeZone.UTC), from)
         assertEquals(LocalDate(2025, 1, 1).atStartOfDayIn(TimeZone.UTC), to)
     }
+
+    // --- observePeriodStats (#91) ---------------------------------------------------------------
+
+    private val june19: Clock =
+        object : Clock {
+            override fun now(): Instant = LocalDateTime(2024, 6, 19, 15, 0).toInstant(TimeZone.UTC)
+        }
+
+    private suspend fun periodStats(period: StatsPeriod) =
+        repo.observePeriodStats(period, TimeZone.UTC, june19, WeekStartDay.MONDAY).first()
+
+    @Test
+    fun observePeriodStats_readsThePeriodsBounds() =
+        runTest {
+            insertBook()
+            insertSession(LocalDateTime(2024, 6, 18, 9, 0).toInstant(TimeZone.UTC), durationSeconds = 600)
+            insertSession(LocalDateTime(2024, 3, 2, 9, 0).toInstant(TimeZone.UTC), durationSeconds = 900)
+
+            assertEquals(600L, periodStats(StatsPeriod.WEEK).timeReadSeconds)
+            assertEquals(1500L, periodStats(StatsPeriod.YEAR).timeReadSeconds)
+            assertEquals(1, periodStats(StatsPeriod.LAST_30_DAYS).sessionCount)
+        }
+
+    @Test
+    fun observePeriodStats_anUndatedFinish_isInAllTime_notInYear() =
+        runTest {
+            insertBook()
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
+            )
+
+            assertEquals(1, periodStats(StatsPeriod.ALL_TIME).booksFinished)
+            assertEquals(0, periodStats(StatsPeriod.YEAR).booksFinished)
+        }
 }
