@@ -204,4 +204,28 @@ class PeriodStatsDaoTest {
             assertEquals(2, row.timedSessionCount)
             assertEquals(3, row.sessionCount)
         }
+
+    // --- Finish dates for the month chart (#219) -------------------------------------------------
+
+    @Test
+    fun finishedAtInRange_returnsOnlyFinishedBooks_withinTheRange() =
+        runTest {
+            insertBook()
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+            )
+            db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = "media-2", status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+            )
+            db.mediaItemDao().insert(sampleMediaItem(id = "media-3"))
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = "media-3", status = ReadingStatus.READING, finishedAt = instant(1_600)),
+            )
+
+            val dates =
+                db.statsDao().observeFinishedAtInRange(instant(1_000), instant(2_000), ReadingStatus.FINISHED).first()
+
+            assertEquals(listOf(instant(1_500)), dates)
+        }
 }

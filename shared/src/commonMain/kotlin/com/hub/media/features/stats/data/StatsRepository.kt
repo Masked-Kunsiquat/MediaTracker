@@ -82,6 +82,24 @@ public class StatsRepository(
     }
 
     /**
+     * Books finished in each month of [yearBounds] (#219): twelve counts, January first, for the Year
+     * view's chart. Months are local months in [timeZone] -- a finish at 23:30 on 31 May in New York
+     * is May, even though it is already June in UTC.
+     */
+    public fun observeFinishesByMonth(
+        yearBounds: Pair<Instant, Instant>,
+        timeZone: TimeZone,
+    ): Flow<List<Int>> =
+        db
+            .statsDao()
+            .observeFinishedAtInRange(yearBounds.first, yearBounds.second, ReadingStatus.FINISHED)
+            .map { dates ->
+                val counts = IntArray(12)
+                dates.forEach { counts[it.toLocalDateTime(timeZone).month.ordinal]++ }
+                counts.toList()
+            }
+
+    /**
      * Current reading streak: the number of consecutive calendar days — counting backward from
      * today — with at least one reading session, bucketed into calendar days via [timeZone]
      * (never UTC/SQLite-default; see [com.hub.media.core.database.dao.StatsDao]'s KDoc on why
@@ -127,6 +145,7 @@ public class StatsRepository(
      * edge cases, and the upper bound ensures every one of today's sessions (which necessarily
      * start before "tomorrow" begins) is included.
      */
+
     public fun observeReadingStreak(
         timeZone: TimeZone = TimeZone.currentSystemDefault(),
         clock: Clock = Clock.System,

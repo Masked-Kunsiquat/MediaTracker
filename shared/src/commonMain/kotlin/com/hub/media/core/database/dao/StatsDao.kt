@@ -98,4 +98,20 @@ interface StatsDao {
         to: Instant?,
         finished: ReadingStatus,
     ): Flow<PeriodStatsRow>
+
+    /**
+     * Finish dates of FINISHED books within `[from, to)`, for the books-per-month chart (#219). Raw
+     * instants rather than a SQL `strftime` grouping: SQLite's `'localtime'` is the device's zone, not
+     * the injected one, so the month a late-evening finish belongs to is decided in Kotlin instead --
+     * the same reason the streak reads raw session starts.
+     */
+    @Query(
+        "SELECT finishedAt FROM book_details " +
+            "WHERE status = :finished AND finishedAt >= :from AND finishedAt < :to",
+    )
+    fun observeFinishedAtInRange(
+        from: Instant,
+        to: Instant,
+        finished: ReadingStatus,
+    ): Flow<List<Instant>>
 }
