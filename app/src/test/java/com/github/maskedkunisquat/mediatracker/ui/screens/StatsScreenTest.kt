@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -21,10 +22,13 @@ import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.ui.StatsUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** The stats screen's period picker and single card (#91), driven statelessly. */
 @RunWith(RobolectricTestRunner::class)
@@ -138,5 +142,27 @@ class StatsScreenTest {
         composeRule
             .onNodeWithTag(TestTags.Stats.PERIODS)
             .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+    }
+
+    /**
+     * The phone this was hand-checked on (SM-G975U1) cuts the last chip off at the edge at normal
+     * font size, so a remembered All time opened with its own chip half hidden. A narrow screen
+     * reproduces that here. NATIVE graphics, because Robolectric's legacy pipeline measures text far
+     * too narrow to overflow anything (AGENTS.md section 7) -- without it every chip fits and this
+     * test passes with the bug in place, which is how it first behaved.
+     */
+    @Test
+    @Config(qualifiers = "w320dp-h640dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aRememberedFarPeriod_opensWithItsChipFullyInView() {
+        setContent(loaded(period = StatsPeriod.ALL_TIME))
+
+        // Unclipped: a node's ordinary bounds are clipped to the visible part of the row.
+        val row = composeRule.onNodeWithTag(TestTags.Stats.PERIODS).getUnclippedBoundsInRoot()
+        val all = chip(R.string.stats_period_all).getUnclippedBoundsInRoot()
+        assertTrue(
+            "All time chip $all is not fully inside the row $row",
+            all.left >= row.left && all.right <= row.right,
+        )
     }
 }

@@ -1,16 +1,19 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,7 +28,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -205,16 +211,37 @@ private fun StatsPeriodRow(
     selected: StatsPeriod,
     onSelect: (StatsPeriod) -> Unit,
 ) {
-    LazyRow(
+    // On a narrow phone the last chips start off the edge, so a remembered All time opened with its
+    // own chip hidden. The selected chip asks to be brought into view once, on first composition:
+    // that scrolls only if it is not already fully visible, and only as far as needed, so a row
+    // that already shows it is left alone and later taps never make it jump.
+    val bringSelectedIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(Unit) {
+        // After the first frame: before the row is laid out there is nothing to scroll.
+        withFrameNanos { }
+        bringSelectedIntoView.bringIntoView()
+    }
+    Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         // One choice, not five toggles: a FilterChip alone announces as an independent checkbox.
-        modifier = Modifier.fillMaxWidth().selectableGroup().testTag(TestTags.Stats.PERIODS),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .selectableGroup()
+                .testTag(TestTags.Stats.PERIODS),
     ) {
-        items(StatsPeriod.entries) { period ->
+        StatsPeriod.entries.forEach { period ->
             FilterChip(
                 selected = period == selected,
                 onClick = { onSelect(period) },
                 label = { Text(stringResource(period.chipLabel())) },
+                modifier =
+                    if (period == selected) {
+                        Modifier.bringIntoViewRequester(bringSelectedIntoView)
+                    } else {
+                        Modifier
+                    },
             )
         }
     }
