@@ -22,9 +22,9 @@ import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -220,8 +220,12 @@ class LibraryViewModelTest {
     private class RecordingBulkDelete : BulkDeleteUseCase {
         val calls = mutableListOf<List<String>>()
 
+        /** Completed on the first call, so a test can await the delete across threads. */
+        val called = CompletableDeferred<Unit>()
+
         override suspend fun execute(ids: List<String>): Resource<DeleteMediaSummary> {
             calls += ids
+            called.complete(Unit)
             return Resource.Success(DeleteMediaSummary(ids.size, 0, 0))
         }
     }
@@ -689,9 +693,7 @@ class LibraryViewModelTest {
             books.deleteSelected()
             // The scope is read from the database before the delete, off the test's virtual clock, so
             // wait in real time (bounded) for the delete to be called at all.
-            withContext(Dispatchers.Default) {
-                withTimeout(5.seconds) { while (recorder.calls.isEmpty()) delay(10) }
-            }
+            withContext(Dispatchers.Default) { withTimeout(5.seconds) { recorder.called.await() } }
 
             // Exactly the book reached the delete -- which is also the positive control that it ran.
             assertEquals(listOf(listOf(book)), recorder.calls)
