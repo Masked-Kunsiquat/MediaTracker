@@ -124,6 +124,12 @@ class PeriodStatsDaoTest {
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
             )
 
+            // A book still being read is not a finish, in All time or anywhere else.
+            db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = "media-2", status = ReadingStatus.READING, finishedAt = null),
+            )
+
             assertEquals(1, stats(null, null).booksFinished)
             assertEquals(0, stats(0, 999_999_999).booksFinished)
         }
@@ -136,5 +142,20 @@ class PeriodStatsDaoTest {
             session(999_999_999, durationSeconds = 60, deltaPages = 1)
 
             assertEquals(PeriodStatsRow(120L, 2, 2, 0), stats(null, null))
+        }
+
+    @Test
+    fun anOpenStatsFlow_updatesWhenABookIsFinished() =
+        runTest {
+            insertBook()
+            val flow = db.statsDao().observePeriodStats(null, null, ReadingStatus.FINISHED)
+            assertEquals(0, flow.first().booksFinished)
+
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
+            )
+
+            // The query observes book_details as well as reading_sessions.
+            assertEquals(1, flow.first { it.booksFinished == 1 }.booksFinished)
         }
 }

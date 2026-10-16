@@ -148,7 +148,7 @@ public class StatsRepository(
          * [timeZone]), with week start = [weekStartDay] (ROADMAP Task 7 Phase B — defaults to
          * [WeekStartDay.MONDAY], ISO-8601 convention, matching this method's pre-Phase-B hardcoded
          * behavior exactly so a caller that never passes [weekStartDay] sees no change). Used by
-         * `StatsViewModel` to drive [StatsRepository]'s range queries for "this week".
+         * [StatsPeriod.bounds] for [StatsPeriod.WEEK].
          *
          * ### Day math
          * `daysSinceStart` is `(today's ISO day number - weekStartDay's ISO day number) mod 7`,
@@ -173,7 +173,7 @@ public class StatsRepository(
         /**
          * `[from, to)` [Instant] bounds for the calendar month containing `today` (per [clock]/
          * [timeZone]) — the 1st of the month through the 1st of the following month, exclusive.
-         * Used by `StatsViewModel` to drive [StatsRepository]'s range queries for "this month".
+         * Used by [StatsPeriod.bounds] for [StatsPeriod.MONTH].
          */
         public fun thisMonthBounds(
             timeZone: TimeZone = TimeZone.currentSystemDefault(),

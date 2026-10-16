@@ -46,9 +46,12 @@ class StatsViewModelTest {
 
     private val timeZone = TimeZone.UTC
     private val now: Instant = LocalDateTime(2024, 6, 19, 15, 0).toInstant(timeZone)
+
+    /** "Now" as the clock reports it; a test may move it to cross midnight. */
+    private var clockNow: Instant = now
     private val clock: Clock =
         object : Clock {
-            override fun now(): Instant = now
+            override fun now(): Instant = clockNow
         }
 
     @BeforeTest
@@ -204,21 +207,14 @@ class StatsViewModelTest {
             session(june(16), durationSeconds = 400, deltaPages = 7)
             val viewModel = newViewModel()
             holdUiStateSubscribed(viewModel)
-            assertEquals(
-                0,
-                viewModel.uiState
-                    .first { !it.isLoading }
-                    .stats.sessionCount,
-            )
+            val monday = viewModel.uiState.first { !it.isLoading }.stats
+            assertEquals(0, monday.sessionCount)
 
             settingsRepository.setWeekStartDay(WeekStartDay.SUNDAY)
 
-            assertEquals(
-                1,
-                viewModel.uiState
-                    .first { it.stats.sessionCount == 1 }
-                    .stats.sessionCount,
-            )
+            // Waits for any change, then names the expected whole period, so a regression fails on
+            // the comparison rather than by a minute-long timeout.
+            assertEquals(StatsUiState.Period(400L, 1, 7, 0), viewModel.uiState.first { it.stats != monday }.stats)
         }
 
     /**
@@ -244,5 +240,23 @@ class StatsViewModelTest {
 
             val halfway = seen.filter { it != before && it != after }
             assertTrue(halfway.isEmpty(), "published a halfway state: $halfway")
+        }
+
+    @Test
+    fun afterMidnight_pickingAPeriod_refreshesTheStreakToo() =
+        runTest {
+            insertBook()
+            session(now) // the 19th
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            assertEquals(1, viewModel.uiState.first { !it.isLoading }.currentStreakDays)
+
+            // Past midnight, the user reads again and picks a period: today counts toward the streak.
+            clockNow = LocalDateTime(2024, 6, 20, 9, 0).toInstant(timeZone)
+            session(clockNow)
+            viewModel.selectPeriod(StatsPeriod.MONTH)
+
+            val after = viewModel.uiState.first { it.period == StatsPeriod.MONTH }
+            assertEquals(2, after.currentStreakDays, "the 19th and the 20th")
         }
 }

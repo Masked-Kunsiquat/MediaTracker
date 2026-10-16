@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
@@ -72,9 +73,9 @@ fun StatsScreenRoute(
 /**
  * Stateless stats screen composable (AGENTS.md §5 State Hoisting).
  *
- * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator], otherwise three
- * cards: "This week" and "This month" (each showing time read, session count, and pages read via
- * [PeriodCard]), and the current reading streak (via [StreakCard]).
+ * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator]; otherwise the period
+ * picker ([StatsPeriodRow]), one [PeriodCard] for the chosen [StatsUiState.period], and the current
+ * reading streak ([StreakCard]) (#91).
  *
  * A `null` [StatsUiState.Period.timeReadSeconds]/[StatsUiState.Period.pagesRead] means no session
  * in the period has a known value at all (schema v2 — see that class's KDoc) and is rendered as
@@ -84,6 +85,8 @@ fun StatsScreenRoute(
  *
  * @param uiState Current [StatsUiState].
  * @param onNavigateBack Called when the back icon is pressed.
+ *
+ * @param onSelectPeriod Called with the chip the user picked; the view model remembers it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,8 +150,8 @@ fun StatsScreen(
 }
 
 /**
- * A single period ("This week"/"This month") stats card: time read, session count, and pages
- * read. See [StatsScreen]'s KDoc for the null-vs-zero rendering rule.
+ * The chosen period's card: time read, sessions, pages read and books finished. See
+ * [StatsScreen]'s KDoc for the null-vs-zero rendering rule.
  */
 @Composable
 private fun PeriodCard(
@@ -193,15 +196,6 @@ private fun PeriodCard(
 }
 
 /**
- * Lifetime books-finished total (ROADMAP Task 6 Phase C) — see
- * [com.hub.media.features.stats.data.StatsRepository]'s "Books-finished stat" KDoc for why this
- * lifetime count is shown as its own card rather than folded into [PeriodCard]: it needs no
- * [com.hub.media.core.database.entities.BookDetailsEntity.finishedAt] timestamp and so is exact
- * from the moment schema v3 exists, unlike [StatsUiState.Period.booksFinished] which can only ever
- * reflect finishes recorded after this phase shipped.
- */
-
-/**
  * The period picker (#91): a scrollable row of chips, in the library status filter's style. Chips
  * rather than a segmented control because five labels do not fit a phone's width as fixed segments,
  * least of all at a large font scale; a chip row scrolls instead.
@@ -213,7 +207,8 @@ private fun StatsPeriodRow(
 ) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth().testTag(TestTags.Stats.PERIODS),
+        // One choice, not five toggles: a FilterChip alone announces as an independent checkbox.
+        modifier = Modifier.fillMaxWidth().selectableGroup().testTag(TestTags.Stats.PERIODS),
     ) {
         items(StatsPeriod.entries) { period ->
             FilterChip(

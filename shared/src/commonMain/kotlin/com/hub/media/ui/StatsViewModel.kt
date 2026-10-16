@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -31,14 +30,17 @@ import kotlin.time.Duration.Companion.seconds
  * independent flows per period, and one inserted session published every halfway mix on the way --
  * "0 sessions, 5 pages read" -- before settling. `aWrite_neverPublishesAHalfwayState` pins this.
  *
- * ### Reactive inputs
- * The remembered period and the week-start preference both feed [flatMapLatest], so picking a period
- * or changing the week start in Settings re-reads at once. Bounds are resolved against [clock] on
- * each of those changes; a screen left open across midnight keeps its bounds until the next one, an
- * accepted staleness shared with [StatsRepository.observeReadingStreak].
+ * ### Reactive inputs, and when "today" is read
+ * The remembered period and the week-start preference both feed [flatMapLatest], and both the
+ * period's bounds and the streak are resolved against [clock] inside it. So "today" is re-read
+ * whenever the user picks a period, changes the week start, or returns to the screen after it was
+ * unsubscribed for more than five seconds (`WhileSubscribed`); a screen left open and untouched
+ * across midnight keeps yesterday's "today" until one of those happens.
  *
- * The streak is its own flow: a different shape (distinct days, not a sum), independent of the
- * period, and not part of the internal consistency #91 is about.
+ * The streak is a separate query (distinct days, not a sum), so a write can update the streak a
+ * moment apart from the period card. That is not the internal inconsistency #91 is about, which is
+ * the period's own four numbers disagreeing, and `aWrite_neverPublishesAHalfwayState` compares the
+ * period's numbers only.
  *
  * @param statsRepository Source of the period snapshot and the streak.
  * @param settingsRepository Source of the remembered period and the week-start preference.
@@ -59,13 +61,18 @@ public class StatsViewModel(
         ) { period, weekStart ->
             period to weekStart
         }.flatMapLatest { (period, weekStart) ->
-            statsRepository.observePeriodStats(period, timeZone, clock, weekStart).map { period to it.toPeriod() }
+            // The streak is re-derived here too, so it reads the same "today" as the period's bounds:
+            // created once outside, it froze on the day the screen opened.
+            combine(
+                statsRepository.observePeriodStats(period, timeZone, clock, weekStart),
+                statsRepository.observeReadingStreak(timeZone, clock),
+            ) { stats, streak ->
+                StatsUiState(isLoading = false, period = period, stats = stats.toPeriod(), currentStreakDays = streak)
+            }
         }
 
     public val uiState: StateFlow<StatsUiState> =
-        combine(periodSnapshot, statsRepository.observeReadingStreak(timeZone, clock)) { (period, stats), streak ->
-            StatsUiState(isLoading = false, period = period, stats = stats, currentStreakDays = streak)
-        }.stateIn(
+        periodSnapshot.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5.seconds),
             initialValue = StatsUiState(isLoading = true),

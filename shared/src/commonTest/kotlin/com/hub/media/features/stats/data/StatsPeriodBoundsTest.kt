@@ -80,4 +80,20 @@ class StatsPeriodBoundsTest {
     fun allTime_isUnbounded() {
         assertNull(StatsPeriod.ALL_TIME.at())
     }
+
+    @Test
+    fun onlyWeek_dependsOnTheWeekStartDay() {
+        for (period in listOf(StatsPeriod.MONTH, StatsPeriod.LAST_30_DAYS, StatsPeriod.YEAR, StatsPeriod.ALL_TIME)) {
+            assertEquals(
+                period.bounds(zone, june19, WeekStartDay.MONDAY),
+                period.bounds(zone, june19, WeekStartDay.SUNDAY),
+                "$period must not move with the week start",
+            )
+        }
+        // Positive control: WEEK does move.
+        assertTrue(
+            StatsPeriod.WEEK.bounds(zone, june19, WeekStartDay.MONDAY) !=
+                StatsPeriod.WEEK.bounds(zone, june19, WeekStartDay.SUNDAY),
+        )
+    }
 }
