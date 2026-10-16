@@ -698,6 +698,19 @@ for now — see Unscheduled features for why the purchase-data prerequisite is p
 - Absorbs the former "stats screen visual polish" backlog item, including replacing
   `Icons.Filled.Info` as the library-toolbar entry point (material-icons-core has no chart glyph,
   so this needs a local vector drawable — the same approach used for the ISBN copy icon).
+- **Stats theme (owner's decision, 2026-10-16)**, which supersedes this task's piecemeal list.
+  Stats are why the app exists, and they have been rudimentary since Task 5. The order:
+  1. **#91: the foundation.** One consistent snapshot per period (a single query instead of
+     four independent flows), plus a shared period picker: Week, Month, 30 days, Year, All time.
+  2. **Domain stats:** #219 (Books upgrade, which absorbs reading velocity above) and #217 (Films
+     and Shows).
+  3. **#221: year in review**, across all three.
+  4. **#220: your own rating**, a schema change planned in as its own step.
+
+  The rule all of it rests on (#126): **one stats engine**. A domain view is a filter on it, and
+  the global view is the same numbers unfiltered; `StatsRepository` is never forked per domain.
+  The global "media diet" (cross-domain time, an activity calendar, money spent) was set aside
+  for now.
 
 ## Task 12 — Genre tracking
 
