@@ -93,10 +93,11 @@ class LibraryScreenGoldenTest {
             onNavigateToAddTVShow = {},
             onMediaClick = { _, _ -> },
             onNavigateToStats = {},
-            onNavigateToSettings = {},
             onNavigateToUpNext = {},
             onStatusFilterChange = {},
             onSearchQueryChange = {},
+            // All media as the app shows it since #126: reached from the hub, so it has a back arrow.
+            onNavigateBack = {},
         )
     }
 

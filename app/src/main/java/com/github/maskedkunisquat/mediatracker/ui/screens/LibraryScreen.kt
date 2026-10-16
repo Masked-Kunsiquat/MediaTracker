@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
@@ -98,8 +98,9 @@ import kotlin.time.Instant
  * @param onNavigateToAddTVShow Callback to navigate to the manual add-show screen (Task 13 Phase C).
  * @param onNavigateToMediaDetail Callback invoked with a media item's id when its card is tapped.
  * @param onNavigateToStats Callback to navigate to the stats screen (ROADMAP Task 5 Phase C).
- * @param onNavigateToSettings Callback to navigate to the Settings screen (ROADMAP Task 7 Phase B).
  * @param onNavigateToUpNext Callback to navigate to the Up next queue (#89).
+ * @param domain The one media type this library shows, from a hub card (#126); `null` is All media.
+ * @param onNavigateBack Called by the top bar's back arrow; the hub is what the app's routes lead back to.
  */
 @Composable
 fun LibraryScreenRoute(
@@ -110,12 +111,16 @@ fun LibraryScreenRoute(
     onNavigateToAddTVShow: () -> Unit,
     onNavigateToMediaDetail: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onNavigateToUpNext: () -> Unit,
+    domain: MediaType?,
+    onNavigateBack: () -> Unit,
 ) {
+    // Each library is its own back-stack entry and so already has its own view model; the key only
+    // makes that explicit if this route is ever hosted outside navigation.
     val viewModel: LibraryViewModel =
         viewModel(
-            factory = LibraryViewModelFactory(appContainer),
+            key = "library-${domain?.name ?: "all"}",
+            factory = LibraryViewModelFactory(appContainer, domain),
         )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -127,8 +132,9 @@ fun LibraryScreenRoute(
         onNavigateToAddTVShow = onNavigateToAddTVShow,
         onMediaClick = onNavigateToMediaDetail,
         onNavigateToStats = onNavigateToStats,
-        onNavigateToSettings = onNavigateToSettings,
         onNavigateToUpNext = onNavigateToUpNext,
+        domain = domain,
+        onNavigateBack = onNavigateBack,
         onStatusFilterChange = viewModel::setStatusFilter,
         onSearchQueryChange = viewModel::setSearchQuery,
         onToggleSelection = viewModel::toggleSelection,
@@ -141,7 +147,8 @@ fun LibraryScreenRoute(
 /**
  * Stateless library screen composable (AGENTS.md §5 State Hoisting).
  *
- * Displays a list of all media items in the library. Consolidated from book-only version per Issue #67.
+ * Displays the library's media -- every type for All media, or one domain's (#126). Consolidated from
+ * the book-only version per Issue #67.
  *
  * @param uiState [LibraryUiState] containing the list of media, status filter, and isEmpty flag.
  * @param coverStorageDir Absolute path to the cover image storage directory.
@@ -152,10 +159,14 @@ fun LibraryScreenRoute(
  *   what lets the caller pick the right detail destination; passing the id alone routed every tap
  *   to Book Detail regardless of type (ROADMAP Task 13 Phase B).
  * @param onNavigateToStats Called when the TopAppBar's stats icon is tapped.
- * @param onNavigateToSettings Called when the TopAppBar's settings icon is tapped.
  * @param onNavigateToUpNext Called when the TopAppBar's Up next icon is tapped (#89).
  * @param onStatusFilterChange Called with the newly selected filter (`null` for "All").
  * @param onSearchQueryChange Called with the new search text — filters [uiState.filteredMedia].
+ * @param domain The media type this library is scoped to (#126), or `null` for All media. It sets
+ *   the title and the search placeholder; inside a domain + adds that kind directly, and the top
+ *   bar keeps only that domain's own action (Stats for Books, Up next for Shows). Settings is on
+ *   the hub, not here.
+ * @param onNavigateBack Shows a back arrow to the hub when non-null.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,7 +178,6 @@ fun LibraryScreen(
     onNavigateToAddTVShow: () -> Unit,
     onMediaClick: (String, MediaType) -> Unit,
     onNavigateToStats: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onNavigateToUpNext: () -> Unit,
     onStatusFilterChange: (LibraryStatusFilter?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
@@ -175,6 +185,8 @@ fun LibraryScreen(
     onClearSelection: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
     onDeleteErrorShown: (Long) -> Unit = {},
+    domain: MediaType? = null,
+    onNavigateBack: (() -> Unit)? = null,
 ) {
     var showBulkDeleteConfirmation by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
@@ -208,25 +220,35 @@ fun LibraryScreen(
                 return@Scaffold
             }
             CenterAlignedTopAppBar(
-                title = { Text("Library") },
+                title = { Text(stringResource(libraryTitle(domain))) },
+                navigationIcon = {
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.navigate_back),
+                            )
+                        }
+                    }
+                },
+                // Each domain keeps the action that belongs to it (#126): Up next is about shows, and
+                // Stats is about reading. All media keeps both. Settings moved to the hub.
                 actions = {
-                    IconButton(onClick = onNavigateToUpNext) {
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = stringResource(R.string.up_next_content_description),
-                        )
+                    if (domain == null || domain == MediaType.TV_SHOW) {
+                        IconButton(onClick = onNavigateToUpNext) {
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = stringResource(R.string.up_next_content_description),
+                            )
+                        }
                     }
-                    IconButton(onClick = onNavigateToStats) {
-                        Icon(
-                            imageVector = Icons.Filled.Info,
-                            contentDescription = stringResource(R.string.stats_content_description),
-                        )
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = stringResource(R.string.settings_content_description),
-                        )
+                    if (domain == null || domain == MediaType.BOOK) {
+                        IconButton(onClick = onNavigateToStats) {
+                            Icon(
+                                imageVector = Icons.Filled.Info,
+                                contentDescription = stringResource(R.string.stats_content_description),
+                            )
+                        }
                     }
                 },
             )
@@ -237,7 +259,16 @@ fun LibraryScreen(
             // imply two places to land.
             Box {
                 FloatingActionButton(
-                    onClick = { showAddMenu = true },
+                    // Inside a domain there is only one kind to add, so + adds it (#126); the menu
+                    // is All media's, where + genuinely has to ask.
+                    onClick = {
+                        when (domain) {
+                            MediaType.BOOK -> onNavigateToAddBook()
+                            MediaType.MOVIE -> onNavigateToAddMovie()
+                            MediaType.TV_SHOW -> onNavigateToAddTVShow()
+                            null -> showAddMenu = true
+                        }
+                    },
                     modifier = Modifier.testTag(TestTags.Library.ADD_BUTTON),
                 ) {
                     Icon(
@@ -300,7 +331,11 @@ fun LibraryScreen(
                     .consumeWindowInsets(innerPadding)
                     .padding(innerPadding.exceptBottom()),
         ) {
-            if (uiState.isEmpty) {
+            if (uiState.isLoading) {
+                // Nothing until the first reading: an empty-state message here would be a claim
+                // that is not yet known to be true (#126).
+                Box(modifier = Modifier.fillMaxSize())
+            } else if (uiState.isEmpty) {
                 // Empty state
                 Column(
                     modifier =
@@ -311,7 +346,17 @@ fun LibraryScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = stringResource(R.string.library_empty_title),
+                        // In a domain, "Your library is empty" would be false for someone whose other
+                        // kinds are full (#126): name the kind instead.
+                        text =
+                            stringResource(
+                                when (domain) {
+                                    MediaType.BOOK -> R.string.library_empty_title_books
+                                    MediaType.MOVIE -> R.string.library_empty_title_films
+                                    MediaType.TV_SHOW -> R.string.library_empty_title_shows
+                                    null -> R.string.library_empty_title
+                                },
+                            ),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(
@@ -325,6 +370,7 @@ fun LibraryScreen(
                     LibrarySearchField(
                         query = uiState.searchQuery,
                         onQueryChange = onSearchQueryChange,
+                        domain = domain,
                     )
                     StatusFilterRow(
                         selected = uiState.statusFilter,
@@ -487,10 +533,20 @@ private fun SelectionTopBar(
     )
 }
 
+/** The library's title for [domain]: the domain's name, or "All media" for every type (#126). */
+private fun libraryTitle(domain: MediaType?): Int =
+    when (domain) {
+        MediaType.BOOK -> R.string.library_title_books
+        MediaType.MOVIE -> R.string.library_title_films
+        MediaType.TV_SHOW -> R.string.library_title_shows
+        null -> R.string.hub_all_media
+    }
+
 @Composable
 private fun LibrarySearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    domain: MediaType?,
 ) {
     OutlinedTextField(
         value = query,
@@ -500,7 +556,18 @@ private fun LibrarySearchField(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 4.dp)
                 .testTag(TestTags.Library.SEARCH_FIELD),
-        placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
+        placeholder = {
+            Text(
+                stringResource(
+                    when (domain) {
+                        MediaType.BOOK -> R.string.library_search_placeholder_books
+                        MediaType.MOVIE -> R.string.library_search_placeholder_films
+                        MediaType.TV_SHOW -> R.string.library_search_placeholder_shows
+                        null -> R.string.library_search_placeholder
+                    },
+                ),
+            )
+        },
         leadingIcon = {
             Icon(
                 imageVector = Icons.Filled.Search,
@@ -732,7 +799,6 @@ private fun LibraryScreenPreview() {
             onNavigateToAddTVShow = {},
             onMediaClick = { _, _ -> },
             onNavigateToStats = {},
-            onNavigateToSettings = {},
             onNavigateToUpNext = {},
             onStatusFilterChange = {},
             onSearchQueryChange = {},

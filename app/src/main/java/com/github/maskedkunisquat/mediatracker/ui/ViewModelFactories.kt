@@ -3,6 +3,7 @@ package com.github.maskedkunisquat.mediatracker.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.github.maskedkunisquat.mediatracker.BuildConfig
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AddBookViewModel
 import com.hub.media.ui.AddMovieViewModel
 import com.hub.media.ui.AddTVShowViewModel
@@ -15,6 +16,7 @@ import com.hub.media.ui.EditBookViewModel
 import com.hub.media.ui.EditMovieViewModel
 import com.hub.media.ui.EditTVShowViewModel
 import com.hub.media.ui.ExportViewModel
+import com.hub.media.ui.HubViewModel
 import com.hub.media.ui.ImportViewModel
 import com.hub.media.ui.LibraryViewModel
 import com.hub.media.ui.LogViewerViewModel
@@ -55,12 +57,27 @@ open class AppViewModelFactory<VM : ViewModel>(
     }
 }
 
+/** Factory for [HubViewModel], the hub's three live numbers (#126). */
+class HubViewModelFactory(
+    appContainer: AppContainer,
+) : AppViewModelFactory<HubViewModel>(
+        HubViewModel::class.java,
+        {
+            HubViewModel(
+                mediaRepository = appContainer.mediaRepository,
+                tvShowRepository = appContainer.tvShowRepository,
+                settingsRepository = appContainer.settingsRepository,
+            )
+        },
+    )
+
 /**
  * Factory for creating [LibraryViewModel] with its [com.hub.media.core.database.MediaRepository]
  * and bulk-delete dependencies from the [AppContainer].
  */
 class LibraryViewModelFactory(
     appContainer: AppContainer,
+    domain: MediaType? = null,
 ) : AppViewModelFactory<LibraryViewModel>(
         LibraryViewModel::class.java,
         {
@@ -68,6 +85,7 @@ class LibraryViewModelFactory(
                 mediaRepository = appContainer.mediaRepository,
                 deleteMediaUseCase = appContainer.deleteMediaUseCase,
                 settingsRepository = appContainer.settingsRepository,
+                domain = domain,
             )
         },
     )

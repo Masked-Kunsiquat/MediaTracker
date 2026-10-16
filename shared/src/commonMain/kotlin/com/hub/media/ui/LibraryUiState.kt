@@ -42,6 +42,12 @@ public data class LibraryUiState(
     val isEmpty: Boolean = media.isEmpty(),
     val selectedIds: Set<String> = emptySet(),
     val deleteError: DeleteErrorEvent? = null,
+    /**
+     * `true` only before the first reading arrives (#126). The screen shows no empty-state message
+     * meanwhile: opening a hub card used to say "No films yet" for a beat before the films appeared.
+     * `false` by default so a state built by hand (previews, tests) is a loaded one.
+     */
+    val isLoading: Boolean = false,
 ) {
     /**
      * True when a bulk selection is active.

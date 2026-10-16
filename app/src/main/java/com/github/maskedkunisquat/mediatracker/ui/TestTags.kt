@@ -37,6 +37,16 @@ object TestTags {
         const val DELETE = "detail-top-bar:delete"
     }
 
+    /** The hub (#126): each card and row is one tap target with no other stable handle. */
+    object Hub {
+        const val LIST = "hub:list"
+        const val BOOKS = "hub:books"
+        const val FILMS = "hub:films"
+        const val SHOWS = "hub:shows"
+        const val ALL_MEDIA = "hub:allMedia"
+        const val STATS = "hub:stats"
+    }
+
     object Library {
         const val ADD_BUTTON = "library:add"
         const val SEARCH_FIELD = "library:search"

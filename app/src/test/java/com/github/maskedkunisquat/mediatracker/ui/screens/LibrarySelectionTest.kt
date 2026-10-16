@@ -66,7 +66,6 @@ class LibrarySelectionTest {
                     onNavigateToAddTVShow = {},
                     onMediaClick = onMediaClick,
                     onNavigateToStats = {},
-                    onNavigateToSettings = {},
                     onNavigateToUpNext = {},
                     onStatusFilterChange = {},
                     onSearchQueryChange = {},

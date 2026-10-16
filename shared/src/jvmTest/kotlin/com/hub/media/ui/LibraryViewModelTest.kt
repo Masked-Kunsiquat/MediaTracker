@@ -22,13 +22,17 @@ import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -39,6 +43,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * [LibraryViewModel] tests against a real in-memory [AppDatabase] (via [testAppDatabase], the
@@ -215,8 +220,12 @@ class LibraryViewModelTest {
     private class RecordingBulkDelete : BulkDeleteUseCase {
         val calls = mutableListOf<List<String>>()
 
+        /** Completed on the first call, so a test can await the delete across threads. */
+        val called = CompletableDeferred<Unit>()
+
         override suspend fun execute(ids: List<String>): Resource<DeleteMediaSummary> {
             calls += ids
+            called.complete(Unit)
             return Resource.Success(DeleteMediaSummary(ids.size, 0, 0))
         }
     }
@@ -598,5 +607,130 @@ class LibraryViewModelTest {
             viewModel.setStatusFilter(LibraryStatusFilter.NOT_STARTED)
             val notStarted = viewModel.uiState.first { it.statusFilter == LibraryStatusFilter.NOT_STARTED }
             assertEquals(listOf("Not Filled In Yet"), notStarted.filteredMedia.map { it.item.title })
+        }
+
+    // --- Domain scope (#126) ---------------------------------------------------------------------
+
+    /** A second, scoped view model over the same database as [viewModel]. */
+    private fun scoped(domain: MediaType): LibraryViewModel =
+        viewModels.track(
+            LibraryViewModel(
+                mediaRepository = mediaRepository,
+                deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir)),
+                settingsRepository = settingsRepository,
+                domain = domain,
+            ),
+        )
+
+    @Test
+    fun aDomain_showsOnlyItsOwnType() =
+        runTest {
+            insertBook("Dune")
+            insertMovie("Solaris", WatchStatus.WATCHLIST)
+
+            val films = scoped(MediaType.MOVIE).uiState.first { it.media.isNotEmpty() }
+
+            assertEquals(listOf("Solaris"), films.media.map { it.item.title })
+        }
+
+    @Test
+    fun anEmptyDomain_isEmpty_whileOtherKindsExist() =
+        runTest {
+            insertBook("Dune")
+            // Positive control: the book is in the database, and the unscoped library sees it.
+            viewModel.uiState.first { it.media.isNotEmpty() }
+            val films = scoped(MediaType.MOVIE)
+            // An empty loaded state equals the initial one, so wait on something only a loaded state
+            // can carry: the search query arrives through the same combine as the media.
+            films.setSearchQuery("anything")
+
+            val state = films.uiState.first { it.searchQuery == "anything" }
+
+            assertTrue(state.media.isEmpty())
+            assertTrue(state.isEmpty)
+        }
+
+    @Test
+    fun searchWithinADomain_matchesOnlyThatDomain() =
+        runTest {
+            insertBook("Solaris")
+            insertMovie("Solaris", WatchStatus.WATCHLIST)
+            val books = scoped(MediaType.BOOK)
+            books.setSearchQuery("Solaris")
+
+            val state = books.uiState.first { it.searchQuery == "Solaris" && it.media.isNotEmpty() }
+
+            assertEquals(listOf(MediaType.BOOK), state.filteredMedia.map { it.item.type })
+        }
+
+    @Test
+    fun aSelectionInADomain_neverHoldsAnotherDomainsRow() =
+        runTest {
+            val book = insertBook("Dune")
+            val film = insertMovie("Solaris", WatchStatus.WATCHLIST)
+            val books = scoped(MediaType.BOOK)
+            books.uiState.first { it.media.isNotEmpty() }
+
+            books.toggleSelection(book)
+            books.toggleSelection(film)
+
+            assertEquals(setOf(book), books.uiState.first { it.selectedIds.isNotEmpty() }.selectedIds)
+        }
+
+    @Test
+    fun deleteSelectedInADomain_neverDeletesAnotherDomainsRow() =
+        runTest {
+            val book = insertBook("Dune")
+            val film = insertMovie("Solaris", WatchStatus.WATCHLIST)
+            val recorder = RecordingBulkDelete()
+            val books =
+                viewModels.track(
+                    LibraryViewModel(mediaRepository, recorder, settingsRepository, domain = MediaType.BOOK),
+                )
+            books.toggleSelection(book)
+            books.toggleSelection(film)
+
+            books.deleteSelected()
+            // The scope is read from the database before the delete, off the test's virtual clock, so
+            // wait in real time (bounded) for the delete to be called at all.
+            withContext(Dispatchers.Default) { withTimeout(5.seconds) { recorder.called.await() } }
+
+            // Exactly the book reached the delete -- which is also the positive control that it ran.
+            assertEquals(listOf(listOf(book)), recorder.calls)
+        }
+
+    @Test
+    fun uiState_isLoading_untilTheFirstReadArrives() =
+        runTest {
+            // The initial value, before anything asynchronous: reading .value is safe here only.
+            assertTrue(scoped(MediaType.MOVIE).uiState.value.isLoading)
+
+            val loaded = viewModel.uiState.first { !it.isLoading }
+
+            // Positive control: the loaded state is the genuinely empty library.
+            assertTrue(loaded.isEmpty)
+        }
+
+    @Test
+    fun deleteSelectedInADomain_whenTheScopeCannotBeRead_reportsItAndKeepsTheSelection() =
+        runTest {
+            val book = insertBook("Dune")
+            val books = scoped(MediaType.BOOK)
+            // Keep uiState collected throughout: a fresh subscription after the close below would
+            // re-run the list query against the closed database, which is not what this test is about.
+            backgroundScope.launch { books.uiState.collect {} }
+            books.uiState.first { it.media.isNotEmpty() }
+            books.toggleSelection(book)
+            books.uiState.first { it.selectedIds == setOf(book) }
+            // The domain's rows are read from the database at delete time; make that read fail, for
+            // real (LoadFailureSupport -- closing the database makes the read hang rather than throw).
+            db.breakMediaItems()
+
+            books.deleteSelected()
+
+            // Reported rather than escaping viewModelScope (a crash), and the selection survives so
+            // the delete can be retried.
+            val failed = books.uiState.first { it.deleteError != null }
+            assertEquals(setOf(book), failed.selectedIds)
         }
 }
