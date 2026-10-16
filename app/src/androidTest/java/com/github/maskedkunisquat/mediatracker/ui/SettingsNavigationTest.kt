@@ -185,7 +185,7 @@ class SettingsNavigationTest {
     }
 
     @Test
-    fun settings_isReachableFromTheLibraryScreen() {
+    fun settings_isReachableFromTheHub() {
         openSettings()
 
         composeRule.onNodeWithText("Settings").assertIsDisplayed()

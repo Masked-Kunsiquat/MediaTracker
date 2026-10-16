@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.navigation
 
+import com.hub.media.core.database.entities.MediaType
+
 /**
  * Navigation routes for the app.
  *
@@ -13,10 +15,24 @@ sealed interface Route {
     val route: String
 
     /**
-     * Library screen showing the list of all books.
+     * The hub (#126): the start destination. One card per domain, each opening [Library] scoped
+     * to it, then All media, Stats and Settings.
+     */
+    data object Hub : Route {
+        override val route: String = "hub"
+    }
+
+    /**
+     * The library. With [ARG_DOMAIN] it shows one media type -- a hub card's Books, Films or
+     * Shows (#126); without it, All media, every type, as the library was before the hub.
      */
     data object Library : Route {
-        override val route: String = "library"
+        const val ARG_DOMAIN: String = "domain"
+        override val route: String = "library?$ARG_DOMAIN={$ARG_DOMAIN}"
+
+        /** `null` is All media. The domain travels as the [MediaType]'s name. */
+        fun createRoute(domain: MediaType?): String =
+            if (domain == null) "library" else "library?$ARG_DOMAIN=${domain.name}"
     }
 
     /**

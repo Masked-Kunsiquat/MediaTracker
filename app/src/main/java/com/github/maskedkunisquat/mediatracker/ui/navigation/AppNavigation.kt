@@ -16,6 +16,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.ChangelogScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditBookScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditTVShowScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.HubScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LibraryScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.LogViewerScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.MismatchReviewScreenRoute
@@ -33,7 +34,9 @@ import com.hub.media.ui.AppContainer
  * Sets up the NavHost with routes and navigation graph for the entire app.
  *
  * Routes:
- * - [Route.Library]: The library screen (start destination).
+ * - [Route.Hub]: The hub (start destination, #126): a card per domain, All media, Stats, Settings.
+ * - [Route.Library]: The library, scoped to one domain by [Route.Library.ARG_DOMAIN], or All media
+ *   without it.
  * - [Route.AddBook]: The add-book-by-ISBN screen.
  * - [Route.BookDetail]: The book detail screen, parameterized by [Route.BookDetail.ARG_BOOK_ID].
  * - [Route.EditBook]: The edit-book-metadata screen, parameterized by
@@ -53,9 +56,30 @@ fun AppNavigation(
 ) {
     NavHost(
         navController = navController,
-        startDestination = Route.Library.route,
+        startDestination = Route.Hub.route,
     ) {
-        composable(Route.Library.route) {
+        composable(Route.Hub.route) {
+            HubScreenRoute(
+                appContainer = appContainer,
+                onOpenDomain = { navController.navigate(Route.Library.createRoute(it)) },
+                onOpenAllMedia = { navController.navigate(Route.Library.createRoute(null)) },
+                onOpenStats = { navController.navigate(Route.Stats.route) },
+                onOpenSettings = { navController.navigate(Route.Settings.route) },
+            )
+        }
+
+        composable(
+            route = Route.Library.route,
+            arguments =
+                listOf(
+                    navArgument(Route.Library.ARG_DOMAIN) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+        ) { backStackEntry ->
+            val domain = backStackEntry.arguments?.getString(Route.Library.ARG_DOMAIN)?.let(MediaType::valueOf)
             LibraryScreenRoute(
                 appContainer = appContainer,
                 coverStorageDir = coverStorageDir,
@@ -82,7 +106,7 @@ fun AppNavigation(
                 onNavigateToStats = {
                     navController.navigate(Route.Stats.route)
                 },
-                domain = null,
+                domain = domain,
                 onNavigateBack = { navController.navigateUp() },
                 onNavigateToUpNext = {
                     navController.navigate(Route.UpNext.route)
