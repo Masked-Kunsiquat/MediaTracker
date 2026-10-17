@@ -114,7 +114,7 @@ public class StatsViewModel(
                 combine(
                     statsRepository.observePeriodStats(period, timeZone, at, weekStart),
                     statsRepository.observeReadingStreak(timeZone, at),
-                    settingsRepository.observeReadingGoal(),
+                    settingsRepository.observeReadingGoal(today.year),
                     statsRepository.observePeriodStats(StatsPeriod.YEAR, timeZone, at, weekStart),
                     if (period == StatsPeriod.YEAR) {
                         statsRepository.observeFinishesByMonth(yearBounds, timeZone)
@@ -243,7 +243,7 @@ public class StatsViewModel(
 
     /** Removes the reading goal. */
     public fun clearGoal() {
-        viewModelScope.launch { settingsRepository.clearReadingGoal() }
+        viewModelScope.launch { settingsRepository.clearReadingGoal(clock.now().toLocalDateTime(timeZone).year) }
     }
 }
 

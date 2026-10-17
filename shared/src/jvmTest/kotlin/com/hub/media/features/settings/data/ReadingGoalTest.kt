@@ -31,14 +31,14 @@ class ReadingGoalTest {
         runTest {
             settings.setReadingGoal(year = 2026, books = 12)
 
-            assertEquals(ReadingGoal(2026, 12), settings.observeReadingGoal().first())
+            assertEquals(ReadingGoal(2026, 12), settings.observeReadingGoal(2026).first())
             assertEquals("2026:12", settings.getString("reading_goal"))
         }
 
     @Test
     fun noGoal_isNull() =
         runTest {
-            assertNull(settings.observeReadingGoal().first())
+            assertNull(settings.observeReadingGoal(2026).first())
         }
 
     @Test
@@ -46,7 +46,7 @@ class ReadingGoalTest {
         runTest {
             for (bad in listOf("twelve", "2026", "2026:0", "2026:1000", ":12", "2026:-3")) {
                 settings.setString("reading_goal", bad)
-                assertNull(settings.observeReadingGoal().first(), "\"$bad\" must not read as a goal")
+                assertNull(settings.observeReadingGoal(2026).first(), "\"$bad\" must not read as a goal")
             }
         }
 
@@ -55,8 +55,60 @@ class ReadingGoalTest {
         runTest {
             settings.setReadingGoal(year = 2026, books = 12)
 
-            settings.clearReadingGoal()
+            settings.clearReadingGoal(2026)
 
-            assertNull(settings.observeReadingGoal().first())
+            assertNull(settings.observeReadingGoal(2026).first())
+            assertNull(settings.getString("reading_goal"), "the last entry gone clears the key")
+        }
+
+    // --- #221: every year's goal is kept --------------------------------------------------------
+
+    @Test
+    fun aGoalStoredBeforeTheChange_stillReads() =
+        runTest {
+            settings.setString("reading_goal", "2026:12")
+
+            assertEquals(mapOf(2026 to 12), settings.observeReadingGoals().first())
+        }
+
+    @Test
+    fun settingNextYear_keepsThisYear() =
+        runTest {
+            settings.setReadingGoal(year = 2026, books = 12)
+            settings.setReadingGoal(year = 2027, books = 20)
+
+            assertEquals(mapOf(2026 to 12, 2027 to 20), settings.observeReadingGoals().first())
+            assertEquals("2026:12,2027:20", settings.getString("reading_goal"))
+            assertEquals(ReadingGoal(2026, 12), settings.observeReadingGoal(2026).first())
+        }
+
+    @Test
+    fun settingAYearAgain_replacesOnlyThatYear() =
+        runTest {
+            settings.setReadingGoal(year = 2026, books = 12)
+            settings.setReadingGoal(year = 2025, books = 30)
+            settings.setReadingGoal(year = 2026, books = 15)
+
+            assertEquals("2025:30,2026:15", settings.getString("reading_goal"))
+        }
+
+    @Test
+    fun clearingOneYear_keepsTheOthers() =
+        runTest {
+            settings.setReadingGoal(year = 2026, books = 12)
+            settings.setReadingGoal(year = 2027, books = 20)
+
+            settings.clearReadingGoal(2026)
+
+            assertEquals(mapOf(2027 to 20), settings.observeReadingGoals().first())
+        }
+
+    @Test
+    fun aMalformedList_readsAsNoGoals() =
+        runTest {
+            for (bad in listOf("2026:12,2026:13", "2026:12,x", "2026:12,2027:0", "2026:12,", ",2026:12")) {
+                settings.setString("reading_goal", bad)
+                assertEquals(emptyMap(), settings.observeReadingGoals().first(), "\"$bad\"")
+            }
         }
 }

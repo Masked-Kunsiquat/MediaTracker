@@ -24,6 +24,7 @@ import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.getLogVerbosity
 import com.hub.media.features.settings.data.getWeekStartDay
 import com.hub.media.features.settings.data.observeReadingGoal
+import com.hub.media.features.settings.data.observeReadingGoals
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
 import com.hub.media.features.settings.data.setReadingGoal
@@ -183,7 +184,7 @@ class ZipImportExportTest {
             settings(source).setReadingGoal(year = 2026, books = 12)
             val summary = ok(importer(target).import(zip(), DuplicatePolicy.SKIP, restoreSettings = true))
             assertEquals(4, summary.settingsRestored)
-            assertEquals(ReadingGoal(2026, 12), settings(target).observeReadingGoal().first())
+            assertEquals(ReadingGoal(2026, 12), settings(target).observeReadingGoal(2026).first())
             assertEquals(false, settings(target).getIncludeSpecials())
             assertEquals(WeekStartDay.MONDAY, settings(target).getWeekStartDay())
             assertEquals(LogLevel.WARN, settings(target).getLogVerbosity())
@@ -197,6 +198,18 @@ class ZipImportExportTest {
             assertEquals(0, summary.settingsRestored)
             assertNull(settings(target).getString("log_verbosity"))
             assertTrue(summary.notes.any { "log_verbosity" in it }, "notes: ${summary.notes}")
+        }
+
+    /** Every year's goal travels with an archive (#221). */
+    @Test
+    fun everyYearsGoal_roundTrips() =
+        runTest {
+            settings(source).setReadingGoal(year = 2025, books = 30)
+            settings(source).setReadingGoal(year = 2026, books = 12)
+
+            ok(importer(target).import(zip(), DuplicatePolicy.SKIP, restoreSettings = true))
+
+            assertEquals(mapOf(2025 to 30, 2026 to 12), settings(target).observeReadingGoals().first())
         }
 
     @Test

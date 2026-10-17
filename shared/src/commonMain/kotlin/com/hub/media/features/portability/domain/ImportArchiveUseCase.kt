@@ -15,9 +15,9 @@ import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.settings.data.setLogVerbosity
-import com.hub.media.features.settings.data.setReadingGoal
+import com.hub.media.features.settings.data.setReadingGoals
 import com.hub.media.features.settings.data.setWeekStartDay
-import com.hub.media.features.settings.data.toReadingGoalOrNull
+import com.hub.media.features.settings.data.toReadingGoalsOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -146,8 +146,9 @@ public class ImportArchiveUseCase(
                     null
             // The same parser the setting's reader uses, so an import cannot store a goal the
             // Stats screen would then refuse to show (#219).
+            // Every year's goal (#221), restored as a whole list.
             "reading_goal" ->
-                value.toReadingGoalOrNull()?.also { settingsRepository.setReadingGoal(it.year, it.books) } != null
+                value.toReadingGoalsOrNull()?.also { settingsRepository.setReadingGoals(it) } != null
             "log_verbosity" ->
                 LogLevel.entries.firstOrNull { it.name == value }?.also { settingsRepository.setLogVerbosity(it) } !=
                     null
