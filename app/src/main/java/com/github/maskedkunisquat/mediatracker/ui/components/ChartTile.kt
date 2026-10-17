@@ -45,11 +45,11 @@ fun ChartTile(
     chart: @Composable () -> Unit,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The tag goes first: clearAndSetSemantics clears everything after it, tags included.
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
             modifier =
-                // The tag goes first: clearAndSetSemantics clears everything after it, tags included.
                 tileModifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
