@@ -1,14 +1,14 @@
 package com.hub.media.core.database
 
-import com.hub.media.core.database.entities.WatchStatus
-import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.dao.ShowStateRow
 import com.hub.media.core.database.dao.ViewingRow
+import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -64,14 +64,20 @@ class ViewingsDaoTest {
         episodeId: String? = null,
         id: String = "log-${nextLog++}",
     ) {
-        db.movieWriteDao().insertViewing(WatchLogEntity(id = id, mediaId = mediaId, episodeId = episodeId, watchedAt = at(atSeconds)))
+        db.movieWriteDao().insertViewing(
+            WatchLogEntity(id = id, mediaId = mediaId, episodeId = episodeId, watchedAt = at(atSeconds)),
+        )
     }
 
     private suspend fun viewings(
         type: MediaType,
         from: Long? = null,
         to: Long? = null,
-    ) = db.statsDao().observeViewings(from?.let(::at), to?.let(::at), type).first().sortedBy { it.watchedAt }
+    ) = db
+        .statsDao()
+        .observeViewings(from?.let(::at), to?.let(::at), type)
+        .first()
+        .sortedBy { it.watchedAt }
 
     @Test
     fun filmsAndShows_areSeparate_andCarryTheirRuntime() =
@@ -153,7 +159,11 @@ class ViewingsDaoTest {
                     ShowStateRow("s1", WatchStatus.WATCHLIST, null),
                     ShowStateRow("s2", WatchStatus.ABANDONED, AiringStatus.ENDED),
                 ),
-                db.statsDao().observeShowStates().first().sortedBy { it.mediaId },
+                db
+                    .statsDao()
+                    .observeShowStates()
+                    .first()
+                    .sortedBy { it.mediaId },
             )
         }
 }

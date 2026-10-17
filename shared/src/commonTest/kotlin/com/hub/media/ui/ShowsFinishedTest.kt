@@ -35,7 +35,11 @@ class ShowsFinishedTest {
     fun aShowStillAiring_allWatched_isNotFinished() {
         assertEquals(
             0,
-            countFinishedShows(listOf(state("a", AiringStatus.CONTINUING)), mapOf(progress("a", 10, 10)), includeSpecials = true),
+            countFinishedShows(
+                listOf(state("a", AiringStatus.CONTINUING)),
+                mapOf(progress("a", 10, 10)),
+                includeSpecials = true,
+            ),
         )
     }
 

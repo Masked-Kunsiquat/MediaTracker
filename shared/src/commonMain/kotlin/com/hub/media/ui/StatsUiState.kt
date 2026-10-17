@@ -1,11 +1,11 @@
 package com.hub.media.ui
 
-import com.hub.media.features.stats.data.ViewingBreakdown
-import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
+import com.hub.media.features.stats.data.ViewingBreakdown
 
 /**
  * UI state for the stats screen: one period at a time (#91).

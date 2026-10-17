@@ -1,16 +1,14 @@
 package com.hub.media.ui
 
-import com.hub.media.features.settings.data.setStatsDomain
-import com.hub.media.features.settings.data.observeStatsDomain
-import com.hub.media.core.database.entities.WatchLogEntity
-import com.hub.media.core.database.entities.TVDetailsEntity
-import com.hub.media.core.database.entities.MovieDetailsEntity
-import com.hub.media.core.database.entities.MediaType
-import com.hub.media.core.database.entities.EpisodeEntity
-import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.entities.AiringStatus
+import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
@@ -19,8 +17,10 @@ import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.observeReadingGoal
+import com.hub.media.features.settings.data.observeStatsDomain
 import com.hub.media.features.settings.data.observeStatsPeriod
 import com.hub.media.features.settings.data.setReadingGoal
+import com.hub.media.features.settings.data.setStatsDomain
 import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
@@ -481,9 +481,20 @@ class StatsViewModelTest {
         db.tvWriteDao().insertMediaItem(sampleMediaItem(id = "show-1", title = "Severance", type = MediaType.TV_SHOW))
         db.tvWriteDao().insertTVDetails(TVDetailsEntity(mediaId = "show-1", airingStatus = AiringStatus.ENDED))
         db.tvWriteDao().insertEpisodes(
-            listOf(EpisodeEntity(id = "ep-1", mediaId = "show-1", seasonNumber = 1, episodeNumber = 1, watchedAt = at, runtimeMinutes = 50)),
+            listOf(
+                EpisodeEntity(
+                    id = "ep-1",
+                    mediaId = "show-1",
+                    seasonNumber = 1,
+                    episodeNumber = 1,
+                    watchedAt = at,
+                    runtimeMinutes = 50,
+                ),
+            ),
         )
-        db.movieWriteDao().insertViewing(WatchLogEntity(id = "sl-1", mediaId = "show-1", episodeId = "ep-1", watchedAt = at))
+        db.movieWriteDao().insertViewing(
+            WatchLogEntity(id = "sl-1", mediaId = "show-1", episodeId = "ep-1", watchedAt = at),
+        )
     }
 
     @Test
@@ -523,11 +534,24 @@ class StatsViewModelTest {
             settingsRepository.setStatsDomain(MediaType.TV_SHOW)
             val viewModel = newViewModel()
             holdUiStateSubscribed(viewModel)
-            assertEquals(null, viewModel.uiState.first { it.viewing != null }.viewing!!.showsFinished, "not on Week")
+            assertEquals(
+                null,
+                viewModel.uiState
+                    .first { it.viewing != null }
+                    .viewing!!
+                    .showsFinished,
+                "not on Week",
+            )
 
             viewModel.selectPeriod(StatsPeriod.ALL_TIME)
 
-            assertEquals(1, viewModel.uiState.first { it.viewing?.showsFinished != null }.viewing!!.showsFinished)
+            assertEquals(
+                1,
+                viewModel.uiState
+                    .first { it.viewing?.showsFinished != null }
+                    .viewing!!
+                    .showsFinished,
+            )
         }
 
     @Test
