@@ -1,5 +1,7 @@
 package com.hub.media.features.stats.data
 
+import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.dao.ViewingRow
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.PeriodStatsRow
@@ -96,6 +98,18 @@ public class StatsRepository(
     ): Flow<List<TimedSessionRow>> {
         val bounds = period.bounds(timeZone, clock, weekStartDay)
         return db.statsDao().observeTimedSessions(bounds?.first, bounds?.second)
+    }
+
+    /** The viewings of [period] for one domain, MOVIE or TV_SHOW (#217), bounded as [observePeriodStats] is. */
+    public fun observeViewings(
+        period: StatsPeriod,
+        timeZone: TimeZone,
+        clock: Clock,
+        weekStartDay: WeekStartDay,
+        type: MediaType,
+    ): Flow<List<ViewingRow>> {
+        val bounds = period.bounds(timeZone, clock, weekStartDay)
+        return db.statsDao().observeViewings(bounds?.first, bounds?.second, type)
     }
 
     /** Finished and did-not-finish counts across the whole library (#219), for All time. */

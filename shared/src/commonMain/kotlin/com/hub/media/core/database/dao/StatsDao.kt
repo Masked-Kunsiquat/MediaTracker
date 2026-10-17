@@ -2,6 +2,7 @@ package com.hub.media.core.database.dao
 
 import androidx.room.Dao
 import androidx.room.Query
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Instant
@@ -146,4 +147,37 @@ interface StatsDao {
         finished: ReadingStatus,
         dnf: ReadingStatus,
     ): Flow<FinishOutcomes>
+
+    /**
+     * Every viewing in `[from, to)` of a media item of [type] (#217): the one read behind the Films
+     * and Shows tabs. The runtime is the film's for a film and the episode's for an episode, `null`
+     * when unknown; a viewing's own duration is never recorded, so it is the only source of time.
+     *
+     * `isRewatch` asks whether an earlier viewing of the same film -- or the same episode -- exists at
+     * any time, so a rewatch of something first seen last year still counts as one this week. Two
+     * viewings at the same instant break the tie by id, so exactly one of them is the first.
+     * `IS` rather than `=` on `episodeId`, so a film's `NULL` matches a film's `NULL`.
+     */
+    @Query(
+        """
+        SELECT w.watchedAt, w.mediaId, w.episodeId, m.title,
+               COALESCE(e.runtimeMinutes, md.runtimeMinutes) AS runtimeMinutes,
+               EXISTS (SELECT 1 FROM watch_logs p
+                        WHERE p.mediaId = w.mediaId AND p.episodeId IS w.episodeId
+                          AND (p.watchedAt < w.watchedAt OR (p.watchedAt = w.watchedAt AND p.id < w.id)))
+                 AS isRewatch
+          FROM watch_logs w
+          JOIN media_items m ON m.id = w.mediaId
+          LEFT JOIN movie_details md ON md.mediaId = w.mediaId AND w.episodeId IS NULL
+          LEFT JOIN episodes e ON e.id = w.episodeId
+         WHERE m.type = :type
+           AND (:from IS NULL OR w.watchedAt >= :from)
+           AND (:to IS NULL OR w.watchedAt < :to)
+        """,
+    )
+    fun observeViewings(
+        from: Instant?,
+        to: Instant?,
+        type: MediaType,
+    ): Flow<List<ViewingRow>>
 }
