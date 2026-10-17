@@ -294,6 +294,17 @@
     </plurals>
     <string name="stats_top_shows_title">Top shows</string>
     <string name="stats_nothing_watched">Nothing watched in this period</string>
+    <string name="stats_no_runtimes">No runtimes known for these shows yet</string>
+    <plurals name="stats_month_films_entry">
+        <item quantity="one">%1$s: %2$d film</item>
+        <item quantity="other">%1$s: %2$d films</item>
+    </plurals>
+    <plurals name="stats_month_episodes_entry">
+        <item quantity="one">%1$s: %2$d episode</item>
+        <item quantity="other">%1$s: %2$d episodes</item>
+    </plurals>
+    <string name="stats_month_films_empty">No films watched yet this year</string>
+    <string name="stats_month_episodes_empty">No episodes watched yet this year</string>
     <string name="stats_busiest">busiest</string>
     <string name="stats_show_larger">Show larger</string>
     <string name="stats_close">Close</string>

@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -93,13 +95,15 @@ fun BarChart(
 fun MonthChart(
     counts: List<Int>,
     modifier: Modifier = Modifier,
+    @PluralsRes entry: Int = R.plurals.stats_month_chart_entry,
+    @StringRes empty: Int = R.string.stats_month_chart_empty,
 ) {
     require(counts.size == 12) { "One count per month, got ${counts.size}" }
     val locale = LocalConfiguration.current.locales[0]
     BarChart(
         values = counts.map { it.toLong() },
         labels = Month.entries.map { it.getDisplayName(TextStyle.NARROW, locale) },
-        description = monthsDescription(counts),
+        description = monthsDescription(counts, entry, empty),
         modifier = modifier,
     )
 }
@@ -109,7 +113,11 @@ fun MonthChart(
  * nothing yet. Shared by [MonthChart] and its tile (#217).
  */
 @Composable
-fun monthsDescription(counts: List<Int>): String {
+fun monthsDescription(
+    counts: List<Int>,
+    @PluralsRes entry: Int = R.plurals.stats_month_chart_entry,
+    @StringRes empty: Int = R.string.stats_month_chart_empty,
+): String {
     val locale = LocalConfiguration.current.locales[0]
     val entries =
         counts.mapIndexedNotNull { index, count ->
@@ -117,8 +125,8 @@ fun monthsDescription(counts: List<Int>): String {
                 null
             } else {
                 val month = Month.of(index + 1).getDisplayName(TextStyle.FULL, locale)
-                pluralStringResource(R.plurals.stats_month_chart_entry, count, month, count)
+                pluralStringResource(entry, count, month, count)
             }
         }
-    return if (entries.isEmpty()) stringResource(R.string.stats_month_chart_empty) else entries.joinToString()
+    return if (entries.isEmpty()) stringResource(empty) else entries.joinToString()
 }

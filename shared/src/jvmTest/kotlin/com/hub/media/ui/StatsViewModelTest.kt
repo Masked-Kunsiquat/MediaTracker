@@ -564,4 +564,34 @@ class StatsViewModelTest {
             assertEquals(MediaType.BOOK, state.domain)
             assertEquals(null, state.viewing)
         }
+
+    /**
+     * Opened from the Films library while Books is the remembered tab, Stats opens on Films and
+     * remembers it (#217). Whether Books could flash first is a race this test cannot create, so the
+     * hold-back itself is pinned by `OpeningOnTest` with the sequence a slow write produces.
+     */
+    @Test
+    fun openedForFilms_opensOnFilms_andRemembersIt() =
+        runTest {
+            settingsRepository.setStatsDomain(MediaType.BOOK)
+            val viewModel =
+                viewModels.track(
+                    StatsViewModel(
+                        statsRepository = repository,
+                        settingsRepository = settingsRepository,
+                        timeZone = timeZone,
+                        clock = clock,
+                        initialDomain = MediaType.MOVIE,
+                    ),
+                )
+            val seen = mutableListOf<MediaType>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.uiState.collect { if (!it.isLoading) seen += it.domain }
+            }
+
+            viewModel.uiState.first { !it.isLoading && it.domain == MediaType.MOVIE }
+
+            assertEquals(listOf(MediaType.MOVIE), seen.distinct())
+            assertEquals(MediaType.MOVIE, settingsRepository.observeStatsDomain().first(), "and it is remembered")
+        }
 }

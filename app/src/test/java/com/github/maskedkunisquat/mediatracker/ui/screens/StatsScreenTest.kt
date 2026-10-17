@@ -723,4 +723,30 @@ class StatsScreenTest {
         composeRule.onNodeWithTag(TestTags.Stats.GOAL_CARD).assertDoesNotExist()
         composeRule.onNode(hasText("streak", substring = true)).assertDoesNotExist()
     }
+
+    /** A Films month tile reads films, not books (#217 review): "January: 3 films". */
+    @Test
+    fun theFilmsMonthTile_readsFilms_notBooks() {
+        val months = List(12) { if (it == 0) 3 else 0 }
+        setContent(viewing(MediaType.MOVIE, watched().copy(months = months), StatsPeriod.YEAR))
+
+        scrollToTile(TestTags.Stats.MONTH_CHART)
+        val description =
+            composeRule
+                .onNodeWithTag(TestTags.Stats.MONTH_CHART)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.ContentDescription]
+                .joinToString()
+        assertTrue(description, "3 films" in description)
+        assertTrue(description, "book" !in description)
+    }
+
+    /** Shows were watched, but none has a runtime: the card says so, not "nothing watched" (#217 review). */
+    @Test
+    fun topShows_withNoRuntimeKnown_saySo_notNothingWatched() {
+        setContent(viewing(MediaType.TV_SHOW, watched(knownSeconds = null, topTitles = emptyList())))
+
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, string(R.string.stats_no_runtimes)).assertExists()
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, string(R.string.stats_nothing_watched)).assertDoesNotExist()
+    }
 }

@@ -101,6 +101,22 @@ internal fun ViewingChartsCard(
                 weekdayValues = numbers.weekdayCounts.map { it.toLong() },
                 months = numbers.months,
                 formatValue = { pluralStringResource(R.plurals.stats_viewings_count, it.toInt(), it.toInt()) },
+                monthEntry =
+                    if (domain ==
+                        MediaType.TV_SHOW
+                    ) {
+                        R.plurals.stats_month_episodes_entry
+                    } else {
+                        R.plurals.stats_month_films_entry
+                    },
+                monthsEmpty =
+                    if (domain ==
+                        MediaType.TV_SHOW
+                    ) {
+                        R.string.stats_month_episodes_empty
+                    } else {
+                        R.string.stats_month_films_empty
+                    },
             ),
         whenTitle = stringResource(R.string.stats_when_watch_title),
         monthsTitle =
@@ -118,14 +134,23 @@ internal fun ViewingChartsCard(
     )
 }
 
-/** Up to five shows by known time watched; a long title is cut short so the time stays on the row. */
+/**
+ * Up to five shows by known time watched; a long title is cut short so the time stays on the row.
+ *
+ * @param watchedAny Whether anything was watched in the period, so an empty list can say why.
+ */
 @Composable
-internal fun TopShowsCard(titles: List<TitleTime>) {
+internal fun TopShowsCard(
+    titles: List<TitleTime>,
+    watchedAny: Boolean,
+) {
     Card(modifier = Modifier.fillMaxWidth().testTag(TestTags.Stats.TOP_SHOWS_CARD)) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(text = stringResource(R.string.stats_top_shows_title), style = MaterialTheme.typography.titleMedium)
             if (titles.isEmpty()) {
-                Text(text = stringResource(R.string.stats_nothing_watched), style = MaterialTheme.typography.bodyMedium)
+                // Shows were watched, but none has a runtime: say that, not that nothing was watched.
+                val empty = if (watchedAny) R.string.stats_no_runtimes else R.string.stats_nothing_watched
+                Text(text = stringResource(empty), style = MaterialTheme.typography.bodyMedium)
             }
             for (title in titles) {
                 BreakdownRow(label = title.title, values = listOf(formatDuration(title.seconds)))

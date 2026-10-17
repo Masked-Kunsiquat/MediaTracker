@@ -78,17 +78,11 @@ fun StatsScreenRoute(
 ) {
     val viewModel: StatsViewModel =
         viewModel(
-            factory = StatsViewModelFactory(appContainer),
+            // A library's stats button opens on its own tab (#217): the view model starts there, so
+            // the remembered tab never shows first. One view model per back-stack entry, so this
+            // runs once per visit and survives rotation.
+            factory = StatsViewModelFactory(appContainer, domain),
         )
-    // A library's stats button opens its own tab (#217), once: saved, so turning the phone does not
-    // pull the user back to it after they picked another tab.
-    var openedOnDomain by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(domain) {
-        if (domain != null && !openedOnDomain) {
-            viewModel.selectDomain(domain)
-            openedOnDomain = true
-        }
-    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     StatsScreen(
@@ -210,7 +204,7 @@ fun StatsScreen(
                         }
                         if (uiState.domain == MediaType.TV_SHOW) {
                             item {
-                                TopShowsCard(viewing.breakdown.topTitles)
+                                TopShowsCard(viewing.breakdown.topTitles, watchedAny = viewing.breakdown.viewings > 0)
                             }
                         }
                         return@LazyColumn

@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -67,6 +68,8 @@ import kotlin.time.Duration.Companion.seconds
  * @param settingsRepository Source of the remembered period and the week-start preference.
  * @param timeZone Time zone for local-day bucketing; tests inject a fixed one.
  * @param clock Wall-clock source for "today"; tests inject a fixed one.
+ * @param initialDomain The tab to open on, from a library's stats button (#217); `null` opens the
+ *   remembered tab.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 public class StatsViewModel(
@@ -74,12 +77,13 @@ public class StatsViewModel(
     private val settingsRepository: SettingsRepository,
     private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
     private val clock: Clock = Clock.System,
+    private val initialDomain: MediaType? = null,
 ) : ViewModel() {
     private val periodSnapshot =
         combine(
             settingsRepository.observeStatsPeriod(),
             settingsRepository.observeWeekStartDay(),
-            settingsRepository.observeStatsDomain(),
+            domains(),
             // Only a trigger: the date it carries is re-read below, with everything else.
             localDateChanges(clock, timeZone),
         ) { period, weekStart, domain, _ ->
@@ -155,6 +159,18 @@ public class StatsViewModel(
     public fun selectPeriod(period: StatsPeriod) {
         viewModelScope.launch { settingsRepository.setStatsPeriod(period) }
     }
+
+    init {
+        // Opened from a library (#217): that library's tab, remembered like any other pick.
+        initialDomain?.let { viewModelScope.launch { settingsRepository.setStatsDomain(it) } }
+    }
+
+    /**
+     * The remembered tab -- except that a view model opened for [initialDomain] holds back whatever
+     * was remembered before until that domain is stored, so the screen never shows the old tab for a
+     * frame and then switches (#217 review). After that every pick passes straight through.
+     */
+    private fun domains(): Flow<MediaType> = settingsRepository.observeStatsDomain().openingOn(initialDomain)
 
     /** Shows [domain]'s tab -- Books, Films or Shows -- and remembers it, as [selectPeriod] does (#217). */
     public fun selectDomain(domain: MediaType) {
@@ -234,3 +250,11 @@ private fun PeriodStatsRow.toPeriod() =
                 null
             },
     )
+
+/**
+ * The remembered tab, held back until it is [domain] when Stats was opened for one (#217 review). The
+ * library's tab is written as the view model starts, but the stored value can still read as the old
+ * tab for a moment -- long enough to draw it. After the first match every pick passes through.
+ */
+internal fun Flow<MediaType>.openingOn(domain: MediaType?): Flow<MediaType> =
+    if (domain == null) this else dropWhile { it != domain }

@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -42,10 +43,23 @@ class StatsNavigationTest {
         @StringRes label: Int,
     ) = composeRule.onNode(hasText(string(label)) and hasClickAction())
 
+    /** Waits for the tab to be selected: the pick goes through a settings write, which idle does not cover. */
+    private fun waitUntilSelected(
+        @StringRes label: Int,
+    ) {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule
+                .onAllNodes(hasText(string(label)) and hasClickAction() and isSelected())
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+    }
+
     @Test
     fun theFilmsLibrary_opensTheFilmsTab() {
         openStatsFrom(TestTags.Hub.FILMS)
 
+        waitUntilSelected(R.string.stats_domain_films)
         tab(R.string.stats_domain_films).assertIsSelected()
     }
 
@@ -53,6 +67,7 @@ class StatsNavigationTest {
     fun theShowsLibrary_opensTheShowsTab() {
         openStatsFrom(TestTags.Hub.SHOWS)
 
+        waitUntilSelected(R.string.stats_domain_shows)
         tab(R.string.stats_domain_shows).assertIsSelected()
     }
 }

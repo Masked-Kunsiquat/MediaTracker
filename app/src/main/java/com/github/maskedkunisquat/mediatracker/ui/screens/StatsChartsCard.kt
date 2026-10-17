@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +41,7 @@ import java.time.format.TextStyle
  * @property dayParts 4 values in [DayPart] order, for the dial's legend and its busiest part.
  * @property weekdays ISO day numbers from the week start; [weekdayValues] follows that order.
  * @property months Twelve counts on the Year view, `null` otherwise.
+ * @property monthEntry / [monthsEmpty] What a month counts, read aloud: books unless set.
  */
 internal data class ChartsData(
     val hours: List<Long>,
@@ -47,6 +50,8 @@ internal data class ChartsData(
     val weekdayValues: List<Long>,
     val months: List<Int>?,
     val formatValue: @Composable (Long) -> String,
+    @param:PluralsRes val monthEntry: Int = R.plurals.stats_month_chart_entry,
+    @param:StringRes val monthsEmpty: Int = R.string.stats_month_chart_empty,
 )
 
 private enum class OpenChart { TIME_OF_DAY, WEEKDAYS, MONTHS }
@@ -136,7 +141,7 @@ internal fun ChartsCard(
                         R.string.stats_tile_description,
                         monthsTitle,
                         stringResource(R.string.stats_chart_by_month),
-                        monthsDescription(months),
+                        monthsDescription(months, data.monthEntry, data.monthsEmpty),
                     ),
                 openLabel = showLarger,
                 onOpen = { open = OpenChart.MONTHS },
@@ -213,7 +218,7 @@ internal fun ChartsCard(
                     open =
                         null
                 }) {
-                    MonthChart(counts = months)
+                    MonthChart(counts = months, entry = data.monthEntry, empty = data.monthsEmpty)
                 }
             }
         null -> Unit
