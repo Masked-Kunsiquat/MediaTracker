@@ -1,5 +1,7 @@
 package com.hub.media.features.stats.data
 
+import com.hub.media.core.database.dao.TVProgressCounts
+import com.hub.media.core.database.dao.ShowStateRow
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.dao.ViewingRow
 import com.hub.media.core.database.AppDatabase
@@ -111,6 +113,12 @@ public class StatsRepository(
         val bounds = period.bounds(timeZone, clock, weekStartDay)
         return db.statsDao().observeViewings(bounds?.first, bounds?.second, type)
     }
+
+    /** Each show's stored status and airing state (#217), for shows finished. */
+    public fun observeShowStates(): Flow<List<ShowStateRow>> = db.statsDao().observeShowStates()
+
+    /** Each show's episode counts (#217): the same progress the library reads. */
+    public fun observeShowProgress(): Flow<List<TVProgressCounts>> = db.episodeDao().observeProgress()
 
     /** Finished and did-not-finish counts across the whole library (#219), for All time. */
     public fun observeFinishOutcomes(): Flow<FinishOutcomes> =

@@ -1,5 +1,7 @@
 package com.hub.media.ui
 
+import com.hub.media.features.stats.data.ViewingBreakdown
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.ReadingBreakdown
@@ -34,6 +36,8 @@ public data class StatsUiState(
     val finishesByMonth: List<Int>? = null,
     val breakdown: ReadingBreakdown = ReadingBreakdown(),
     val finishOutcomes: FinishOutcomes? = null,
+    val domain: MediaType = MediaType.BOOK,
+    val viewing: ViewingStats? = null,
 ) {
     /**
      * One period's aggregate numbers.
@@ -60,3 +64,14 @@ public data class StatsUiState(
         val pagesPerHour: Int? = null,
     )
 }
+
+/**
+ * The Films or Shows tab's numbers (#217).
+ *
+ * @property showsFinished Shows finished, on the Shows tab under All time only (a show has no
+ *   "finished on" date); `null` everywhere else.
+ */
+public data class ViewingStats(
+    val breakdown: ViewingBreakdown,
+    val showsFinished: Int? = null,
+)

@@ -1,5 +1,15 @@
 package com.hub.media.ui
 
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Dispatchers
+import com.hub.media.features.stats.data.viewingBreakdown
+import com.hub.media.features.settings.data.setStatsDomain
+import com.hub.media.features.settings.data.observeStatsDomain
+import com.hub.media.features.settings.data.observeIncludeSpecials
+import com.hub.media.features.settings.data.WeekStartDay
+import com.hub.media.core.database.entities.MediaType
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.dao.PeriodStatsRow
@@ -69,11 +79,12 @@ public class StatsViewModel(
         combine(
             settingsRepository.observeStatsPeriod(),
             settingsRepository.observeWeekStartDay(),
+            settingsRepository.observeStatsDomain(),
             // Only a trigger: the date it carries is re-read below, with everything else.
             localDateChanges(clock, timeZone),
-        ) { period, weekStart, _ ->
-            period to weekStart
-        }.flatMapLatest { (period, weekStart) ->
+        ) { period, weekStart, domain, _ ->
+            Triple(period, weekStart, domain)
+        }.flatMapLatest { (period, weekStart, domain) ->
             // "Now" is read once per restart and every query below is given that same instant, so
             // the period's bounds, the streak, the goal's year and the months can never straddle a
             // midnight between them. The streak is re-derived here too: created once outside, it
@@ -87,6 +98,10 @@ public class StatsViewModel(
                     override fun now() = now
                 }
             val today = now.toLocalDateTime(timeZone).date
+            // Films and Shows (#217) read their own one query; Books below is exactly as before.
+            if (domain != MediaType.BOOK) {
+                return@flatMapLatest viewingState(period, weekStart, domain, at, today.year)
+            }
             val yearBounds = StatsPeriod.YEAR.bounds(timeZone, at, weekStart)!!
             val periodState =
                 combine(
@@ -139,6 +154,51 @@ public class StatsViewModel(
     /** Shows [period], and remembers it for the next visit; the screen follows the stored value. */
     public fun selectPeriod(period: StatsPeriod) {
         viewModelScope.launch { settingsRepository.setStatsPeriod(period) }
+    }
+
+    /** Shows [domain]'s tab -- Books, Films or Shows -- and remembers it, as [selectPeriod] does (#217). */
+    public fun selectDomain(domain: MediaType) {
+        viewModelScope.launch { settingsRepository.setStatsDomain(domain) }
+    }
+
+    /**
+     * The Films or Shows tab (#217): one read of the period's viewings, turned into numbers off the
+     * main thread and only when the viewings change. Shows finished is read on the Shows tab under
+     * All time only, through the library's own rule.
+     */
+    private fun viewingState(
+        period: StatsPeriod,
+        weekStart: WeekStartDay,
+        domain: MediaType,
+        at: Clock,
+        year: Int,
+    ): Flow<StatsUiState> {
+        val breakdown =
+            statsRepository
+                .observeViewings(period, timeZone, at, weekStart, domain)
+                .map { viewingBreakdown(it, timeZone, weekStart, withMonths = period == StatsPeriod.YEAR) }
+                .flowOn(Dispatchers.Default)
+        val finished =
+            if (domain == MediaType.TV_SHOW && period == StatsPeriod.ALL_TIME) {
+                combine(
+                    statsRepository.observeShowStates(),
+                    statsRepository.observeShowProgress(),
+                    settingsRepository.observeIncludeSpecials(),
+                ) { states, progress, includeSpecials ->
+                    countFinishedShows(states, progress.associateBy { it.mediaId }, includeSpecials)
+                }
+            } else {
+                flowOf(null)
+            }
+        return combine(breakdown, finished) { numbers, showsFinished ->
+            StatsUiState(
+                isLoading = false,
+                period = period,
+                domain = domain,
+                goalYear = year,
+                viewing = ViewingStats(numbers, showsFinished),
+            )
+        }
     }
 
     /** Sets this year's reading goal to [books]; values outside 1..[MAX_READING_GOAL] are ignored. */
