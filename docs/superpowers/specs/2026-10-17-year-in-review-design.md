@@ -26,6 +26,30 @@ the tiles.
   (`isPickedDate`).
 - **`:app` sees no kotlinx-datetime types:** months, days and hours cross as numbers.
 
+## 0. Reading goals for every year (owner, 2026-10-17)
+
+The app stored one goal, `"2026:12"`, so setting next year's goal erased this year's, and the review
+could not show a past year's goal. The owner asked for the storage itself to be fixed, inside this
+work. No schema change:
+
+- **Format:** the `reading_goal` setting holds every year's goal, comma-separated in year order:
+  `"2025:20,2026:12"`. A single entry, which is every value stored today, is a one-year list, so
+  nothing stored needs migrating.
+- **API:**
+  - `observeReadingGoals(): Flow<Map<Int, Int>>` (empty when none, or when the value is malformed);
+  - `observeReadingGoal(year): Flow<ReadingGoal?>`;
+  - `setReadingGoal(year, books)` adds or replaces that year's entry only;
+  - `clearReadingGoal(year)` removes that year's entry only.
+- **Parsing:** `String.toReadingGoalsOrNull(): Map<Int, Int>?` is all-or-nothing. Every entry must be
+  `year:books` with books in 1..999, and no year may appear twice; anything else reads as no goals,
+  as a malformed single value does today.
+- **Stats** reads this year's entry, so the goal card is unchanged. A new year still starts with no
+  goal, and the earlier year's goal is now kept.
+- **Import:** it validates with the same parser and restores the whole list. It stays in
+  `EXPORTABLE_SETTING_KEYS`, so every year's goal travels with an archive.
+- **The limit:** goals overwritten before this change are gone, so the review's goal page appears
+  from this change on.
+
 ## 1. Years
 
 - `yearBounds(year, timeZone)`: the local `[1 Jan year, 1 Jan year+1)`.
@@ -44,7 +68,7 @@ the tiles.
 | `observeViewings(MOVIE)` | films watched, film time, most-rewatched film |
 | `observeViewings(TV_SHOW)` | episodes watched, episode time, biggest binge day |
 | `observeFinishedBooks` (**new**) | the longest book finished |
-| `observeReadingGoal` | the goal, if it is this year's |
+| `observeReadingGoal(year)` | that year's goal (§0) |
 
 - `TimedSessionRow` gains `mediaId` and `title` (it already joins `book_details`; this joins
   `media_items` too), so the longest session can name its book. `readingBreakdown` ignores the new
@@ -65,9 +89,8 @@ the tiles.
 3. **Top author:** the first of `readingBreakdown(...).topAuthors`, with its time.
 4. **Longest session:** the timed session with the longest duration, with its book's title; ties go to
    the earliest.
-5. **Reading goal:** only when the stored goal's year equals the review's year (the app keeps one goal
-   and replaces it each year, so earlier years' goals are gone). The page shows finished against the
-   goal, and whether it was reached.
+5. **Reading goal:** that year's goal from §0, when one was set. The page shows finished against
+   the goal, and whether it was reached.
 6. **Most-rewatched film:** the film with the most viewings in the year, **only when that is two or
    more**; ties go to the title.
 7. **Biggest binge day:** the local day with the most episode viewings (picked dates count, since
@@ -130,4 +153,3 @@ the tiles.
 - Ratings ("best of the year"); those come with #220.
 - Sharing or exporting an image.
 - Animations beyond the pager's own.
-- Keeping past years' reading goals.
