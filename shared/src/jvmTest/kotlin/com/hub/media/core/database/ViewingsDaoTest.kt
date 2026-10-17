@@ -1,5 +1,8 @@
 package com.hub.media.core.database
 
+import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.AiringStatus
+import com.hub.media.core.database.dao.ShowStateRow
 import com.hub.media.core.database.dao.ViewingRow
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
@@ -134,5 +137,23 @@ class ViewingsDaoTest {
             watch("s1", 1_200, episodeId = "e1") // episode 1 again: a rewatch
 
             assertEquals(listOf(false, false, true), viewings(MediaType.TV_SHOW).map { it.isRewatch })
+        }
+
+    @Test
+    fun showStates_carryEachShowsStatusAndAiring() =
+        runTest {
+            show("s1")
+            db.tvWriteDao().insertMediaItem(sampleMediaItem(id = "s2", title = "Andor", type = MediaType.TV_SHOW))
+            db.tvWriteDao().insertTVDetails(
+                TVDetailsEntity(mediaId = "s2", status = WatchStatus.ABANDONED, airingStatus = AiringStatus.ENDED),
+            )
+
+            assertEquals(
+                listOf(
+                    ShowStateRow("s1", WatchStatus.WATCHLIST, null),
+                    ShowStateRow("s2", WatchStatus.ABANDONED, AiringStatus.ENDED),
+                ),
+                db.statsDao().observeShowStates().first().sortedBy { it.mediaId },
+            )
         }
 }

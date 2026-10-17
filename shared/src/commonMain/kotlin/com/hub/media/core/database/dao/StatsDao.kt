@@ -180,4 +180,8 @@ interface StatsDao {
         to: Instant?,
         type: MediaType,
     ): Flow<List<ViewingRow>>
+
+    /** Each show's stored status and airing state (#217), for "shows finished" (see `countFinishedShows`). */
+    @Query("SELECT mediaId, status, airingStatus FROM tv_details")
+    fun observeShowStates(): Flow<List<ShowStateRow>>
 }
