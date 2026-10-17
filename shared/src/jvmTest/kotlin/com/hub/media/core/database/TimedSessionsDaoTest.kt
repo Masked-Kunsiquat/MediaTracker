@@ -1,6 +1,7 @@
 package com.hub.media.core.database
 
 import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.dao.FinishedBookRow
 import com.hub.media.core.database.dao.TimedSessionRow
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.ReadingStatus
@@ -67,7 +68,8 @@ class TimedSessionsDaoTest {
             session("b1", start = 2_000, durationSeconds = 900) // the end is exclusive: out
 
             assertEquals(
-                listOf(TimedSessionRow(at(1_000), 600, BookFormat.EBOOK, "A; B")),
+                // The book's id and title too (#221): the year in review names the longest session's book.
+                listOf(TimedSessionRow(at(1_000), 600, BookFormat.EBOOK, "A; B", mediaId = "b1", title = "Test Book")),
                 timed(1_000, 2_000),
             )
         }
@@ -118,5 +120,66 @@ class TimedSessionsDaoTest {
                 FinishOutcomes(0, 0),
                 db.statsDao().observeFinishOutcomes(ReadingStatus.FINISHED, ReadingStatus.DNF).first(),
             )
+        }
+
+    // --- #221: what a year in review reads ------------------------------------------------------
+
+    private suspend fun finished(
+        id: String,
+        pages: Int?,
+        at: Long,
+        status: ReadingStatus = ReadingStatus.FINISHED,
+    ) {
+        db.mediaItemDao().insert(sampleMediaItem(id = id, title = "Book $id"))
+        db.bookDetailsDao().insert(
+            sampleBookDetails(
+                mediaId = id,
+                status = status,
+                finishedAt = at(at),
+                totalPages = pages,
+            ).copy(authors = "Le Guin"),
+        )
+    }
+
+    @Test
+    fun finishedBooks_areBoundedAndFinishedOnly_withTheirPages() =
+        runTest {
+            finished("in", pages = 412, at = 1_500)
+            finished("unknown", pages = null, at = 1_600)
+            finished("before", pages = 900, at = 900)
+            finished("reading", pages = 300, at = 1_700, status = ReadingStatus.READING)
+
+            val rows = db.statsDao().observeFinishedBooks(at(1_000), at(2_000), ReadingStatus.FINISHED).first()
+
+            assertEquals(
+                listOf(
+                    FinishedBookRow("in", "Book in", 412, "Le Guin", at(1_500)),
+                    FinishedBookRow("unknown", "Book unknown", null, "Le Guin", at(1_600)),
+                ),
+                rows.sortedBy { it.finishedAt },
+            )
+        }
+
+    @Test
+    fun firstActivity_isTheEarliestOfSessionsViewingsAndFinishes() =
+        runTest {
+            book("b1")
+            session("b1", start = 5_000, durationSeconds = 60)
+            finished("f1", pages = 100, at = 4_000)
+            db.mediaItemDao().insert(
+                sampleMediaItem(id = "film", type = com.hub.media.core.database.entities.MediaType.MOVIE),
+            )
+            db.movieWriteDao().insertViewing(
+                com.hub.media.core.database.entities
+                    .WatchLogEntity(id = "w", mediaId = "film", watchedAt = at(3_000)),
+            )
+
+            assertEquals(at(3_000), db.statsDao().observeFirstActivity().first(), "the viewing is earliest")
+        }
+
+    @Test
+    fun firstActivity_onAnEmptyLibrary_isNull() =
+        runTest {
+            assertEquals(null, db.statsDao().observeFirstActivity().first())
         }
 }

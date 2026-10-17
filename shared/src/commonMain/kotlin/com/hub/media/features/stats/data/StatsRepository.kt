@@ -2,6 +2,7 @@ package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.dao.FinishedBookRow
 import com.hub.media.core.database.dao.PeriodStatsRow
 import com.hub.media.core.database.dao.ShowStateRow
 import com.hub.media.core.database.dao.TVProgressCounts
@@ -113,6 +114,30 @@ public class StatsRepository(
         val bounds = period.bounds(timeZone, clock, weekStartDay)
         return db.statsDao().observeViewings(bounds?.first, bounds?.second, type)
     }
+
+    // --- Any year's reads, for the year in review (#221) -------------------------------------------
+    // The same queries as the period functions above, bounded by [yearBounds] instead of a period.
+
+    /** [observePeriodStats] over [bounds]. */
+    public fun observePeriodStatsIn(bounds: Pair<Instant, Instant>): Flow<PeriodStatsRow> =
+        db.statsDao().observePeriodStats(bounds.first, bounds.second, ReadingStatus.FINISHED)
+
+    /** [observeTimedSessions] over [bounds]. */
+    public fun observeTimedSessionsIn(bounds: Pair<Instant, Instant>): Flow<List<TimedSessionRow>> =
+        db.statsDao().observeTimedSessions(bounds.first, bounds.second)
+
+    /** [observeViewings] over [bounds]. */
+    public fun observeViewingsIn(
+        bounds: Pair<Instant, Instant>,
+        type: MediaType,
+    ): Flow<List<ViewingRow>> = db.statsDao().observeViewings(bounds.first, bounds.second, type)
+
+    /** Books finished within [bounds], with their pages. */
+    public fun observeFinishedBooks(bounds: Pair<Instant, Instant>): Flow<List<FinishedBookRow>> =
+        db.statsDao().observeFinishedBooks(bounds.first, bounds.second, ReadingStatus.FINISHED)
+
+    /** The earliest thing logged, or `null` when nothing is. */
+    public fun observeFirstActivity(): Flow<Instant?> = db.statsDao().observeFirstActivity()
 
     /** Each show's stored status and airing state (#217), for shows finished. */
     public fun observeShowStates(): Flow<List<ShowStateRow>> = db.statsDao().observeShowStates()

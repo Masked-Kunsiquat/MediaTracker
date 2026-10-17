@@ -24,7 +24,7 @@ class ReadingBreakdownTest {
         format: BookFormat = BookFormat.PAPERBACK,
         authors: String? = "Ann Leckie",
         zone: TimeZone = utc,
-    ) = TimedSessionRow(at.toInstant(zone), seconds, format, authors)
+    ) = TimedSessionRow(at.toInstant(zone), seconds, format, authors, mediaId = "b1", title = "A Book")
 
     private fun breakdown(
         vararg rows: TimedSessionRow,
