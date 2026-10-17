@@ -125,9 +125,10 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT s.timestampStart, s.durationSeconds, b.format, b.authors
+        SELECT s.timestampStart, s.durationSeconds, b.format, b.authors, s.mediaId, mi.title
           FROM reading_sessions s
           JOIN book_details b ON b.mediaId = s.mediaId
+          JOIN media_items mi ON mi.id = s.mediaId
          WHERE s.durationSeconds > 0
            AND (:from IS NULL OR s.timestampStart >= :from)
            AND (:to IS NULL OR s.timestampStart < :to)
@@ -184,4 +185,35 @@ interface StatsDao {
     /** Each show's stored status and airing state (#217), for "shows finished" (see `countFinishedShows`). */
     @Query("SELECT mediaId, status, airingStatus FROM tv_details")
     fun observeShowStates(): Flow<List<ShowStateRow>>
+
+    /** Books FINISHED with a finish date in `[from, to)`, with their pages (#221): the year's longest book. */
+    @Query(
+        """
+        SELECT b.mediaId, mi.title, b.totalPages, b.authors, b.finishedAt
+          FROM book_details b
+          JOIN media_items mi ON mi.id = b.mediaId
+         WHERE b.status = :finished AND b.finishedAt >= :from AND b.finishedAt < :to
+        """,
+    )
+    fun observeFinishedBooks(
+        from: Instant,
+        to: Instant,
+        finished: ReadingStatus,
+    ): Flow<List<FinishedBookRow>>
+
+    /**
+     * The earliest thing logged (#221): a reading session's start, a viewing, or a finish date,
+     * whichever came first, or `null` when nothing is logged. The year in review's picker reaches back
+     * to its year.
+     */
+    @Query(
+        """
+        SELECT MIN(t) FROM (
+            SELECT MIN(timestampStart) AS t FROM reading_sessions
+            UNION ALL SELECT MIN(watchedAt) FROM watch_logs
+            UNION ALL SELECT MIN(finishedAt) FROM book_details
+        )
+        """,
+    )
+    fun observeFirstActivity(): Flow<Instant?>
 }

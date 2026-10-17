@@ -572,11 +572,13 @@ class TVShowDetailViewModelTest {
 
             viewModel.addMissingEpisodes(seasonNumber = 1)
 
+            // The refresh already left its own report in errorMessage ("No episode details needed
+            // filling in."), so waiting for any message returns that one whenever the add's write is
+            // slow -- which is how this failed in CI on #228. Wait for the add's own error instead.
             val state =
                 viewModel.uiState.first {
-                    it is TVShowDetailUiState.Ready && it.errorMessage != null
+                    it is TVShowDetailUiState.Ready && it.errorMessage?.contains("500") == true
                 } as TVShowDetailUiState.Ready
-            assertTrue(state.errorMessage!!.contains("500"), state.errorMessage!!)
             assertEquals(
                 listOf(1),
                 state.seasonFindings.map { it.seasonNumber },

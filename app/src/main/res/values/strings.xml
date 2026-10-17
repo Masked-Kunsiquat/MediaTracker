@@ -294,6 +294,74 @@
     </plurals>
     <string name="stats_top_shows_title">Top shows</string>
     <string name="stats_nothing_watched">Nothing watched in this period</string>
+    <!-- Year in review (#221) -->
+    <string name="year_review_hub">Year in review</string>
+    <string name="year_review_title_so_far">Your %1$d so far</string>
+    <string name="year_review_title">Your %1$d</string>
+    <string name="year_review_next">Next page</string>
+    <string name="year_review_previous">Previous page</string>
+    <string name="year_review_quiet">A quiet year: nothing logged yet</string>
+    <string name="year_review_card_hint">Swipe through your year in books, films and shows</string>
+    <string name="year_review_pick_year">Pick a year</string>
+    <string name="year_review_totals">In all</string>
+    <plurals name="year_review_books">
+        <item quantity="one">book finished</item>
+        <item quantity="other">books finished</item>
+    </plurals>
+    <plurals name="year_review_films">
+        <item quantity="one">film watched</item>
+        <item quantity="other">films watched</item>
+    </plurals>
+    <plurals name="year_review_episodes">
+        <item quantity="one">episode watched</item>
+        <item quantity="other">episodes watched</item>
+    </plurals>
+    <string name="year_review_hours">%1$s reading and watching</string>
+    <plurals name="year_review_unknown_runtime">
+        <item quantity="one">plus %d viewing without a runtime</item>
+        <item quantity="other">plus %d viewings without a runtime</item>
+    </plurals>
+    <plurals name="year_review_untimed_sessions">
+        <item quantity="one">plus %d reading session without a time</item>
+        <item quantity="other">plus %d reading sessions without a time</item>
+    </plurals>
+    <string name="year_review_longest_book">Your longest book</string>
+    <plurals name="year_review_pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <string name="year_review_top_author">Your top author</string>
+    <string name="year_review_of_reading">%1$s of reading</string>
+    <string name="year_review_longest_session">Your longest session</string>
+    <string name="year_review_with_book">with %1$s</string>
+    <string name="year_review_goal">Your reading goal</string>
+    <string name="year_review_goal_of">%1$d of %2$d</string>
+    <plurals name="year_review_goal_short">
+        <item quantity="one">%d short of your goal</item>
+        <item quantity="other">%d short of your goal</item>
+    </plurals>
+    <string name="year_review_rewatched">Your most-watched film</string>
+    <plurals name="year_review_times">
+        <item quantity="one">%d time</item>
+        <item quantity="other">%d times</item>
+    </plurals>
+    <string name="year_review_binge">Your biggest binge</string>
+    <string name="year_review_episodes_in_a_day">episodes in one day</string>
+    <string name="year_review_mostly">mostly %1$s</string>
+    <string name="year_review_rhythm">Your rhythm</string>
+    <string name="year_review_busiest_month">was your busiest month</string>
+    <string name="year_review_read_morning">You read most in the mornings</string>
+    <string name="year_review_read_afternoon">You read most in the afternoons</string>
+    <string name="year_review_read_evening">You read most in the evenings</string>
+    <string name="year_review_read_night">You read most at night</string>
+    <string name="year_review_watch_morning">You watched most in the mornings</string>
+    <string name="year_review_watch_afternoon">You watched most in the afternoons</string>
+    <string name="year_review_watch_evening">You watched most in the evenings</string>
+    <string name="year_review_watch_night">You watched most at night</string>
+    <string name="year_review_quiet_past">A quiet year: nothing logged</string>
+    <string name="year_review_summary">That was your %1$d</string>
+    <string name="year_review_summary_longest">Longest book: %1$s</string>
+    <string name="year_review_summary_binge">Biggest binge: %1$d episodes of %2$s</string>
     <string name="stats_no_runtimes">No runtimes known for these shows yet</string>
     <plurals name="stats_month_films_entry">
         <item quantity="one">%1$s: %2$d film</item>

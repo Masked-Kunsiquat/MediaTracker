@@ -29,6 +29,7 @@ import com.hub.media.ui.StatsViewModel
 import com.hub.media.ui.TVShowDetailViewModel
 import com.hub.media.ui.TVShowSearchViewModel
 import com.hub.media.ui.UpNextViewModel
+import com.hub.media.ui.YearReviewViewModel
 
 /**
  * Base [ViewModelProvider.Factory] shared by every factory in this file.
@@ -163,6 +164,24 @@ class EditBookViewModelFactory(
  * the stats screen the same way [LibraryViewModelFactory]/[AddBookViewModelFactory] are (unlike the
  * per-navigation-argument [BookDetailViewModelFactory]).
  */
+
+/** Factory for the year in review (#221), opened on [initialYear]; `null` is this year. */
+class YearReviewViewModelFactory
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    constructor(
+        appContainer: AppContainer,
+        initialYear: Int?,
+    ) : AppViewModelFactory<YearReviewViewModel>(
+            YearReviewViewModel::class.java,
+            {
+                YearReviewViewModel(
+                    appContainer.statsRepository,
+                    appContainer.settingsRepository,
+                    initialYear = initialYear,
+                )
+            },
+        )
+
 class StatsViewModelFactory
     @OptIn(kotlin.time.ExperimentalTime::class)
     constructor(

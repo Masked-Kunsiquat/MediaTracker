@@ -58,6 +58,7 @@ fun HubScreenRoute(
     onOpenDomain: (MediaType) -> Unit,
     onOpenAllMedia: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenYearReview: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val viewModel: HubViewModel =
@@ -69,6 +70,7 @@ fun HubScreenRoute(
         onOpenDomain = onOpenDomain,
         onOpenAllMedia = onOpenAllMedia,
         onOpenStats = onOpenStats,
+        onOpenYearReview = onOpenYearReview,
         onOpenSettings = onOpenSettings,
     )
 }
@@ -90,6 +92,7 @@ fun HubScreen(
     onOpenDomain: (MediaType) -> Unit,
     onOpenAllMedia: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenYearReview: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val showNumbers = !uiState.isLoading && !uiState.loadFailed
@@ -164,6 +167,11 @@ fun HubScreen(
                 onClick = onOpenAllMedia,
             )
             HubRow(text = stringResource(R.string.stats_title), tag = TestTags.Hub.STATS, onClick = onOpenStats)
+            HubRow(
+                text = stringResource(R.string.year_review_hub),
+                tag = TestTags.Hub.YEAR_REVIEW,
+                onClick = onOpenYearReview,
+            )
         }
     }
 }

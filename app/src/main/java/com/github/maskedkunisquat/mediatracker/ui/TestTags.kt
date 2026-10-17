@@ -45,6 +45,7 @@ object TestTags {
         const val SHOWS = "hub:shows"
         const val ALL_MEDIA = "hub:allMedia"
         const val STATS = "hub:stats"
+        const val YEAR_REVIEW = "hub:yearReview"
     }
 
     object Stats {
@@ -55,10 +56,19 @@ object TestTags {
         const val CHARTS_CARD = "stats:charts"
         const val DOMAINS = "stats:domains"
         const val TOP_SHOWS_CARD = "stats:topShows"
+        const val YEAR_REVIEW_CARD = "stats:yearReview"
         const val DAYPART_CHART = "stats:daypartChart"
         const val WEEKDAY_CHART = "stats:weekdayChart"
         const val AUTHORS_CARD = "stats:authors"
         const val FORMATS_CARD = "stats:formats"
+    }
+
+    object YearReview {
+        const val PAGER = "yearReview:pager"
+        const val CLOSE = "yearReview:close"
+
+        /** One page's root, by its kind (YEAR, TOTALS, LONGEST_BOOK, … SUMMARY). */
+        fun page(kind: String): String = "yearReview:page:$kind"
     }
 
     object Library {

@@ -373,7 +373,7 @@ class StatsViewModelTest {
 
             assertEquals(null, state.goal)
             // Positive control: the goal really is stored.
-            assertEquals(ReadingGoal(2023, 20), settingsRepository.observeReadingGoal().first())
+            assertEquals(ReadingGoal(2023, 20), settingsRepository.observeReadingGoal(2023).first())
         }
 
     @Test
