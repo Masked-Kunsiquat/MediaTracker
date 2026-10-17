@@ -30,6 +30,7 @@ import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowSearchScreenRoute
 import com.github.maskedkunisquat.mediatracker.ui.screens.UpNextScreenRoute
+import com.github.maskedkunisquat.mediatracker.ui.screens.YearReviewScreenRoute
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.ui.AppContainer
 
@@ -67,6 +68,7 @@ fun AppNavigation(
                 onOpenDomain = { navController.navigate(Route.Library.createRoute(it)) },
                 onOpenAllMedia = { navController.navigate(Route.Library.createRoute(null)) },
                 onOpenStats = { navController.navigate(Route.Stats.createRoute(null)) },
+                onOpenYearReview = { navController.navigate(Route.YearReview.createRoute(null)) },
                 onOpenSettings = { navController.navigate(Route.Settings.route) },
             )
         }
@@ -316,6 +318,27 @@ fun AppNavigation(
         }
 
         guardedComposable(
+            route = Route.YearReview.route,
+            arguments =
+                listOf(
+                    navArgument(Route.YearReview.ARG_YEAR) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+        ) { backStackEntry ->
+            YearReviewScreenRoute(
+                appContainer = appContainer,
+                initialYear =
+                    Route.YearReview.parseYear(
+                        backStackEntry.arguments?.getString(Route.YearReview.ARG_YEAR),
+                    ),
+                onClose = { navController.navigateUp() },
+            )
+        }
+
+        guardedComposable(
             route = Route.Stats.route,
             arguments =
                 listOf(
@@ -328,6 +351,7 @@ fun AppNavigation(
         ) { backStackEntry ->
             StatsScreenRoute(
                 appContainer = appContainer,
+                onOpenYearReview = { navController.navigate(Route.YearReview.createRoute(null)) },
                 domain = Route.Stats.parseDomain(backStackEntry.arguments?.getString(Route.Stats.ARG_DOMAIN)),
                 onNavigateBack = {
                     navController.navigateUp()

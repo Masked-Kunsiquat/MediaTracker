@@ -51,6 +51,7 @@ class HubScreenGoldenTest {
             onOpenDomain = {},
             onOpenAllMedia = {},
             onOpenStats = {},
+            onOpenYearReview = {},
             onOpenSettings = {},
         )
     }

@@ -198,6 +198,17 @@ sealed interface Route {
         fun parseDomain(arg: String?): MediaType? = MediaType.entries.firstOrNull { it.name == arg }
     }
 
+    /** The year in review (#221), on [ARG_YEAR] or this year. */
+    data object YearReview : Route {
+        const val ARG_YEAR: String = "year"
+        override val route: String = "year_review?$ARG_YEAR={$ARG_YEAR}"
+
+        fun createRoute(year: Int?): String = if (year == null) "year_review" else "year_review?$ARG_YEAR=$year"
+
+        /** The year from a route argument; absent or unreadable is this year. */
+        fun parseYear(arg: String?): Int? = arg?.toIntOrNull()
+    }
+
     /**
      * Settings screen: app-wide preferences, starting with the week-start-day preference that
      * drives [Stats]'s period bounds (ROADMAP Task 7 Phase B).

@@ -39,6 +39,7 @@ class HubScreenTest {
                     onOpenDomain = { opened += it.name },
                     onOpenAllMedia = { opened += "all" },
                     onOpenStats = { opened += "stats" },
+                    onOpenYearReview = { opened += "yearReview" },
                     onOpenSettings = { opened += "settings" },
                 )
             }
@@ -113,5 +114,14 @@ class HubScreenTest {
         for (tag in listOf(TestTags.Hub.ALL_MEDIA, TestTags.Hub.STATS, TestTags.Hub.BOOKS)) {
             composeRule.onNodeWithTag(tag).assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
         }
+    }
+
+    @Test
+    fun theYearInReviewRow_opensIt() {
+        setContent()
+
+        composeRule.onNodeWithTag(TestTags.Hub.YEAR_REVIEW).performClick()
+
+        assertEquals(listOf("yearReview"), opened)
     }
 }

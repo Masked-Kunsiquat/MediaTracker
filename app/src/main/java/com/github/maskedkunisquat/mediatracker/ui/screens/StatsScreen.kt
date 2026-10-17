@@ -18,6 +18,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,6 +75,7 @@ import com.hub.media.ui.StatsViewModel
 fun StatsScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
+    onOpenYearReview: () -> Unit,
     domain: MediaType? = null,
 ) {
     val viewModel: StatsViewModel =
@@ -89,6 +91,7 @@ fun StatsScreenRoute(
         uiState = uiState,
         onSelectPeriod = viewModel::selectPeriod,
         onSelectDomain = viewModel::selectDomain,
+        onOpenYearReview = onOpenYearReview,
         onSetGoal = viewModel::setGoal,
         onClearGoal = viewModel::clearGoal,
         onNavigateBack = onNavigateBack,
@@ -122,6 +125,7 @@ fun StatsScreen(
     uiState: StatsUiState,
     onSelectPeriod: (StatsPeriod) -> Unit,
     onSelectDomain: (MediaType) -> Unit,
+    onOpenYearReview: () -> Unit,
     onSetGoal: (Int) -> Unit,
     onClearGoal: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -187,6 +191,12 @@ fun StatsScreen(
                     }
                     item {
                         StatsPeriodRow(selected = uiState.period, onSelect = onSelectPeriod)
+                    }
+                    // The year in review (#221), offered on the Year view of every tab.
+                    if (uiState.period == StatsPeriod.YEAR) {
+                        item {
+                            YearReviewCard(year = uiState.goalYear, onClick = onOpenYearReview)
+                        }
                     }
                     val viewing = uiState.viewing
                     if (uiState.domain != MediaType.BOOK && viewing != null) {
@@ -456,6 +466,27 @@ private fun StatsPeriodRow(
     }
 }
 
+/** "Your 2026 so far": opens the year in review (#221). */
+@Composable
+private fun YearReviewCard(
+    year: Int,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth().testTag(TestTags.Stats.YEAR_REVIEW_CARD),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = stringResource(R.string.year_review_title_so_far, year),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(text = stringResource(R.string.year_review_card_hint), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
 /** Books, Films or Shows (#217): one choice, like the period chips beneath it. */
 @Composable
 private fun StatsDomainRow(
@@ -555,6 +586,7 @@ private fun StatsScreenLoadingPreview() {
             uiState = StatsUiState(isLoading = true),
             onSelectPeriod = {},
             onSelectDomain = {},
+            onOpenYearReview = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -577,6 +609,7 @@ private fun StatsScreenPopulatedPreview() {
                 ),
             onSelectPeriod = {},
             onSelectDomain = {},
+            onOpenYearReview = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -601,6 +634,7 @@ private fun StatsScreenEmptyPreview() {
                 ),
             onSelectPeriod = {},
             onSelectDomain = {},
+            onOpenYearReview = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},

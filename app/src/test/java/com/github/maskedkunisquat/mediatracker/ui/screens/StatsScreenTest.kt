@@ -57,6 +57,7 @@ class StatsScreenTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val picked = mutableListOf<StatsPeriod>()
     private val domains = mutableListOf<MediaType>()
+    private var yearReviews = 0
 
     private fun string(id: Int) = context.getString(id)
 
@@ -67,6 +68,7 @@ class StatsScreenTest {
                     uiState = state,
                     onSelectPeriod = { picked += it },
                     onSelectDomain = { domains += it },
+                    onOpenYearReview = { yearReviews++ },
                     onSetGoal = {},
                     onClearGoal = {},
                     onNavigateBack = {},
@@ -144,6 +146,7 @@ class StatsScreenTest {
                     uiState = loaded(period = period),
                     onSelectPeriod = {},
                     onSelectDomain = {},
+                    onOpenYearReview = {},
                     onSetGoal = {},
                     onClearGoal = {},
                     onNavigateBack = {},
@@ -766,5 +769,30 @@ class StatsScreenTest {
         composeRule.onNode(hasText(string(R.string.stats_close)) and hasClickAction()).performScrollTo().performClick()
 
         composeRule.onNodeWithText(string(R.string.stats_close)).assertDoesNotExist()
+    }
+
+    /** The year in review opens from a card on the Year view, on any tab (#221). */
+    @Test
+    fun theYearView_offersTheYearInReview() {
+        setContent(loaded(period = StatsPeriod.YEAR))
+        val card = context.getString(R.string.year_review_title_so_far, 2024)
+
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.YEAR_REVIEW_CARD))
+        composeRule
+            .onNodeWithTag(
+                TestTags.Stats.YEAR_REVIEW_CARD,
+            ).assert(hasText(card, substring = true))
+            .performClick()
+
+        assertEquals(1, yearReviews)
+    }
+
+    @Test
+    fun otherPeriods_doNotOfferIt() {
+        setContent(loaded(period = StatsPeriod.MONTH))
+
+        // Positive control: the screen is drawn.
+        composeRule.onNodeWithTag(TestTags.Stats.PERIODS).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.YEAR_REVIEW_CARD).assertDoesNotExist()
     }
 }
