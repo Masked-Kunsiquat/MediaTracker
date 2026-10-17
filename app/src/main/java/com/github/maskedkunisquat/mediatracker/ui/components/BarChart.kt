@@ -17,6 +17,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import java.time.Month
@@ -41,6 +42,7 @@ fun BarChart(
     labels: List<String>,
     description: String,
     modifier: Modifier = Modifier,
+    barHeight: Dp = 120.dp,
 ) {
     require(values.size == labels.size) { "One label per bar: ${values.size} values, ${labels.size} labels" }
     val barColor = MaterialTheme.colorScheme.primary
@@ -52,7 +54,7 @@ fun BarChart(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(120.dp),
+                    .height(barHeight),
         ) {
             val slot = size.width / values.size
             val barWidth = slot * 0.6f
@@ -94,6 +96,21 @@ fun MonthChart(
 ) {
     require(counts.size == 12) { "One count per month, got ${counts.size}" }
     val locale = LocalConfiguration.current.locales[0]
+    BarChart(
+        values = counts.map { it.toLong() },
+        labels = Month.entries.map { it.getDisplayName(TextStyle.NARROW, locale) },
+        description = monthsDescription(counts),
+        modifier = modifier,
+    )
+}
+
+/**
+ * The months with something, read aloud ("January: 1 book, June: 2 books"), or that there is
+ * nothing yet. Shared by [MonthChart] and its tile (#217).
+ */
+@Composable
+fun monthsDescription(counts: List<Int>): String {
+    val locale = LocalConfiguration.current.locales[0]
     val entries =
         counts.mapIndexedNotNull { index, count ->
             if (count == 0) {
@@ -103,17 +120,5 @@ fun MonthChart(
                 pluralStringResource(R.plurals.stats_month_chart_entry, count, month, count)
             }
         }
-    BarChart(
-        values = counts.map { it.toLong() },
-        labels = Month.entries.map { it.getDisplayName(TextStyle.NARROW, locale) },
-        description =
-            if (entries.isEmpty()) {
-                stringResource(
-                    R.string.stats_month_chart_empty,
-                )
-            } else {
-                entries.joinToString()
-            },
-        modifier = modifier,
-    )
+    return if (entries.isEmpty()) stringResource(R.string.stats_month_chart_empty) else entries.joinToString()
 }

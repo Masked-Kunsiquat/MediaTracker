@@ -52,7 +52,7 @@ object TestTags {
         const val PERIODS = "stats:periods"
         const val GOAL_CARD = "stats:goal"
         const val MONTH_CHART = "stats:monthChart"
-        const val WHEN_CARD = "stats:when"
+        const val CHARTS_CARD = "stats:charts"
         const val DAYPART_CHART = "stats:daypartChart"
         const val WEEKDAY_CHART = "stats:weekdayChart"
         const val AUTHORS_CARD = "stats:authors"

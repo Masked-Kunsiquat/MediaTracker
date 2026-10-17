@@ -87,6 +87,23 @@ class ReadingBreakdownTest {
         }
     }
 
+    /** The clock dial's 24 slots (#217): the local hour a session starts in, in seconds. */
+    @Test
+    fun hours_areTheLocalStartHour_andAddUpToTheTotal() {
+        val newYork = TimeZone.of("America/New_York")
+        val b =
+            breakdown(
+                row(june17(21, 30), 600, zone = newYork),
+                row(june17(7, 15), 300, zone = newYork),
+                zone = newYork,
+            )
+
+        assertEquals(24, b.hours.size)
+        assertEquals(600L, b.hours[21])
+        assertEquals(300L, b.hours[7])
+        assertEquals(b.totalSeconds, b.hours.sum())
+    }
+
     @Test
     fun theWeekdaysStartOnTheWeekStart() {
         assertEquals(DayOfWeek.MONDAY.isoDayNumber, breakdown(weekStart = WeekStartDay.MONDAY).weekdays.first())

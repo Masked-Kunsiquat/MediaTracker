@@ -36,6 +36,8 @@ public data class FormatTime(
  * @property topAuthors At most [TOP_AUTHORS], most time first, ties by name. A co-author gets the
  *   whole session's time.
  * @property formats Every format with time, most first, ties in [BookFormat]'s order.
+ * @property hours Seconds per local start hour, midnight first: the clock dial's 24 slots (#217).
+ *   [dayParts] is these grouped by [dayPartOf].
  */
 public data class ReadingBreakdown(
     val dayParts: List<Long> = List(DayPart.entries.size) { 0L },
@@ -44,6 +46,7 @@ public data class ReadingBreakdown(
     val topAuthors: List<AuthorTime> = emptyList(),
     val formats: List<FormatTime> = emptyList(),
     val totalSeconds: Long = 0,
+    val hours: List<Long> = List(24) { 0L },
 )
 
 /** How many authors the top-authors card lists. */
@@ -78,6 +81,7 @@ public fun readingBreakdown(
     val weekdays = List(7) { (weekStart.isoDayNumber - 1 + it) % 7 + 1 }
     val dayParts = LongArray(DayPart.entries.size)
     val weekdaySeconds = LongArray(7)
+    val hours = LongArray(24)
     val formatSeconds = mutableMapOf<BookFormat, Long>()
     // key -> spelling -> seconds
     val authorSeconds = mutableMapOf<String, MutableMap<String, Long>>()
@@ -85,6 +89,7 @@ public fun readingBreakdown(
     for (row in rows) {
         val local = row.timestampStart.toLocalDateTime(timeZone)
         dayParts[dayPartOf(local.hour).ordinal] += row.durationSeconds
+        hours[local.hour] += row.durationSeconds
         weekdaySeconds[weekdays.indexOf(local.dayOfWeek.isoDayNumber)] += row.durationSeconds
         formatSeconds[row.format] = (formatSeconds[row.format] ?: 0L) + row.durationSeconds
         for (name in splitAuthors(row.authors)) {
@@ -118,5 +123,6 @@ public fun readingBreakdown(
         topAuthors = topAuthors,
         formats = formats,
         totalSeconds = rows.sumOf { it.durationSeconds },
+        hours = hours.toList(),
     )
 }

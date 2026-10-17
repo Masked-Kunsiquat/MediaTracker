@@ -48,7 +48,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.components.MonthChart
 import com.github.maskedkunisquat.mediatracker.ui.components.ReadingGoalDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
@@ -94,7 +93,7 @@ fun StatsScreenRoute(
  *
  * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator]; otherwise the period
  * picker ([StatsPeriodRow]), one [PeriodCard] for the chosen [StatsUiState.period], and the current
- * reading streak ([StreakCard]) (#91). Since #219 the Year view adds a [MonthChartCard], and every
+ * reading streak ([StreakCard]) (#91). Since #219 every
  * period shows this year's reading goal ([GoalCard]), which opens [ReadingGoalDialog] when tapped.
  *
  * A `null` [StatsUiState.Period.timeReadSeconds]/[StatsUiState.Period.pagesRead] means no session
@@ -185,11 +184,6 @@ fun StatsScreen(
                             finishOutcomes = uiState.finishOutcomes,
                         )
                     }
-                    uiState.finishesByMonth?.let { months ->
-                        item {
-                            MonthChartCard(months)
-                        }
-                    }
                     item {
                         GoalCard(goal = uiState.goal, goalYear = uiState.goalYear, onClick = { showGoalDialog = true })
                     }
@@ -197,7 +191,20 @@ fun StatsScreen(
                         StreakCard(streakDays = uiState.currentStreakDays)
                     }
                     item {
-                        WhenYouReadCard(uiState.breakdown)
+                        ChartsCard(
+                            data =
+                                ChartsData(
+                                    hours = uiState.breakdown.hours,
+                                    dayParts = uiState.breakdown.dayParts,
+                                    weekdays = uiState.breakdown.weekdays,
+                                    weekdayValues = uiState.breakdown.weekdaySeconds,
+                                    months = uiState.finishesByMonth,
+                                    formatValue = { formatDuration(it) },
+                                ),
+                            whenTitle = stringResource(R.string.stats_when_title),
+                            monthsTitle = stringResource(R.string.stats_month_chart_title),
+                            emptyText = stringResource(R.string.stats_no_timed_reading),
+                        )
                     }
                     item {
                         TopAuthorsCard(
@@ -309,23 +316,6 @@ private fun PeriodCard(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-        }
-    }
-}
-
-/** The Year view's chart of books finished each month (#219). */
-@Composable
-private fun MonthChartCard(months: List<Int>) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(text = stringResource(R.string.stats_month_chart_title), style = MaterialTheme.typography.titleMedium)
-            MonthChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
         }
     }
 }

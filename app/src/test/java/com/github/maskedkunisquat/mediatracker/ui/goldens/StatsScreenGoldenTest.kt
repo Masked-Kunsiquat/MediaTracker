@@ -62,7 +62,7 @@ class StatsScreenGoldenTest {
     fun statsYear() {
         composeRule.captureGolden(
             name = "stats-year",
-            alsoAssert = { assertTextIsShown("This year", "Books finished by month", "Speed") },
+            alsoAssert = { assertTextIsShown("This year", "By month", "Speed") },
         ) { YearFixture() }
     }
 
@@ -78,7 +78,7 @@ class StatsScreenGoldenTest {
             name = "stats-breakdown",
             alsoAssert = {
                 onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.FORMATS_CARD))
-                assertTextIsShown("When you read", "Top authors", "Formats", "<1%")
+                assertTextIsShown("Charts", "Top authors", "Formats", "<1%")
             },
         ) { BreakdownFixture() }
     }
@@ -88,6 +88,7 @@ class StatsScreenGoldenTest {
         val breakdown =
             ReadingBreakdown(
                 dayParts = listOf(9_000L, 2_400L, 14_400L, 4_200L),
+                hours = hoursFrom(listOf(9_000L, 2_400L, 14_400L, 4_200L)),
                 weekdays = List(7) { it + 1 },
                 weekdaySeconds = listOf(3_000L, 0L, 4_800L, 2_100L, 0L, 9_600L, 10_500L),
                 topAuthors =
@@ -153,6 +154,7 @@ class StatsScreenGoldenTest {
                     breakdown =
                         ReadingBreakdown(
                             dayParts = listOf(20_520L, 8_208L, 41_040L, 12_312L),
+                            hours = hoursFrom(listOf(20_520L, 8_208L, 41_040L, 12_312L)),
                             weekdays = List(7) { it + 1 },
                             weekdaySeconds = listOf(8_208L, 4_104L, 12_312L, 8_208L, 4_104L, 20_520L, 24_624L),
                             topAuthors = listOf(AuthorTime("Ursula K. Le Guin", 41_040)),
@@ -191,5 +193,32 @@ class StatsScreenGoldenTest {
             onClearGoal = {},
             onNavigateBack = {},
         )
+    }
+
+    /**
+     * 24 hours consistent with four part-of-day totals, as real data always is (#217): each part's
+     * time spread over its own hours, rising towards the middle of the part so the dial reads like a
+     * real day rather than four flat blocks. Sums exactly to each part.
+     */
+    private fun hoursFrom(dayParts: List<Long>): List<Long> {
+        val partHours =
+            listOf(
+                (5..11).toList(),
+                (12..16).toList(),
+                (17..20).toList(),
+                (21..23).toList() + (0..4).toList(),
+            )
+        val hours = LongArray(24)
+        for ((part, slots) in partHours.withIndex()) {
+            val weights = slots.indices.map { minOf(it, slots.lastIndex - it) + 1L }
+            val total = dayParts[part]
+            var given = 0L
+            slots.forEachIndexed { i, hour ->
+                val share = if (i == slots.lastIndex) total - given else total * weights[i] / weights.sum()
+                hours[hour] = share
+                given += share
+            }
+        }
+        return hours.toList()
     }
 }

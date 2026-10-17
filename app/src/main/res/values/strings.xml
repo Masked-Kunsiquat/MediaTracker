@@ -264,6 +264,19 @@
         <item quantity="other">%1$s: %2$d books</item>
     </plurals>
     <string name="stats_when_title">When you read</string>
+    <string name="stats_charts_title">Charts</string>
+    <string name="stats_busiest">busiest</string>
+    <string name="stats_show_larger">Show larger</string>
+    <string name="stats_close">Close</string>
+    <string name="stats_chart_time_of_day">Time of day</string>
+    <string name="stats_chart_weekdays">Weekdays</string>
+    <string name="stats_chart_by_month">By month</string>
+    <!-- A chart tile, read aloud: "Time of day, Evenings. Evening: 2h 0m". -->
+    <string name="stats_tile_description">%1$s, %2$s. %3$s</string>
+    <string name="stats_daypart_mornings">Mornings</string>
+    <string name="stats_daypart_afternoons">Afternoons</string>
+    <string name="stats_daypart_evenings">Evenings</string>
+    <string name="stats_daypart_nights">Nights</string>
     <string name="stats_daypart_morning">Morning</string>
     <string name="stats_daypart_afternoon">Afternoon</string>
     <string name="stats_daypart_evening">Evening</string>

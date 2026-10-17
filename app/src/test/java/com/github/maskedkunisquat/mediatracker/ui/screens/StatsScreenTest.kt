@@ -315,7 +315,7 @@ class StatsScreenTest {
         composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.MONTH_CHART))
         composeRule
             .onNodeWithTag(TestTags.Stats.MONTH_CHART)
-            .assert(hasContentDescription(string(R.string.stats_month_chart_empty)))
+            .assert(hasContentDescription(string(R.string.stats_month_chart_empty), substring = true))
     }
 
     @Test
@@ -343,6 +343,8 @@ class StatsScreenTest {
         topAuthors = authors,
         formats = formats,
         totalSeconds = dayParts.sum(),
+        // Consistent with dayParts, as real data always is: each part's time in one hour inside it.
+        hours = List(24) { h -> mapOf(8 to 0, 14 to 1, 18 to 2, 22 to 3)[h]?.let { dayParts[it] } ?: 0L },
     )
 
     private fun inCard(
@@ -357,7 +359,7 @@ class StatsScreenTest {
     fun aPopulatedBreakdown_fillsTheThreeCards() {
         setContent(loaded(breakdown = breakdown()))
 
-        inCard(TestTags.Stats.WHEN_CARD, string(R.string.stats_when_title)).assertExists()
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_charts_title)).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.WEEKDAY_CHART).assertExists()
         inCard(TestTags.Stats.AUTHORS_CARD, "Ursula K. Le Guin").assertExists()
@@ -371,7 +373,7 @@ class StatsScreenTest {
         setContent(loaded(breakdown = ReadingBreakdown(weekdays = week)))
         val none = string(R.string.stats_no_timed_reading)
 
-        inCard(TestTags.Stats.WHEN_CARD, none).assertExists()
+        inCard(TestTags.Stats.CHARTS_CARD, none).assertExists()
         inCard(TestTags.Stats.AUTHORS_CARD, none).assertExists()
         inCard(TestTags.Stats.FORMATS_CARD, none).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertDoesNotExist()
@@ -485,5 +487,76 @@ class StatsScreenTest {
                 .joinToString()
         assertTrue(description, string(R.string.stats_daypart_morning) in description)
         assertTrue(description, string(R.string.stats_daypart_afternoon) !in description)
+    }
+
+    // --- #217: charts as tiles that open larger -------------------------------------------------
+
+    private fun hourly(vararg busy: Pair<Int, Long>): List<Long> =
+        List(24) { h ->
+            busy.firstOrNull { it.first == h }?.second
+                ?: 0L
+        }
+
+    private fun timed() =
+        breakdown(dayParts = listOf(0L, 0L, 7_200L, 0L)).copy(hours = hourly(19 to 3_600L, 20 to 3_600L))
+
+    private fun scrollToTile(tag: String) {
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(tag))
+    }
+
+    @Test
+    fun theTimeOfDayTile_isAButton_captionedWithTheBusiestPart() {
+        setContent(loaded(breakdown = timed()))
+
+        scrollToTile(TestTags.Stats.DAYPART_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assert(hasClickAction())
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_daypart_evenings)).assertExists()
+    }
+
+    @Test
+    fun tappingTheTimeOfDayTile_showsItLarger_withItsNumbers_andCloseDismisses() {
+        setContent(loaded(breakdown = timed()))
+        scrollToTile(TestTags.Stats.DAYPART_CHART)
+
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).performClick()
+
+        // The legend: the evening's two hours, in words, only in the larger view.
+        composeRule.onNodeWithText(string(R.string.stats_daypart_evening)).assertExists()
+        composeRule.onNodeWithText("2h 0m").assertExists()
+        composeRule.onNode(hasText(string(R.string.stats_close)) and hasClickAction()).performClick()
+        composeRule.onNodeWithText(string(R.string.stats_close)).assertDoesNotExist()
+    }
+
+    @Test
+    fun theMonthTile_isOnlyOnTheYearView() {
+        setContent(
+            loaded(
+                period = StatsPeriod.YEAR,
+                breakdown = timed(),
+                finishesByMonth =
+                    List(12) {
+                        if (it ==
+                            1
+                        ) {
+                            2
+                        } else {
+                            0
+                        }
+                    },
+            ),
+        )
+
+        scrollToTile(TestTags.Stats.MONTH_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.MONTH_CHART).assert(hasClickAction())
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_chart_by_month)).assertExists()
+    }
+
+    @Test
+    fun theWeekdayTile_isCaptionedWithTheBusiestDay() {
+        // The fixture's weekday seconds all fall on its first day, a Monday.
+        setContent(loaded(breakdown = timed()))
+
+        scrollToTile(TestTags.Stats.WEEKDAY_CHART)
+        inCard(TestTags.Stats.CHARTS_CARD, "Monday").assertExists()
     }
 }
