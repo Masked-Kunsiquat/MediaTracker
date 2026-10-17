@@ -125,6 +125,29 @@ The weekday and day-part charts count viewings rather than time, for the reason 
   - the same empty state.
 - The goal, streak, authors and formats cards stay on the Books tab.
 
+## 6a. The time-of-day clock (owner, 2026-10-17)
+
+The parts-of-the-day **bars are replaced by a 24-hour heat dial**, a shared `ClockDial` component
+drawn on `Canvas` with the theme's colours and no library. It is used on all three tabs, so Books'
+"When you read" changes too; Books' numbers do not.
+
+- **The ring:** 24 hour wedges, midnight at the top, clockwise. Each wedge is filled with
+  `colorScheme.primary` at an alpha scaled to that hour's value over the busiest hour's (a floor so
+  the lightest real hour is still visible). An empty hour is drawn as a faint outline in
+  `outlineVariant`, so the ring is always a whole clock.
+- **Quarter labels** follow the phone's clock setting: "12a 6a 12p 6p" in 12-hour mode, "00 06 12 18"
+  in 24-hour mode.
+- **The centre** names the busiest part of the day ("Evenings"), from the same four parts as before.
+- **The legend** below the dial has one line per part with its value: time for Books ("Evening ·
+  5h 30m"), viewings for Films and Shows ("Evening · 12 viewings"). It gives the numbers that
+  shading alone cannot, and it is what TalkBack reads; the dial itself is one node, described the way
+  the bar charts are.
+- **Data:** `ReadingBreakdown` gains `hours: List<Long>` (24 slots, seconds) beside `dayParts`, and
+  `ViewingBreakdown` gains `hours: List<Int>` (24 slots, viewings, exact-noon viewings left out).
+  `dayParts` stays, as the sum of its hours, for the centre and the legend.
+- **Golden:** `clock-dial`, with a busy evening and an empty early morning; the existing
+  `stats-breakdown` golden is re-recorded.
+
 ## 7. Date-only imports (for later)
 
 A future import whose source records only a date (likely for some streaming services) must store
