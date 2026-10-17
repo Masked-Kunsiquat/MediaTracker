@@ -53,6 +53,8 @@ object TestTags {
         const val GOAL_CARD = "stats:goal"
         const val MONTH_CHART = "stats:monthChart"
         const val CHARTS_CARD = "stats:charts"
+        const val DOMAINS = "stats:domains"
+        const val TOP_SHOWS_CARD = "stats:topShows"
         const val DAYPART_CHART = "stats:daypartChart"
         const val WEEKDAY_CHART = "stats:weekdayChart"
         const val AUTHORS_CARD = "stats:authors"

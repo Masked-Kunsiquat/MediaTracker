@@ -27,13 +27,17 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.AuthorTime
 import com.hub.media.features.stats.data.FormatTime
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
+import com.hub.media.features.stats.data.TitleTime
+import com.hub.media.features.stats.data.ViewingBreakdown
 import com.hub.media.ui.StatsUiState
+import com.hub.media.ui.ViewingStats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -51,6 +55,7 @@ class StatsScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val picked = mutableListOf<StatsPeriod>()
+    private val domains = mutableListOf<MediaType>()
 
     private fun string(id: Int) = context.getString(id)
 
@@ -60,6 +65,7 @@ class StatsScreenTest {
                 StatsScreen(
                     uiState = state,
                     onSelectPeriod = { picked += it },
+                    onSelectDomain = { domains += it },
                     onSetGoal = {},
                     onClearGoal = {},
                     onNavigateBack = {},
@@ -136,6 +142,7 @@ class StatsScreenTest {
                 StatsScreen(
                     uiState = loaded(period = period),
                     onSelectPeriod = {},
+                    onSelectDomain = {},
                     onSetGoal = {},
                     onClearGoal = {},
                     onNavigateBack = {},
@@ -558,5 +565,162 @@ class StatsScreenTest {
 
         scrollToTile(TestTags.Stats.WEEKDAY_CHART)
         inCard(TestTags.Stats.CHARTS_CARD, "Monday").assertExists()
+    }
+
+    // --- #217: the Films and Shows tabs ----------------------------------------------------------
+
+    private fun viewing(
+        domain: MediaType,
+        breakdown: ViewingBreakdown,
+        period: StatsPeriod = StatsPeriod.MONTH,
+        showsFinished: Int? = null,
+    ) = StatsUiState(
+        isLoading = false,
+        period = period,
+        domain = domain,
+        goalYear = 2024,
+        viewing = ViewingStats(breakdown, showsFinished),
+    )
+
+    private fun watched(
+        viewings: Int = 9,
+        rewatches: Int = 2,
+        titles: Int = 4,
+        knownSeconds: Long? = 51_600,
+        unknownRuntime: Int = 1,
+        hours: List<Int> = List(24) { if (it == 20) 9 else 0 },
+        untimed: Int = 0,
+        topTitles: List<TitleTime> = emptyList(),
+    ) = ViewingBreakdown(
+        viewings = viewings,
+        rewatches = rewatches,
+        titles = titles,
+        knownSeconds = knownSeconds,
+        unknownRuntime = unknownRuntime,
+        hours = hours,
+        dayParts = listOf(0, 0, hours.sum(), 0),
+        untimed = untimed,
+        weekdays = week,
+        weekdayCounts = listOf(viewings, 0, 0, 0, 0, 0, 0),
+        topTitles = topTitles,
+    )
+
+    private fun domainChip(id: Int) =
+        composeRule.onNode(
+            hasText(string(id)) and hasClickAction() and hasAnyAncestor(hasTestTag(TestTags.Stats.DOMAINS)),
+        )
+
+    @Test
+    fun theDomainChips_pickATab_andShowWhichIsSelected() {
+        setContent(viewing(MediaType.MOVIE, watched()))
+
+        domainChip(R.string.stats_domain_films).assertIsSelected()
+        domainChip(R.string.stats_domain_shows).performClick()
+        domainChip(R.string.stats_domain_books).performClick()
+
+        assertEquals(listOf(MediaType.TV_SHOW, MediaType.BOOK), domains)
+        composeRule
+            .onNodeWithTag(
+                TestTags.Stats.DOMAINS,
+            ).assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+    }
+
+    @Test
+    fun films_countViewings_withRewatches() {
+        setContent(viewing(MediaType.MOVIE, watched(viewings = 9, rewatches = 2)))
+
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_films_watched_rewatches, 2, 9, 2),
+            ).assertExists()
+    }
+
+    @Test
+    fun films_withNoRewatches_justCountViewings() {
+        setContent(viewing(MediaType.MOVIE, watched(viewings = 3, rewatches = 0)))
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_films_watched, 3)).assertExists()
+    }
+
+    @Test
+    fun timeWatched_namesTheViewingsWithoutARuntime() {
+        setContent(viewing(MediaType.MOVIE, watched(knownSeconds = 51_600, unknownRuntime = 1)))
+        val value = context.getString(R.string.stats_time_with_unknown, "14h 20m", 1)
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_time_watched_label, value)).assertExists()
+    }
+
+    @Test
+    fun timeWatched_withNoRuntimeKnown_isUnknown_notZero() {
+        setContent(viewing(MediaType.MOVIE, watched(knownSeconds = null, unknownRuntime = 9)))
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.stats_time_watched_label, string(R.string.stats_unknown_value)))
+            .assertExists()
+    }
+
+    @Test
+    fun shows_countEpisodesAcrossShows_andFinishedOnAllTime() {
+        setContent(
+            viewing(MediaType.TV_SHOW, watched(viewings = 34, titles = 4), StatsPeriod.ALL_TIME, showsFinished = 3),
+        )
+
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_episodes_watched, 4, 34, 4),
+            ).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.stats_shows_finished_label, 3)).assertExists()
+    }
+
+    @Test
+    fun showsFinished_isNotShownWhenUnknown() {
+        setContent(viewing(MediaType.TV_SHOW, watched(), StatsPeriod.WEEK, showsFinished = null))
+
+        // Positive control: the Shows card is drawn.
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_episodes_watched, 4, 9, 4),
+            ).assertExists()
+        composeRule.onNode(hasText("Shows finished", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun everyViewingUntimed_hidesTheClock_andSaysSo() {
+        setContent(viewing(MediaType.MOVIE, watched(hours = List(24) { 0 }, untimed = 9)))
+
+        scrollToTile(TestTags.Stats.WEEKDAY_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertDoesNotExist()
+        inCard(
+            TestTags.Stats.CHARTS_CARD,
+            context.resources.getQuantityString(R.plurals.stats_untimed, 9, 9),
+        ).assertExists()
+    }
+
+    @Test
+    fun topShows_listTheirTime() {
+        setContent(viewing(MediaType.TV_SHOW, watched(topTitles = listOf(TitleTime("Severance", 22_200)))))
+
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, "Severance").assertExists()
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, "6h 10m").assertExists()
+    }
+
+    @Test
+    fun nothingWatched_saysSo() {
+        setContent(viewing(MediaType.MOVIE, ViewingBreakdown(weekdays = week)))
+
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_nothing_watched)).assertExists()
+    }
+
+    @Test
+    fun theGoalAndStreak_stayOnTheBooksTab() {
+        setContent(viewing(MediaType.MOVIE, watched()))
+
+        // Positive control: the Films card is drawn.
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_films_watched_rewatches, 2, 9, 2),
+            ).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.GOAL_CARD).assertDoesNotExist()
+        composeRule.onNode(hasText("streak", substring = true)).assertDoesNotExist()
     }
 }

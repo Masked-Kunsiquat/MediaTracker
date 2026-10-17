@@ -94,6 +94,7 @@ fun StatsScreenRoute(
     StatsScreen(
         uiState = uiState,
         onSelectPeriod = viewModel::selectPeriod,
+        onSelectDomain = viewModel::selectDomain,
         onSetGoal = viewModel::setGoal,
         onClearGoal = viewModel::clearGoal,
         onNavigateBack = onNavigateBack,
@@ -126,6 +127,7 @@ fun StatsScreenRoute(
 fun StatsScreen(
     uiState: StatsUiState,
     onSelectPeriod: (StatsPeriod) -> Unit,
+    onSelectDomain: (MediaType) -> Unit,
     onSetGoal: (Int) -> Unit,
     onClearGoal: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -187,7 +189,31 @@ fun StatsScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {
+                        StatsDomainRow(selected = uiState.domain, onSelect = onSelectDomain)
+                    }
+                    item {
                         StatsPeriodRow(selected = uiState.period, onSelect = onSelectPeriod)
+                    }
+                    val viewing = uiState.viewing
+                    if (uiState.domain != MediaType.BOOK && viewing != null) {
+                        // Films and Shows (#217): their own cards; the goal, streak, authors and
+                        // formats belong to Books.
+                        item {
+                            ViewingPeriodCard(
+                                title = stringResource(uiState.period.cardTitle()),
+                                domain = uiState.domain,
+                                stats = viewing,
+                            )
+                        }
+                        item {
+                            ViewingChartsCard(domain = uiState.domain, stats = viewing)
+                        }
+                        if (uiState.domain == MediaType.TV_SHOW) {
+                            item {
+                                TopShowsCard(viewing.breakdown.topTitles)
+                            }
+                        }
+                        return@LazyColumn
                     }
                     item {
                         PeriodCard(
@@ -436,6 +462,34 @@ private fun StatsPeriodRow(
     }
 }
 
+/** Books, Films or Shows (#217): one choice, like the period chips beneath it. */
+@Composable
+private fun StatsDomainRow(
+    selected: MediaType,
+    onSelect: (MediaType) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .selectableGroup()
+                .testTag(TestTags.Stats.DOMAINS),
+    ) {
+        for ((domain, label) in listOf(
+            MediaType.BOOK to R.string.stats_domain_books,
+            MediaType.MOVIE to R.string.stats_domain_films,
+            MediaType.TV_SHOW to R.string.stats_domain_shows,
+        )) {
+            FilterChip(
+                selected = domain == selected,
+                onClick = { onSelect(domain) },
+                label = { Text(stringResource(label)) },
+            )
+        }
+    }
+}
+
 private fun StatsPeriod.chipLabel(): Int =
     when (this) {
         StatsPeriod.WEEK -> R.string.stats_period_week
@@ -506,6 +560,7 @@ private fun StatsScreenLoadingPreview() {
         StatsScreen(
             uiState = StatsUiState(isLoading = true),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -527,6 +582,7 @@ private fun StatsScreenPopulatedPreview() {
                     currentStreakDays = 5,
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -550,6 +606,7 @@ private fun StatsScreenEmptyPreview() {
                     currentStreakDays = 0,
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},

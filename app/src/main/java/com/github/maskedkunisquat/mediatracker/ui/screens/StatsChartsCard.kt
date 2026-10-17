@@ -58,6 +58,7 @@ private enum class OpenChart { TIME_OF_DAY, WEEKDAYS, MONTHS }
  *
  * @param whenTitle The time-of-day dialog's title ("When you read").
  * @param monthsTitle The by-month dialog's title ("Books finished by month").
+ * @param footnote A line under the tiles, e.g. how many viewings had no time of day.
  */
 @Composable
 internal fun ChartsCard(
@@ -65,6 +66,7 @@ internal fun ChartsCard(
     whenTitle: String,
     monthsTitle: String,
     emptyText: String,
+    footnote: String? = null,
 ) {
     var open by rememberSaveable { mutableStateOf<OpenChart?>(null) }
     val locale = LocalConfiguration.current.locales[0]
@@ -167,6 +169,13 @@ internal fun ChartsCard(
                     // An odd tile keeps its size; its neighbour's slot stays empty.
                     if (pair.size == 2) pair[1](Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
                 }
+            }
+            footnote?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

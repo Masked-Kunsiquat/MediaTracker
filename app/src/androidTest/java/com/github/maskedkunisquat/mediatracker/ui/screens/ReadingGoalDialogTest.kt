@@ -53,6 +53,7 @@ class ReadingGoalDialogTest {
                             goalYear = 2024,
                         ),
                     onSelectPeriod = {},
+                    onSelectDomain = {},
                     onSetGoal = { saved += it },
                     onClearGoal = { cleared++ },
                     onNavigateBack = {},
