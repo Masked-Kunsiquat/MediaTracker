@@ -16,6 +16,8 @@ import kotlinx.datetime.toLocalDateTime
  * @property readSeconds Known reading time.
  * @property watchSeconds Known watching time: viewings whose film or episode has a runtime.
  *   [unknownRuntime] counts the viewings left out -- never added as 0.
+ * @property untimedSessions Reading sessions logged without a duration: left out of [readSeconds]
+ *   and counted here instead, the same way (#228 review).
  */
 public data class YearTotals(
     val booksFinished: Int,
@@ -24,6 +26,7 @@ public data class YearTotals(
     val readSeconds: Long,
     val watchSeconds: Long,
     val unknownRuntime: Int,
+    val untimedSessions: Int = 0,
 )
 
 /** The finished book with the most pages. */
@@ -127,6 +130,7 @@ public fun yearReview(
             readSeconds = readSeconds,
             watchSeconds = viewings.sumOf { (it.runtimeMinutes ?: 0) * 60L },
             unknownRuntime = viewings.count { it.runtimeMinutes == null },
+            untimedSessions = periodStats.sessionCount - periodStats.timedSessionCount,
         )
     val reading = readingBreakdown(sessions, timeZone, weekStart)
 

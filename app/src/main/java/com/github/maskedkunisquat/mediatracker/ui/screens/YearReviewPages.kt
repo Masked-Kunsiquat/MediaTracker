@@ -180,6 +180,13 @@ private fun TotalsPage(review: YearReview) {
             color = LocalContentColor.current.copy(alpha = 0.7f),
         )
     }
+    if (t.untimedSessions > 0) {
+        Text(
+            text = pluralStringResource(R.plurals.year_review_untimed_sessions, t.untimedSessions, t.untimedSessions),
+            style = MaterialTheme.typography.bodyMedium,
+            color = LocalContentColor.current.copy(alpha = 0.7f),
+        )
+    }
 }
 
 @Composable

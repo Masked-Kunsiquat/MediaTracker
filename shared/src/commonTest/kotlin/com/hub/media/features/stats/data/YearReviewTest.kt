@@ -35,7 +35,8 @@ class YearReviewTest {
         booksFinished: Int = 0,
         timeRead: Long? = null,
         sessions: Int = 0,
-    ) = PeriodStatsRow(timeRead, sessions, null, booksFinished, 0, null, null, null)
+        timedSessions: Int = 0,
+    ) = PeriodStatsRow(timeRead, sessions, null, booksFinished, timedSessions, null, null, null)
 
     private fun session(
         at: Instant,
@@ -244,5 +245,20 @@ class YearReviewTest {
         assertEquals(true, review().quiet)
         assertEquals(false, review(periodStats = stats(sessions = 4)).quiet)
         assertEquals(false, review(films = listOf(film(at(1, 1), "Arrival", null))).quiet)
+    }
+
+    /**
+     * Sessions logged without a time are counted, not dropped: the totals say how many sat outside
+     * the reading time, as they do for viewings without a runtime (#228 review).
+     */
+    @Test
+    fun untimedSessions_areCounted_notAddedAsTime() {
+        val r = review(periodStats = stats(timeRead = 600, sessions = 5, timedSessions = 2))
+
+        assertEquals(3, r.totals.untimedSessions)
+        assertEquals(
+            0,
+            review(periodStats = stats(timeRead = 600, sessions = 2, timedSessions = 2)).totals.untimedSessions,
+        )
     }
 }

@@ -214,4 +214,13 @@ class YearReviewScreenTest {
         next()
         composeRule.onNodeWithText(string(R.string.year_review_quiet_past)).assertExists()
     }
+
+    @Test
+    fun theTotals_sayHowManyReadingSessionsHadNoTime() {
+        setContent(review(totals = totals.copy(untimedSessions = 3)))
+
+        next()
+        page("TOTALS").assertExists()
+        composeRule.onNodeWithText("plus 3 reading sessions without a time").assertExists()
+    }
 }
