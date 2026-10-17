@@ -44,6 +44,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
 /**
@@ -593,5 +594,42 @@ class StatsViewModelTest {
 
             assertEquals(listOf(MediaType.MOVIE), seen.distinct())
             assertEquals(MediaType.MOVIE, settingsRepository.observeStatsDomain().first(), "and it is remembered")
+        }
+
+    /**
+     * The hold-back is once per visit (#217, CodeRabbit): opened for Films, switched to Books, then
+     * left in the background past the 5-second window and resumed, Stats must follow Books -- not
+     * wait again for Films, which would freeze every number on the screen.
+     */
+    @Test
+    fun afterResuming_theHoldBackDoesNotReturn() =
+        runTest {
+            val viewModel =
+                viewModels.track(
+                    StatsViewModel(
+                        statsRepository = repository,
+                        settingsRepository = settingsRepository,
+                        timeZone = timeZone,
+                        clock = clock,
+                        initialDomain = MediaType.MOVIE,
+                    ),
+                )
+            val first =
+                backgroundScope.launch(
+                    UnconfinedTestDispatcher(testScheduler),
+                ) { viewModel.uiState.collect { } }
+            viewModel.uiState.first { it.domain == MediaType.MOVIE && !it.isLoading }
+            viewModel.selectDomain(MediaType.BOOK)
+            viewModel.uiState.first { it.domain == MediaType.BOOK }
+
+            // Leave: nobody collects for longer than WhileSubscribed's 5 seconds, so the upstream stops.
+            first.cancel()
+            viewModels.advanceMainTimeBy(6.seconds)
+            // Come back, and change something so a fresh state is needed.
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect { } }
+            viewModel.selectPeriod(StatsPeriod.YEAR)
+
+            val state = viewModel.uiState.first { it.period == StatsPeriod.YEAR }
+            assertEquals(MediaType.BOOK, state.domain)
         }
 }

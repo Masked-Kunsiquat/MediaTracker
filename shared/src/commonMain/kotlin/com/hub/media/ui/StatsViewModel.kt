@@ -31,10 +31,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -170,7 +173,20 @@ public class StatsViewModel(
      * was remembered before until that domain is stored, so the screen never shows the old tab for a
      * frame and then switches (#217 review). After that every pick passes straight through.
      */
-    private fun domains(): Flow<MediaType> = settingsRepository.observeStatsDomain().openingOn(initialDomain)
+    private fun domains(): Flow<MediaType> =
+        flow {
+            // Read per collection, and cleared once matched: the hold-back is once per visit. Stats
+            // resubscribes after a pause longer than WhileSubscribed's window, and holding back again
+            // then would wait for a tab the user has since left -- freezing every number (#217).
+            emitAll(
+                settingsRepository.observeStatsDomain().openingOn(pendingDomain).onEach {
+                    if (it == pendingDomain) pendingDomain = null
+                },
+            )
+        }
+
+    /** The library's tab, until it has been shown once; then `null`, so later resumes are not held. */
+    private var pendingDomain: MediaType? = initialDomain
 
     /** Shows [domain]'s tab -- Books, Films or Shows -- and remembers it, as [selectPeriod] does (#217). */
     public fun selectDomain(domain: MediaType) {
