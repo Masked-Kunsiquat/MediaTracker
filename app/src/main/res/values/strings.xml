@@ -265,6 +265,9 @@
     </plurals>
     <string name="stats_when_title">When you read</string>
     <string name="stats_charts_title">Charts</string>
+    <string name="stats_domain_books">Books</string>
+    <string name="stats_domain_films">Films</string>
+    <string name="stats_domain_shows">Shows</string>
     <string name="stats_busiest">busiest</string>
     <string name="stats_show_larger">Show larger</string>
     <string name="stats_close">Close</string>

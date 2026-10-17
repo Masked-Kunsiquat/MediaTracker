@@ -184,7 +184,18 @@ sealed interface Route {
      * (ROADMAP Task 5 Phase C).
      */
     data object Stats : Route {
-        override val route: String = "stats"
+        const val ARG_DOMAIN: String = "domain"
+        override val route: String = "stats?$ARG_DOMAIN={$ARG_DOMAIN}"
+
+        /**
+         * With a domain, Stats opens on that tab (a library's stats button, #217); without one -- the
+         * hub's Stats row -- it opens on the remembered tab.
+         */
+        fun createRoute(domain: MediaType?): String =
+            if (domain == null) "stats" else "stats?$ARG_DOMAIN=${domain.name}"
+
+        /** The domain from a route argument; an absent or unknown value is "the remembered tab". */
+        fun parseDomain(arg: String?): MediaType? = MediaType.entries.firstOrNull { it.name == arg }
     }
 
     /**

@@ -54,6 +54,7 @@ import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.dnfPercent
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
@@ -67,16 +68,27 @@ import com.hub.media.ui.StatsViewModel
  *
  * @param appContainer The dependency container for creating ViewModels.
  * @param onNavigateBack Callback to navigate back (TopAppBar back icon).
+ * @param domain The tab to open on, from a library's stats button; `null` opens the remembered tab.
  */
 @Composable
 fun StatsScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
+    domain: MediaType? = null,
 ) {
     val viewModel: StatsViewModel =
         viewModel(
             factory = StatsViewModelFactory(appContainer),
         )
+    // A library's stats button opens its own tab (#217), once: saved, so turning the phone does not
+    // pull the user back to it after they picked another tab.
+    var openedOnDomain by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(domain) {
+        if (domain != null && !openedOnDomain) {
+            viewModel.selectDomain(domain)
+            openedOnDomain = true
+        }
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     StatsScreen(

@@ -242,13 +242,12 @@ fun LibraryScreen(
                             )
                         }
                     }
-                    if (domain == null || domain == MediaType.BOOK) {
-                        IconButton(onClick = onNavigateToStats) {
-                            Icon(
-                                imageVector = Icons.Filled.Info,
-                                contentDescription = stringResource(R.string.stats_content_description),
-                            )
-                        }
+                    // Every domain has its own Stats tab (#217); the route opens the one for this library.
+                    IconButton(onClick = onNavigateToStats) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = stringResource(R.string.stats_content_description),
+                        )
                     }
                 },
             )
