@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A year in review: swipe through your year in books, films and shows, from your totals to your longest book, biggest binge and busiest month, for this year so far or any earlier year. Open it from Stats' Year view or the hub. (#221)
+- Your reading goal is now kept for every year, instead of only the current one. (#221)
+
 ## [0.28.0] - 2026-10-17
 
 ### Added
