@@ -48,11 +48,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.components.MonthBarChart
+import com.github.maskedkunisquat.mediatracker.ui.components.MonthChart
 import com.github.maskedkunisquat.mediatracker.ui.components.ReadingGoalDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.dao.dnfPercent
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
@@ -177,7 +179,11 @@ fun StatsScreen(
                         StatsPeriodRow(selected = uiState.period, onSelect = onSelectPeriod)
                     }
                     item {
-                        PeriodCard(title = stringResource(uiState.period.cardTitle()), period = uiState.stats)
+                        PeriodCard(
+                            title = stringResource(uiState.period.cardTitle()),
+                            period = uiState.stats,
+                            finishOutcomes = uiState.finishOutcomes,
+                        )
                     }
                     uiState.finishesByMonth?.let { months ->
                         item {
@@ -189,6 +195,18 @@ fun StatsScreen(
                     }
                     item {
                         StreakCard(streakDays = uiState.currentStreakDays)
+                    }
+                    item {
+                        WhenYouReadCard(uiState.breakdown)
+                    }
+                    item {
+                        TopAuthorsCard(
+                            authors = uiState.breakdown.topAuthors,
+                            isEmpty = uiState.breakdown.totalSeconds == 0L,
+                        )
+                    }
+                    item {
+                        FormatsCard(formats = uiState.breakdown.formats, totalSeconds = uiState.breakdown.totalSeconds)
                     }
                 }
             }
@@ -204,6 +222,7 @@ fun StatsScreen(
 private fun PeriodCard(
     title: String,
     period: StatsUiState.Period,
+    finishOutcomes: FinishOutcomes? = null,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -263,6 +282,33 @@ private fun PeriodCard(
                     ),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // All time only (#219): a DNF has no date, so the rate cannot be split by period.
+            if (finishOutcomes != null) {
+                val decided = finishOutcomes.finished + finishOutcomes.dnf
+                val percent = finishOutcomes.dnfPercent()
+                Text(
+                    text =
+                        stringResource(
+                            R.string.stats_dnf_label,
+                            if (percent == null) {
+                                stringResource(R.string.stats_unknown_value)
+                            } else {
+                                pluralStringResource(
+                                    R.plurals.stats_dnf_value,
+                                    decided,
+                                    finishOutcomes.dnf,
+                                    decided,
+                                    shareLabel(
+                                        percent,
+                                        hasPart = finishOutcomes.dnf > 0,
+                                        hasRest = finishOutcomes.finished > 0,
+                                    ),
+                                )
+                            },
+                        ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
@@ -279,7 +325,7 @@ private fun MonthChartCard(months: List<Int>) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(text = stringResource(R.string.stats_month_chart_title), style = MaterialTheme.typography.titleMedium)
-            MonthBarChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
+            MonthChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
         }
     }
 }

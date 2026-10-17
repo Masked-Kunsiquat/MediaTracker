@@ -154,3 +154,15 @@ public fun joinAuthors(authors: List<String>): String? =
         .filter { it.isNotEmpty() }
         .joinToString(BookDetailsEntity.AUTHOR_SEPARATOR)
         .ifEmpty { null }
+
+/**
+ * The inverse of [joinAuthors]: [BookDetailsEntity.authors]' stored form back into one name per
+ * author, trimmed, with blank entries dropped. `null` (no author on record) is an empty list. Used by
+ * the stats screen's top authors (#219), which credits each author of a co-authored book.
+ */
+public fun splitAuthors(stored: String?): List<String> =
+    stored
+        ?.split(BookDetailsEntity.AUTHOR_SEPARATOR)
+        ?.map { it.trim() }
+        ?.filter { it.isNotEmpty() }
+        .orEmpty()

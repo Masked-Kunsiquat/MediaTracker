@@ -114,4 +114,36 @@ interface StatsDao {
         to: Instant,
         finished: ReadingStatus,
     ): Flow<List<Instant>>
+
+    /**
+     * Every session in `[from, to)` with a known duration above zero, with its book's format and
+     * authors (#219): the one read Books stats part 2 builds when you read, top authors and formats
+     * from, so the three always agree. Both bounds null is All time. Raw start instants, for the same
+     * reason as [observeFinishedAtInRange]: the part of the day and the weekday are decided in Kotlin
+     * in the injected zone, never by SQLite.
+     */
+    @Query(
+        """
+        SELECT s.timestampStart, s.durationSeconds, b.format, b.authors
+          FROM reading_sessions s
+          JOIN book_details b ON b.mediaId = s.mediaId
+         WHERE s.durationSeconds > 0
+           AND (:from IS NULL OR s.timestampStart >= :from)
+           AND (:to IS NULL OR s.timestampStart < :to)
+        """,
+    )
+    fun observeTimedSessions(
+        from: Instant?,
+        to: Instant?,
+    ): Flow<List<TimedSessionRow>>
+
+    /** Books FINISHED and books DNF, whatever their dates (#219): the All time did-not-finish rate. */
+    @Query(
+        "SELECT (SELECT COUNT(*) FROM book_details WHERE status = :finished) AS finished, " +
+            "(SELECT COUNT(*) FROM book_details WHERE status = :dnf) AS dnf",
+    )
+    fun observeFinishOutcomes(
+        finished: ReadingStatus,
+        dnf: ReadingStatus,
+    ): Flow<FinishOutcomes>
 }

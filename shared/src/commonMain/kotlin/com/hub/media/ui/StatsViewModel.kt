@@ -16,6 +16,7 @@ import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.stats.data.bounds
 import com.hub.media.features.stats.data.goalProgress
 import com.hub.media.features.stats.data.localDateChanges
+import com.hub.media.features.stats.data.readingBreakdown
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -87,29 +88,43 @@ public class StatsViewModel(
                 }
             val today = now.toLocalDateTime(timeZone).date
             val yearBounds = StatsPeriod.YEAR.bounds(timeZone, at, weekStart)!!
+            val periodState =
+                combine(
+                    statsRepository.observePeriodStats(period, timeZone, at, weekStart),
+                    statsRepository.observeReadingStreak(timeZone, at),
+                    settingsRepository.observeReadingGoal(),
+                    statsRepository.observePeriodStats(StatsPeriod.YEAR, timeZone, at, weekStart),
+                    if (period == StatsPeriod.YEAR) {
+                        statsRepository.observeFinishesByMonth(yearBounds, timeZone)
+                    } else {
+                        flowOf(null)
+                    },
+                ) { stats, streak, goal, yearStats, months ->
+                    StatsUiState(
+                        isLoading = false,
+                        period = period,
+                        stats = stats.toPeriod(),
+                        currentStreakDays = streak,
+                        // A goal set for another year is not this year's goal: January starts fresh.
+                        goal =
+                            goal?.takeIf { it.year == today.year }?.let {
+                                goalProgress(goal = it.books, finished = yearStats.booksFinished, today = today)
+                            },
+                        goalYear = today.year,
+                        finishesByMonth = months,
+                    )
+                }
+            // Part 2 (#219): when you read, top authors and formats come from one read of the
+            // period's timed sessions, so they agree with each other; the finish outcomes are read
+            // only on All time, the one place they are shown (a DNF has no date).
             combine(
-                statsRepository.observePeriodStats(period, timeZone, at, weekStart),
-                statsRepository.observeReadingStreak(timeZone, at),
-                settingsRepository.observeReadingGoal(),
-                statsRepository.observePeriodStats(StatsPeriod.YEAR, timeZone, at, weekStart),
-                if (period == StatsPeriod.YEAR) {
-                    statsRepository.observeFinishesByMonth(yearBounds, timeZone)
-                } else {
-                    flowOf(null)
-                },
-            ) { stats, streak, goal, yearStats, months ->
-                StatsUiState(
-                    isLoading = false,
-                    period = period,
-                    stats = stats.toPeriod(),
-                    currentStreakDays = streak,
-                    // A goal set for another year is not this year's goal: January starts fresh.
-                    goal =
-                        goal?.takeIf { it.year == today.year }?.let {
-                            goalProgress(goal = it.books, finished = yearStats.booksFinished, today = today)
-                        },
-                    goalYear = today.year,
-                    finishesByMonth = months,
+                periodState,
+                statsRepository.observeTimedSessions(period, timeZone, at, weekStart),
+                if (period == StatsPeriod.ALL_TIME) statsRepository.observeFinishOutcomes() else flowOf(null),
+            ) { state, sessions, outcomes ->
+                state.copy(
+                    breakdown = readingBreakdown(sessions, timeZone, weekStart),
+                    finishOutcomes = outcomes,
                 )
             }
         }
