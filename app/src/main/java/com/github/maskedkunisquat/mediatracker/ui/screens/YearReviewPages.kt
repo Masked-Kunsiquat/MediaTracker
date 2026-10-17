@@ -36,7 +36,18 @@ import java.time.format.TextStyle
  */
 
 /** The pages, in story order. A page whose data is absent for the year is never built. */
-internal enum class YearPage { YEAR, TOTALS, LONGEST_BOOK, TOP_AUTHOR, LONGEST_SESSION, GOAL, REWATCHED_FILM, BINGE, RHYTHM, SUMMARY }
+internal enum class YearPage {
+    YEAR,
+    TOTALS,
+    LONGEST_BOOK,
+    TOP_AUTHOR,
+    LONGEST_SESSION,
+    GOAL,
+    REWATCHED_FILM,
+    BINGE,
+    RHYTHM,
+    SUMMARY,
+}
 
 /** The pages [review] has something for, in order: the year and the totals always, the summary last. */
 internal fun pagesOf(review: YearReview): List<YearPage> =
