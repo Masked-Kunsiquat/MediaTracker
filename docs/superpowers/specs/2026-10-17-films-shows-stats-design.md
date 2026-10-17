@@ -148,6 +148,28 @@ drawn on `Canvas` with the theme's colours and no library. It is used on all thr
 - **Golden:** `clock-dial`, with a busy evening and an empty early morning; the existing
   `stats-breakdown` golden is re-recorded.
 
+## 6b. Charts as tiles (owner, 2026-10-17)
+
+Every chart on every tab becomes a small **tile**, and tapping one opens it larger. The owner saw
+renders and approved them.
+
+- **One "Charts" card per tab** holds square `ChartTile`s, two to a row:
+  - the clock dial (in `mini` mode: ring only), captioned with the busiest part ("Evenings");
+  - the weekday bars (single-letter labels), captioned with the busiest day ("Sundays");
+  - on Year only, the by-month bars with quarter labels (J, A, J, O), captioned "By month".
+
+  An odd tile leaves its neighbour's slot empty; tiles are never stretched.
+- This replaces Books' separate "When you read" and "Books finished by month" cards and the
+  `MonthChartCard`. The numbers do not change.
+- **Tapping a tile** opens a `ChartDialog`:
+  - a plain `Dialog` holding the chart at full width, its full labels (hour labels and centre text
+    for the dial, full day names, all twelve months), its legend with the real numbers, and Close;
+  - a `Dialog` without a text field, so it is testable in Robolectric (`m_6729e5145c`).
+- **Accessibility:** each tile is one button whose description names the chart and its caption
+  ("Time of day, Evenings busiest"), with the click label "Show larger". The dialog's legend carries
+  the numbers.
+- `ClockDial` gains `mini`, and `BarChart` gains `barHeight`.
+
 ## 7. Date-only imports (for later)
 
 A future import whose source records only a date (likely for some streaming services) must store

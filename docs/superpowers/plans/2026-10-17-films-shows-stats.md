@@ -39,6 +39,20 @@
 4. **A fully watched show that is still airing is not "finished",** and a show whose only unwatched episodes are specials flips with the setting. Pinned in Task 5.
 5. **Opening Stats from the Films library opens Films,** even when Books was last used. Pinned in Task 7 (route test).
 
+## Amendment (owner, 2026-10-17): charts as tiles
+
+The spec's §6b replaces the full-width charts with tiles. It changes two tasks:
+
+- **Task 1** also commits `ui/components/ChartTile.kt` (`ChartTile`, `ChartDialog` and `ChartDialogContent`), already on disk from the approved render, plus `ClockDial`'s `mini` and `BarChart`'s `barHeight`.
+  - Books' "When you read" card and its separate month card become one `ChartsCard`, with tiles for the dial and weekdays (and months on Year). Each tile opens a `ChartDialog` with the full chart and its legend.
+  - Tests:
+    - each tile is a button with its caption;
+    - tapping the dial tile shows the legend in the dialog, and Close dismisses it;
+    - the month tile appears only on Year.
+- **Task 8** uses the same `ChartsCard` for Films and Shows, with legends in viewings.
+- **Task 9's goldens** add `stats-chart-dialog`, the dialog's body through `ChartDialogContent`.
+- **Sabotage for the tiles:** make the month tile show on every period. Expect the Year-only test to fail.
+
 ---
 
 ### Task 1: Hours for Books, and the clock dial
