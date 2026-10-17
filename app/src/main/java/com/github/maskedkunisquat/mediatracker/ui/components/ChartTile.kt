@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -99,7 +101,12 @@ fun ChartDialogContent(
     content: @Composable () -> Unit,
 ) {
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Scrolls: in landscape or at a large font the chart and its legend outgrow the window, and
+        // Close must stay reachable (#217).
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text(text = title, style = MaterialTheme.typography.titleLarge)
             content()
             TextButton(onClick = onClose, modifier = Modifier.align(Alignment.End)) { Text(closeLabel) }

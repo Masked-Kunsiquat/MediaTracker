@@ -18,6 +18,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
@@ -748,5 +749,22 @@ class StatsScreenTest {
 
         inCard(TestTags.Stats.TOP_SHOWS_CARD, string(R.string.stats_no_runtimes)).assertExists()
         inCard(TestTags.Stats.TOP_SHOWS_CARD, string(R.string.stats_nothing_watched)).assertDoesNotExist()
+    }
+
+    /**
+     * On a short screen -- landscape, or a large font -- the larger chart is taller than the window,
+     * and Close must still be reachable by scrolling (#217, CodeRabbit). Without a scrolling body
+     * `performScrollTo` finds nothing to scroll and fails.
+     */
+    @Test
+    @Config(qualifiers = "w640dp-h360dp")
+    fun theLargerChart_scrolls_soCloseIsAlwaysReachable() {
+        setContent(loaded(breakdown = timed()))
+        scrollToTile(TestTags.Stats.DAYPART_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).performClick()
+
+        composeRule.onNode(hasText(string(R.string.stats_close)) and hasClickAction()).performScrollTo().performClick()
+
+        composeRule.onNodeWithText(string(R.string.stats_close)).assertDoesNotExist()
     }
 }
