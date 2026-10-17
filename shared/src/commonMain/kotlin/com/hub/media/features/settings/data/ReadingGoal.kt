@@ -2,6 +2,8 @@ package com.hub.media.features.settings.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * A yearly reading goal (#219): [books] to finish in [year].
@@ -33,21 +35,32 @@ public fun SettingsRepository.observeReadingGoals(): Flow<Map<Int, Int>> =
 public fun SettingsRepository.observeReadingGoal(year: Int): Flow<ReadingGoal?> =
     observeReadingGoals().map { goals -> goals[year]?.let { ReadingGoal(year, it) } }
 
+/**
+ * Serializes every write to the goal list. A per-year change reads the whole list, edits one entry
+ * and writes it back, so two overlapping changes -- or one overlapping an archive import -- could each
+ * write a list missing the other's year (#228 review). Process-wide, since the setting is.
+ */
+private val goalWrites = Mutex()
+
 /** Stores [books] as [year]'s goal, keeping every other year's. */
 public suspend fun SettingsRepository.setReadingGoal(
     year: Int,
     books: Int,
 ) {
-    setReadingGoals(storedGoals() + (year to books))
+    goalWrites.withLock { writeGoals(storedGoals() + (year to books)) }
 }
 
 /** Removes [year]'s goal, keeping every other year's; the last one gone clears the setting. */
 public suspend fun SettingsRepository.clearReadingGoal(year: Int) {
-    setReadingGoals(storedGoals() - year)
+    goalWrites.withLock { writeGoals(storedGoals() - year) }
 }
 
 /** Replaces every goal with [goals], in year order -- an archive import restoring the whole list. */
 public suspend fun SettingsRepository.setReadingGoals(goals: Map<Int, Int>) {
+    goalWrites.withLock { writeGoals(goals) }
+}
+
+private suspend fun SettingsRepository.writeGoals(goals: Map<Int, Int>) {
     if (goals.isEmpty()) {
         clear(KEY_READING_GOAL)
     } else {

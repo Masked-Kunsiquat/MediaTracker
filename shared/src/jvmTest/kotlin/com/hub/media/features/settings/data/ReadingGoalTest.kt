@@ -2,8 +2,13 @@ package com.hub.media.features.settings.data
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.testAppDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -110,5 +115,19 @@ class ReadingGoalTest {
                 settings.setString("reading_goal", bad)
                 assertEquals(emptyMap(), settings.observeReadingGoals().first(), "\"$bad\"")
             }
+        }
+
+    /**
+     * Each set reads the whole list, changes one year and writes it back, so two at once could each
+     * write a list missing the other's year (#228 review). Forty years set concurrently must all land.
+     */
+    @Test
+    fun concurrentSets_loseNoYear() =
+        runBlocking {
+            withContext(Dispatchers.Default) {
+                (2000 until 2040).map { year -> async { settings.setReadingGoal(year, books = 1) } }.awaitAll()
+            }
+
+            assertEquals((2000 until 2040).toSet(), settings.observeReadingGoals().first().keys)
         }
 }
