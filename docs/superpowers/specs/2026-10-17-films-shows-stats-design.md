@@ -76,8 +76,8 @@ the Shows tab.
 - `viewings`: the number of rows; `rewatches`: rows with `isRewatch`; `titles`: distinct `mediaId`.
 - `knownSeconds`: the sum of `runtimeMinutes * 60` over rows with a runtime, or `null` when no row
   has one. `unknownRuntime`: the number of rows without one.
-- `weekdays` and `weekdaySeconds`, as in Books, except that a viewing counts as **1** rather than
-  seconds. The weekday chart is "how often", because a runtime may be unknown and a viewing still
+- `weekdays` (ISO day numbers, from the week start, as in Books) and `weekdayCounts`: viewings per
+  day, not seconds. The weekday chart is "how often", because a runtime may be unknown and a viewing still
   happened.
 - `dayParts`: counts per part of the day (same hours as Books), **leaving out viewings at exactly
   12:00:00.000 local**. `dayPartsSkipped` is the number of those.
