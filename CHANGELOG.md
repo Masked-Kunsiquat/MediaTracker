@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-17
+
 ### Added
 - Stats has Films and Shows tabs beside Books: what you watched (rewatches included), time watched where runtimes are known, top shows, shows finished under All time, and charts of when you watch. Each library's stats button opens its own tab. (#217)
 - Stats' charts are small tiles you can tap to see larger with their numbers, including a 24-hour clock of when you read or watch. (#217)
