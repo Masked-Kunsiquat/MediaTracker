@@ -2,10 +2,9 @@ package com.github.maskedkunisquat.mediatracker.ui.goldens
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
-import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.YearReviewScreen
 import com.hub.media.features.stats.data.BingeDay
 import com.hub.media.features.stats.data.DayPart
@@ -21,7 +20,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * The year in review's pages (#221): the totals, a highlight and the rhythm clock. Each golden pages
- * forward through the real pager -- the way TalkBack does, by its "Next page" action -- before the
+ * forward through the real pager -- the way TalkBack does, by the page's "Next page" action -- before the
  * capture, so the picture is of the story as reached, not of a page drawn on its own.
  *
  * The fixture agrees with itself (Graphban `m_ab00cbec8a`): the clock's hours add up to the totals'
@@ -97,10 +96,12 @@ class YearReviewGoldenTest {
     /** Pages forward [times], as TalkBack's "Next page" does. */
     private fun ComposeContentTestRule.forward(times: Int) {
         repeat(times) {
+            // The page on screen carries the actions, since TalkBack focuses it rather than the pager.
             val actions =
-                onNodeWithTag(
-                    TestTags.YearReview.PAGER,
-                ).fetchSemanticsNode().config[SemanticsActions.CustomActions]
+                onAllNodes(SemanticsMatcher("a page") { it.config.contains(SemanticsActions.CustomActions) })
+                    .fetchSemanticsNodes()
+                    .first { node -> node.boundsInRoot.left >= 0f && node.boundsInRoot.left < 1f }
+                    .config[SemanticsActions.CustomActions]
             runOnIdle { actions.first { it.label == "Next page" }.action() }
             waitForIdle()
         }
