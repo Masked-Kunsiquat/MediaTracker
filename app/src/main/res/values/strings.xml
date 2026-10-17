@@ -264,6 +264,59 @@
         <item quantity="other">%1$s: %2$d books</item>
     </plurals>
     <string name="stats_when_title">When you read</string>
+    <string name="stats_charts_title">Charts</string>
+    <string name="stats_domain_books">Books</string>
+    <string name="stats_domain_films">Films</string>
+    <string name="stats_domain_shows">Shows</string>
+    <string name="stats_films_watched">Films watched: %1$d</string>
+    <plurals name="stats_films_watched_rewatches">
+        <item quantity="one">Films watched: %1$d (%2$d rewatch)</item>
+        <item quantity="other">Films watched: %1$d (%2$d rewatches)</item>
+    </plurals>
+    <plurals name="stats_episodes_watched">
+        <item quantity="one">Episodes watched: %1$d across %2$d show</item>
+        <item quantity="other">Episodes watched: %1$d across %2$d shows</item>
+    </plurals>
+    <string name="stats_time_watched_label">Time watched: %1$s</string>
+    <!-- "14h 20m · 1 without a runtime": some viewings' films or episodes have no runtime. -->
+    <string name="stats_time_with_unknown">%1$s · %2$d without a runtime</string>
+    <string name="stats_shows_finished_label">Shows finished: %1$d</string>
+    <string name="stats_when_watch_title">When you watch</string>
+    <string name="stats_films_by_month">Films watched by month</string>
+    <string name="stats_episodes_by_month">Episodes watched by month</string>
+    <plurals name="stats_viewings_count">
+        <item quantity="one">%d viewing</item>
+        <item quantity="other">%d viewings</item>
+    </plurals>
+    <plurals name="stats_untimed">
+        <item quantity="one">%d logged without a time</item>
+        <item quantity="other">%d logged without a time</item>
+    </plurals>
+    <string name="stats_top_shows_title">Top shows</string>
+    <string name="stats_nothing_watched">Nothing watched in this period</string>
+    <string name="stats_no_runtimes">No runtimes known for these shows yet</string>
+    <plurals name="stats_month_films_entry">
+        <item quantity="one">%1$s: %2$d film</item>
+        <item quantity="other">%1$s: %2$d films</item>
+    </plurals>
+    <plurals name="stats_month_episodes_entry">
+        <item quantity="one">%1$s: %2$d episode</item>
+        <item quantity="other">%1$s: %2$d episodes</item>
+    </plurals>
+    <string name="stats_month_films_empty">No films watched yet this year</string>
+    <string name="stats_month_episodes_empty">No episodes watched yet this year</string>
+    <string name="stats_busiest">busiest</string>
+    <string name="stats_show_larger">Show larger</string>
+    <string name="stats_close">Close</string>
+    <string name="stats_chart_time_of_day">Time of day</string>
+    <string name="stats_chart_weekdays">Weekdays</string>
+    <string name="stats_chart_by_month">By month</string>
+    <!-- A chart tile, read aloud: "Time of day, Evenings. Evening: 2h 0m". -->
+    <string name="stats_tile_description">%1$s, %2$s. %3$s</string>
+    <string name="stats_daypart_mornings">Mornings</string>
+    <string name="stats_daypart_afternoons">Afternoons</string>
+    <string name="stats_daypart_evenings">Evenings</string>
+    <string name="stats_daypart_nights">Nights</string>
     <string name="stats_daypart_morning">Morning</string>
     <string name="stats_daypart_afternoon">Afternoon</string>
     <string name="stats_daypart_evening">Evening</string>

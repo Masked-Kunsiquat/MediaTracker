@@ -2,7 +2,13 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.FinishOutcomes
+import com.hub.media.core.database.entities.AiringStatus
+import com.hub.media.core.database.entities.EpisodeEntity
+import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
@@ -11,8 +17,10 @@ import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
 import com.hub.media.features.settings.data.observeReadingGoal
+import com.hub.media.features.settings.data.observeStatsDomain
 import com.hub.media.features.settings.data.observeStatsPeriod
 import com.hub.media.features.settings.data.setReadingGoal
+import com.hub.media.features.settings.data.setStatsDomain
 import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
@@ -36,6 +44,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
 /**
@@ -458,5 +467,169 @@ class StatsViewModelTest {
             viewModel.selectPeriod(StatsPeriod.ALL_TIME)
 
             assertEquals(FinishOutcomes(1, 1), viewModel.uiState.first { it.finishOutcomes != null }.finishOutcomes)
+        }
+
+    // --- #217: the Films and Shows tabs ----------------------------------------------------------
+
+    private suspend fun filmWatchedAt(at: Instant) {
+        db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "film-1", title = "Arrival", type = MediaType.MOVIE))
+        db.movieWriteDao().insertMovieDetails(MovieDetailsEntity(mediaId = "film-1", runtimeMinutes = 116))
+        db.movieWriteDao().insertViewing(WatchLogEntity(id = "fl-1", mediaId = "film-1", watchedAt = at))
+    }
+
+    /** An ended one-episode show, its episode watched at [at]: finished by the library's rule. */
+    private suspend fun showEpisodeWatchedAt(at: Instant) {
+        db.tvWriteDao().insertMediaItem(sampleMediaItem(id = "show-1", title = "Severance", type = MediaType.TV_SHOW))
+        db.tvWriteDao().insertTVDetails(TVDetailsEntity(mediaId = "show-1", airingStatus = AiringStatus.ENDED))
+        db.tvWriteDao().insertEpisodes(
+            listOf(
+                EpisodeEntity(
+                    id = "ep-1",
+                    mediaId = "show-1",
+                    seasonNumber = 1,
+                    episodeNumber = 1,
+                    watchedAt = at,
+                    runtimeMinutes = 50,
+                ),
+            ),
+        )
+        db.movieWriteDao().insertViewing(
+            WatchLogEntity(id = "sl-1", mediaId = "show-1", episodeId = "ep-1", watchedAt = at),
+        )
+    }
+
+    @Test
+    fun selectingFilms_showsFilmViewings_andIsRemembered() =
+        runTest {
+            filmWatchedAt(june(19))
+            showEpisodeWatchedAt(june(19))
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            viewModel.uiState.first { !it.isLoading }
+
+            viewModel.selectDomain(MediaType.MOVIE)
+
+            val state = viewModel.uiState.first { it.domain == MediaType.MOVIE && it.viewing != null }
+            assertEquals(1, state.viewing!!.breakdown.viewings)
+            assertEquals(6_960L, state.viewing!!.breakdown.knownSeconds, "the film, not the episode")
+            assertEquals(MediaType.MOVIE, settingsRepository.observeStatsDomain().first())
+        }
+
+    @Test
+    fun theShowsTab_countsEpisodes_notFilms() =
+        runTest {
+            filmWatchedAt(june(19))
+            showEpisodeWatchedAt(june(19))
+            settingsRepository.setStatsDomain(MediaType.TV_SHOW)
+
+            val state = newViewModel().uiState.first { it.viewing != null }
+
+            assertEquals(1, state.viewing!!.breakdown.viewings)
+            assertEquals(3_000L, state.viewing!!.breakdown.knownSeconds)
+        }
+
+    @Test
+    fun showsFinished_isOnlyOnTheShowsTab_underAllTime() =
+        runTest {
+            showEpisodeWatchedAt(june(19))
+            settingsRepository.setStatsDomain(MediaType.TV_SHOW)
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            assertEquals(
+                null,
+                viewModel.uiState
+                    .first { it.viewing != null }
+                    .viewing!!
+                    .showsFinished,
+                "not on Week",
+            )
+
+            viewModel.selectPeriod(StatsPeriod.ALL_TIME)
+
+            assertEquals(
+                1,
+                viewModel.uiState
+                    .first { it.viewing?.showsFinished != null }
+                    .viewing!!
+                    .showsFinished,
+            )
+        }
+
+    @Test
+    fun theBooksTab_hasNoViewingNumbers() =
+        runTest {
+            filmWatchedAt(june(19))
+
+            val state = newViewModel().uiState.first { !it.isLoading }
+
+            assertEquals(MediaType.BOOK, state.domain)
+            assertEquals(null, state.viewing)
+        }
+
+    /**
+     * Opened from the Films library while Books is the remembered tab, Stats opens on Films and
+     * remembers it (#217). Whether Books could flash first is a race this test cannot create, so the
+     * hold-back itself is pinned by `OpeningOnTest` with the sequence a slow write produces.
+     */
+    @Test
+    fun openedForFilms_opensOnFilms_andRemembersIt() =
+        runTest {
+            settingsRepository.setStatsDomain(MediaType.BOOK)
+            val viewModel =
+                viewModels.track(
+                    StatsViewModel(
+                        statsRepository = repository,
+                        settingsRepository = settingsRepository,
+                        timeZone = timeZone,
+                        clock = clock,
+                        initialDomain = MediaType.MOVIE,
+                    ),
+                )
+            val seen = mutableListOf<MediaType>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.uiState.collect { if (!it.isLoading) seen += it.domain }
+            }
+
+            viewModel.uiState.first { !it.isLoading && it.domain == MediaType.MOVIE }
+
+            assertEquals(listOf(MediaType.MOVIE), seen.distinct())
+            assertEquals(MediaType.MOVIE, settingsRepository.observeStatsDomain().first(), "and it is remembered")
+        }
+
+    /**
+     * The hold-back is once per visit (#217, CodeRabbit): opened for Films, switched to Books, then
+     * left in the background past the 5-second window and resumed, Stats must follow Books -- not
+     * wait again for Films, which would freeze every number on the screen.
+     */
+    @Test
+    fun afterResuming_theHoldBackDoesNotReturn() =
+        runTest {
+            val viewModel =
+                viewModels.track(
+                    StatsViewModel(
+                        statsRepository = repository,
+                        settingsRepository = settingsRepository,
+                        timeZone = timeZone,
+                        clock = clock,
+                        initialDomain = MediaType.MOVIE,
+                    ),
+                )
+            val first =
+                backgroundScope.launch(
+                    UnconfinedTestDispatcher(testScheduler),
+                ) { viewModel.uiState.collect { } }
+            viewModel.uiState.first { it.domain == MediaType.MOVIE && !it.isLoading }
+            viewModel.selectDomain(MediaType.BOOK)
+            viewModel.uiState.first { it.domain == MediaType.BOOK }
+
+            // Leave: nobody collects for longer than WhileSubscribed's 5 seconds, so the upstream stops.
+            first.cancel()
+            viewModels.advanceMainTimeBy(6.seconds)
+            // Come back, and change something so a fresh state is needed.
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect { } }
+            viewModel.selectPeriod(StatsPeriod.YEAR)
+
+            val state = viewModel.uiState.first { it.period == StatsPeriod.YEAR }
+            assertEquals(MediaType.BOOK, state.domain)
         }
 }

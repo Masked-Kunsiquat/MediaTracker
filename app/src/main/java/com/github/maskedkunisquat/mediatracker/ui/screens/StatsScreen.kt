@@ -48,13 +48,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.StatsViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.components.MonthChart
 import com.github.maskedkunisquat.mediatracker.ui.components.ReadingGoalDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.dnfPercent
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.StatsPeriod
@@ -68,21 +68,27 @@ import com.hub.media.ui.StatsViewModel
  *
  * @param appContainer The dependency container for creating ViewModels.
  * @param onNavigateBack Callback to navigate back (TopAppBar back icon).
+ * @param domain The tab to open on, from a library's stats button; `null` opens the remembered tab.
  */
 @Composable
 fun StatsScreenRoute(
     appContainer: AppContainer,
     onNavigateBack: () -> Unit,
+    domain: MediaType? = null,
 ) {
     val viewModel: StatsViewModel =
         viewModel(
-            factory = StatsViewModelFactory(appContainer),
+            // A library's stats button opens on its own tab (#217): the view model starts there, so
+            // the remembered tab never shows first. One view model per back-stack entry, so this
+            // runs once per visit and survives rotation.
+            factory = StatsViewModelFactory(appContainer, domain),
         )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     StatsScreen(
         uiState = uiState,
         onSelectPeriod = viewModel::selectPeriod,
+        onSelectDomain = viewModel::selectDomain,
         onSetGoal = viewModel::setGoal,
         onClearGoal = viewModel::clearGoal,
         onNavigateBack = onNavigateBack,
@@ -94,7 +100,7 @@ fun StatsScreenRoute(
  *
  * Renders [StatsUiState.isLoading] as a centered [CircularProgressIndicator]; otherwise the period
  * picker ([StatsPeriodRow]), one [PeriodCard] for the chosen [StatsUiState.period], and the current
- * reading streak ([StreakCard]) (#91). Since #219 the Year view adds a [MonthChartCard], and every
+ * reading streak ([StreakCard]) (#91). Since #219 every
  * period shows this year's reading goal ([GoalCard]), which opens [ReadingGoalDialog] when tapped.
  *
  * A `null` [StatsUiState.Period.timeReadSeconds]/[StatsUiState.Period.pagesRead] means no session
@@ -115,6 +121,7 @@ fun StatsScreenRoute(
 fun StatsScreen(
     uiState: StatsUiState,
     onSelectPeriod: (StatsPeriod) -> Unit,
+    onSelectDomain: (MediaType) -> Unit,
     onSetGoal: (Int) -> Unit,
     onClearGoal: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -176,7 +183,31 @@ fun StatsScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {
+                        StatsDomainRow(selected = uiState.domain, onSelect = onSelectDomain)
+                    }
+                    item {
                         StatsPeriodRow(selected = uiState.period, onSelect = onSelectPeriod)
+                    }
+                    val viewing = uiState.viewing
+                    if (uiState.domain != MediaType.BOOK && viewing != null) {
+                        // Films and Shows (#217): their own cards; the goal, streak, authors and
+                        // formats belong to Books.
+                        item {
+                            ViewingPeriodCard(
+                                title = stringResource(uiState.period.cardTitle()),
+                                domain = uiState.domain,
+                                stats = viewing,
+                            )
+                        }
+                        item {
+                            ViewingChartsCard(domain = uiState.domain, stats = viewing)
+                        }
+                        if (uiState.domain == MediaType.TV_SHOW) {
+                            item {
+                                TopShowsCard(viewing.breakdown.topTitles, watchedAny = viewing.breakdown.viewings > 0)
+                            }
+                        }
+                        return@LazyColumn
                     }
                     item {
                         PeriodCard(
@@ -185,11 +216,6 @@ fun StatsScreen(
                             finishOutcomes = uiState.finishOutcomes,
                         )
                     }
-                    uiState.finishesByMonth?.let { months ->
-                        item {
-                            MonthChartCard(months)
-                        }
-                    }
                     item {
                         GoalCard(goal = uiState.goal, goalYear = uiState.goalYear, onClick = { showGoalDialog = true })
                     }
@@ -197,7 +223,20 @@ fun StatsScreen(
                         StreakCard(streakDays = uiState.currentStreakDays)
                     }
                     item {
-                        WhenYouReadCard(uiState.breakdown)
+                        ChartsCard(
+                            data =
+                                ChartsData(
+                                    hours = uiState.breakdown.hours,
+                                    dayParts = uiState.breakdown.dayParts,
+                                    weekdays = uiState.breakdown.weekdays,
+                                    weekdayValues = uiState.breakdown.weekdaySeconds,
+                                    months = uiState.finishesByMonth,
+                                    formatValue = { formatDuration(it) },
+                                ),
+                            whenTitle = stringResource(R.string.stats_when_title),
+                            monthsTitle = stringResource(R.string.stats_month_chart_title),
+                            emptyText = stringResource(R.string.stats_no_timed_reading),
+                        )
                     }
                     item {
                         TopAuthorsCard(
@@ -313,23 +352,6 @@ private fun PeriodCard(
     }
 }
 
-/** The Year view's chart of books finished each month (#219). */
-@Composable
-private fun MonthChartCard(months: List<Int>) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(text = stringResource(R.string.stats_month_chart_title), style = MaterialTheme.typography.titleMedium)
-            MonthChart(counts = months, modifier = Modifier.testTag(TestTags.Stats.MONTH_CHART))
-        }
-    }
-}
-
 /**
  * This year's reading goal (#219): an offer to set one, or progress against it and whether it is on
  * pace. The whole card is the control that opens [ReadingGoalDialog], whichever state it is in.
@@ -434,6 +456,34 @@ private fun StatsPeriodRow(
     }
 }
 
+/** Books, Films or Shows (#217): one choice, like the period chips beneath it. */
+@Composable
+private fun StatsDomainRow(
+    selected: MediaType,
+    onSelect: (MediaType) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .selectableGroup()
+                .testTag(TestTags.Stats.DOMAINS),
+    ) {
+        for ((domain, label) in listOf(
+            MediaType.BOOK to R.string.stats_domain_books,
+            MediaType.MOVIE to R.string.stats_domain_films,
+            MediaType.TV_SHOW to R.string.stats_domain_shows,
+        )) {
+            FilterChip(
+                selected = domain == selected,
+                onClick = { onSelect(domain) },
+                label = { Text(stringResource(label)) },
+            )
+        }
+    }
+}
+
 private fun StatsPeriod.chipLabel(): Int =
     when (this) {
         StatsPeriod.WEEK -> R.string.stats_period_week
@@ -504,6 +554,7 @@ private fun StatsScreenLoadingPreview() {
         StatsScreen(
             uiState = StatsUiState(isLoading = true),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -525,6 +576,7 @@ private fun StatsScreenPopulatedPreview() {
                     currentStreakDays = 5,
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -548,6 +600,7 @@ private fun StatsScreenEmptyPreview() {
                     currentStreakDays = 0,
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},

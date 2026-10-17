@@ -1,20 +1,35 @@
 package com.github.maskedkunisquat.mediatracker.ui.goldens
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.ChartDialogContent
+import com.github.maskedkunisquat.mediatracker.ui.components.ClockDial
 import com.github.maskedkunisquat.mediatracker.ui.screens.StatsScreen
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.AuthorTime
 import com.hub.media.features.stats.data.FormatTime
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
+import com.hub.media.features.stats.data.TitleTime
+import com.hub.media.features.stats.data.ViewingBreakdown
 import com.hub.media.ui.StatsUiState
+import com.hub.media.ui.ViewingStats
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,7 +77,7 @@ class StatsScreenGoldenTest {
     fun statsYear() {
         composeRule.captureGolden(
             name = "stats-year",
-            alsoAssert = { assertTextIsShown("This year", "Books finished by month", "Speed") },
+            alsoAssert = { assertTextIsShown("This year", "By month", "Speed") },
         ) { YearFixture() }
     }
 
@@ -78,7 +93,7 @@ class StatsScreenGoldenTest {
             name = "stats-breakdown",
             alsoAssert = {
                 onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.FORMATS_CARD))
-                assertTextIsShown("When you read", "Top authors", "Formats", "<1%")
+                assertTextIsShown("Charts", "Top authors", "Formats", "<1%")
             },
         ) { BreakdownFixture() }
     }
@@ -88,6 +103,7 @@ class StatsScreenGoldenTest {
         val breakdown =
             ReadingBreakdown(
                 dayParts = listOf(9_000L, 2_400L, 14_400L, 4_200L),
+                hours = hoursFrom(listOf(9_000L, 2_400L, 14_400L, 4_200L)),
                 weekdays = List(7) { it + 1 },
                 weekdaySeconds = listOf(3_000L, 0L, 4_800L, 2_100L, 0L, 9_600L, 10_500L),
                 topAuthors =
@@ -121,6 +137,7 @@ class StatsScreenGoldenTest {
                     breakdown = breakdown,
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -153,6 +170,7 @@ class StatsScreenGoldenTest {
                     breakdown =
                         ReadingBreakdown(
                             dayParts = listOf(20_520L, 8_208L, 41_040L, 12_312L),
+                            hours = hoursFrom(listOf(20_520L, 8_208L, 41_040L, 12_312L)),
                             weekdays = List(7) { it + 1 },
                             weekdaySeconds = listOf(8_208L, 4_104L, 12_312L, 8_208L, 4_104L, 20_520L, 24_624L),
                             topAuthors = listOf(AuthorTime("Ursula K. Le Guin", 41_040)),
@@ -161,6 +179,7 @@ class StatsScreenGoldenTest {
                         ),
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
@@ -187,9 +206,150 @@ class StatsScreenGoldenTest {
                     goalYear = 2026,
                 ),
             onSelectPeriod = {},
+            onSelectDomain = {},
             onSetGoal = {},
             onClearGoal = {},
             onNavigateBack = {},
         )
+    }
+
+    /** A week of evenings and a Sunday afternoon, with three viewings logged by date only (#217). */
+    private val watchedHours = List(24) { h -> mapOf(14 to 2, 15 to 1, 19 to 3, 20 to 5, 21 to 4, 22 to 1)[h] ?: 0 }
+
+    private fun watched(
+        viewings: Int,
+        titles: Int,
+        topTitles: List<TitleTime> = emptyList(),
+    ) = ViewingBreakdown(
+        viewings = viewings,
+        rewatches = 2,
+        titles = titles,
+        knownSeconds = 51_600,
+        unknownRuntime = 1,
+        hours = watchedHours,
+        dayParts = listOf(0, 3, 8, 5), // the hours above, grouped
+        untimed = viewings - watchedHours.sum(),
+        weekdays = List(7) { it + 1 },
+        weekdayCounts = listOf(2, 1, 3, 1, 4, 3, viewings - 14),
+        topTitles = topTitles,
+    )
+
+    /** The Films tab on Month: rewatches, an unknown runtime, and the charts' tiles (#217). */
+    @Test
+    fun statsFilms() {
+        composeRule.captureGolden(
+            name = "stats-films",
+            alsoAssert = { assertTextIsShown("Films watched", "Time watched", "1 without a runtime") },
+        ) {
+            StatsScreen(
+                uiState =
+                    StatsUiState(
+                        isLoading = false,
+                        period = StatsPeriod.MONTH,
+                        domain = MediaType.MOVIE,
+                        goalYear = 2026,
+                        viewing = ViewingStats(watched(viewings = 19, titles = 15)),
+                    ),
+                onSelectPeriod = {},
+                onSelectDomain = {},
+                onSetGoal = {},
+                onClearGoal = {},
+                onNavigateBack = {},
+            )
+        }
+    }
+
+    /** The Shows tab on All time, scrolled to the charts and top shows (#217). */
+    @Test
+    fun statsShows() {
+        composeRule.captureGolden(
+            name = "stats-shows",
+            alsoAssert = {
+                onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.TOP_SHOWS_CARD))
+                assertTextIsShown("Top shows", "Severance", "Charts")
+            },
+        ) {
+            StatsScreen(
+                uiState =
+                    StatsUiState(
+                        isLoading = false,
+                        period = StatsPeriod.ALL_TIME,
+                        domain = MediaType.TV_SHOW,
+                        goalYear = 2026,
+                        viewing =
+                            ViewingStats(
+                                watched(
+                                    viewings = 19,
+                                    titles = 4,
+                                    topTitles =
+                                        listOf(
+                                            TitleTime("Severance", 32_400),
+                                            TitleTime("The Bear", 14_400),
+                                            TitleTime("Andor", 9_600),
+                                        ),
+                                ),
+                                showsFinished = 3,
+                            ),
+                    ),
+                onSelectPeriod = {},
+                onSelectDomain = {},
+                onSetGoal = {},
+                onClearGoal = {},
+                onNavigateBack = {},
+            )
+        }
+    }
+
+    /** The larger view a time-of-day tile opens (#217): the full dial, its labels and its legend. */
+    @Test
+    fun statsChartDialog() {
+        composeRule.captureGolden(
+            name = "stats-chart-dialog",
+            alsoAssert = { assertTextIsShown("When you watch", "Evening", "Close") },
+        ) {
+            Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                ChartDialogContent(title = "When you watch", closeLabel = "Close", onClose = {}) {
+                    ClockDial(
+                        hours = watchedHours.map { it.toLong() },
+                        busiest = "Evenings",
+                        description = "",
+                        use24Hour = false,
+                    )
+                    for ((part, count) in listOf("Morning" to 0, "Afternoon" to 3, "Evening" to 8, "Night" to 5)) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(part, modifier = Modifier.weight(1f))
+                            Text("$count viewings")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 24 hours consistent with four part-of-day totals, as real data always is (#217): each part's
+     * time spread over its own hours, rising towards the middle of the part so the dial reads like a
+     * real day rather than four flat blocks. Sums exactly to each part.
+     */
+    private fun hoursFrom(dayParts: List<Long>): List<Long> {
+        val partHours =
+            listOf(
+                (5..11).toList(),
+                (12..16).toList(),
+                (17..20).toList(),
+                (21..23).toList() + (0..4).toList(),
+            )
+        val hours = LongArray(24)
+        for ((part, slots) in partHours.withIndex()) {
+            val weights = slots.indices.map { minOf(it, slots.lastIndex - it) + 1L }
+            val total = dayParts[part]
+            var given = 0L
+            slots.forEachIndexed { i, hour ->
+                val share = if (i == slots.lastIndex) total - given else total * weights[i] / weights.sum()
+                hours[hour] = share
+                given += share
+            }
+        }
+        return hours.toList()
     }
 }

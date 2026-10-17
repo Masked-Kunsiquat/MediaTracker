@@ -167,9 +167,16 @@ class StatsViewModelFactory
     @OptIn(kotlin.time.ExperimentalTime::class)
     constructor(
         appContainer: AppContainer,
+        initialDomain: MediaType? = null,
     ) : AppViewModelFactory<StatsViewModel>(
             StatsViewModel::class.java,
-            { StatsViewModel(appContainer.statsRepository, appContainer.settingsRepository) },
+            {
+                StatsViewModel(
+                    appContainer.statsRepository,
+                    appContainer.settingsRepository,
+                    initialDomain = initialDomain,
+                )
+            },
         )
 
 /**
