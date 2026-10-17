@@ -10,55 +10,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
-import com.github.maskedkunisquat.mediatracker.ui.components.BarChart
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.hub.media.features.stats.data.AuthorTime
 import com.hub.media.features.stats.data.DayPart
 import com.hub.media.features.stats.data.FormatTime
-import com.hub.media.features.stats.data.ReadingBreakdown
-import java.time.DayOfWeek
-import java.time.format.TextStyle
 import kotlin.math.roundToInt
 
 /*
- * Books stats part 2 (#219): the three cards built from one read of the period's timed sessions --
- * when you read, top authors and formats. Split out of StatsScreen.kt by region (AGENTS.md section
+ * Books stats part 2 (#219): the cards built from one read of the period's timed sessions -- top
+ * authors and formats. When you read moved into [ChartsCard]'s tiles (#217). Split out of StatsScreen.kt by region (AGENTS.md section
  * 6). All three show the same one-line empty state when the period has no timed reading, rather than
  * empty charts or lists.
  */
-
-/** Parts of the day and weekdays, as two bar charts by time read. */
-@Composable
-internal fun WhenYouReadCard(breakdown: ReadingBreakdown) {
-    BreakdownCard(
-        title = stringResource(R.string.stats_when_title),
-        isEmpty = breakdown.totalSeconds == 0L,
-        tag = TestTags.Stats.WHEN_CARD,
-    ) {
-        val parts = DayPart.entries.map { stringResource(it.label()) }
-        BarChart(
-            values = breakdown.dayParts,
-            labels = parts,
-            description = chartDescription(parts, breakdown.dayParts),
-            modifier = Modifier.testTag(TestTags.Stats.DAYPART_CHART),
-        )
-        val locale = LocalConfiguration.current.locales[0]
-        val days = breakdown.weekdays.map { DayOfWeek.of(it).getDisplayName(TextStyle.SHORT, locale) }
-        BarChart(
-            values = breakdown.weekdaySeconds,
-            labels = days,
-            description = chartDescription(days, breakdown.weekdaySeconds),
-            modifier = Modifier.testTag(TestTags.Stats.WEEKDAY_CHART),
-        )
-    }
-}
 
 /** Up to five authors by time read; a long name is cut short so the time stays on the row. */
 @Composable
@@ -132,7 +101,7 @@ private fun BreakdownCard(
 }
 
 @Composable
-private fun BreakdownRow(
+internal fun BreakdownRow(
     label: String,
     values: List<String>,
 ) {
@@ -170,19 +139,7 @@ internal fun shareLabel(
         else -> stringResource(R.string.stats_percent, percent)
     }
 
-/** "Morning: 2h 10m, Evening: 5h 30m": the slots with time, read aloud; empty slots are left out. */
-@Composable
-private fun chartDescription(
-    labels: List<String>,
-    seconds: List<Long>,
-): String =
-    labels
-        .zip(seconds)
-        .filter { (_, value) -> value > 0 }
-        .map { (label, value) -> stringResource(R.string.stats_chart_entry, label, formatDuration(value)) }
-        .joinToString()
-
-private fun DayPart.label(): Int =
+internal fun DayPart.label(): Int =
     when (this) {
         DayPart.MORNING -> R.string.stats_daypart_morning
         DayPart.AFTERNOON -> R.string.stats_daypart_afternoon

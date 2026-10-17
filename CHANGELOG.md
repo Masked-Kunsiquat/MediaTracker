@@ -8,10 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Stats has Films and Shows tabs beside Books: what you watched (rewatches included), time watched where runtimes are known, top shows, shows finished under All time, and charts of when you watch. Each library's stats button opens its own tab. (#217)
+- Stats' charts are small tiles you can tap to see larger with their numbers, including a 24-hour clock of when you read or watch. (#217)
 - Stats shows when you read (time of day and weekday), your top authors and the formats you read, by time read in the chosen period. Under All time it also shows how many books you didn't finish. (#219)
 - Stats shows your reading speed, average and longest session, a yearly reading goal you can set by tapping, and a chart of books finished per month in the Year view. Time read now reads like "22h 48m". (#219)
 
 ### Changed
+- On Stats, when you read is now a 24-hour clock instead of bars, and the charts share one card. (#217)
 - Stats has a period picker: this week, this month, the last 30 days, this year, or all time. It remembers your choice. The separate "books finished (lifetime)" card is now the All time view. (#91)
 
 ### Fixed

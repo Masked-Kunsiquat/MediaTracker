@@ -18,6 +18,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
@@ -27,13 +28,17 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.AuthorTime
 import com.hub.media.features.stats.data.FormatTime
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
+import com.hub.media.features.stats.data.TitleTime
+import com.hub.media.features.stats.data.ViewingBreakdown
 import com.hub.media.ui.StatsUiState
+import com.hub.media.ui.ViewingStats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -51,6 +56,7 @@ class StatsScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val picked = mutableListOf<StatsPeriod>()
+    private val domains = mutableListOf<MediaType>()
 
     private fun string(id: Int) = context.getString(id)
 
@@ -60,6 +66,7 @@ class StatsScreenTest {
                 StatsScreen(
                     uiState = state,
                     onSelectPeriod = { picked += it },
+                    onSelectDomain = { domains += it },
                     onSetGoal = {},
                     onClearGoal = {},
                     onNavigateBack = {},
@@ -136,6 +143,7 @@ class StatsScreenTest {
                 StatsScreen(
                     uiState = loaded(period = period),
                     onSelectPeriod = {},
+                    onSelectDomain = {},
                     onSetGoal = {},
                     onClearGoal = {},
                     onNavigateBack = {},
@@ -315,7 +323,7 @@ class StatsScreenTest {
         composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.MONTH_CHART))
         composeRule
             .onNodeWithTag(TestTags.Stats.MONTH_CHART)
-            .assert(hasContentDescription(string(R.string.stats_month_chart_empty)))
+            .assert(hasContentDescription(string(R.string.stats_month_chart_empty), substring = true))
     }
 
     @Test
@@ -343,6 +351,8 @@ class StatsScreenTest {
         topAuthors = authors,
         formats = formats,
         totalSeconds = dayParts.sum(),
+        // Consistent with dayParts, as real data always is: each part's time in one hour inside it.
+        hours = List(24) { h -> mapOf(8 to 0, 14 to 1, 18 to 2, 22 to 3)[h]?.let { dayParts[it] } ?: 0L },
     )
 
     private fun inCard(
@@ -357,7 +367,7 @@ class StatsScreenTest {
     fun aPopulatedBreakdown_fillsTheThreeCards() {
         setContent(loaded(breakdown = breakdown()))
 
-        inCard(TestTags.Stats.WHEN_CARD, string(R.string.stats_when_title)).assertExists()
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_charts_title)).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.WEEKDAY_CHART).assertExists()
         inCard(TestTags.Stats.AUTHORS_CARD, "Ursula K. Le Guin").assertExists()
@@ -371,7 +381,7 @@ class StatsScreenTest {
         setContent(loaded(breakdown = ReadingBreakdown(weekdays = week)))
         val none = string(R.string.stats_no_timed_reading)
 
-        inCard(TestTags.Stats.WHEN_CARD, none).assertExists()
+        inCard(TestTags.Stats.CHARTS_CARD, none).assertExists()
         inCard(TestTags.Stats.AUTHORS_CARD, none).assertExists()
         inCard(TestTags.Stats.FORMATS_CARD, none).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertDoesNotExist()
@@ -485,5 +495,276 @@ class StatsScreenTest {
                 .joinToString()
         assertTrue(description, string(R.string.stats_daypart_morning) in description)
         assertTrue(description, string(R.string.stats_daypart_afternoon) !in description)
+    }
+
+    // --- #217: charts as tiles that open larger -------------------------------------------------
+
+    private fun hourly(vararg busy: Pair<Int, Long>): List<Long> =
+        List(24) { h ->
+            busy.firstOrNull { it.first == h }?.second
+                ?: 0L
+        }
+
+    private fun timed() =
+        breakdown(dayParts = listOf(0L, 0L, 7_200L, 0L)).copy(hours = hourly(19 to 3_600L, 20 to 3_600L))
+
+    private fun scrollToTile(tag: String) {
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(tag))
+    }
+
+    @Test
+    fun theTimeOfDayTile_isAButton_captionedWithTheBusiestPart() {
+        setContent(loaded(breakdown = timed()))
+
+        scrollToTile(TestTags.Stats.DAYPART_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assert(hasClickAction())
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_daypart_evenings)).assertExists()
+    }
+
+    @Test
+    fun tappingTheTimeOfDayTile_showsItLarger_withItsNumbers_andCloseDismisses() {
+        setContent(loaded(breakdown = timed()))
+        scrollToTile(TestTags.Stats.DAYPART_CHART)
+
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).performClick()
+
+        // The legend: the evening's two hours, in words, only in the larger view.
+        composeRule.onNodeWithText(string(R.string.stats_daypart_evening)).assertExists()
+        composeRule.onNodeWithText("2h 0m").assertExists()
+        composeRule.onNode(hasText(string(R.string.stats_close)) and hasClickAction()).performClick()
+        composeRule.onNodeWithText(string(R.string.stats_close)).assertDoesNotExist()
+    }
+
+    @Test
+    fun theMonthTile_isOnlyOnTheYearView() {
+        setContent(
+            loaded(
+                period = StatsPeriod.YEAR,
+                breakdown = timed(),
+                finishesByMonth =
+                    List(12) {
+                        if (it ==
+                            1
+                        ) {
+                            2
+                        } else {
+                            0
+                        }
+                    },
+            ),
+        )
+
+        scrollToTile(TestTags.Stats.MONTH_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.MONTH_CHART).assert(hasClickAction())
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_chart_by_month)).assertExists()
+    }
+
+    @Test
+    fun theWeekdayTile_isCaptionedWithTheBusiestDay() {
+        // The fixture's weekday seconds all fall on its first day, a Monday.
+        setContent(loaded(breakdown = timed()))
+
+        scrollToTile(TestTags.Stats.WEEKDAY_CHART)
+        inCard(TestTags.Stats.CHARTS_CARD, "Monday").assertExists()
+    }
+
+    // --- #217: the Films and Shows tabs ----------------------------------------------------------
+
+    private fun viewing(
+        domain: MediaType,
+        breakdown: ViewingBreakdown,
+        period: StatsPeriod = StatsPeriod.MONTH,
+        showsFinished: Int? = null,
+    ) = StatsUiState(
+        isLoading = false,
+        period = period,
+        domain = domain,
+        goalYear = 2024,
+        viewing = ViewingStats(breakdown, showsFinished),
+    )
+
+    private fun watched(
+        viewings: Int = 9,
+        rewatches: Int = 2,
+        titles: Int = 4,
+        knownSeconds: Long? = 51_600,
+        unknownRuntime: Int = 1,
+        hours: List<Int> = List(24) { if (it == 20) 9 else 0 },
+        untimed: Int = 0,
+        topTitles: List<TitleTime> = emptyList(),
+    ) = ViewingBreakdown(
+        viewings = viewings,
+        rewatches = rewatches,
+        titles = titles,
+        knownSeconds = knownSeconds,
+        unknownRuntime = unknownRuntime,
+        hours = hours,
+        dayParts = listOf(0, 0, hours.sum(), 0),
+        untimed = untimed,
+        weekdays = week,
+        weekdayCounts = listOf(viewings, 0, 0, 0, 0, 0, 0),
+        topTitles = topTitles,
+    )
+
+    private fun domainChip(id: Int) =
+        composeRule.onNode(
+            hasText(string(id)) and hasClickAction() and hasAnyAncestor(hasTestTag(TestTags.Stats.DOMAINS)),
+        )
+
+    @Test
+    fun theDomainChips_pickATab_andShowWhichIsSelected() {
+        setContent(viewing(MediaType.MOVIE, watched()))
+
+        domainChip(R.string.stats_domain_films).assertIsSelected()
+        domainChip(R.string.stats_domain_shows).performClick()
+        domainChip(R.string.stats_domain_books).performClick()
+
+        assertEquals(listOf(MediaType.TV_SHOW, MediaType.BOOK), domains)
+        composeRule
+            .onNodeWithTag(
+                TestTags.Stats.DOMAINS,
+            ).assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+    }
+
+    @Test
+    fun films_countViewings_withRewatches() {
+        setContent(viewing(MediaType.MOVIE, watched(viewings = 9, rewatches = 2)))
+
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_films_watched_rewatches, 2, 9, 2),
+            ).assertExists()
+    }
+
+    @Test
+    fun films_withNoRewatches_justCountViewings() {
+        setContent(viewing(MediaType.MOVIE, watched(viewings = 3, rewatches = 0)))
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_films_watched, 3)).assertExists()
+    }
+
+    @Test
+    fun timeWatched_namesTheViewingsWithoutARuntime() {
+        setContent(viewing(MediaType.MOVIE, watched(knownSeconds = 51_600, unknownRuntime = 1)))
+        val value = context.getString(R.string.stats_time_with_unknown, "14h 20m", 1)
+
+        composeRule.onNodeWithText(context.getString(R.string.stats_time_watched_label, value)).assertExists()
+    }
+
+    @Test
+    fun timeWatched_withNoRuntimeKnown_isUnknown_notZero() {
+        setContent(viewing(MediaType.MOVIE, watched(knownSeconds = null, unknownRuntime = 9)))
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.stats_time_watched_label, string(R.string.stats_unknown_value)))
+            .assertExists()
+    }
+
+    @Test
+    fun shows_countEpisodesAcrossShows_andFinishedOnAllTime() {
+        setContent(
+            viewing(MediaType.TV_SHOW, watched(viewings = 34, titles = 4), StatsPeriod.ALL_TIME, showsFinished = 3),
+        )
+
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_episodes_watched, 4, 34, 4),
+            ).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.stats_shows_finished_label, 3)).assertExists()
+    }
+
+    @Test
+    fun showsFinished_isNotShownWhenUnknown() {
+        setContent(viewing(MediaType.TV_SHOW, watched(), StatsPeriod.WEEK, showsFinished = null))
+
+        // Positive control: the Shows card is drawn.
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_episodes_watched, 4, 9, 4),
+            ).assertExists()
+        composeRule.onNode(hasText("Shows finished", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun everyViewingUntimed_hidesTheClock_andSaysSo() {
+        setContent(viewing(MediaType.MOVIE, watched(hours = List(24) { 0 }, untimed = 9)))
+
+        scrollToTile(TestTags.Stats.WEEKDAY_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).assertDoesNotExist()
+        inCard(
+            TestTags.Stats.CHARTS_CARD,
+            context.resources.getQuantityString(R.plurals.stats_untimed, 9, 9),
+        ).assertExists()
+    }
+
+    @Test
+    fun topShows_listTheirTime() {
+        setContent(viewing(MediaType.TV_SHOW, watched(topTitles = listOf(TitleTime("Severance", 22_200)))))
+
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, "Severance").assertExists()
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, "6h 10m").assertExists()
+    }
+
+    @Test
+    fun nothingWatched_saysSo() {
+        setContent(viewing(MediaType.MOVIE, ViewingBreakdown(weekdays = week)))
+
+        inCard(TestTags.Stats.CHARTS_CARD, string(R.string.stats_nothing_watched)).assertExists()
+    }
+
+    @Test
+    fun theGoalAndStreak_stayOnTheBooksTab() {
+        setContent(viewing(MediaType.MOVIE, watched()))
+
+        // Positive control: the Films card is drawn.
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.stats_films_watched_rewatches, 2, 9, 2),
+            ).assertExists()
+        composeRule.onNodeWithTag(TestTags.Stats.GOAL_CARD).assertDoesNotExist()
+        composeRule.onNode(hasText("streak", substring = true)).assertDoesNotExist()
+    }
+
+    /** A Films month tile reads films, not books (#217 review): "January: 3 films". */
+    @Test
+    fun theFilmsMonthTile_readsFilms_notBooks() {
+        val months = List(12) { if (it == 0) 3 else 0 }
+        setContent(viewing(MediaType.MOVIE, watched().copy(months = months), StatsPeriod.YEAR))
+
+        scrollToTile(TestTags.Stats.MONTH_CHART)
+        val description =
+            composeRule
+                .onNodeWithTag(TestTags.Stats.MONTH_CHART)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.ContentDescription]
+                .joinToString()
+        assertTrue(description, "3 films" in description)
+        assertTrue(description, "book" !in description)
+    }
+
+    /** Shows were watched, but none has a runtime: the card says so, not "nothing watched" (#217 review). */
+    @Test
+    fun topShows_withNoRuntimeKnown_saySo_notNothingWatched() {
+        setContent(viewing(MediaType.TV_SHOW, watched(knownSeconds = null, topTitles = emptyList())))
+
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, string(R.string.stats_no_runtimes)).assertExists()
+        inCard(TestTags.Stats.TOP_SHOWS_CARD, string(R.string.stats_nothing_watched)).assertDoesNotExist()
+    }
+
+    /**
+     * On a short screen -- landscape, or a large font -- the larger chart is taller than the window,
+     * and Close must still be reachable by scrolling (#217, CodeRabbit). Without a scrolling body
+     * `performScrollTo` finds nothing to scroll and fails.
+     */
+    @Test
+    @Config(qualifiers = "w640dp-h360dp")
+    fun theLargerChart_scrolls_soCloseIsAlwaysReachable() {
+        setContent(loaded(breakdown = timed()))
+        scrollToTile(TestTags.Stats.DAYPART_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.DAYPART_CHART).performClick()
+
+        composeRule.onNode(hasText(string(R.string.stats_close)) and hasClickAction()).performScrollTo().performClick()
+
+        composeRule.onNodeWithText(string(R.string.stats_close)).assertDoesNotExist()
     }
 }

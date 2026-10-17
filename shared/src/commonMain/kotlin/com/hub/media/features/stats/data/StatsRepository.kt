@@ -3,7 +3,11 @@ package com.hub.media.features.stats.data
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.PeriodStatsRow
+import com.hub.media.core.database.dao.ShowStateRow
+import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.dao.TimedSessionRow
+import com.hub.media.core.database.dao.ViewingRow
+import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.coroutines.flow.Flow
@@ -97,6 +101,24 @@ public class StatsRepository(
         val bounds = period.bounds(timeZone, clock, weekStartDay)
         return db.statsDao().observeTimedSessions(bounds?.first, bounds?.second)
     }
+
+    /** The viewings of [period] for one domain, MOVIE or TV_SHOW (#217), bounded as [observePeriodStats] is. */
+    public fun observeViewings(
+        period: StatsPeriod,
+        timeZone: TimeZone,
+        clock: Clock,
+        weekStartDay: WeekStartDay,
+        type: MediaType,
+    ): Flow<List<ViewingRow>> {
+        val bounds = period.bounds(timeZone, clock, weekStartDay)
+        return db.statsDao().observeViewings(bounds?.first, bounds?.second, type)
+    }
+
+    /** Each show's stored status and airing state (#217), for shows finished. */
+    public fun observeShowStates(): Flow<List<ShowStateRow>> = db.statsDao().observeShowStates()
+
+    /** Each show's episode counts (#217): the same progress the library reads. */
+    public fun observeShowProgress(): Flow<List<TVProgressCounts>> = db.episodeDao().observeProgress()
 
     /** Finished and did-not-finish counts across the whole library (#219), for All time. */
     public fun observeFinishOutcomes(): Flow<FinishOutcomes> =

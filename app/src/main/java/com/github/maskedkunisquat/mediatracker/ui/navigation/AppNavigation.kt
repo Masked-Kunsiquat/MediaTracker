@@ -66,7 +66,7 @@ fun AppNavigation(
                 appContainer = appContainer,
                 onOpenDomain = { navController.navigate(Route.Library.createRoute(it)) },
                 onOpenAllMedia = { navController.navigate(Route.Library.createRoute(null)) },
-                onOpenStats = { navController.navigate(Route.Stats.route) },
+                onOpenStats = { navController.navigate(Route.Stats.createRoute(null)) },
                 onOpenSettings = { navController.navigate(Route.Settings.route) },
             )
         }
@@ -107,7 +107,7 @@ fun AppNavigation(
                     }
                 },
                 onNavigateToStats = {
-                    navController.navigate(Route.Stats.route)
+                    navController.navigate(Route.Stats.createRoute(domain))
                 },
                 domain = domain,
                 onNavigateBack = { navController.navigateUp() },
@@ -315,9 +315,20 @@ fun AppNavigation(
             )
         }
 
-        guardedComposable(Route.Stats.route) {
+        guardedComposable(
+            route = Route.Stats.route,
+            arguments =
+                listOf(
+                    navArgument(Route.Stats.ARG_DOMAIN) {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+        ) { backStackEntry ->
             StatsScreenRoute(
                 appContainer = appContainer,
+                domain = Route.Stats.parseDomain(backStackEntry.arguments?.getString(Route.Stats.ARG_DOMAIN)),
                 onNavigateBack = {
                     navController.navigateUp()
                 },

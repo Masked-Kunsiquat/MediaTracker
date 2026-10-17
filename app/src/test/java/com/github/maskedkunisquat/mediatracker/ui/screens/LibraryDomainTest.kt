@@ -111,20 +111,20 @@ class LibraryDomainTest {
     }
 
     @Test
-    fun shows_offerUpNext_notStats() {
+    fun shows_offerUpNext_andStats() {
         setContent(MediaType.TV_SHOW)
 
         composeRule.onNodeWithContentDescription(upNext).assertExists()
-        composeRule.onNodeWithContentDescription(stats).assertDoesNotExist()
+        // Every domain has its own Stats tab since #217.
+        composeRule.onNodeWithContentDescription(stats).assertExists()
     }
 
     @Test
-    fun films_offerNeitherStatsNorUpNext() {
+    fun films_offerStats_notUpNext() {
         setContent(MediaType.MOVIE)
 
-        // Positive control: the bar is drawn (its back arrow is there).
-        composeRule.onNodeWithContentDescription(string(R.string.navigate_back)).assertExists()
-        composeRule.onNodeWithContentDescription(stats).assertDoesNotExist()
+        // Every domain has its own Stats tab since #217.
+        composeRule.onNodeWithContentDescription(stats).assertExists()
         composeRule.onNodeWithContentDescription(upNext).assertDoesNotExist()
     }
 
