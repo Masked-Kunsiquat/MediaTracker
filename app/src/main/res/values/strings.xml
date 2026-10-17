@@ -346,8 +346,15 @@
     <string name="year_review_mostly">mostly %1$s</string>
     <string name="year_review_rhythm">Your rhythm</string>
     <string name="year_review_busiest_month">was your busiest month</string>
-    <string name="year_review_read_most">You read most in the %1$s</string>
-    <string name="year_review_watch_most">You watch most in the %1$s</string>
+    <string name="year_review_read_morning">You read most in the mornings</string>
+    <string name="year_review_read_afternoon">You read most in the afternoons</string>
+    <string name="year_review_read_evening">You read most in the evenings</string>
+    <string name="year_review_read_night">You read most at night</string>
+    <string name="year_review_watch_morning">You watched most in the mornings</string>
+    <string name="year_review_watch_afternoon">You watched most in the afternoons</string>
+    <string name="year_review_watch_evening">You watched most in the evenings</string>
+    <string name="year_review_watch_night">You watched most at night</string>
+    <string name="year_review_quiet_past">A quiet year: nothing logged</string>
     <string name="year_review_summary">That was your %1$d</string>
     <string name="year_review_summary_longest">Longest book: %1$s</string>
     <string name="year_review_summary_binge">Biggest binge: %1$d episodes of %2$s</string>

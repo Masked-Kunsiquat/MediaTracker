@@ -69,10 +69,10 @@ fun YearReviewScreenRoute(
 /**
  * The year in review (#221): a story of full-screen pages, one number or highlight each, that the
  * user swipes or taps through -- the right third of the screen goes on, the left third goes back.
- * TalkBack users get the same as "Next page" and "Previous page" actions on the pager, since tapping
- * thirds of the screen is not discoverable without sight. A page with nothing for the year is never
- * built ([pagesOf]). Each page has its own theme colour, and sets [LocalContentColor] so everything
- * on it -- the clock dial included -- reads on that colour.
+ * TalkBack users get the same as "Next page" and "Previous page" actions on each page -- the node
+ * TalkBack focuses -- since tapping thirds of the screen is not discoverable without sight. A page with nothing for the year is never
+ * built ([pagesOf]). Each page has its own theme colour, and sets [LocalContentColor] so its text
+ * reads on that colour.
  *
  * No `Scaffold` and no text field: the page draws edge to edge and pads itself with
  * `safeDrawingPadding`.
@@ -115,19 +115,7 @@ fun YearReviewScreen(
                 Modifier
                     .fillMaxSize()
                     .testTag(TestTags.YearReview.PAGER)
-                    .semantics {
-                        customActions =
-                            listOf(
-                                CustomAccessibilityAction(nextLabel) {
-                                    go(1)
-                                    true
-                                },
-                                CustomAccessibilityAction(previousLabel) {
-                                    go(-1)
-                                    true
-                                },
-                            )
-                    }.pointerInput(pages.size) {
+                    .pointerInput(pages.size) {
                         detectTapGestures { offset ->
                             when {
                                 offset.x > size.width * 2f / 3f -> go(1)
@@ -143,7 +131,24 @@ fun YearReviewScreen(
                 background = background,
                 onBackground = onBackground,
                 onClose = onClose,
-                modifier = Modifier.testTag(TestTags.YearReview.page(pages[index].name)),
+                // TalkBack focuses the page, never the pager, so the paging actions live here; a page
+                // reads as one item -- except the year page, whose chips must stay reachable (#221 review).
+                modifier =
+                    Modifier
+                        .testTag(TestTags.YearReview.page(pages[index].name))
+                        .semantics(mergeDescendants = pages[index] != YearPage.YEAR) {
+                            customActions =
+                                listOf(
+                                    CustomAccessibilityAction(nextLabel) {
+                                        go(1)
+                                        true
+                                    },
+                                    CustomAccessibilityAction(previousLabel) {
+                                        go(-1)
+                                        true
+                                    },
+                                )
+                        },
             ) {
                 YearPageContent(pages[index], review, uiState.years, thisYear, onSelectYear)
             }

@@ -34,7 +34,8 @@ class YearReviewTest {
     private fun stats(
         booksFinished: Int = 0,
         timeRead: Long? = null,
-    ) = PeriodStatsRow(timeRead, 0, null, booksFinished, 0, null, null, null)
+        sessions: Int = 0,
+    ) = PeriodStatsRow(timeRead, sessions, null, booksFinished, 0, null, null, null)
 
     private fun session(
         at: Instant,
@@ -229,5 +230,19 @@ class YearReviewTest {
         assertEquals(false, watching.reading)
         assertEquals(1L, watching.hours[21])
         assertEquals(DayPart.NIGHT, watching.busiestPart)
+    }
+
+    /** A book stored with 0 pages is not "Your longest book: 0 pages" (#221 review). */
+    @Test
+    fun aBookWithZeroPages_isNotTheLongest() {
+        assertNull(review(books = listOf(book("Blank", 0, at(1, 1)))).longestBook)
+    }
+
+    /** Quiet means nothing logged at all: untimed reading sessions are not a quiet year (#221 review). */
+    @Test
+    fun untimedReading_isNotAQuietYear() {
+        assertEquals(true, review().quiet)
+        assertEquals(false, review(periodStats = stats(sessions = 4)).quiet)
+        assertEquals(false, review(films = listOf(film(at(1, 1), "Arrival", null))).quiet)
     }
 }

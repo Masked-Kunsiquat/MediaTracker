@@ -64,10 +64,6 @@ internal fun pagesOf(review: YearReview): List<YearPage> =
         YearPage.SUMMARY,
     )
 
-/** Whether nothing at all was logged in the year. */
-private fun YearReview.isQuiet(): Boolean =
-    totals.booksFinished == 0 && totals.films == 0 && totals.episodes == 0 && totals.readSeconds == 0L
-
 @Composable
 internal fun YearPageContent(
     page: YearPage,
@@ -129,7 +125,7 @@ internal fun YearPageContent(
             }
         YearPage.BINGE -> review.bingeDay?.let { BingePage(it) }
         YearPage.RHYTHM -> review.rhythm?.let { RhythmPage(it) }
-        YearPage.SUMMARY -> SummaryPage(review)
+        YearPage.SUMMARY -> SummaryPage(review, thisYear)
     }
 }
 
@@ -240,30 +236,28 @@ private fun RhythmPage(rhythm: com.hub.media.features.stats.data.Rhythm) {
     )
     Text(text = stringResource(R.string.year_review_busiest_month), style = MaterialTheme.typography.titleMedium)
     rhythm.busiestPart?.let { part ->
-        val parts = stringResource(part.pluralLabelRes()).lowercase(locale)
+        val sentence = stringResource(part.rhythmSentence(rhythm.reading))
         Spacer(Modifier.height(16.dp))
-        ClockDial(hours = rhythm.hours, busiest = stringResource(part.pluralLabelRes()), description = "")
+        ClockDial(hours = rhythm.hours, busiest = stringResource(part.pluralLabelRes()), description = sentence)
         Spacer(Modifier.height(12.dp))
-        Text(
-            text =
-                stringResource(
-                    if (rhythm.reading) R.string.year_review_read_most else R.string.year_review_watch_most,
-                    parts,
-                ),
-            style = MaterialTheme.typography.headlineSmall,
-        )
+        Text(text = sentence, style = MaterialTheme.typography.headlineSmall)
     }
 }
 
 @Composable
-private fun SummaryPage(review: YearReview) {
-    if (review.isQuiet()) {
+private fun SummaryPage(
+    review: YearReview,
+    thisYear: Int,
+) {
+    if (review.quiet) {
         Text(
             text = stringResource(R.string.year_review_title, review.year),
             style = MaterialTheme.typography.displaySmall,
         )
         Spacer(Modifier.height(16.dp))
-        Text(text = stringResource(R.string.year_review_quiet), style = MaterialTheme.typography.titleLarge)
+        // "yet" only while the year is still going.
+        val quiet = if (review.year == thisYear) R.string.year_review_quiet else R.string.year_review_quiet_past
+        Text(text = stringResource(quiet), style = MaterialTheme.typography.titleLarge)
         return
     }
     val t = review.totals
@@ -302,4 +296,13 @@ private fun DayPart.pluralLabelRes(): Int =
         DayPart.AFTERNOON -> R.string.stats_daypart_afternoons
         DayPart.EVENING -> R.string.stats_daypart_evenings
         DayPart.NIGHT -> R.string.stats_daypart_nights
+    }
+
+/** "You read most in the evenings" / "…at night": a whole sentence per part, so each reads naturally. */
+private fun DayPart.rhythmSentence(reading: Boolean): Int =
+    when (this) {
+        DayPart.MORNING -> if (reading) R.string.year_review_read_morning else R.string.year_review_watch_morning
+        DayPart.AFTERNOON -> if (reading) R.string.year_review_read_afternoon else R.string.year_review_watch_afternoon
+        DayPart.EVENING -> if (reading) R.string.year_review_read_evening else R.string.year_review_watch_evening
+        DayPart.NIGHT -> if (reading) R.string.year_review_read_night else R.string.year_review_watch_night
     }

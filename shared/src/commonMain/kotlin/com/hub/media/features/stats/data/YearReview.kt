@@ -83,6 +83,9 @@ public data class Rhythm(
 /**
  * One year across books, films and shows (#221). Each highlight is `null` when the year has nothing
  * for it, and the story skips that page; [totals] is always there, zeros and all.
+ *
+ * @property quiet Nothing at all was logged in the year: no reading session (timed or not), no
+ *   viewing and no finish. A year of untimed reading is not quiet, though its totals show no time.
  */
 public data class YearReview(
     val year: Int,
@@ -94,6 +97,7 @@ public data class YearReview(
     val rewatchedFilm: RewatchedFilm?,
     val bingeDay: BingeDay?,
     val rhythm: Rhythm?,
+    val quiet: Boolean = false,
 )
 
 /**
@@ -131,7 +135,8 @@ public fun yearReview(
         totals = totals,
         longestBook =
             finishedBooks
-                .filter { it.totalPages != null }
+                // A page count of 0 is a missing count, not "0 pages" (#221 review).
+                .filter { (it.totalPages ?: 0) > 0 }
                 .sortedWith(compareBy({ -it.totalPages!! }, { it.finishedAt }))
                 .firstOrNull()
                 ?.let { LongestBook(it.title, it.totalPages!!) },
@@ -152,6 +157,7 @@ public fun yearReview(
                 .firstOrNull(),
         bingeDay = bingeDay(episodes, timeZone),
         rhythm = rhythm(sessions, viewings, reading, readSeconds, timeZone),
+        quiet = periodStats.sessionCount == 0 && viewings.isEmpty() && periodStats.booksFinished == 0,
     )
 }
 

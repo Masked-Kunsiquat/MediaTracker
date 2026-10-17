@@ -4,6 +4,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -16,7 +18,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
+import com.hub.media.features.stats.data.DayPart
 import com.hub.media.features.stats.data.LongestBook
+import com.hub.media.features.stats.data.Rhythm
 import com.hub.media.features.stats.data.YearReview
 import com.hub.media.features.stats.data.YearTotals
 import com.hub.media.ui.YearReviewUiState
@@ -64,14 +68,17 @@ class YearReviewScreenTest {
 
     private fun page(kind: String) = composeRule.onNodeWithTag(TestTags.YearReview.page(kind))
 
-    /** Pages forward the way TalkBack does: through the pager's "Next page" custom action. */
+    /**
+     * Pages forward the way TalkBack does: the "Next page" action of the page on screen -- the node
+     * TalkBack focuses, since the pager itself has nothing to read (#221 review).
+     */
     private fun next() {
-        val actions =
+        val current =
             composeRule
-                .onNodeWithTag(
-                    TestTags.YearReview.PAGER,
-                ).fetchSemanticsNode()
-                .config[SemanticsActions.CustomActions]
+                .onAllNodes(SemanticsMatcher("a page") { it.config.contains(SemanticsActions.CustomActions) })
+                .fetchSemanticsNodes()
+                .first { node -> node.boundsInRoot.left >= 0f && node.boundsInRoot.left < 1f }
+        val actions = current.config[SemanticsActions.CustomActions]
         val next = actions.first { it.label == string(R.string.year_review_next) }
         composeRule.runOnIdle { next.action() }
         composeRule.waitForIdle()
@@ -114,20 +121,23 @@ class YearReviewScreenTest {
             .onNodeWithTag(
                 TestTags.YearReview.PAGER,
             ).performTouchInput { click(Offset(width * 0.9f, height / 2f)) }
-        page("TOTALS").assertExists()
+        // Displayed, not merely composed: the pager can keep a neighbour alive off screen, so
+        // "exists" would pass with a dead tap (#221 review).
+        page("TOTALS").assertIsDisplayed()
         composeRule
             .onNodeWithTag(
                 TestTags.YearReview.PAGER,
             ).performTouchInput { click(Offset(width * 0.1f, height / 2f)) }
-        page("YEAR").assertExists()
+        page("YEAR").assertIsDisplayed()
+        page("TOTALS").assertIsNotDisplayed()
     }
 
+    /** The actions sit on the page TalkBack focuses, not on the pager it never lands on (#221 review). */
     @Test
     fun talkBack_canPageForwardAndBack() {
         setContent()
 
-        composeRule
-            .onNodeWithTag(TestTags.YearReview.PAGER)
+        page("YEAR")
             .assert(
                 SemanticsMatcher("has Next and Previous actions") { node ->
                     val labels =
@@ -162,11 +172,46 @@ class YearReviewScreenTest {
 
     @Test
     fun aQuietYear_saysSo() {
-        setContent(review(totals = YearTotals(0, 0, 0, 0, 0, 0)))
+        setContent(review(totals = YearTotals(0, 0, 0, 0, 0, 0)).copy(quiet = true))
 
         next()
         next()
         page("SUMMARY").assertExists()
         composeRule.onNodeWithText(string(R.string.year_review_quiet)).assertExists()
+    }
+
+    @Test
+    fun theRhythm_saysAtNight_notInTheNights() {
+        val rhythm =
+            Rhythm(
+                busiestMonth = 1,
+                hours =
+                    List(24) {
+                        if (it ==
+                            23
+                        ) {
+                            3_600L
+                        } else {
+                            0L
+                        }
+                    },
+                busiestPart = DayPart.NIGHT,
+                reading = true,
+            )
+        setContent(review().copy(rhythm = rhythm))
+
+        next()
+        next()
+        page("RHYTHM").assertExists()
+        composeRule.onNodeWithText(string(R.string.year_review_read_night)).assertExists()
+    }
+
+    @Test
+    fun aQuietPastYear_doesNotSayYet() {
+        setContent(review(totals = YearTotals(0, 0, 0, 0, 0, 0)).copy(year = 2025, quiet = true), thisYear = 2026)
+
+        next()
+        next()
+        composeRule.onNodeWithText(string(R.string.year_review_quiet_past)).assertExists()
     }
 }
