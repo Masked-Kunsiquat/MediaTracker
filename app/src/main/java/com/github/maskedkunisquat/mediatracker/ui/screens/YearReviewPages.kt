@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import android.text.format.DateFormat
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -215,7 +216,8 @@ private fun BingePage(binge: com.hub.media.features.stats.data.BingeDay) {
     Text(text = stringResource(R.string.year_review_episodes_in_a_day), style = MaterialTheme.typography.headlineSmall)
     Spacer(Modifier.height(24.dp))
     Text(
-        text = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", locale)),
+        // The locale's own order: "Saturday, March 14" in the US, "Saturday 14 March" in the UK.
+        text = date.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), locale)),
         style = MaterialTheme.typography.titleLarge,
     )
     Text(

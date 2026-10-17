@@ -129,7 +129,7 @@ class YearReviewGoldenTest {
             name = "year-review-binge",
             alsoAssert = {
                 forward(2)
-                assertTextIsShown("Your biggest binge", "Saturday 14 March", "mostly Severance")
+                assertTextIsShown("Your biggest binge", "Saturday, March 14", "mostly Severance")
             },
         ) { Fixture() }
     }
