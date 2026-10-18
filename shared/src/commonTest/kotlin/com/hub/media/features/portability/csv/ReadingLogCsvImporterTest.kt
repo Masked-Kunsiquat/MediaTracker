@@ -128,4 +128,18 @@ class ReadingLogCsvImporterTest {
         assertIs<SessionRowParseResult.Parsed>(result)
         assertEquals(0L, result.row.durationSeconds)
     }
+
+    /** A session names its read (#230); a file from before reads (no read_number) means read #1. */
+    @Test
+    fun parseRow_readsTheReadNumber_andAnOldRowIsReadOne() {
+        val withNumber = ReadingLogCsvImporter.parseRow(validRow() + "2")
+        assertIs<SessionRowParseResult.Parsed>(withNumber)
+        assertEquals(2, withNumber.row.readNumber)
+
+        val legacy = ReadingLogCsvImporter.parseRow(ReadingLogCsvImporter.padLegacyV6Row(validRow()))
+        assertIs<SessionRowParseResult.Parsed>(legacy)
+        assertEquals(1, legacy.row.readNumber)
+
+        assertIs<SessionRowParseResult.Rejected>(ReadingLogCsvImporter.parseRow(validRow() + "0"))
+    }
 }

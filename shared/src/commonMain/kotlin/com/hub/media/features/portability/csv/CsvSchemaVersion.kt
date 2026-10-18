@@ -100,8 +100,14 @@ package com.hub.media.features.portability.csv
  * viewing, so a re-watch history survives an export rather than only a `.sqlite` backup. **No
  * existing file's header changes**, so a v5 library, reading-log or episodes file imports as-is with
  * no legacy adapter, and the new file is optional on import exactly as `episodes_export.csv` is.
+ *
+ * **v7 (#230)** adds a fifth file, `read_throughs_export.csv` ([ReadThroughCsvExporter]): one row per
+ * read of a book, with its status, dates and rating. `reading_logs_export.csv` gains `read_number`,
+ * appended last; a v6 reading log imports through [ReadingLogCsvImporter.padLegacyV6Row], every session
+ * landing in read #1. A file with no reads file is read the way the database migration reads an old
+ * library: each book's status and finish date are its read #1's.
  */
-public const val CSV_SCHEMA_VERSION: Int = 6
+public const val CSV_SCHEMA_VERSION: Int = 7
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

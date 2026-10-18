@@ -11,6 +11,7 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
@@ -31,8 +32,14 @@ import kotlin.time.Instant
  * [com.hub.media.features.media.data.MediaWithDetails]'s shape on the read side.
  */
 public sealed class ImportDetails {
+    /**
+     * @property readOne The book's read #1 as this import leaves it (#230): from the file's status and finish
+     *   date (and a Goodreads rating), merged with the existing read #1 under the duplicate policy. `null`
+     *   leaves the book's reads alone, only making sure read #1 exists.
+     */
     public data class Book(
         public val details: BookDetailsEntity,
+        public val readOne: ReadThroughEntity? = null,
     ) : ImportDetails()
 
     public data class Movie(
@@ -168,6 +175,43 @@ public interface ImportWriteDao {
     @Query("SELECT id FROM read_throughs WHERE mediaId = :mediaId ORDER BY number DESC LIMIT 1")
     public suspend fun latestReadId(mediaId: String): String?
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    public suspend fun insertRead(read: ReadThroughEntity)
+
+    @Query(
+        "UPDATE read_throughs SET status = :status, startedAt = :startedAt, finishedAt = :finishedAt, " +
+            "rating = :rating WHERE mediaId = :mediaId AND number = :number",
+    )
+    public suspend fun updateReadByNumber(
+        mediaId: String,
+        number: Int,
+        status: ReadingStatus,
+        startedAt: Instant?,
+        finishedAt: Instant?,
+        rating: Int?,
+    ): Int
+
+    /** Writes [read] onto the book's read with its number, or inserts it when there is none (#230). */
+    private suspend fun upsertRead(read: ReadThroughEntity) {
+        val updated =
+            updateReadByNumber(read.mediaId, read.number, read.status, read.startedAt, read.finishedAt, read.rating)
+        if (updated == 0) insertRead(read)
+    }
+
+    private suspend fun writeReadOne(details: ImportDetails.Book) {
+        val readOne = details.readOne
+        if (readOne != null) {
+            upsertRead(readOne)
+        } else {
+            insertFirstReadIfMissing(
+                newId(),
+                details.details.mediaId,
+                details.details.status,
+                details.details.finishedAt,
+            )
+        }
+    }
+
     /**
      * [session] with its read filled in (#230): a session the import built from the file carries a blank
      * `readThroughId` and joins its book's latest read, which this transaction has already created.
@@ -230,18 +274,14 @@ public interface ImportWriteDao {
         touchedEpisodeIds: Collection<String> = emptyList(),
         filmViewingDeletes: Collection<String> = emptyList(),
         touchedFilmIds: Collection<String> = emptyList(),
+        readUpserts: List<ReadThroughEntity> = emptyList(),
     ) {
         for (insert in mediaInserts) {
             insertMediaItem(insert.mediaItem)
             when (val details = insert.details) {
                 is ImportDetails.Book -> {
                     insertBookDetails(details.details)
-                    insertFirstReadIfMissing(
-                        newId(),
-                        details.details.mediaId,
-                        details.details.status,
-                        details.details.finishedAt,
-                    )
+                    writeReadOne(details)
                 }
                 is ImportDetails.Movie -> insertMovieDetails(details.details)
                 is ImportDetails.TVShow -> insertTvDetails(details.details)
@@ -265,12 +305,7 @@ public interface ImportWriteDao {
             when (val details = update.details) {
                 is ImportDetails.Book -> {
                     if (updateBookDetails(details.details) == 0) insertBookDetails(details.details)
-                    insertFirstReadIfMissing(
-                        newId(),
-                        details.details.mediaId,
-                        details.details.status,
-                        details.details.finishedAt,
-                    )
+                    writeReadOne(details)
                 }
                 is ImportDetails.Movie ->
                     if (updateMovieDetails(details.details) == 0) insertMovieDetails(details.details)
@@ -282,6 +317,9 @@ public interface ImportWriteDao {
             }
             update.identifiers.forEach { upsertExternalIdentifier(it) }
         }
+        // Reads from read_throughs_export.csv (#230): after the books they belong to, before the sessions
+        // that point at them.
+        readUpserts.forEach { upsertRead(it) }
         for (session in sessionInserts) {
             insertSession(withRead(session))
         }

@@ -14,6 +14,9 @@ public enum class ImportRowSource {
 
     /** A `watch_logs_export.csv` row (#90). */
     WATCH_LOG,
+
+    /** A `read_throughs_export.csv` row (#230). */
+    READ,
 }
 
 /**

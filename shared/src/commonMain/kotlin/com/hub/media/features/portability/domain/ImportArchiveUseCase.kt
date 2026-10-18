@@ -77,6 +77,7 @@ public class ImportArchiveUseCase(
                         read.episodesCsv,
                         duplicatePolicy,
                         read.watchLogsCsv,
+                        read.readThroughsCsv,
                     )
             ) {
                 is Resource.Error -> return result
@@ -90,6 +91,7 @@ public class ImportArchiveUseCase(
                 ExportArchive.READING_LOGS to read.readingLogsCsv,
                 ExportArchive.EPISODES to read.episodesCsv,
                 ExportArchive.WATCH_LOGS to read.watchLogsCsv,
+                ExportArchive.READ_THROUGHS to read.readThroughsCsv,
             )
         for (file in read.manifest.files) {
             val csv = present[file.name] ?: continue

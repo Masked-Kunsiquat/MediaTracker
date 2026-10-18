@@ -14,6 +14,8 @@ public data class ParsedSessionRow(
     public val endUnit: Double,
     public val deltaPages: Int?,
     public val notes: String?,
+    /** The read this session belongs to (#230); 1 for a file from before reads. */
+    public val readNumber: Int = 1,
 )
 
 /** Outcome of parsing one `reading_logs_export.csv` data row. */
@@ -65,6 +67,16 @@ public object ReadingLogCsvImporter {
 
         val deltaPages = parseOptionalInt(row[COL_DELTA_PAGES], "delta_pages")
         val notes = row[COL_NOTES].ifBlank { null }
+        // getOrNull: a row shorter than the current header (a caller passing a pre-#230 row directly)
+        // reads as read #1, the same as an adapted legacy file's blank cell.
+        val rawReadNumber = row.getOrNull(COL_READ_NUMBER).orEmpty()
+        val readNumber =
+            if (rawReadNumber.isBlank()) {
+                1
+            } else {
+                rawReadNumber.toIntOrNull()?.takeIf { it >= 1 }
+                    ?: reject("read_number must be 1 or more, got '$rawReadNumber'")
+            }
 
         return ParsedSessionRow(
             sessionId = sessionId,
@@ -76,8 +88,12 @@ public object ReadingLogCsvImporter {
             endUnit = endUnit,
             deltaPages = deltaPages,
             notes = notes,
+            readNumber = readNumber,
         )
     }
+
+    /** A pre-#230 (CSV v6 and earlier) row, padded to the current width: its blank `read_number` is read #1. */
+    public fun padLegacyV6Row(row: List<String>): List<String> = row + ""
 
     // Column indices, matching ReadingLogCsvExporter.HEADER's order exactly.
     private const val COL_SESSION_ID = 1
@@ -89,4 +105,5 @@ public object ReadingLogCsvImporter {
     private const val COL_END_UNIT = 7
     private const val COL_DELTA_PAGES = 8
     private const val COL_NOTES = 9
+    private const val COL_READ_NUMBER = 10
 }

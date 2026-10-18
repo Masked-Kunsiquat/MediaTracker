@@ -194,4 +194,23 @@ class ReadingLogCsvExporterTest {
         val lines = csv.trimEnd().split(CsvUtil.LINE_ENDING)
         assertEquals(4, lines.size) // header + 3 sessions
     }
+
+    /** Each session's read number is written from the reads it belongs to (#230). */
+    @Test
+    fun export_writesEachSessionsReadNumber() {
+        val start = kotlin.time.Instant.fromEpochMilliseconds(0)
+        val end = kotlin.time.Instant.fromEpochMilliseconds(1_000)
+        val csv =
+            ReadingLogCsvExporter.export(
+                listOf(
+                    ReadingSessionEntity("s1", "m1", start, end, 1L, 0.0, 1.0, 1, null, "r1"),
+                    ReadingSessionEntity("s2", "m1", start, end, 1L, 1.0, 2.0, 1, null, "r2"),
+                ),
+                readNumberById = mapOf("r1" to 1, "r2" to 2),
+            )
+
+        val lines = csv.trim().lines()
+        assertEquals("read_number", lines[0].split(",").last())
+        assertEquals(listOf("1", "2"), lines.drop(1).map { it.split(",").last() })
+    }
 }

@@ -40,6 +40,8 @@ public sealed class ParsedRowDetails {
         public val status: ReadingStatus,
         public val finishedAt: Instant?,
         public val trackingMode: TrackingMode,
+        /** Read #1's rating in half-steps (#230). Only a Goodreads row carries one; a library row never does. */
+        public val rating: Int? = null,
     ) : ParsedRowDetails()
 
     /** @see ParsedLibraryRow */
