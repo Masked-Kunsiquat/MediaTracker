@@ -3,7 +3,11 @@ package com.github.maskedkunisquat.mediatracker.ui.goldens
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreen
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookReadActions
 import com.hub.media.core.database.entities.BookDetailsEntity
@@ -78,6 +82,24 @@ class BookDetailScreenGoldenTest {
     }
 
     /**
+     * A re-read (#230): the history with read #2 open and read #1 -- finished, rated 4 -- folded below it.
+     * The fixture agrees with itself (Graphban `m_ab00cbec8a`): the header's single rated read is read #1's
+     * 4 stars, the current progress is read #2's latest session, and read #1's three sessions are what its
+     * folded card counts.
+     */
+    @Test
+    fun bookDetail_reads() {
+        composeRule.captureGolden(
+            name = "book-detail-reads",
+            alsoAssert = {
+                onNodeWithTag(TestTags.BookDetail.LIST)
+                    .performScrollToNode(hasText("Read #1", substring = true))
+                assertTextIsShown("Read #2", "Read #1", "3 sessions")
+            },
+        ) { ReadsFixture() }
+    }
+
+    /**
      * A book **with** a cover (#141) -- the state [bookDetail] does NOT cover. `GOLDEN_BOOK`'s
      * `coverImageHash` is null, and as of #141 step 3 Book's header matches Movie/TV: the shared
      * `DetailHeader`'s `artwork` slot (built via `?.let`) skips `CoverImage` entirely for a null
@@ -115,6 +137,37 @@ class BookDetailScreenGoldenTest {
                     details = GOLDEN_DETAILS,
                     sessions = GOLDEN_SESSIONS,
                     reads = GOLDEN_READS,
+                ),
+            timerState = ReadingTimerState.Idle,
+            elapsedSeconds = 0,
+            coverStorageDir = "/fake/path",
+            onNavigateBack = {},
+            onDeleteBook = {},
+            onStartReading = {},
+            onPauseReading = {},
+            onResumeReading = {},
+            onStopReading = {},
+            onSaveSession = { _, _, _, _ -> },
+            onDiscardPendingSession = {},
+            onLogManualSession = { _, _, _, _, _, _ -> },
+            onDeleteSession = {},
+            onEditSession = { _, _, _, _, _, _, _ -> },
+            onEditBook = {},
+            onStatusChange = {},
+            onRefetchCover = {},
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
+        )
+    }
+
+    @Composable
+    private fun ReadsFixture() {
+        BookDetailScreen(
+            uiState =
+                BookDetailUiState.Ready(
+                    book = GOLDEN_BOOK,
+                    details = GOLDEN_DETAILS,
+                    sessions = GOLDEN_SESSIONS.map { it.copy(readThroughId = "r2") } + FIRST_READ_SESSIONS,
+                    reads = TWO_READS,
                 ),
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
@@ -305,3 +358,44 @@ private val DUNE_SESSIONS =
             readThroughId = "r1",
         ),
     )
+
+/** Gatsby's first read (#230): finished in March 2023, rated 4 stars. */
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val TWO_READS =
+    listOf(
+        ReadThroughEntity(
+            id = "r1",
+            mediaId = "book-1",
+            number = 1,
+            status = ReadingStatus.FINISHED,
+            startedAt = Instant.fromEpochMilliseconds(1_677_000_000_000),
+            finishedAt = Instant.fromEpochMilliseconds(1_678_000_000_000),
+            rating = 8,
+        ),
+        ReadThroughEntity(
+            id = "r2",
+            mediaId = "book-1",
+            number = 2,
+            status = ReadingStatus.READING,
+            startedAt = Instant.fromEpochMilliseconds(1_699_900_000_000),
+        ),
+    )
+
+/** Read #1's three sessions, the whole book: 180 pages over 3 hours. */
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val FIRST_READ_SESSIONS =
+    listOf(0 to 60, 60 to 120, 120 to 180).mapIndexed { i, (from, to) ->
+        val start = Instant.fromEpochMilliseconds(1_677_000_000_000 + i * 86_400_000L)
+        ReadingSessionEntity(
+            id = "first-$i",
+            mediaId = "book-1",
+            timestampStart = start,
+            timestampEnd = Instant.fromEpochMilliseconds(start.toEpochMilliseconds() + 3_600_000),
+            durationSeconds = 3_600,
+            startUnit = from.toDouble(),
+            endUnit = to.toDouble(),
+            deltaPages = to - from,
+            notes = null,
+            readThroughId = "r1",
+        )
+    }
