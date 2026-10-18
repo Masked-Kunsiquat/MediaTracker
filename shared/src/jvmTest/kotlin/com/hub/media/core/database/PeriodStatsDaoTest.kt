@@ -104,21 +104,21 @@ class PeriodStatsDaoTest {
         runTest {
             insertBook()
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
+                sampleBookDetails(mediaId = mediaId),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = instant(1_000)),
             )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "media-2", status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+                sampleBookDetails(mediaId = "media-2"),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "media-2", 1, ReadingStatus.FINISHED, finishedAt = instant(2_000)),
             )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-3"))
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "media-3", status = ReadingStatus.READING, finishedAt = instant(1_500)),
+                sampleBookDetails(mediaId = "media-3"),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "media-3", 1, ReadingStatus.READING, finishedAt = instant(1_500)),
@@ -132,7 +132,7 @@ class PeriodStatsDaoTest {
         runTest {
             insertBook()
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
+                sampleBookDetails(mediaId = mediaId),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = null),
@@ -141,7 +141,7 @@ class PeriodStatsDaoTest {
             // A book still being read is not a finish, in All time or anywhere else.
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "media-2", status = ReadingStatus.READING, finishedAt = null),
+                sampleBookDetails(mediaId = "media-2"),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "media-2", 1, ReadingStatus.READING, finishedAt = null),
@@ -169,7 +169,7 @@ class PeriodStatsDaoTest {
             assertEquals(0, flow.first().booksFinished)
 
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
+                sampleBookDetails(mediaId = mediaId),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = instant(1_000)),
@@ -253,21 +253,21 @@ class PeriodStatsDaoTest {
         runTest {
             insertBook()
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+                sampleBookDetails(mediaId = mediaId),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = instant(1_500)),
             )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "media-2", status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+                sampleBookDetails(mediaId = "media-2"),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "media-2", 1, ReadingStatus.FINISHED, finishedAt = instant(2_000)),
             )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-3"))
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "media-3", status = ReadingStatus.READING, finishedAt = instant(1_600)),
+                sampleBookDetails(mediaId = "media-3"),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "media-3", 1, ReadingStatus.READING, finishedAt = instant(1_600)),

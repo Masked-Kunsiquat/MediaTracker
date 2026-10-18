@@ -42,7 +42,7 @@ class TimedSessionsDaoTest {
     ) {
         db.mediaItemDao().insert(sampleMediaItem(id = id))
         db.bookDetailsDao().insert(
-            sampleBookDetails(mediaId = id, format = format, status = status).copy(authors = authors),
+            sampleBookDetails(mediaId = id, format = format).copy(authors = authors),
         )
         db.readThroughDao().insert(ReadThroughEntity(newId(), id, 1, status))
     }
@@ -137,8 +137,6 @@ class TimedSessionsDaoTest {
         db.bookDetailsDao().insert(
             sampleBookDetails(
                 mediaId = id,
-                status = status,
-                finishedAt = at(at),
                 totalPages = pages,
             ).copy(authors = "Le Guin"),
         )
@@ -222,8 +220,6 @@ class TimedSessionsDaoTest {
         runTest {
             db.insertTestBook("b", status = ReadingStatus.FINISHED, finishedAt = at(1_000))
             db.readThroughDao().insert(ReadThroughEntity(newId(), "b", 2, ReadingStatus.READING))
-            // The book's own row now says Reading with no finish, as a re-read leaves it.
-            db.bookDetailsDao().insert(sampleBookDetails(mediaId = "b", status = ReadingStatus.READING))
 
             assertEquals(at(1_000), db.statsDao().observeFirstActivity().first())
         }

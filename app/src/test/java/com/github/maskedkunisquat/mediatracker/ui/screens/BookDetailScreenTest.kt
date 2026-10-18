@@ -65,25 +65,23 @@ class BookDetailScreenTest {
 
     private fun details(
         mediaId: String = "book-1",
-        status: ReadingStatus = ReadingStatus.READING,
         authors: String? = "F. Scott Fitzgerald",
         isbn: String? = "9780743273565",
         totalPages: Int? = 180,
-        finishedAt: Instant? = null,
     ) = BookDetailsEntity(
         mediaId = mediaId,
         isbn = isbn,
         format = BookFormat.PHYSICAL,
         totalPages = totalPages,
-        status = status,
         authors = authors,
-        finishedAt = finishedAt,
     )
 
-    /** A Ready state whose book has one read carrying [details]' status and finish date (#230). */
+    /** A Ready state whose book has one read, carrying [status] and [finishedAt] (#230). */
     private fun ready(
         book: MediaItemEntity,
         details: BookDetailsEntity?,
+        status: ReadingStatus = ReadingStatus.READING,
+        finishedAt: Instant? = null,
         sessions: List<ReadingSessionEntity> = emptyList(),
         pendingSession: ReadingTimerResult? = null,
         errorMessage: String? = null,
@@ -97,8 +95,11 @@ class BookDetailScreenTest {
         isRefetchingCover = isRefetchingCover,
         reads =
             details
-                ?.let { listOf(ReadThroughEntity("read-1", it.mediaId, 1, it.status, finishedAt = it.finishedAt)) }
-                .orEmpty(),
+                ?.let {
+                    listOf(
+                        ReadThroughEntity("read-1", it.mediaId, 1, status, finishedAt = finishedAt),
+                    )
+                }.orEmpty(),
     )
 
     private fun session(
@@ -352,7 +353,7 @@ class BookDetailScreenTest {
     fun tappingAStatusOption_invokesOnStatusChangeWithThatStatus() {
         var captured: ReadingStatus? = null
         setContent(
-            ready(book = book(), details = details(status = ReadingStatus.READING)),
+            ready(book = book(), details = details(), status = ReadingStatus.READING),
             onStatusChange = { captured = it },
         )
 
@@ -369,7 +370,9 @@ class BookDetailScreenTest {
         setContent(
             ready(
                 book = book(),
-                details = details(status = ReadingStatus.FINISHED, finishedAt = finishedAt),
+                details = details(),
+                status = ReadingStatus.FINISHED,
+                finishedAt = finishedAt,
             ),
         )
 
@@ -396,7 +399,9 @@ class BookDetailScreenTest {
         setContent(
             ready(
                 book = book(),
-                details = details(status = ReadingStatus.READING, finishedAt = finishedAt),
+                details = details(),
+                status = ReadingStatus.READING,
+                finishedAt = finishedAt,
             ),
         )
 

@@ -185,7 +185,6 @@ public class BookRepository(
                     isbn = isbn,
                     format = format,
                     totalPages = totalPages,
-                    status = status,
                     trackingMode = trackingMode,
                     authors = authors,
                 )
@@ -199,7 +198,7 @@ public class BookRepository(
                     )
                 }
 
-            db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities)
+            db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities, status = status)
 
             Resource.Success(mediaId)
         }
@@ -459,10 +458,6 @@ public class BookRepository(
                     clock = clock,
                 )
             db.readThroughDao().updateStatus(latest.id, status, finishedAt)
-            // book_details still carries these columns until #230 drops them; kept in step meanwhile.
-            db.bookDetailsDao().getByMediaId(mediaId)?.let {
-                db.bookDetailsDao().update(it.copy(status = status, finishedAt = finishedAt))
-            }
             Resource.Success(Unit)
         }
 

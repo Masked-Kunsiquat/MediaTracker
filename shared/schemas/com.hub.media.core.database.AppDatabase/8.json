@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "ebe42e414adedf19fe2075c1c7b52781",
+    "identityHash": "bda0e72478d3eaca3333f77fc2981117",
     "entities": [
       {
         "tableName": "media_items",
@@ -67,7 +67,7 @@
       },
       {
         "tableName": "book_details",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `isbn` TEXT, `format` TEXT NOT NULL, `totalPages` INTEGER, `status` TEXT NOT NULL, `finishedAt` INTEGER, `trackingMode` TEXT NOT NULL, `authors` TEXT, PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `isbn` TEXT, `format` TEXT NOT NULL, `totalPages` INTEGER, `trackingMode` TEXT NOT NULL, `authors` TEXT, PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "mediaId",
@@ -89,17 +89,6 @@
           {
             "fieldPath": "totalPages",
             "columnName": "totalPages",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "status",
-            "columnName": "status",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "finishedAt",
-            "columnName": "finishedAt",
             "affinity": "INTEGER"
           },
           {
@@ -703,7 +692,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ebe42e414adedf19fe2075c1c7b52781')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bda0e72478d3eaca3333f77fc2981117')"
     ]
   }
 }

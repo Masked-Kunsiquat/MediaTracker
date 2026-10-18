@@ -16,6 +16,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -1488,6 +1489,13 @@ class MigrationTest {
                 ),
                 reads,
             )
+            // Status and finish date now live only on the read (#230).
+            db.prepare("PRAGMA table_info(book_details)").use { s ->
+                val cols = mutableListOf<String>()
+                while (s.step()) cols += s.getText(1)
+                assertFalse("status" in cols || "finishedAt" in cols, "book_details keeps $cols")
+                assertTrue("authors" in cols && "trackingMode" in cols, "every other column survives: $cols")
+            }
         }
     }
 

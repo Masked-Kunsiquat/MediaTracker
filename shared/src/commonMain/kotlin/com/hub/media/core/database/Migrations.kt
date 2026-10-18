@@ -455,10 +455,10 @@ private const val SQL_UUID: String =
  *    - `startedAt` is its earliest session.
  * 2. Rebuilds `reading_sessions` with a `NOT NULL` `readThroughId` (a foreign key SQLite cannot
  *    `ALTER` in), pointing every existing session at its book's read #1.
+ * 3. Rebuilds `book_details` without `status` and `finishedAt`: a book's state is its latest read's now.
  *
  * Nothing is lost: every session keeps its values and now belongs to read #1, and every book's status
- * and finish date are unchanged, read through its only read. `book_details.status`/`finishedAt` are
- * left in place here; a later step of #230 removes them.
+ * and finish date are unchanged, read through its only read.
  */
 public val MIGRATION_7_8: Migration =
     object : Migration(7, 8) {
@@ -513,5 +513,19 @@ public val MIGRATION_7_8: Migration =
                     "CREATE INDEX IF NOT EXISTS `index_reading_sessions_readThroughId` " +
                         "ON `reading_sessions` (`readThroughId`)",
                 )
+                // 3. The status and finish date now live on the reads, copied there in step 1.
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `book_details_new` (`mediaId` TEXT NOT NULL, `isbn` TEXT, " +
+                        "`format` TEXT NOT NULL, `totalPages` INTEGER, `trackingMode` TEXT NOT NULL, `authors` TEXT, " +
+                        "PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `book_details_new` (`mediaId`, `isbn`, `format`, `totalPages`, `trackingMode`, " +
+                        "`authors`) SELECT `mediaId`, `isbn`, `format`, `totalPages`, `trackingMode`, `authors` " +
+                        "FROM `book_details`",
+                )
+                connection.execSQL("DROP TABLE `book_details`")
+                connection.execSQL("ALTER TABLE `book_details_new` RENAME TO `book_details`")
             }
     }

@@ -99,14 +99,12 @@ interface BookWriteDao {
      */
     @Query(
         "UPDATE book_details SET format = :format, totalPages = :totalPages, " +
-            "status = :status, finishedAt = :finishedAt, trackingMode = :trackingMode WHERE mediaId = :mediaId",
+            "trackingMode = :trackingMode WHERE mediaId = :mediaId",
     )
     suspend fun updateBookDetailsMetadata(
         mediaId: String,
         format: BookFormat,
         totalPages: Int?,
-        status: ReadingStatus,
-        finishedAt: Instant?,
         trackingMode: TrackingMode,
     ): Int
 
@@ -131,7 +129,7 @@ interface BookWriteDao {
      * before the transaction opened, which could already be stale by the time this method runs
      * (concurrent insert/delete of that row). Zero rows affected means no [BookDetailsEntity] row
      * exists yet, so this self-heals by inserting a fresh one with the given format/totalPages/
-     * status/finishedAt/trackingMode and a `null` isbn (see
+     * trackingMode and a `null` isbn (see
      * [com.hub.media.features.books.data.BookRepository.updateBookMetadata] KDoc for the full
      * data-integrity edge case this covers).
      *
@@ -154,9 +152,7 @@ interface BookWriteDao {
         val mediaRowsAffected = updateMediaItemMetadata(mediaId, title, releaseYear, purchasePrice)
         if (mediaRowsAffected == 0) return 0
 
-        val detailsRowsAffected =
-            updateBookDetailsMetadata(mediaId, format, totalPages, status, finishedAt, trackingMode)
-        updateLatestReadStatus(mediaId, status, finishedAt)
+        val detailsRowsAffected = updateBookDetailsMetadata(mediaId, format, totalPages, trackingMode)
         if (detailsRowsAffected == 0) {
             insertBookDetails(
                 BookDetailsEntity(
@@ -164,13 +160,13 @@ interface BookWriteDao {
                     isbn = null,
                     format = format,
                     totalPages = totalPages,
-                    status = status,
-                    finishedAt = finishedAt,
                     trackingMode = trackingMode,
                 ),
             )
-            insertFirstReadIfMissing(newId(), mediaId, status, finishedAt)
         }
+        // The status lives on the latest read (#230); a book with none gets read #1 with it.
+        updateLatestReadStatus(mediaId, status, finishedAt)
+        insertFirstReadIfMissing(newId(), mediaId, status, finishedAt)
         return mediaRowsAffected
     }
 
@@ -291,10 +287,13 @@ interface BookWriteDao {
         mediaItem: MediaItemEntity,
         bookDetails: BookDetailsEntity,
         externalIdentifiers: List<ExternalIdentifierEntity>,
+        status: ReadingStatus = ReadingStatus.TO_READ,
+        finishedAt: Instant? = null,
     ) {
         insertMediaItem(mediaItem)
         insertBookDetails(bookDetails)
-        insertFirstReadIfMissing(newId(), mediaItem.id, bookDetails.status, bookDetails.finishedAt)
+        // Read #1 carries the book's status (#230).
+        insertFirstReadIfMissing(newId(), mediaItem.id, status, finishedAt)
         externalIdentifiers.forEach { insertExternalIdentifier(it) }
     }
 }

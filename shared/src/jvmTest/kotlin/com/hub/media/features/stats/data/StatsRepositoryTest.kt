@@ -331,7 +331,7 @@ class StatsRepositoryTest {
         runTest {
             insertBook()
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
+                sampleBookDetails(mediaId = mediaId),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = null),
@@ -352,8 +352,6 @@ class StatsRepositoryTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(
                     mediaId = mediaId,
-                    status = ReadingStatus.FINISHED,
-                    finishedAt = LocalDateTime(2024, 5, 31, 23, 30).toInstant(newYork),
                 ),
             )
             db.readThroughDao().insert(
@@ -369,8 +367,6 @@ class StatsRepositoryTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(
                     mediaId = "media-2",
-                    status = ReadingStatus.FINISHED,
-                    finishedAt = LocalDateTime(2024, 1, 2, 10, 0).toInstant(newYork),
                 ),
             )
             db.readThroughDao().insert(

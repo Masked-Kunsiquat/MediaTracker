@@ -82,7 +82,6 @@ class EditBookViewModelTest {
                 mediaId = mediaId,
                 format = format,
                 totalPages = totalPages,
-                status = status,
                 trackingMode = trackingMode,
             ),
         )

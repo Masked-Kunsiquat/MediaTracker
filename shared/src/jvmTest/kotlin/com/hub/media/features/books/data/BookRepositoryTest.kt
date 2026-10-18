@@ -352,7 +352,7 @@ class BookRepositoryTest {
             val details = db.bookDetailsDao().getByMediaId(mediaId)
             assertEquals(366, details?.totalPages)
             assertEquals(BookFormat.HARDCOVER, details?.format)
-            assertEquals(ReadingStatus.READING, details?.status)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
             assertEquals(TrackingMode.PERCENT, details?.trackingMode)
             // ISBN is not editable in this phase -- must be untouched.
             assertEquals("9780593135204", details?.isbn)
@@ -600,7 +600,7 @@ class BookRepositoryTest {
             assertEquals(null, details?.isbn)
             assertEquals(150, details?.totalPages)
             assertEquals(BookFormat.PAPERBACK, details?.format)
-            assertEquals(ReadingStatus.READING, details?.status)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
             assertEquals(TrackingMode.PAGES, details?.trackingMode)
         }
 
@@ -622,8 +622,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.FINISHED, details?.status)
-            assertTrue(details?.finishedAt != null, "finishedAt must be stamped on the FINISHED transition")
+            assertEquals(ReadingStatus.FINISHED, db.readThroughDao().getLatest(mediaId)?.status)
+            assertTrue(
+                db.readThroughDao().getLatest(mediaId)?.finishedAt != null,
+                "finishedAt must be stamped on the FINISHED transition",
+            )
         }
 
     @Test
@@ -639,7 +642,7 @@ class BookRepositoryTest {
                 status = ReadingStatus.FINISHED,
                 trackingMode = TrackingMode.PERCENT,
             )
-            val firstFinishedAt = db.bookDetailsDao().getByMediaId(mediaId)?.finishedAt
+            val firstFinishedAt = db.readThroughDao().getLatest(mediaId)?.finishedAt
 
             val result =
                 repo.updateBookMetadata(
@@ -652,7 +655,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(firstFinishedAt, details?.finishedAt, "re-saving while FINISHED must not bump finishedAt")
+            assertEquals(
+                firstFinishedAt,
+                db.readThroughDao().getLatest(mediaId)?.finishedAt,
+                "re-saving while FINISHED must not bump finishedAt",
+            )
         }
 
     @Test
@@ -680,8 +687,12 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.READING, details?.status)
-            assertEquals(null, details?.finishedAt, "moving away from FINISHED must clear finishedAt")
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
+            assertEquals(
+                null,
+                db.readThroughDao().getLatest(mediaId)?.finishedAt,
+                "moving away from FINISHED must clear finishedAt",
+            )
         }
 
     @Test
@@ -695,8 +706,8 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.READING, details?.status)
-            assertEquals(null, details?.finishedAt)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
+            assertEquals(null, db.readThroughDao().getLatest(mediaId)?.finishedAt)
         }
 
     @Test
@@ -727,7 +738,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(fixedInstant, details?.finishedAt, "finishedAt must come from the injected Clock")
+            assertEquals(
+                fixedInstant,
+                db.readThroughDao().getLatest(mediaId)?.finishedAt,
+                "finishedAt must come from the injected Clock",
+            )
         }
 
     @Test
@@ -741,8 +756,8 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.FINISHED, details?.status)
-            assertTrue(details?.finishedAt != null)
+            assertEquals(ReadingStatus.FINISHED, db.readThroughDao().getLatest(mediaId)?.status)
+            assertTrue(db.readThroughDao().getLatest(mediaId)?.finishedAt != null)
         }
 
     @Test

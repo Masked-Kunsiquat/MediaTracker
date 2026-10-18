@@ -19,7 +19,7 @@ internal suspend fun AppDatabase.insertTestBook(
 ): String {
     mediaItemDao().insert(sampleMediaItem(id = mediaId, title = title))
     bookDetailsDao().insert(
-        sampleBookDetails(mediaId = mediaId, totalPages = totalPages, status = status, finishedAt = finishedAt),
+        sampleBookDetails(mediaId = mediaId, totalPages = totalPages),
     )
     val readId = newId()
     readThroughDao().insert(

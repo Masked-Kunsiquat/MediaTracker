@@ -1218,19 +1218,19 @@ class ImportDataUseCaseTest {
             assertEquals("9780593135204", atlas.details?.isbn)
             assertEquals(BookFormat.HARDCOVER, atlas.details?.format)
             assertEquals(412, atlas.details?.totalPages)
-            assertEquals(ReadingStatus.FINISHED, atlas.details?.status)
-            assertTrue(atlas.details?.finishedAt != null)
+            assertEquals(ReadingStatus.FINISHED, atlas.status)
+            assertTrue(atlas.finishedAt != null)
 
             val nebula = items.getValue("Nebula's Edge")
             assertEquals(2015, nebula.item.releaseYear)
             assertEquals(null, nebula.details?.isbn)
-            assertEquals(ReadingStatus.READING, nebula.details?.status)
-            assertEquals(null, nebula.details?.finishedAt)
+            assertEquals(ReadingStatus.READING, nebula.status)
+            assertEquals(null, nebula.finishedAt)
 
             val salt = items.getValue("Salt and Ember")
             assertEquals(null, salt.item.releaseYear)
             assertEquals(BookFormat.PHYSICAL, salt.details?.format)
-            assertEquals(ReadingStatus.TO_READ, salt.details?.status)
+            assertEquals(ReadingStatus.TO_READ, salt.status)
         }
 
     @Test

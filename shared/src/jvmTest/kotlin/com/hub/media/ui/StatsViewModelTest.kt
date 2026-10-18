@@ -220,7 +220,7 @@ class StatsViewModelTest {
         runTest {
             insertBook()
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = june(10)),
+                sampleBookDetails(mediaId = mediaId),
             )
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = june(10)),
@@ -340,7 +340,7 @@ class StatsViewModelTest {
             val id = "finished-$i-${at.toEpochMilliseconds()}"
             db.mediaItemDao().insert(sampleMediaItem(id = id))
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = id, status = ReadingStatus.FINISHED, finishedAt = at),
+                sampleBookDetails(mediaId = id),
             )
             db.readThroughDao().insert(ReadThroughEntity(newId(), id, 1, ReadingStatus.FINISHED, finishedAt = at))
         }
@@ -357,7 +357,7 @@ class StatsViewModelTest {
             )
             // As finishing the re-read leaves the book's own row: finished this June.
             db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "dune", status = ReadingStatus.FINISHED, finishedAt = june(3)),
+                sampleBookDetails(mediaId = "dune"),
             )
             finishBooks(1, at = june(4))
             val viewModel = newViewModel()
@@ -490,7 +490,7 @@ class StatsViewModelTest {
         runTest {
             finishBooks(1, at = june(3))
             db.mediaItemDao().insert(sampleMediaItem(id = "dnf-1"))
-            db.bookDetailsDao().insert(sampleBookDetails(mediaId = "dnf-1", status = ReadingStatus.DNF))
+            db.bookDetailsDao().insert(sampleBookDetails(mediaId = "dnf-1"))
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "dnf-1", 1, ReadingStatus.DNF, finishedAt = null),
             )

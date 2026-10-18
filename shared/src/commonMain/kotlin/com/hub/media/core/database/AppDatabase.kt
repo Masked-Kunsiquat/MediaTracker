@@ -90,7 +90,8 @@ public const val APP_DATABASE_VERSION: Int = 8
  *
  * Version 8 (#230, ROADMAP Task 10) adds [ReadThroughEntity] -- a book's numbered reads, each with its
  * own status, dates and rating -- and groups every [ReadingSessionEntity] into one, via
- * [MIGRATION_7_8] (`Migrations.kt`).
+ * [MIGRATION_7_8] (`Migrations.kt`). [BookDetailsEntity] loses `status` and `finishedAt`, which
+ * move onto the reads: a book's state is its latest read's.
  */
 @Database(
     entities = [

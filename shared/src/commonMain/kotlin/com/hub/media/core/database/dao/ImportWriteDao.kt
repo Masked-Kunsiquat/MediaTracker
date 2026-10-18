@@ -203,12 +203,9 @@ public interface ImportWriteDao {
         if (readOne != null) {
             upsertRead(readOne)
         } else {
-            insertFirstReadIfMissing(
-                newId(),
-                details.details.mediaId,
-                details.details.status,
-                details.details.finishedAt,
-            )
+            // No read #1 planned: the book keeps its reads, and one that somehow has none gets a To read
+            // read #1, as every book must have.
+            insertFirstReadIfMissing(newId(), details.details.mediaId, ReadingStatus.TO_READ, null)
         }
     }
 

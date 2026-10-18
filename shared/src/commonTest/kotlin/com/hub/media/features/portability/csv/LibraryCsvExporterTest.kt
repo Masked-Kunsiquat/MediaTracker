@@ -7,6 +7,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.TrackingMode
@@ -68,8 +69,6 @@ class LibraryCsvExporterTest {
                 isbn = "9780000000001",
                 format = BookFormat.HARDCOVER,
                 totalPages = 342,
-                status = ReadingStatus.FINISHED,
-                finishedAt = finishedAt,
                 trackingMode = TrackingMode.PAGES,
                 authors = "Ann Sample Author",
             )
@@ -81,7 +80,24 @@ class LibraryCsvExporterTest {
 
         val csv =
             LibraryCsvExporter.export(
-                mediaItems = listOf(MediaWithDetails.Book(mediaItem, details)),
+                // The status and finish date are the latest read's (#230).
+                mediaItems =
+                    listOf(
+                        MediaWithDetails.Book(
+                            mediaItem,
+                            details,
+                            reads =
+                                listOf(
+                                    ReadThroughEntity(
+                                        "r1",
+                                        "media-1",
+                                        1,
+                                        ReadingStatus.FINISHED,
+                                        finishedAt = finishedAt,
+                                    ),
+                                ),
+                        ),
+                    ),
                 identifiersByMediaId = mapOf("media-1" to identifiers),
             )
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
@@ -125,12 +141,20 @@ class LibraryCsvExporterTest {
                 isbn = null,
                 format = BookFormat.EBOOK,
                 totalPages = null,
-                status = ReadingStatus.TO_READ,
-                finishedAt = null,
                 trackingMode = TrackingMode.PERCENT,
             )
 
-        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Book(mediaItem, details)), emptyMap())
+        val csv =
+            LibraryCsvExporter.export(
+                listOf(
+                    MediaWithDetails.Book(
+                        mediaItem,
+                        details,
+                        reads = listOf(ReadThroughEntity("r2", "media-2", 1, ReadingStatus.TO_READ)),
+                    ),
+                ),
+                emptyMap(),
+            )
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
         val fields = dataLine.split(",")
 
@@ -374,7 +398,17 @@ class LibraryCsvExporterTest {
         val details =
             BookDetailsEntity(mediaId = "media-4", isbn = null, format = BookFormat.PHYSICAL, totalPages = null)
 
-        val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.Book(mediaItem, details)), emptyMap())
+        val csv =
+            LibraryCsvExporter.export(
+                listOf(
+                    MediaWithDetails.Book(
+                        mediaItem,
+                        details,
+                        reads = listOf(ReadThroughEntity("r2", "media-2", 1, ReadingStatus.TO_READ)),
+                    ),
+                ),
+                emptyMap(),
+            )
         val dataLine = csv.split(CsvUtil.LINE_ENDING)[1]
 
         assertTrue(dataLine.contains("\"The \"\"Best\"\" Book, Ever\""))
@@ -429,9 +463,9 @@ class LibraryCsvExporterTest {
                     isbn = "9780000000000",
                     format = format,
                     totalPages = 200,
-                    status = status,
                     trackingMode = trackingMode,
                 ),
+            reads = listOf(ReadThroughEntity("r-$mediaId", mediaId, 1, status)),
         )
 
     private companion object {

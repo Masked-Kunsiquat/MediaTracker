@@ -9,6 +9,7 @@ import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.timer.ReadingTimerState
@@ -112,6 +113,7 @@ class BookDetailScreenGoldenTest {
                     book = GOLDEN_BOOK,
                     details = GOLDEN_DETAILS,
                     sessions = GOLDEN_SESSIONS,
+                    reads = GOLDEN_READS,
                 ),
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
@@ -144,6 +146,7 @@ class BookDetailScreenGoldenTest {
                     book = DUNE_BOOK.copy(coverImageHash = coverImageHash),
                     details = DUNE_DETAILS,
                     sessions = DUNE_SESSIONS,
+                    reads = DUNE_READS,
                 ),
             timerState = ReadingTimerState.Idle,
             elapsedSeconds = 0,
@@ -204,12 +207,14 @@ private val GOLDEN_DETAILS =
         isbn = "9780743273565",
         format = BookFormat.PHYSICAL,
         totalPages = 180,
-        // READING, not the TO_READ default: the fixture has two logged sessions and renders
-        // "Page 78 / 180", so a "To read" chip in the image would be a contradiction a reviewer
-        // has to squint past -- and a golden a reviewer distrusts is not doing its job.
-        status = ReadingStatus.READING,
         authors = "F. Scott Fitzgerald",
     )
+
+// READING, not the TO_READ default: the fixture has two logged sessions and renders "Page 78 / 180", so
+// a "To read" chip in the image would be a contradiction a reviewer has to squint past -- and a golden a
+// reviewer distrusts is not doing its job. The status is the book's read's since #230.
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val GOLDEN_READS = listOf(ReadThroughEntity("r1", "book-1", 1, ReadingStatus.READING))
 
 @OptIn(kotlin.time.ExperimentalTime::class)
 private val GOLDEN_SESSIONS =
@@ -275,9 +280,11 @@ private val DUNE_DETAILS =
         isbn = "9780441013593",
         format = BookFormat.PAPERBACK,
         totalPages = 412,
-        status = ReadingStatus.READING,
         authors = "Frank Herbert",
     )
+
+@OptIn(kotlin.time.ExperimentalTime::class)
+private val DUNE_READS = listOf(ReadThroughEntity("r1", "book-2", 1, ReadingStatus.READING))
 
 @OptIn(kotlin.time.ExperimentalTime::class)
 private val DUNE_SESSIONS =
