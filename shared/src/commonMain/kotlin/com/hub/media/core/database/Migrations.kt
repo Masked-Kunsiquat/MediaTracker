@@ -466,7 +466,8 @@ public val MIGRATION_7_8: Migration =
             loggedMigration(7, 8) {
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `read_throughs` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
-                        "`number` INTEGER NOT NULL, `status` TEXT NOT NULL, `startedAt` INTEGER, `finishedAt` INTEGER, " +
+                        "`number` INTEGER NOT NULL, `status` TEXT NOT NULL, `startedAt` INTEGER, " +
+                        "`finishedAt` INTEGER, " +
                         "`rating` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
                         "ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
@@ -475,7 +476,8 @@ public val MIGRATION_7_8: Migration =
                         "ON `read_throughs` (`mediaId`, `number`)",
                 )
                 connection.execSQL(
-                    "INSERT INTO `read_throughs` (`id`, `mediaId`, `number`, `status`, `startedAt`, `finishedAt`, `rating`) " +
+                    "INSERT INTO `read_throughs` " +
+                        "(`id`, `mediaId`, `number`, `status`, `startedAt`, `finishedAt`, `rating`) " +
                         "SELECT $SQL_UUID, m.`id`, 1, " +
                         "COALESCE(b.`status`, CASE WHEN EXISTS (SELECT 1 FROM `reading_sessions` s " +
                         "WHERE s.`mediaId` = m.`id`) THEN 'READING' ELSE 'TO_READ' END), " +
@@ -486,10 +488,12 @@ public val MIGRATION_7_8: Migration =
                 )
                 connection.execSQL(
                     "CREATE TABLE IF NOT EXISTS `reading_sessions_new` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
-                        "`timestampStart` INTEGER NOT NULL, `timestampEnd` INTEGER NOT NULL, `durationSeconds` INTEGER, " +
+                        "`timestampStart` INTEGER NOT NULL, `timestampEnd` INTEGER NOT NULL, " +
+                        "`durationSeconds` INTEGER, " +
                         "`startUnit` REAL NOT NULL, `endUnit` REAL NOT NULL, `deltaPages` INTEGER, `notes` TEXT, " +
                         "`readThroughId` TEXT NOT NULL, PRIMARY KEY(`id`), " +
-                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE , " +
                         "FOREIGN KEY(`readThroughId`) REFERENCES `read_throughs`(`id`) " +
                         "ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
