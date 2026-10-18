@@ -423,4 +423,16 @@ class EditBookViewModelTest {
 
             assertEquals("abc123", ready.coverImageHash)
         }
+
+    /** On a re-read the form must not offer To read (#230 review): it marks the state as a re-read. */
+    @Test
+    fun aReread_isMarked_soTheFormLeavesOutToRead() =
+        runTest {
+            insertBook(status = ReadingStatus.FINISHED)
+            db.readThroughDao().insert(ReadThroughEntity(newId(), mediaId, 2, ReadingStatus.READING))
+            val viewModel = newViewModel()
+
+            val ready = viewModel.uiState.first { it is EditBookUiState.Ready && it.status == ReadingStatus.READING }
+            assertTrue((ready as EditBookUiState.Ready).isReread)
+        }
 }

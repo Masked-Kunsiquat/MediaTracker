@@ -443,6 +443,7 @@ private fun EditBookForm(
                     status = status,
                     onStatusChange = { status = it },
                     enabled = !state.isSaving,
+                    isReread = state.isReread,
                 )
             }
 
@@ -589,6 +590,7 @@ private fun StatusChipRow(
     status: ReadingStatus,
     onStatusChange: (ReadingStatus) -> Unit,
     enabled: Boolean,
+    isReread: Boolean = false,
 ) {
     Column {
         Text(
@@ -599,7 +601,8 @@ private fun StatusChipRow(
         )
         StatusDropdownChip(
             value = status,
-            options = ReadingStatus.entries.toList(),
+            // Only read #1 may be To read (#230): on a re-read the form leaves it out, as the status menu does.
+            options = if (isReread) ReadingStatus.entries - ReadingStatus.TO_READ else ReadingStatus.entries.toList(),
             label = { it.displayLabel() },
             onSelect = onStatusChange,
             onClickLabel = stringResource(R.string.detail_status_change_action_label),

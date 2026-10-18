@@ -446,11 +446,20 @@ public class BookDetailViewModel(
         localState.update { it.copy(ratePromptReadId = null) }
     }
 
-    /** Starts the next read (#230). A double tap makes one read; see [ReadThroughRepository.readAgain]. */
+    /** Set while a Read again is in flight, so a double tap is one read and no error (#230 review). */
+    private var readAgainInFlight: Boolean = false
+
+    /** Starts the next read (#230). A second tap while the first is saving is ignored. */
     public fun readAgain() {
+        if (readAgainInFlight) return
+        readAgainInFlight = true
         viewModelScope.launch {
-            val result = readThroughRepository.readAgain(bookId)
-            if (result is Resource.Error) localState.update { it.copy(errorMessage = result.message) }
+            try {
+                val result = readThroughRepository.readAgain(bookId)
+                if (result is Resource.Error) localState.update { it.copy(errorMessage = result.message) }
+            } finally {
+                readAgainInFlight = false
+            }
         }
     }
 

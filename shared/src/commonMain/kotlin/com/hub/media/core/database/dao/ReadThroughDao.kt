@@ -52,4 +52,15 @@ interface ReadThroughDao {
 
     @Query("DELETE FROM read_throughs WHERE id = :id")
     suspend fun deleteById(id: String): Int
+
+    /**
+     * Deletes [id] only while it is its book's latest read, after #1, with no sessions (#230): the undo for
+     * a mistaken Read again. One statement, so a session saved meanwhile cannot be cascaded away with it.
+     */
+    @Query(
+        "DELETE FROM read_throughs WHERE id = :id AND number > 1 " +
+            "AND number = (SELECT MAX(r.number) FROM read_throughs r WHERE r.mediaId = read_throughs.mediaId) " +
+            "AND NOT EXISTS (SELECT 1 FROM reading_sessions s WHERE s.readThroughId = :id)",
+    )
+    suspend fun deleteIfRemovable(id: String): Int
 }

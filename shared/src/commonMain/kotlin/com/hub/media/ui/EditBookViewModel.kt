@@ -130,6 +130,7 @@ public class EditBookViewModel(
                         totalPages = bookDetail.details?.totalPages,
                         format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
                         status = bookDetail.status,
+                        isReread = (bookDetail.latestRead?.number ?: 1) > 1,
                         trackingMode = bookDetail.details?.trackingMode ?: TrackingMode.PAGES,
                         errorMessage = local.errorMessage,
                         isSaving = local.isSaving,

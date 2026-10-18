@@ -57,7 +57,8 @@ public class ReadThroughRepository(
 
     /**
      * Removes a re-read that has no sessions: the undo for a mistaken Read again, which returns the
-     * book to its previous read's state. Read #1 and a read with sessions are never removed.
+     * book to its previous read's state. Only the latest read, never read #1, never a read with sessions --
+     * removing an earlier one would leave the numbering with a gap.
      */
     public suspend fun removeRead(readId: String): Resource<Unit> =
         logger.guardResource(
@@ -68,8 +69,14 @@ public class ReadThroughRepository(
             val read = db.readThroughDao().getById(readId) ?: return Resource.Error("Read not found")
             if (read.number == 1) return Resource.Error("The first read can't be removed")
             if (db.readThroughDao().sessionCount(readId) > 0) return Resource.Error("This read has sessions")
-            db.readThroughDao().deleteById(readId)
-            Resource.Success(Unit)
+            if (db.readThroughDao().getLatest(read.mediaId)?.id != readId) {
+                return Resource.Error("Only the latest read can be removed")
+            }
+            if (db.readThroughDao().deleteIfRemovable(readId) == 0) {
+                Resource.Error("This read can't be removed")
+            } else {
+                Resource.Success(Unit)
+            }
         }
 
     /** Sets [readId]'s rating in half-steps, or clears it with `null`. Off the 1..10 grid is refused. */

@@ -54,6 +54,8 @@ public sealed class EditBookUiState {
         val isSaving: Boolean = false,
         /** The cover shown in the edit screen's header (#174); `null` when the book has none. */
         val coverImageHash: String? = null,
+        /** The book is on a re-read (#230): its status may not go back to To read, so the form leaves it out. */
+        val isReread: Boolean = false,
     ) : EditBookUiState()
 
     /**

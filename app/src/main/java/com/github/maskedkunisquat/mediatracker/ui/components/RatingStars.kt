@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -20,6 +21,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import kotlin.math.roundToInt
@@ -42,6 +44,7 @@ fun RatingStars(
     onRate: ((Int?) -> Unit)? = null,
 ) {
     val value = halves ?: 0
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val description =
         if (halves == null) {
             stringResource(R.string.rating_none)
@@ -55,9 +58,11 @@ fun RatingStars(
             Modifier
                 // Material's minimum touch target, whatever the star size.
                 .heightIn(min = 48.dp)
-                .pointerInput(halves) {
+                .pointerInput(halves, rtl) {
                     detectTapGestures { offset ->
-                        val tapped = (offset.x / size.width * 10).toInt().coerceIn(0, 9) + 1
+                        // Star 1 sits at the start edge: the right one in a right-to-left layout.
+                        val fromStart = if (rtl) size.width - offset.x else offset.x
+                        val tapped = (fromStart / size.width * 10).toInt().coerceIn(0, 9) + 1
                         onRate(if (tapped == halves) null else tapped)
                     }
                 }

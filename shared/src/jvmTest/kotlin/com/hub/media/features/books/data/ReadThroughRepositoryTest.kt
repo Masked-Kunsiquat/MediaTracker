@@ -177,4 +177,17 @@ class ReadThroughRepositoryTest {
                     .status,
             )
         }
+
+    /** Removing undoes the latest Read again only; an earlier empty read stays, or numbers would skip (#230 review). */
+    @Test
+    fun removeRead_refusesAnEarlierEmptyRead() =
+        runTest {
+            db.insertTestBook("b", status = ReadingStatus.FINISHED)
+            val two = (reads.readAgain("b") as Resource.Success).data
+            books.updateReadingStatus("b", ReadingStatus.DNF)
+            reads.readAgain("b")
+
+            assertIs<Resource.Error>(reads.removeRead(two))
+            assertEquals(listOf(1, 2, 3), reads.observeReads("b").first().map { it.number })
+        }
 }

@@ -51,7 +51,7 @@ class ReadThroughCsvTest {
     /** Review Focus 5: a rating off the half-star grid rejects its row, with a reason. */
     @Test
     fun readThroughsCsv_offGridRating_isRejected() {
-        for (bad in listOf("4.3", "0", "6", "abc", "-1")) {
+        for (bad in listOf("4.3", "0", "6", "abc", "-1", "NaN", "Infinity")) {
             val result = parseOne("$CSV_SCHEMA_VERSION,b,1,FINISHED,,,$bad")
             assertIs<ReadThroughRowParseResult.Rejected>(result, "rating '$bad'")
             assertEquals(true, result.reason.contains("rating"), result.reason)

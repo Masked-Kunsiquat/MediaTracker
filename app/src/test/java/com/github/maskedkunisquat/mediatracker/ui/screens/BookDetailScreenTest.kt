@@ -785,6 +785,26 @@ class BookDetailScreenTest {
         assertEquals(listOf("dismiss"), readCalls)
     }
 
+    /** Remove undoes the latest read only: an earlier empty read, opened, has no Remove menu (#230 review). */
+    @Test
+    fun anEarlierEmptyRead_cannotBeRemoved() {
+        val reads =
+            listOf(
+                ReadThroughEntity("r1", "book-1", 1, ReadingStatus.FINISHED, finishedAt = march2024),
+                ReadThroughEntity("r2", "book-1", 2, ReadingStatus.DNF),
+                ReadThroughEntity("r3", "book-1", 3, ReadingStatus.READING),
+            )
+        setContent(ready(book = book(), details = details(), reads = reads))
+
+        val folded = context.getString(R.string.read_number, 2)
+        list().performScrollToNode(hasText(folded, substring = true))
+        composeRule.onNodeWithText(folded, substring = true).performClick()
+        list().performScrollToNode(hasContentDescription(context.getString(R.string.read_collapse, 2)))
+
+        composeRule.onAllNodesWithContentDescription(context.getString(R.string.read_menu, 2)).assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription(context.getString(R.string.read_menu, 3)).assertCountEquals(1)
+    }
+
     private companion object {
         /** See `MovieDetailScreenTest`: this class asserts text and controls, never real artwork. */
         const val NO_COVERS = "no-covers-in-this-fixture"

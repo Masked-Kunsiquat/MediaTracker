@@ -2100,4 +2100,32 @@ class ImportDataUseCaseTest {
             assertEquals(6 to 8, ratingsAfter(DuplicatePolicy.MERGE))
             assertEquals(8 to 8, ratingsAfter(DuplicatePolicy.REPLACE))
         }
+
+    /**
+     * A v7 library row's status is the book's latest read's, not read #1's (#230 review). Imported on its
+     * own over a book with two reads, it must not rewrite read #1 -- even under Replace.
+     */
+    @Test
+    fun loneV7Library_overBookWithTwoReads_leavesItsReadsAlone() =
+        runTest {
+            val mediaId =
+                addBook(
+                    title = "Dune",
+                    isbn = "9780441013593",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            val readOne = db.readThroughDao().getLatest(mediaId)!!
+            ReadThroughRepository(db).readAgain(mediaId)
+            // A v7 export of this library: its row says READING (the re-read), with no finish date.
+            val library = LibraryCsvExporter.export(bookRepository.observeAllBooksWithDetails().first(), emptyMap())
+
+            val result = useCase.execute(library, null, null, DuplicatePolicy.REPLACE)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            val after = db.readThroughDao().getById(readOne.id)!!
+            assertEquals(ReadingStatus.FINISHED, after.status, "read #1 keeps its finish")
+            assertEquals(readOne.finishedAt, after.finishedAt)
+            assertEquals(2, db.readThroughDao().getForMedia(mediaId).size)
+        }
 }

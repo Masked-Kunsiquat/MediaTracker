@@ -1041,4 +1041,31 @@ class BookRepositoryTest {
             assertEquals("Book Without Details", bookWithDetails.item.title)
             assertEquals(null, bookWithDetails.details)
         }
+
+    /** The edit form's save refuses To read on a re-read too, not only the status menu (#230 Review Focus 3). */
+    @Test
+    fun updateBookMetadata_toReadOnARereadIsRefused() =
+        runTest {
+            val mediaId =
+                (
+                    repo.addBook(
+                        title = "Dune",
+                        format = BookFormat.PHYSICAL,
+                        status = ReadingStatus.FINISHED,
+                    ) as Resource.Success
+                ).data
+            ReadThroughRepository(db).readAgain(mediaId)
+
+            val result =
+                repo.updateBookMetadata(
+                    mediaId = mediaId,
+                    title = "Dune",
+                    format = BookFormat.PHYSICAL,
+                    status = ReadingStatus.TO_READ,
+                    trackingMode = TrackingMode.PAGES,
+                )
+
+            assertIs<Resource.Error>(result)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)!!.status)
+        }
 }

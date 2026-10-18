@@ -1120,4 +1120,21 @@ class BookDetailViewModelTest {
             val state = viewModel.uiState.first { ready(it)?.reads?.size == 1 } as BookDetailUiState.Ready
             assertEquals(ReadingStatus.FINISHED, state.status)
         }
+
+    /** A double tap on Read again starts one read and shows no error (#230 review). */
+    @Test
+    fun readAgain_doubleTap_startsOneRead_withoutAnError() =
+        runTest {
+            db.insertTestBook(mediaId, status = ReadingStatus.FINISHED)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+
+            viewModel.readAgain()
+            viewModel.readAgain()
+
+            val state = viewModel.uiState.first { ready(it)?.reads?.size == 2 } as BookDetailUiState.Ready
+            runCurrentUntilOrTimeOut { db.readThroughDao().getForMedia(mediaId).size == 2 }
+            assertEquals(null, ready(viewModel.uiState.first { ready(it) != null })!!.errorMessage)
+            assertEquals(2, state.reads.size)
+        }
 }

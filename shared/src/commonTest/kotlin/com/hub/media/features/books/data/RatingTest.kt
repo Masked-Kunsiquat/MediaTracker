@@ -42,5 +42,7 @@ class RatingTest {
         assertNull(starsToHalves(4.3))
         assertNull(starsToHalves(0.0))
         assertNull(starsToHalves(5.5))
+        assertNull(starsToHalves(Double.NaN), "NaN cannot be rounded; it must be refused, not thrown")
+        assertNull(starsToHalves(Double.POSITIVE_INFINITY))
     }
 }

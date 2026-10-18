@@ -297,6 +297,8 @@ public class ImportDataUseCase(
             return refuse("Nothing to import -- no file was selected.")
         }
 
+        // The library file's CSV version (#230): from v7 a row's status is the book's latest read's, not read #1's.
+        var libraryFileVersion: Int? = null
         val libraryParseResults =
             if (libraryCsv != null) {
                 when (
@@ -317,7 +319,14 @@ public class ImportDataUseCase(
                         )
                 ) {
                     is CsvTableResult.Failure -> return refuse("library_export.csv: ${table.message}")
-                    is CsvTableResult.Success -> table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
+                    is CsvTableResult.Success -> {
+                        libraryFileVersion =
+                            table.rows
+                                .firstOrNull()
+                                ?.firstOrNull()
+                                ?.toIntOrNull()
+                        table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
+                    }
                 }
             } else {
                 emptyList()
@@ -428,19 +437,21 @@ public class ImportDataUseCase(
                     .associateBy { it.mediaId to it.number }
             // With a reads file, it is the record of every read, and a library row's status (the latest
             // read's) must not be written onto an existing book's read #1 first.
+            // A book's existing reads count, to tell a re-read book from one read once.
+            val readCountByMediaId = existingReadsByKey.keys.groupingBy { it.first }.eachCount()
+            val libraryRowsAreLatestReads = (libraryFileVersion ?: 0) >= 7
             val mediaUpdates =
-                if (readThroughsCsv == null) {
-                    mediaResolution.updates
-                } else {
-                    mediaResolution.updates.map { update ->
-                        val details = update.details
-                        if (details is ImportDetails.Book) {
-                            update.copy(
-                                details = details.copy(readOne = null),
-                            )
-                        } else {
-                            update
-                        }
+                mediaResolution.updates.map { update ->
+                    val details = update.details
+                    val leaveReadsAlone =
+                        readThroughsCsv != null ||
+                            // A v7+ row without its reads file describes the latest read: on a book read more
+                            // than once that is not read #1, so the book's reads are left as they are.
+                            (libraryRowsAreLatestReads && (readCountByMediaId[update.mediaItem.id] ?: 0) > 1)
+                    if (details is ImportDetails.Book && leaveReadsAlone) {
+                        update.copy(details = details.copy(readOne = null))
+                    } else {
+                        update
                     }
                 }
             val readIdByKey = existingReadsByKey.mapValuesTo(mutableMapOf()) { it.value.id }

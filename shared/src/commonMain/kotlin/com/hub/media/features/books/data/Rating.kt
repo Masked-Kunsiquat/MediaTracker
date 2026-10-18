@@ -17,6 +17,8 @@ public fun Int.toStars(): Double = this / 2.0
 
 /** [stars] as half-steps, or `null` when it is not on the half-star grid in 0.5..5 (an import's `4.3`). */
 public fun starsToHalves(stars: Double): Int? {
+    // NaN cannot be rounded at all (it throws), and infinity is never a rating.
+    if (!stars.isFinite()) return null
     val halves = (stars * 2).roundToInt()
     return if (abs(stars * 2 - halves) < 1e-9 && isValidRating(halves)) halves else null
 }

@@ -122,7 +122,8 @@ internal fun LazyListScope.readingHistorySection(
             item(key = "read-${read.id}") {
                 ReadHeaderCard(
                     read = read,
-                    canRemove = read.number > 1 && ofRead.isEmpty(),
+                    // The latest read only: removing undoes the last Read again (#230 review).
+                    canRemove = read == latest && read.number > 1 && ofRead.isEmpty(),
                     onRate = { onRateRead(read.id, it) },
                     onRemove = { onRemoveRead(read.id) },
                     onCollapse = if (read == latest) null else ({ onToggleRead(read.id) }),

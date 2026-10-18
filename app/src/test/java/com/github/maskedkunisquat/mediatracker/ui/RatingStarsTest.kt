@@ -99,4 +99,28 @@ class RatingStarsTest {
         tapAt(9.5f)
         assertEquals(-1, rated)
     }
+
+    /** In a right-to-left layout star 1 is on the right, so a tap on the far left is star 5 (#230 review). */
+    @Test
+    fun rightToLeft_tapsMatchTheStarsAsDrawn() {
+        rule.setContent {
+            MediaTrackerTheme(dynamicColor = false) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalLayoutDirection provides
+                        androidx.compose.ui.unit.LayoutDirection.Rtl,
+                ) {
+                    RatingStars(
+                        halves = null,
+                        starSize = 40.dp,
+                        onRate = { rated = it },
+                        modifier = Modifier.testTag("stars"),
+                    )
+                }
+            }
+        }
+
+        tapAt(0.5f)
+
+        assertEquals(10, rated)
+    }
 }
