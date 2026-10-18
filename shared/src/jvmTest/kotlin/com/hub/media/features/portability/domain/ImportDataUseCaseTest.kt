@@ -2128,4 +2128,39 @@ class ImportDataUseCaseTest {
             assertEquals(readOne.finishedAt, after.finishedAt)
             assertEquals(2, db.readThroughDao().getForMedia(mediaId).size)
         }
+
+    /**
+     * The same book twice in one file, under Merge (#230 review): the second row is merged against the first
+     * row's result, which must still hold the book's reads -- or read #1 is rebuilt from nothing and takes
+     * the file's status over the device's.
+     */
+    @Test
+    fun aBookRepeatedInOneFile_mergeKeepsReadOne() =
+        runTest {
+            val mediaId =
+                addBook(
+                    title = "Dune",
+                    isbn = "9780441013593",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            addBook(title = "Dune", isbn = "9780441013593", status = ReadingStatus.READING)
+            val lines =
+                LibraryCsvExporter
+                    .export(
+                        sourceBookRepository.observeAllBooksWithDetails().first(),
+                        emptyMap(),
+                    ).trim()
+                    .lines()
+            val repeated = (lines + lines[1]).joinToString("\n") + "\n"
+
+            val result = useCase.execute(repeated, null, null, DuplicatePolicy.MERGE)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(
+                ReadingStatus.FINISHED,
+                db.readThroughDao().getLatest(mediaId)!!.status,
+                "the device's status stands",
+            )
+        }
 }

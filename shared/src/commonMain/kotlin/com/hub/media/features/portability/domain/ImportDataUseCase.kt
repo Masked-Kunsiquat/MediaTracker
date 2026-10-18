@@ -1166,7 +1166,7 @@ public class ImportDataUseCase(
                                 replaced++
                                 registerCurrentState(
                                     matchedId,
-                                    stateOf(update.mediaItem, update.details),
+                                    stateOf(update.mediaItem, update.details, previous = match),
                                     update.identifiers,
                                 )
                             }
@@ -1177,7 +1177,7 @@ public class ImportDataUseCase(
                                 merged++
                                 registerCurrentState(
                                     matchedId,
-                                    stateOf(update.mediaItem, update.details),
+                                    stateOf(update.mediaItem, update.details, previous = match),
                                     existingIdentifiers + update.identifiers,
                                 )
                             }
@@ -1207,13 +1207,25 @@ public class ImportDataUseCase(
      * Re-pairs an item with its details as a [MediaWithDetails], so a row this import just resolved
      * can be matched against by a later row in the same file (see `registerCurrentState`). The
      * inverse of the [ImportDetails] split, and exhaustive over it for the same reason.
+     *
+     * A book keeps its reads (#230): [previous]'s, with read #1 replaced by the one this row plans, so a
+     * second row for the same book merges against the reads it really has rather than none.
      */
     private fun stateOf(
         mediaItem: MediaItemEntity,
         details: ImportDetails,
+        previous: MediaWithDetails? = null,
     ): MediaWithDetails =
         when (details) {
-            is ImportDetails.Book -> MediaWithDetails.Book(mediaItem, details.details)
+            is ImportDetails.Book -> {
+                val reads = (previous as? MediaWithDetails.Book)?.reads.orEmpty()
+                val readOne = details.readOne
+                MediaWithDetails.Book(
+                    mediaItem,
+                    details.details,
+                    reads = if (readOne == null) reads else reads.filter { it.number != 1 } + readOne,
+                )
+            }
             is ImportDetails.Movie -> MediaWithDetails.Movie(mediaItem, details.details)
             is ImportDetails.TVShow -> MediaWithDetails.TVShow(mediaItem, details.details)
         }

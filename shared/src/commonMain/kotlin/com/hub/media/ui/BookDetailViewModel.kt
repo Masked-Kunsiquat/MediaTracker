@@ -416,12 +416,14 @@ public class BookDetailViewModel(
      */
     public fun updateStatus(status: ReadingStatus) {
         // The read the change lands on: a status change never creates a read, so it is the latest now.
-        val readId = (uiState.value as? BookDetailUiState.Ready)?.latestRead?.id
+        val read = (uiState.value as? BookDetailUiState.Ready)?.latestRead
+        val readId = read?.id
+        val asks = asksToRate(from = read?.status, to = status)
         viewModelScope.launch {
             when (val result = bookRepository.updateReadingStatus(bookId, status)) {
                 // A read that just ended -- finished or abandoned -- is offered "Rate this read?" (#230).
                 is Resource.Success ->
-                    if (readId != null && (status == ReadingStatus.FINISHED || status == ReadingStatus.DNF)) {
+                    if (readId != null && asks) {
                         localState.update { it.copy(ratePromptReadId = readId) }
                     }
                 is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
@@ -504,4 +506,17 @@ public class BookDetailViewModel(
             }
         }
     }
+}
+
+/**
+ * Whether changing a read from [from] to [to] opens "Rate this read?" (#230): only when a read that had
+ * not ended ends -- Finished or Did not finish. Choosing Finished again, or moving between the two, is
+ * not a read ending, so it does not ask again.
+ */
+internal fun asksToRate(
+    from: ReadingStatus?,
+    to: ReadingStatus,
+): Boolean {
+    val ended = setOf(ReadingStatus.FINISHED, ReadingStatus.DNF)
+    return to in ended && from !in ended
 }
