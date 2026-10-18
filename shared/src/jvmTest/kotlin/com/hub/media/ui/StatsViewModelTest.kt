@@ -355,10 +355,6 @@ class StatsViewModelTest {
             db.readThroughDao().insert(
                 ReadThroughEntity(newId(), "dune", 2, ReadingStatus.FINISHED, finishedAt = june(3)),
             )
-            // As finishing the re-read leaves the book's own row: finished this June.
-            db.bookDetailsDao().insert(
-                sampleBookDetails(mediaId = "dune"),
-            )
             finishBooks(1, at = june(4))
             val viewModel = newViewModel()
             holdUiStateSubscribed(viewModel)
