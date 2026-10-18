@@ -6,13 +6,16 @@ import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.insertTestBook
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.util.newId
 import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
@@ -219,6 +222,9 @@ class StatsViewModelTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = june(10)),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = june(10)),
+            )
             val viewModel = newViewModel()
             holdUiStateSubscribed(viewModel)
 
@@ -336,8 +342,33 @@ class StatsViewModelTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = id, status = ReadingStatus.FINISHED, finishedAt = at),
             )
+            db.readThroughDao().insert(ReadThroughEntity(newId(), id, 1, ReadingStatus.FINISHED, finishedAt = at))
         }
     }
+
+    /** The goal counts books new to you (#230): a book first finished last year and re-read this year is not one. */
+    @Test
+    fun aReread_countsAsFinished_butNotTowardTheGoal() =
+        runTest {
+            val lastYear = LocalDateTime(2023, 6, 1, 12, 0).toInstant(timeZone)
+            db.insertTestBook("dune", status = ReadingStatus.FINISHED, finishedAt = lastYear)
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "dune", 2, ReadingStatus.FINISHED, finishedAt = june(3)),
+            )
+            // As finishing the re-read leaves the book's own row: finished this June.
+            db.bookDetailsDao().insert(
+                sampleBookDetails(mediaId = "dune", status = ReadingStatus.FINISHED, finishedAt = june(3)),
+            )
+            finishBooks(1, at = june(4))
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+            viewModel.uiState.first { !it.isLoading }
+
+            viewModel.setGoal(12)
+
+            val goal = viewModel.uiState.first { it.goal != null }.goal
+            assertEquals(1, goal?.finished, "only the new book counts toward the goal")
+        }
 
     @Test
     fun withNoGoal_theCardOffersThisYear() =
@@ -460,6 +491,9 @@ class StatsViewModelTest {
             finishBooks(1, at = june(3))
             db.mediaItemDao().insert(sampleMediaItem(id = "dnf-1"))
             db.bookDetailsDao().insert(sampleBookDetails(mediaId = "dnf-1", status = ReadingStatus.DNF))
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "dnf-1", 1, ReadingStatus.DNF, finishedAt = null),
+            )
             val viewModel = newViewModel()
             holdUiStateSubscribed(viewModel)
             assertEquals(null, viewModel.uiState.first { !it.isLoading }.finishOutcomes, "not on Week")

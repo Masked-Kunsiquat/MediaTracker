@@ -4,7 +4,9 @@ import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.FinishedBookRow
 import com.hub.media.core.database.dao.TimedSessionRow
 import com.hub.media.core.database.entities.BookFormat
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.util.newId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -42,6 +44,7 @@ class TimedSessionsDaoTest {
         db.bookDetailsDao().insert(
             sampleBookDetails(mediaId = id, format = format, status = status).copy(authors = authors),
         )
+        db.readThroughDao().insert(ReadThroughEntity(newId(), id, 1, status))
     }
 
     private suspend fun session(
@@ -139,6 +142,7 @@ class TimedSessionsDaoTest {
                 totalPages = pages,
             ).copy(authors = "Le Guin"),
         )
+        db.readThroughDao().insert(ReadThroughEntity(newId(), id, 1, status, finishedAt = at(at)))
     }
 
     @Test
@@ -181,5 +185,46 @@ class TimedSessionsDaoTest {
     fun firstActivity_onAnEmptyLibrary_isNull() =
         runTest {
             assertEquals(null, db.statsDao().observeFirstActivity().first())
+        }
+
+    // --- #230: stats count reads ------------------------------------------------------------------
+
+    /** Finish outcomes count reads, so a book finished then re-read and abandoned is one of each (#230). */
+    @Test
+    fun finishOutcomes_countReads() =
+        runTest {
+            db.insertTestBook("b", status = ReadingStatus.FINISHED, finishedAt = at(1))
+            db.readThroughDao().insert(ReadThroughEntity(newId(), "b", 2, ReadingStatus.DNF))
+
+            assertEquals(
+                FinishOutcomes(finished = 1, dnf = 1),
+                db.statsDao().observeFinishOutcomes(ReadingStatus.FINISHED, ReadingStatus.DNF).first(),
+            )
+        }
+
+    /** A re-read finished in the range is a finished book of that range, at the re-read's date (#230). */
+    @Test
+    fun finishedBooks_includeAReread_atItsOwnDate() =
+        runTest {
+            db.insertTestBook("b", status = ReadingStatus.FINISHED, finishedAt = at(900), title = "Book b")
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "b", 2, ReadingStatus.FINISHED, finishedAt = at(1_500)),
+            )
+
+            val rows = db.statsDao().observeFinishedBooks(at(1_000), at(2_000), ReadingStatus.FINISHED).first()
+
+            assertEquals(listOf("b" to at(1_500)), rows.map { it.mediaId to it.finishedAt })
+        }
+
+    /** An earlier read's finish is activity, even once a re-read has moved the book on (#230). */
+    @Test
+    fun firstActivity_seesAnEarlierReadsFinish() =
+        runTest {
+            db.insertTestBook("b", status = ReadingStatus.FINISHED, finishedAt = at(1_000))
+            db.readThroughDao().insert(ReadThroughEntity(newId(), "b", 2, ReadingStatus.READING))
+            // The book's own row now says Reading with no finish, as a re-read leaves it.
+            db.bookDetailsDao().insert(sampleBookDetails(mediaId = "b", status = ReadingStatus.READING))
+
+            assertEquals(at(1_000), db.statsDao().observeFirstActivity().first())
         }
 }

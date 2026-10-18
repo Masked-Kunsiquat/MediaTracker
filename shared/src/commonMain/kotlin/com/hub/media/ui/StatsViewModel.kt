@@ -130,7 +130,7 @@ public class StatsViewModel(
                         // A goal set for another year is not this year's goal: January starts fresh.
                         goal =
                             goal?.takeIf { it.year == today.year }?.let {
-                                goalProgress(goal = it.books, finished = yearStats.booksFinished, today = today)
+                                goalProgress(goal = it.books, finished = yearStats.firstFinishes, today = today)
                             },
                         goalYear = today.year,
                         finishesByMonth = months,

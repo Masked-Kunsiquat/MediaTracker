@@ -13,6 +13,8 @@ package com.hub.media.core.database.dao
  *   are above zero, or `null` when there is no such session. A session missing either value would
  *   otherwise inflate or deflate the speed, and one that moved backwards (a corrected page) or
  *   nowhere says nothing about how fast anyone reads.
+ * @property firstFinishes Finished reads that are their book's first finish (#230): the reading goal's
+ *   count, since the goal is for books new to you. [booksFinished] counts every finished read.
  */
 public data class PeriodStatsRow(
     val timeReadSeconds: Long?,
@@ -23,4 +25,5 @@ public data class PeriodStatsRow(
     val longestSessionSeconds: Long?,
     val speedSeconds: Long?,
     val speedPages: Int?,
+    val firstFinishes: Int = 0,
 )

@@ -1,11 +1,13 @@
 package com.hub.media.features.stats.data
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.util.newId
 import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -331,6 +333,9 @@ class StatsRepositoryTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = null),
+            )
 
             assertEquals(1, periodStats(StatsPeriod.ALL_TIME).booksFinished)
             assertEquals(0, periodStats(StatsPeriod.YEAR).booksFinished)
@@ -351,11 +356,29 @@ class StatsRepositoryTest {
                     finishedAt = LocalDateTime(2024, 5, 31, 23, 30).toInstant(newYork),
                 ),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(
+                    newId(),
+                    mediaId,
+                    1,
+                    ReadingStatus.FINISHED,
+                    finishedAt = LocalDateTime(2024, 5, 31, 23, 30).toInstant(newYork),
+                ),
+            )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
                 sampleBookDetails(
                     mediaId = "media-2",
                     status = ReadingStatus.FINISHED,
+                    finishedAt = LocalDateTime(2024, 1, 2, 10, 0).toInstant(newYork),
+                ),
+            )
+            db.readThroughDao().insert(
+                ReadThroughEntity(
+                    newId(),
+                    "media-2",
+                    1,
+                    ReadingStatus.FINISHED,
                     finishedAt = LocalDateTime(2024, 1, 2, 10, 0).toInstant(newYork),
                 ),
             )

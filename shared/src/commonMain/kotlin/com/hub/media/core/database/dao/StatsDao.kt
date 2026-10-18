@@ -72,7 +72,7 @@ interface StatsDao {
              WHERE deltaPages IS NOT NULL
                AND (:from IS NULL OR timestampStart >= :from)
                AND (:to IS NULL OR timestampStart < :to)) AS pagesRead,
-          (SELECT COUNT(*) FROM book_details
+          (SELECT COUNT(*) FROM read_throughs
              WHERE status = :finished
                AND (:from IS NULL OR finishedAt >= :from)
                AND (:to IS NULL OR finishedAt < :to)) AS booksFinished,
@@ -91,7 +91,13 @@ interface StatsDao {
           (SELECT SUM(deltaPages) FROM reading_sessions
              WHERE durationSeconds > 0 AND deltaPages > 0
                AND (:from IS NULL OR timestampStart >= :from)
-               AND (:to IS NULL OR timestampStart < :to)) AS speedPages
+               AND (:to IS NULL OR timestampStart < :to)) AS speedPages,
+          (SELECT COUNT(*) FROM read_throughs r
+             WHERE r.status = :finished
+               AND (:from IS NULL OR r.finishedAt >= :from)
+               AND (:to IS NULL OR r.finishedAt < :to)
+               AND r.number = (SELECT MIN(f.number) FROM read_throughs f
+                                WHERE f.mediaId = r.mediaId AND f.status = :finished)) AS firstFinishes
         """,
     )
     fun observePeriodStats(
@@ -107,7 +113,7 @@ interface StatsDao {
      * the same reason the streak reads raw session starts.
      */
     @Query(
-        "SELECT finishedAt FROM book_details " +
+        "SELECT finishedAt FROM read_throughs " +
             "WHERE status = :finished AND finishedAt >= :from AND finishedAt < :to",
     )
     fun observeFinishedAtInRange(
@@ -139,10 +145,13 @@ interface StatsDao {
         to: Instant?,
     ): Flow<List<TimedSessionRow>>
 
-    /** Books FINISHED and books DNF, whatever their dates (#219): the All time did-not-finish rate. */
+    /**
+     * Reads FINISHED and reads DNF, whatever their dates (#219): the All time did-not-finish rate. Over
+     * reads since #230, so a re-read that ends is an outcome of its own.
+     */
     @Query(
-        "SELECT (SELECT COUNT(*) FROM book_details WHERE status = :finished) AS finished, " +
-            "(SELECT COUNT(*) FROM book_details WHERE status = :dnf) AS dnf",
+        "SELECT (SELECT COUNT(*) FROM read_throughs WHERE status = :finished) AS finished, " +
+            "(SELECT COUNT(*) FROM read_throughs WHERE status = :dnf) AS dnf",
     )
     fun observeFinishOutcomes(
         finished: ReadingStatus,
@@ -186,13 +195,17 @@ interface StatsDao {
     @Query("SELECT mediaId, status, airingStatus FROM tv_details")
     fun observeShowStates(): Flow<List<ShowStateRow>>
 
-    /** Books FINISHED with a finish date in `[from, to)`, with their pages (#221): the year's longest book. */
+    /**
+     * Reads FINISHED with a finish date in `[from, to)`, with their book's pages (#221): the year's longest
+     * book. A re-read appears at its own finish date (#230).
+     */
     @Query(
         """
-        SELECT b.mediaId, mi.title, b.totalPages, b.authors, b.finishedAt
-          FROM book_details b
-          JOIN media_items mi ON mi.id = b.mediaId
-         WHERE b.status = :finished AND b.finishedAt >= :from AND b.finishedAt < :to
+        SELECT b.mediaId, mi.title, b.totalPages, b.authors, r.finishedAt
+          FROM read_throughs r
+          JOIN book_details b ON b.mediaId = r.mediaId
+          JOIN media_items mi ON mi.id = r.mediaId
+         WHERE r.status = :finished AND r.finishedAt >= :from AND r.finishedAt < :to
         """,
     )
     fun observeFinishedBooks(
@@ -211,7 +224,7 @@ interface StatsDao {
         SELECT MIN(t) FROM (
             SELECT MIN(timestampStart) AS t FROM reading_sessions
             UNION ALL SELECT MIN(watchedAt) FROM watch_logs
-            UNION ALL SELECT MIN(finishedAt) FROM book_details
+            UNION ALL SELECT MIN(finishedAt) FROM read_throughs
         )
         """,
     )

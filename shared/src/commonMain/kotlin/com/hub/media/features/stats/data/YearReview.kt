@@ -150,7 +150,7 @@ public fun yearReview(
                 .sortedWith(compareBy({ -it.durationSeconds }, { it.timestampStart }))
                 .firstOrNull()
                 ?.let { LongestSession(it.title, it.durationSeconds) },
-        goal = goal?.let { GoalResult(it.books, periodStats.booksFinished, periodStats.booksFinished >= it.books) },
+        goal = goal?.let { GoalResult(it.books, periodStats.firstFinishes, periodStats.firstFinishes >= it.books) },
         rewatchedFilm =
             films
                 .groupBy { it.mediaId }

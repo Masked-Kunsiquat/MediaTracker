@@ -1,7 +1,9 @@
 package com.hub.media.core.database
 
 import com.hub.media.core.database.dao.PeriodStatsRow
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.util.newId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -104,13 +106,22 @@ class PeriodStatsDaoTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = instant(1_000)),
+            )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = "media-2", status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "media-2", 1, ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+            )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-3"))
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = "media-3", status = ReadingStatus.READING, finishedAt = instant(1_500)),
+            )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "media-3", 1, ReadingStatus.READING, finishedAt = instant(1_500)),
             )
 
             assertEquals(1, stats(1_000, 2_000).booksFinished)
@@ -123,11 +134,17 @@ class PeriodStatsDaoTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = null),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = null),
+            )
 
             // A book still being read is not a finish, in All time or anywhere else.
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = "media-2", status = ReadingStatus.READING, finishedAt = null),
+            )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "media-2", 1, ReadingStatus.READING, finishedAt = null),
             )
 
             assertEquals(1, stats(null, null).booksFinished)
@@ -153,6 +170,9 @@ class PeriodStatsDaoTest {
 
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_000)),
+            )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = instant(1_000)),
             )
 
             // The query observes book_details as well as reading_sessions.
@@ -235,18 +255,56 @@ class PeriodStatsDaoTest {
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = mediaId, status = ReadingStatus.FINISHED, finishedAt = instant(1_500)),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), mediaId, 1, ReadingStatus.FINISHED, finishedAt = instant(1_500)),
+            )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-2"))
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = "media-2", status = ReadingStatus.FINISHED, finishedAt = instant(2_000)),
             )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "media-2", 1, ReadingStatus.FINISHED, finishedAt = instant(2_000)),
+            )
             db.mediaItemDao().insert(sampleMediaItem(id = "media-3"))
             db.bookDetailsDao().insert(
                 sampleBookDetails(mediaId = "media-3", status = ReadingStatus.READING, finishedAt = instant(1_600)),
+            )
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "media-3", 1, ReadingStatus.READING, finishedAt = instant(1_600)),
             )
 
             val dates =
                 db.statsDao().observeFinishedAtInRange(instant(1_000), instant(2_000), ReadingStatus.FINISHED).first()
 
             assertEquals(listOf(instant(1_500)), dates)
+        }
+
+    /** Re-reads count as books finished in their own period; the goal's count takes first finishes only (#230). */
+    @Test
+    fun aRereadCountsAsFinished_butNotAsAFirstFinish() =
+        runTest {
+            db.insertTestBook("dune", status = ReadingStatus.FINISHED, finishedAt = instant(1_000))
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "dune", 2, ReadingStatus.FINISHED, finishedAt = instant(5_000)),
+            )
+            db.insertTestBook("phm", status = ReadingStatus.FINISHED, finishedAt = instant(5_500))
+
+            val later = stats(4_000, 6_000)
+
+            assertEquals(2, later.booksFinished, "dune's re-read and phm")
+            assertEquals(1, later.firstFinishes, "only phm is new")
+            assertEquals(1, stats(500, 1_500).firstFinishes, "dune's first read was new back then")
+        }
+
+    /** DNF first, then a finish: the finish is the book's first, so it counts toward the goal (#230). */
+    @Test
+    fun aFinishAfterADnf_isAFirstFinish() =
+        runTest {
+            db.insertTestBook("b", status = ReadingStatus.DNF)
+            db.readThroughDao().insert(
+                ReadThroughEntity(newId(), "b", 2, ReadingStatus.FINISHED, finishedAt = instant(5_000)),
+            )
+
+            assertEquals(1, stats(4_000, 6_000).firstFinishes)
         }
 }
