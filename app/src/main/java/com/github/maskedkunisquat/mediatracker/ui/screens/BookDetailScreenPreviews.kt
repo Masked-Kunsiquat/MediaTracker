@@ -11,6 +11,7 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
@@ -197,6 +198,8 @@ private fun BookDetailHeaderSectionPreview() {
         BookDetailHeaderSection(
             book = PREVIEW_BOOK,
             details = PREVIEW_DETAILS,
+            status = ReadingStatus.READING,
+            finishedAt = null,
             coverStorageDir = "/fake/path",
             onStatusChange = {},
         )
@@ -211,6 +214,8 @@ private fun BookDetailHeaderSectionDarkPreview() {
         BookDetailHeaderSection(
             book = PREVIEW_BOOK,
             details = PREVIEW_DETAILS,
+            status = ReadingStatus.READING,
+            finishedAt = null,
             coverStorageDir = "/fake/path",
             onStatusChange = {},
         )

@@ -129,7 +129,7 @@ public class EditBookViewModel(
                         purchasePrice = bookDetail.item.purchasePrice,
                         totalPages = bookDetail.details?.totalPages,
                         format = bookDetail.details?.format ?: BookFormat.PHYSICAL,
-                        status = bookDetail.details?.status ?: ReadingStatus.TO_READ,
+                        status = bookDetail.status,
                         trackingMode = bookDetail.details?.trackingMode ?: TrackingMode.PAGES,
                         errorMessage = local.errorMessage,
                         isSaving = local.isSaving,

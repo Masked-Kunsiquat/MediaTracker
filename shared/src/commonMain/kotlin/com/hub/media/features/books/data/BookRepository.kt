@@ -62,9 +62,10 @@ public class BookRepository(
         combine(
             db.mediaItemDao().observeById(id),
             db.bookDetailsDao().observeByMediaId(id),
-        ) { mediaItem, details ->
+            db.readThroughDao().observeForMedia(id),
+        ) { mediaItem, details, reads ->
             if (mediaItem != null && mediaItem.type == MediaType.BOOK) {
-                MediaWithDetails.Book(item = mediaItem, details = details)
+                MediaWithDetails.Book(item = mediaItem, details = details, reads = reads)
             } else {
                 null
             }
@@ -79,10 +80,16 @@ public class BookRepository(
         combine(
             observeAllBooks(),
             db.bookDetailsDao().observeAll(),
-        ) { mediaItems, allDetails ->
+            db.readThroughDao().observeAll(),
+        ) { mediaItems, allDetails, allReads ->
             val detailsByMediaId = allDetails.associateBy { it.mediaId }
+            val readsByMediaId = allReads.groupBy { it.mediaId }
             mediaItems.map { mediaItem ->
-                MediaWithDetails.Book(item = mediaItem, details = detailsByMediaId[mediaItem.id])
+                MediaWithDetails.Book(
+                    item = mediaItem,
+                    details = detailsByMediaId[mediaItem.id],
+                    reads = readsByMediaId[mediaItem.id].orEmpty(),
+                )
             }
         }
 
@@ -212,7 +219,8 @@ public class BookRepository(
                 Resource.Success(null)
             } else {
                 val details = db.bookDetailsDao().getByMediaId(mediaId)
-                Resource.Success(MediaWithDetails.Book(item = mediaItem, details = details))
+                val reads = db.readThroughDao().getForMedia(mediaId)
+                Resource.Success(MediaWithDetails.Book(item = mediaItem, details = details, reads = reads))
             }
         }
 
@@ -233,8 +241,13 @@ public class BookRepository(
     public suspend fun getAllBooksWithDetails(): List<MediaWithDetails.Book> {
         val mediaItems = db.mediaItemDao().getAllByType(MediaType.BOOK)
         val detailsByMediaId = db.bookDetailsDao().getAll().associateBy { it.mediaId }
+        val readsByMediaId = db.readThroughDao().getAll().groupBy { it.mediaId }
         return mediaItems.map { mediaItem ->
-            MediaWithDetails.Book(item = mediaItem, details = detailsByMediaId[mediaItem.id])
+            MediaWithDetails.Book(
+                item = mediaItem,
+                details = detailsByMediaId[mediaItem.id],
+                reads = readsByMediaId[mediaItem.id].orEmpty(),
+            )
         }
     }
 
@@ -318,12 +331,16 @@ public class BookRepository(
             // UPDATE of just the requested columns, so this read being taken outside the
             // transaction can never cause a concurrent writer's change to some *other* field to be
             // silently reverted (see BookWriteDao.updateBookMetadataAtomically's KDoc).
-            val existingDetails = db.bookDetailsDao().getByMediaId(mediaId)
+            // The status lives on the latest read (#230); a book with no read yet is read #1 to be.
+            val latestRead = db.readThroughDao().getLatest(mediaId)
+            if (status == ReadingStatus.TO_READ && latestRead != null && latestRead.number > 1) {
+                return Resource.Error(REREAD_TO_READ)
+            }
             val finishedAt =
                 resolveFinishedAt(
                     newStatus = status,
-                    oldStatus = existingDetails?.status ?: ReadingStatus.TO_READ,
-                    oldFinishedAt = existingDetails?.finishedAt,
+                    oldStatus = latestRead?.status ?: ReadingStatus.TO_READ,
+                    oldFinishedAt = latestRead?.finishedAt,
                     clock = clock,
                 )
 
@@ -427,22 +444,32 @@ public class BookRepository(
             failure = "Failed to update reading status",
             logMessage = { "Failed to update reading status for book: id=$mediaId" },
         ) {
-            val existingDetails =
-                db.bookDetailsDao().getByMediaId(mediaId)
-                    ?: return Resource.Error("No book details found for id=$mediaId")
-
+            // The book's status is its latest read's (#230), so that is the row this changes.
+            val latest =
+                db.readThroughDao().getLatest(mediaId)
+                    ?: return Resource.Error("No read-through found for id=$mediaId")
+            if (status == ReadingStatus.TO_READ && latest.number > 1) {
+                return Resource.Error(REREAD_TO_READ)
+            }
             val finishedAt =
                 resolveFinishedAt(
                     newStatus = status,
-                    oldStatus = existingDetails.status,
-                    oldFinishedAt = existingDetails.finishedAt,
+                    oldStatus = latest.status,
+                    oldFinishedAt = latest.finishedAt,
                     clock = clock,
                 )
-            db.bookDetailsDao().update(existingDetails.copy(status = status, finishedAt = finishedAt))
+            db.readThroughDao().updateStatus(latest.id, status, finishedAt)
+            // book_details still carries these columns until #230 drops them; kept in step meanwhile.
+            db.bookDetailsDao().getByMediaId(mediaId)?.let {
+                db.bookDetailsDao().update(it.copy(status = status, finishedAt = finishedAt))
+            }
             Resource.Success(Unit)
         }
 
     public companion object {
+        /** Why a re-read can't go back to To read (#230): only read #1 may, and removing the read is the undo. */
+        internal const val REREAD_TO_READ: String = "A re-read can't go back to To read; remove the read instead"
+
         /**
          * Derives the [BookDetailsEntity.finishedAt] value for a [ReadingStatus] transition
          * (ROADMAP Task 6 Phase C), shared by [updateBookMetadata] and [updateReadingStatus] so the

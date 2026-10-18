@@ -407,7 +407,13 @@ class ImportDataUseCaseTest {
 
             val importedMedia = bookRepository.observeAllBooksWithDetails().first()
             val originalMedia = sourceBookRepository.observeAllBooksWithDetails().first()
-            assertEquals(originalMedia, importedMedia)
+
+            // Read ids are generated per database (#230), so compare the books with their reads' ids blanked.
+            fun List<MediaWithDetails.Book>.withoutReadIds() =
+                map { b ->
+                    b.copy(reads = b.reads.map { it.copy(id = "") })
+                }
+            assertEquals(originalMedia.withoutReadIds(), importedMedia.withoutReadIds())
 
             val importedIdentifiers = bookRepository.observeAllExternalIdentifiers().first().toSet()
             val originalIdentifiers = sourceBookRepository.observeAllExternalIdentifiers().first().toSet()

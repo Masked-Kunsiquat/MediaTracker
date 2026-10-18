@@ -376,6 +376,8 @@ fun BookDetailScreen(
                         BookDetailHeaderSection(
                             book = book,
                             details = details,
+                            status = uiState.status,
+                            finishedAt = uiState.finishedAt,
                             coverStorageDir = coverStorageDir,
                             onStatusChange = onStatusChange,
                         )

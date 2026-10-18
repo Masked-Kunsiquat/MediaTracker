@@ -2,8 +2,11 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.timer.ReadingTimerResult
+import kotlin.time.Instant
 
 /** UI state for the book detail screen (ROADMAP Task 4 Phase B). */
 public sealed class BookDetailUiState {
@@ -50,7 +53,16 @@ public sealed class BookDetailUiState {
         val pendingSession: ReadingTimerResult? = null,
         val errorMessage: String? = null,
         val isRefetchingCover: Boolean = false,
+        val reads: List<ReadThroughEntity> = emptyList(),
     ) : BookDetailUiState() {
+        /** The latest read (#230): the book's state. */
+        val latestRead: ReadThroughEntity? get() = reads.maxByOrNull { it.number }
+
+        /** The latest read's status (#230); To read for a book with no read at all. */
+        val status: ReadingStatus get() = latestRead?.status ?: ReadingStatus.TO_READ
+
+        val finishedAt: Instant? get() = latestRead?.finishedAt
+
         /**
          * Current reading progress: the [ReadingSessionEntity.endUnit] of the most recent session
          * (`sessions` is already most-recent-first, so this is simply `sessions.firstOrNull()`),

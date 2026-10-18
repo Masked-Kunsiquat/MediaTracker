@@ -61,6 +61,8 @@ import kotlin.time.Instant
 internal fun BookDetailHeaderSection(
     book: MediaItemEntity,
     details: BookDetailsEntity?,
+    status: ReadingStatus,
+    finishedAt: Instant?,
     coverStorageDir: String,
     onStatusChange: (ReadingStatus) -> Unit,
 ) {
@@ -76,11 +78,11 @@ internal fun BookDetailHeaderSection(
             book.coverImageHash?.let { hash ->
                 DetailArtwork(coverStorageDir = coverStorageDir, coverImageHash = hash, mediaType = MediaType.BOOK)
             },
-        statusNote = finishedNote(details?.status, details?.finishedAt),
+        statusNote = finishedNote(status, finishedAt),
         onArtworkClick = { showEnlargedCover = true },
         artworkClickLabel = stringResource(R.string.cover_view_action_label),
     ) {
-        DetailStatusChip(bookStatusControl(details?.status, onStatusChange))
+        DetailStatusChip(bookStatusControl(status, onStatusChange))
     }
 
     if (showEnlargedCover) {

@@ -734,7 +734,7 @@ private fun MediaCard(
             }
             val status =
                 when (media) {
-                    is MediaWithDetails.Book -> media.details?.status
+                    is MediaWithDetails.Book -> media.status
                     is MediaWithDetails.Movie,
                     is MediaWithDetails.TVShow,
                     -> null

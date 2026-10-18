@@ -91,7 +91,8 @@ class BookRepositoryTest {
             val id = newId()
             db.mediaItemDao().insert(sampleMediaItem(id = id, type = MediaType.BOOK, title = "Doomed"))
             db.bookDetailsDao().insert(sampleBookDetails(mediaId = id))
-            db.useWriterConnection { connection -> connection.execSQL("DROP TABLE book_details") }
+            // The status lives on the book's read since #230, so that is the write broken here.
+            db.useWriterConnection { connection -> connection.execSQL("DROP TABLE read_throughs") }
 
             val result = repo.updateReadingStatus(id, ReadingStatus.FINISHED)
 

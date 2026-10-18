@@ -119,6 +119,7 @@ public class BookDetailViewModel(
                     pendingSession = local.pendingSession,
                     errorMessage = local.errorMessage,
                     isRefetchingCover = local.isRefetchingCover,
+                    reads = bookDetail.reads,
                 )
             }
         }.stateIn(

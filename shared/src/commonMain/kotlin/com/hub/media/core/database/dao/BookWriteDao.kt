@@ -156,6 +156,7 @@ interface BookWriteDao {
 
         val detailsRowsAffected =
             updateBookDetailsMetadata(mediaId, format, totalPages, status, finishedAt, trackingMode)
+        updateLatestReadStatus(mediaId, status, finishedAt)
         if (detailsRowsAffected == 0) {
             insertBookDetails(
                 BookDetailsEntity(
@@ -199,6 +200,18 @@ interface BookWriteDao {
      *   `0` otherwise. Unlike [updateBookMetadataAtomically], a `0` here is never self-healed --
      *   see [applyBackfilledMetadata]'s KDoc.
      */
+
+    /** The book's status lives on its latest read (#230): the edit form's status goes there. */
+    @Query(
+        "UPDATE read_throughs SET status = :status, finishedAt = :finishedAt WHERE mediaId = :mediaId " +
+            "AND number = (SELECT MAX(number) FROM read_throughs WHERE mediaId = :mediaId)",
+    )
+    suspend fun updateLatestReadStatus(
+        mediaId: String,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    )
+
     @Query("UPDATE book_details SET authors = :authors WHERE mediaId = :mediaId")
     suspend fun updateAuthorsOnly(
         mediaId: String,

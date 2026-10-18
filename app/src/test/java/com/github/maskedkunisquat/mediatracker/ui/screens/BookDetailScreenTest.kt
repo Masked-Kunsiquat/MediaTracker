@@ -22,8 +22,10 @@ import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.features.books.timer.ReadingTimerResult
 import com.hub.media.features.books.timer.ReadingTimerState
 import com.hub.media.ui.BookDetailUiState
 import org.junit.Assert.assertEquals
@@ -76,6 +78,27 @@ class BookDetailScreenTest {
         status = status,
         authors = authors,
         finishedAt = finishedAt,
+    )
+
+    /** A Ready state whose book has one read carrying [details]' status and finish date (#230). */
+    private fun ready(
+        book: MediaItemEntity,
+        details: BookDetailsEntity?,
+        sessions: List<ReadingSessionEntity> = emptyList(),
+        pendingSession: ReadingTimerResult? = null,
+        errorMessage: String? = null,
+        isRefetchingCover: Boolean = false,
+    ) = BookDetailUiState.Ready(
+        book = book,
+        details = details,
+        sessions = sessions,
+        pendingSession = pendingSession,
+        errorMessage = errorMessage,
+        isRefetchingCover = isRefetchingCover,
+        reads =
+            details
+                ?.let { listOf(ReadThroughEntity("read-1", it.mediaId, 1, it.status, finishedAt = it.finishedAt)) }
+                .orEmpty(),
     )
 
     private fun session(
@@ -154,7 +177,7 @@ class BookDetailScreenTest {
         // Movie/TV made in steps 1-2 -- Book no longer repeats it in both places. Was
         // `ready_showsTitleInTopBarAndHeader_unlikeMovieAndTV`, asserting a count of 2 (top bar +
         // BookHeader's own headline); that divergence from Movie/TV is gone.
-        setContent(BookDetailUiState.Ready(book = book(), details = details()))
+        setContent(ready(book = book(), details = details()))
 
         composeRule.onAllNodesWithText("The Great Gatsby").assertCountEquals(1)
     }
@@ -162,7 +185,7 @@ class BookDetailScreenTest {
     @Test
     fun backIcon_invokesOnNavigateBack() {
         var backCount = 0
-        setContent(BookDetailUiState.Ready(book = book(), details = details()), onNavigateBack = { backCount++ })
+        setContent(ready(book = book(), details = details()), onNavigateBack = { backCount++ })
 
         composeRule.onNodeWithContentDescription(context.getString(R.string.navigate_back)).performClick()
 
@@ -172,7 +195,7 @@ class BookDetailScreenTest {
     @Test
     fun ready_showsEditAction_andInvokesOnEditBook() {
         var edits = 0
-        setContent(BookDetailUiState.Ready(book = book(), details = details()), onEditBook = { edits++ })
+        setContent(ready(book = book(), details = details()), onEditBook = { edits++ })
 
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.edit_book_content_description))
@@ -233,7 +256,7 @@ class BookDetailScreenTest {
     fun deleteAction_showsConfirmationWithBookTitle_andDoesNotDeleteYet() {
         var deletes = 0
         setContent(
-            BookDetailUiState.Ready(book = book(title = "Dune"), details = details()),
+            ready(book = book(title = "Dune"), details = details()),
             onDeleteBook = { deletes++ },
         )
 
@@ -250,7 +273,7 @@ class BookDetailScreenTest {
     @Test
     fun confirmingTheDeleteDialog_invokesOnDeleteBook() {
         var deletes = 0
-        setContent(BookDetailUiState.Ready(book = book(), details = details()), onDeleteBook = { deletes++ })
+        setContent(ready(book = book(), details = details()), onDeleteBook = { deletes++ })
 
         chooseFromMoreOptions(context.getString(R.string.delete_book_content_description))
         composeRule.onNodeWithText(context.getString(R.string.delete_button)).performClick()
@@ -261,7 +284,7 @@ class BookDetailScreenTest {
     @Test
     fun cancellingTheDeleteDialog_dismissesWithoutInvokingOnDeleteBook() {
         var deletes = 0
-        setContent(BookDetailUiState.Ready(book = book(), details = details()), onDeleteBook = { deletes++ })
+        setContent(ready(book = book(), details = details()), onDeleteBook = { deletes++ })
 
         chooseFromMoreOptions(context.getString(R.string.delete_book_content_description))
         composeRule.onNodeWithText(context.getString(R.string.cancel_button)).performClick()
@@ -281,7 +304,7 @@ class BookDetailScreenTest {
      */
     @Test
     fun ready_rendersKindAndYearInHeader() {
-        setContent(BookDetailUiState.Ready(book = book(releaseYear = 1925), details = details()))
+        setContent(ready(book = book(releaseYear = 1925), details = details()))
 
         val expected =
             context.getString(
@@ -295,14 +318,14 @@ class BookDetailScreenTest {
     /** Was `releaseYearNull_rendersNoPublishedYearRow` -- see [ready_rendersKindAndYearInHeader]. */
     @Test
     fun releaseYearNull_rendersKindAloneInHeader() {
-        setContent(BookDetailUiState.Ready(book = book(releaseYear = null), details = details()))
+        setContent(ready(book = book(releaseYear = null), details = details()))
 
         composeRule.onNodeWithText(context.getString(R.string.book_detail_kind)).assertIsDisplayed()
     }
 
     @Test
     fun noSessionsLogged_rendersProgressNotStartedText() {
-        setContent(BookDetailUiState.Ready(book = book(), details = details(), sessions = emptyList()))
+        setContent(ready(book = book(), details = details(), sessions = emptyList()))
 
         composeRule.onNodeWithText(context.getString(R.string.detail_progress_not_started)).assertIsDisplayed()
     }
@@ -313,7 +336,7 @@ class BookDetailScreenTest {
         // other than the "not started" copy once a session exists -- not the exact formatted
         // fraction, which belongs to formatProgress's own unit coverage.
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details(totalPages = 180), sessions = listOf(session())),
+            ready(book = book(), details = details(totalPages = 180), sessions = listOf(session())),
         )
 
         composeRule.onNodeWithText(context.getString(R.string.detail_progress_not_started)).assertDoesNotExist()
@@ -329,7 +352,7 @@ class BookDetailScreenTest {
     fun tappingAStatusOption_invokesOnStatusChangeWithThatStatus() {
         var captured: ReadingStatus? = null
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details(status = ReadingStatus.READING)),
+            ready(book = book(), details = details(status = ReadingStatus.READING)),
             onStatusChange = { captured = it },
         )
 
@@ -344,7 +367,7 @@ class BookDetailScreenTest {
     fun finishedWithDate_showsFinishedNote() {
         val finishedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L)
         setContent(
-            BookDetailUiState.Ready(
+            ready(
                 book = book(),
                 details = details(status = ReadingStatus.FINISHED, finishedAt = finishedAt),
             ),
@@ -371,7 +394,7 @@ class BookDetailScreenTest {
         // status is what gates it, not the date's mere presence. Mirrors MovieDetailScreenTest's
         // notWatched_showsNoWatchedNote.
         setContent(
-            BookDetailUiState.Ready(
+            ready(
                 book = book(),
                 details = details(status = ReadingStatus.READING, finishedAt = finishedAt),
             ),
@@ -392,7 +415,7 @@ class BookDetailScreenTest {
     @Test
     fun readingHistorySection_rendersOnTheSamePageAsProgress_noTabSwitch() {
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details(totalPages = 180), sessions = listOf(session())),
+            ready(book = book(), details = details(totalPages = 180), sessions = listOf(session())),
         )
 
         // The progress card's own value text ("Page 78 / 180"), not detail_progress_title
@@ -412,7 +435,7 @@ class BookDetailScreenTest {
     fun timerRow_idle_showsStartAndInvokesOnStartReading() {
         var starts = 0
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details()),
+            ready(book = book(), details = details()),
             timerState = ReadingTimerState.Idle,
             onStartReading = { starts++ },
         )
@@ -427,7 +450,7 @@ class BookDetailScreenTest {
         var pauses = 0
         var stops = 0
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details()),
+            ready(book = book(), details = details()),
             timerState = ReadingTimerState.Running,
             onPauseReading = { pauses++ },
             onStopReading = { stops++ },
@@ -445,7 +468,7 @@ class BookDetailScreenTest {
         var resumes = 0
         var stops = 0
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details()),
+            ready(book = book(), details = details()),
             timerState = ReadingTimerState.Paused,
             onResumeReading = { resumes++ },
             onStopReading = { stops++ },
@@ -462,7 +485,7 @@ class BookDetailScreenTest {
 
     @Test
     fun facts_isbnCopyAction_copiesIsbnToClipboard() {
-        setContent(BookDetailUiState.Ready(book = book(), details = details(isbn = "9780743273565")))
+        setContent(ready(book = book(), details = details(isbn = "9780743273565")))
 
         composeRule
             .onNodeWithContentDescription(context.getString(R.string.isbn_copy_content_description))
@@ -487,14 +510,14 @@ class BookDetailScreenTest {
         // BookDetailHeaderSection now renders the shared DetailHeader, whose artwork slot is
         // built only when a cover hash exists (`?.let`) -- the always-present InteractiveCoverBox
         // placeholder this test used to pin is gone, matching Movie/TV.
-        setContent(BookDetailUiState.Ready(book = book(), details = details()))
+        setContent(ready(book = book(), details = details()))
 
         composeRule.onNodeWithText(BOOK_COVER_PLACEHOLDER_EMOJI).assertDoesNotExist()
     }
 
     @Test
     fun tappingCover_opensEnlargedCoverDialog() {
-        setContent(BookDetailUiState.Ready(book = book(coverImageHash = "cover.jpg"), details = details()))
+        setContent(ready(book = book(coverImageHash = "cover.jpg"), details = details()))
 
         val viewCoverLabel = context.getString(R.string.cover_view_action_label)
         val artwork =
@@ -523,7 +546,7 @@ class BookDetailScreenTest {
     fun overflowMenu_refetchItem_invokesOnRefetchCover_whenIsbnPresent() {
         var refetches = 0
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details(isbn = "9780743273565")),
+            ready(book = book(), details = details(isbn = "9780743273565")),
             onRefetchCover = { refetches++ },
         )
 
@@ -537,7 +560,7 @@ class BookDetailScreenTest {
     fun overflowMenu_refetchItem_disabledAndExplainsWhenNoIsbn() {
         var refetches = 0
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details(isbn = null)),
+            ready(book = book(), details = details(isbn = null)),
             onRefetchCover = { refetches++ },
         )
 
@@ -559,7 +582,7 @@ class BookDetailScreenTest {
         // refetch, so the menu stays and the refetch item carries the progress instead.
         var deletes = 0
         setContent(
-            BookDetailUiState.Ready(book = book(), details = details(), isRefetchingCover = true),
+            ready(book = book(), details = details(), isRefetchingCover = true),
             onDeleteBook = { deletes++ },
         )
 

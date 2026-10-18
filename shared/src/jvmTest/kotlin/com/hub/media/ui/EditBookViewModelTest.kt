@@ -3,6 +3,7 @@ package com.hub.media.ui
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.sampleBookDetails
@@ -85,6 +86,7 @@ class EditBookViewModelTest {
                 trackingMode = trackingMode,
             ),
         )
+        db.readThroughDao().insert(ReadThroughEntity(newId(), mediaId, 1, status))
     }
 
     private fun newViewModel(id: String = mediaId) =
@@ -177,9 +179,11 @@ class EditBookViewModelTest {
             val details = db.bookDetailsDao().getByMediaId(mediaId)
             assertEquals(366, details?.totalPages)
             assertEquals(BookFormat.HARDCOVER, details?.format)
-            assertEquals(ReadingStatus.FINISHED, details?.status)
             assertEquals(TrackingMode.PERCENT, details?.trackingMode)
-            assertTrue(details?.finishedAt != null)
+            // The status and its finish date live on the latest read (#230).
+            val read = db.readThroughDao().getLatest(mediaId)
+            assertEquals(ReadingStatus.FINISHED, read?.status)
+            assertTrue(read?.finishedAt != null)
         }
 
     @Test
