@@ -815,4 +815,7 @@
     <string name="about_open_library_title">Open Library</string>
     <string name="about_open_library_description">Book details and cover art, and the first place an ISBN is looked up. Open Library asks for no credit; this one is a courtesy.</string>
     <string name="about_open_library_link_label">Visit openlibrary.org</string>
+    <!-- Your rating (#230) -->
+    <string name="rating_none">Not rated</string>
+    <string name="rating_value">Your rating, %1$s of 5</string>
 </resources>
