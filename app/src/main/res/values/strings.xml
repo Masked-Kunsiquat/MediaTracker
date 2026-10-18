@@ -818,4 +818,24 @@
     <!-- Your rating (#230) -->
     <string name="rating_none">Not rated</string>
     <string name="rating_value">Your rating, %1$s of 5</string>
+    <string name="rating_yours">Yours</string>
+    <string name="rating_not_yet">Not rated yet</string>
+    <string name="rating_average_of_reads">%1$s average of %2$d reads · latest %3$s</string>
+    <string name="rating_your_rating">Your rating</string>
+    <string name="read_number">Read #%1$d</string>
+    <string name="read_number_status">Read #%1$d · %2$s</string>
+    <string name="read_started_on">Started %1$s</string>
+    <string name="read_again">Read again</string>
+    <string name="read_remove">Remove this read</string>
+    <string name="read_menu">Options for read %1$d</string>
+    <string name="read_expand">Show read %1$d</string>
+    <string name="read_collapse">Hide read %1$d</string>
+    <plurals name="read_sessions_summary">
+        <item quantity="one">%1$d session · %2$s</item>
+        <item quantity="other">%1$d sessions · %2$s</item>
+    </plurals>
+    <string name="rate_read_title">Rate this read?</string>
+    <string name="rate_read_body">%1$s, read #%2$d</string>
+    <string name="rate_read_skip">Skip</string>
+    <string name="rate_read_save">Save</string>
 </resources>

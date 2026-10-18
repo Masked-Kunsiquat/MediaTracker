@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 
 /**
@@ -80,6 +81,11 @@ internal fun LazyListScope.readingHistorySection(
     onLogManuallyClick: () -> Unit,
     onEditSessionClick: (ReadingSessionEntity) -> Unit,
     onDeleteSessionClick: (ReadingSessionEntity) -> Unit,
+    reads: List<ReadThroughEntity> = emptyList(),
+    expandedReadIds: Set<String> = emptySet(),
+    onToggleRead: (String) -> Unit = {},
+    onRateRead: (readId: String, halves: Int?) -> Unit = { _, _ -> },
+    onRemoveRead: (String) -> Unit = {},
 ) {
     item {
         Text(
@@ -98,18 +104,62 @@ internal fun LazyListScope.readingHistorySection(
         }
     }
 
+    // Reads (#230): the latest one open with its sessions, earlier ones folded until tapped. A book with
+    // no read at all (only ever a fixture) shows its sessions as one timeline, as before.
+    val latest = reads.maxByOrNull { it.number }
+    if (latest == null) {
+        sessionTimeline(sessions, keyPrefix = "", onEditSessionClick, onDeleteSessionClick)
+        return
+    }
+    val readIds = reads.map { it.id }.toSet()
+
+    fun sessionsOf(read: ReadThroughEntity) =
+        sessions.filter { it.readThroughId == read.id || (read == latest && it.readThroughId !in readIds) }
+    for (read in reads.sortedByDescending { it.number }) {
+        val ofRead = sessionsOf(read)
+        val open = read == latest || read.id in expandedReadIds
+        if (open) {
+            item(key = "read-${read.id}") {
+                ReadHeaderCard(
+                    read = read,
+                    canRemove = read.number > 1 && ofRead.isEmpty(),
+                    onRate = { onRateRead(read.id, it) },
+                    onRemove = { onRemoveRead(read.id) },
+                    onCollapse = if (read == latest) null else ({ onToggleRead(read.id) }),
+                )
+            }
+            sessionTimeline(ofRead, keyPrefix = "${read.id}-", onEditSessionClick, onDeleteSessionClick)
+        } else {
+            item(key = "read-${read.id}") {
+                FoldedReadCard(read = read, sessions = ofRead, onExpand = { onToggleRead(read.id) })
+            }
+        }
+    }
+}
+
+/**
+ * [sessions] as the history's timeline rail, or "no sessions" when there are none. [keyPrefix] keeps
+ * item keys unique when several reads each render their own timeline (#230).
+ */
+private fun LazyListScope.sessionTimeline(
+    sessions: List<ReadingSessionEntity>,
+    keyPrefix: String,
+    onEditSessionClick: (ReadingSessionEntity) -> Unit,
+    onDeleteSessionClick: (ReadingSessionEntity) -> Unit,
+) {
     if (sessions.isEmpty()) {
-        item {
+        item(key = "${keyPrefix}none") {
             Text(
                 text = stringResource(R.string.no_sessions_logged_yet),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp),
             )
         }
     } else {
         val entries = buildTimelineEntries(sessions)
         val today = java.time.LocalDate.now()
-        itemsIndexed(entries, key = { _, entry -> entry.key }) { index, entry ->
+        itemsIndexed(entries, key = { _, entry -> keyPrefix + entry.key }) { index, entry ->
             val showTopLine = index > 0
             val showBottomLine = index < entries.lastIndex
             when (entry) {

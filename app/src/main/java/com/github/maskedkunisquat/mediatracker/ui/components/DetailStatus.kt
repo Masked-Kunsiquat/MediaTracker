@@ -43,6 +43,8 @@ sealed interface DetailStatus {
         val label: @Composable (T) -> String,
         val onSelect: (T) -> Unit,
         val onClickLabel: String,
+        /** An action listed below the statuses, e.g. a book's Read again (#230); `null` for none. */
+        val menuAction: StatusAction? = null,
     ) : DetailStatus
 
     /**
@@ -90,6 +92,7 @@ private fun <T> EditableStatusChip(
         onSelect = status.onSelect,
         onClickLabel = status.onClickLabel,
         modifier = modifier,
+        menuAction = status.menuAction,
     )
 }
 

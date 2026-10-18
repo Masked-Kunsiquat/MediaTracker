@@ -30,10 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
@@ -41,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.BookDetailViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFact
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFactAction
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
@@ -162,6 +165,13 @@ fun BookDetailScreenRoute(
         onEditBook = onNavigateToEditBook,
         onStatusChange = viewModel::updateStatus,
         onRefetchCover = viewModel::refetchCover,
+        readActions =
+            BookReadActions(
+                onReadAgain = viewModel::readAgain,
+                onRemoveRead = viewModel::removeRead,
+                onRateRead = viewModel::rateRead,
+                onDismissRatePrompt = viewModel::dismissRatePrompt,
+            ),
     )
 }
 
@@ -248,6 +258,7 @@ fun BookDetailScreen(
     onEditBook: () -> Unit,
     onStatusChange: (ReadingStatus) -> Unit,
     onRefetchCover: () -> Unit,
+    readActions: BookReadActions,
 ) {
     var showDeleteBookDialog by remember { mutableStateOf(false) }
 
@@ -340,8 +351,15 @@ fun BookDetailScreen(
         // ManualSessionDialog's KDoc.
         var sessionToEdit by remember { mutableStateOf<ReadingSessionEntity?>(null) }
 
+        // Earlier reads opened in the history (#230), kept across a rotation.
+        var expandedReadIds by rememberSaveable { mutableStateOf(setOf<String>()) }
+
         LazyColumn(
-            modifier = Modifier.fillMaxSize().consumeWindowInsets(innerPadding),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .consumeWindowInsets(innerPadding)
+                    .testTag(TestTags.BookDetail.LIST),
             contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
         ) {
             when (uiState) {
@@ -380,6 +398,9 @@ fun BookDetailScreen(
                             finishedAt = uiState.finishedAt,
                             coverStorageDir = coverStorageDir,
                             onStatusChange = onStatusChange,
+                            titleRating = uiState.titleRating,
+                            isReread = (uiState.latestRead?.number ?: 1) > 1,
+                            onReadAgain = readActions.onReadAgain,
                         )
                     }
                     item { DetailSynopsis(text = book.synopsis) }
@@ -449,8 +470,26 @@ fun BookDetailScreen(
                             showManualEntry = true
                         },
                         onDeleteSessionClick = { session -> sessionToDelete = session },
+                        reads = uiState.reads,
+                        expandedReadIds = expandedReadIds,
+                        onToggleRead = { id ->
+                            expandedReadIds = if (id in expandedReadIds) expandedReadIds - id else expandedReadIds + id
+                        },
+                        onRateRead = readActions.onRateRead,
+                        onRemoveRead = readActions.onRemoveRead,
                     )
                 }
+            }
+        }
+
+        if (uiState is BookDetailUiState.Ready) {
+            uiState.ratePrompt?.let { read ->
+                RateReadDialog(
+                    bookTitle = uiState.book.title,
+                    read = read,
+                    onSave = { readActions.onRateRead(read.id, it) },
+                    onSkip = readActions.onDismissRatePrompt,
+                )
             }
         }
 

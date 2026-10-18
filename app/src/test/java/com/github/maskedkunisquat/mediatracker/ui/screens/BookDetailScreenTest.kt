@@ -8,15 +8,22 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
@@ -82,6 +89,8 @@ class BookDetailScreenTest {
         details: BookDetailsEntity?,
         status: ReadingStatus = ReadingStatus.READING,
         finishedAt: Instant? = null,
+        reads: List<ReadThroughEntity>? = null,
+        ratePrompt: ReadThroughEntity? = null,
         sessions: List<ReadingSessionEntity> = emptyList(),
         pendingSession: ReadingTimerResult? = null,
         errorMessage: String? = null,
@@ -94,12 +103,14 @@ class BookDetailScreenTest {
         errorMessage = errorMessage,
         isRefetchingCover = isRefetchingCover,
         reads =
-            details
-                ?.let {
-                    listOf(
-                        ReadThroughEntity("read-1", it.mediaId, 1, status, finishedAt = finishedAt),
-                    )
-                }.orEmpty(),
+            reads
+                ?: details
+                    ?.let {
+                        listOf(
+                            ReadThroughEntity("r1", it.mediaId, 1, status, finishedAt = finishedAt),
+                        )
+                    }.orEmpty(),
+        ratePrompt = ratePrompt,
     )
 
     private fun session(
@@ -142,6 +153,7 @@ class BookDetailScreenTest {
         onPauseReading: () -> Unit = {},
         onResumeReading: () -> Unit = {},
         onStopReading: () -> Unit = {},
+        readActions: BookReadActions = recordingReadActions,
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -165,6 +177,7 @@ class BookDetailScreenTest {
                     onEditBook = onEditBook,
                     onStatusChange = onStatusChange,
                     onRefetchCover = onRefetchCover,
+                    readActions = readActions,
                 )
             }
         }
@@ -610,6 +623,166 @@ class BookDetailScreenTest {
 
         composeRule.onNodeWithText(context.getString(R.string.delete_book_body, "The Great Gatsby")).assertIsDisplayed()
         assertEquals("choosing Delete must ask, not act", 0, deletes)
+    }
+
+    // --- Reads and your rating (#230) ---------------------------------------------------------------
+
+    private val readCalls = mutableListOf<String>()
+    private val recordingReadActions =
+        BookReadActions(
+            onReadAgain = { readCalls += "again" },
+            onRemoveRead = { readCalls += "remove:$it" },
+            onRateRead = { id, halves -> readCalls += "rate:$id:$halves" },
+            onDismissRatePrompt = { readCalls += "dismiss" },
+        )
+
+    private val march2024 = Instant.fromEpochMilliseconds(1_709_500_000_000)
+
+    private fun twoReads(
+        readOneRating: Int? = 8,
+        readTwoRating: Int? = null,
+    ) = listOf(
+        ReadThroughEntity("r1", "book-1", 1, ReadingStatus.FINISHED, finishedAt = march2024, rating = readOneRating),
+        ReadThroughEntity("r2", "book-1", 2, ReadingStatus.READING, rating = readTwoRating),
+    )
+
+    private fun list() = composeRule.onNodeWithTag(TestTags.BookDetail.LIST)
+
+    @Test
+    fun header_showsYourAverage_andLatest_forTwoRatedReads() {
+        setContent(ready(book = book(), details = details(), reads = twoReads(readOneRating = 8, readTwoRating = 10)))
+
+        composeRule.onNodeWithText(context.getString(R.string.rating_yours)).assertIsDisplayed()
+        composeRule
+            .onNodeWithText(
+                context.getString(R.string.rating_average_of_reads, "4.5", 2, "5"),
+            ).assertIsDisplayed()
+    }
+
+    @Test
+    fun header_saysNotRatedYet_withNoRating() {
+        setContent(ready(book = book(), details = details(), reads = twoReads(readOneRating = null)))
+
+        composeRule.onNodeWithText(context.getString(R.string.rating_not_yet)).assertIsDisplayed()
+    }
+
+    @Test
+    fun header_withOneRatedRead_showsNoAverageLine() {
+        setContent(ready(book = book(), details = details(), reads = twoReads(readOneRating = 8)))
+
+        composeRule.onNodeWithText(context.getString(R.string.rating_yours)).assertIsDisplayed()
+        composeRule.onAllNodesWithText("average", substring = true).assertCountEquals(0)
+    }
+
+    /** The latest read is open with its sessions; an earlier read is one folded line that expands on tap. */
+    @Test
+    fun history_foldsEarlierReads_andExpandsThemOnTap() {
+        val readOneSession = session(id = "s-old").copy(readThroughId = "r1", notes = "First time through")
+        val readTwoSession = session(id = "s-new").copy(readThroughId = "r2", notes = "Second time")
+        setContent(
+            ready(
+                book = book(),
+                details = details(),
+                reads = twoReads(),
+                sessions = listOf(readTwoSession, readOneSession),
+            ),
+        )
+
+        list().performScrollToNode(hasText(context.getString(R.string.read_number, 2), substring = true))
+        composeRule.onNodeWithText(context.getString(R.string.read_number, 2), substring = true).assertIsDisplayed()
+        list().performScrollToNode(hasText("Second time"))
+        composeRule.onNodeWithText("Second time").assertIsDisplayed()
+
+        // Scrolled to read #1, so its rows would be built if it were open: the list only builds what is
+        // near the screen, and an absence checked anywhere else passes whether or not it folds.
+        val folded = context.getString(R.string.read_number, 1)
+        list().performScrollToNode(hasText(folded, substring = true))
+        // Positive control: the folded card's own summary, which an open read never shows.
+        composeRule.onNodeWithText("1 session", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("First time through").assertCountEquals(0)
+        composeRule.onNodeWithText(folded, substring = true).performClick()
+
+        list().performScrollToNode(hasText("First time through"))
+        composeRule.onNodeWithText("First time through").assertIsDisplayed()
+    }
+
+    @Test
+    fun statusMenu_offersReadAgain_onceARead_isFinished() {
+        setContent(ready(book = book(), details = details(), status = ReadingStatus.FINISHED))
+
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_finished)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.read_again)).performClick()
+
+        assertEquals(listOf("again"), readCalls)
+    }
+
+    @Test
+    fun statusMenu_whileReading_hasNoReadAgain() {
+        setContent(ready(book = book(), details = details(), status = ReadingStatus.READING))
+
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_reading)).performClick()
+
+        composeRule.onAllNodesWithText(context.getString(R.string.read_again)).assertCountEquals(0)
+        // Positive control: the menu really is open.
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_finished)).assertIsDisplayed()
+    }
+
+    /** Only read #1 may be To read; on a re-read the menu leaves it out (#230 Review Focus 3). */
+    @Test
+    fun statusMenu_onAReread_leavesOutToRead() {
+        setContent(ready(book = book(), details = details(), reads = twoReads()))
+
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_reading)).performClick()
+
+        composeRule.onAllNodesWithText(context.getString(R.string.reading_status_to_read)).assertCountEquals(0)
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_finished)).assertIsDisplayed()
+    }
+
+    @Test
+    fun anEmptyReread_canBeRemoved_fromItsCard() {
+        setContent(ready(book = book(), details = details(), reads = twoReads()))
+
+        list().performScrollToNode(hasContentDescription(context.getString(R.string.read_menu, 2)))
+        composeRule.onNodeWithContentDescription(context.getString(R.string.read_menu, 2)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.read_remove)).performClick()
+
+        assertEquals(listOf("remove:r2"), readCalls)
+    }
+
+    @Test
+    fun readOne_hasNoRemove() {
+        setContent(ready(book = book(), details = details(), status = ReadingStatus.FINISHED))
+
+        composeRule.onAllNodesWithContentDescription(context.getString(R.string.read_menu, 1)).assertCountEquals(0)
+    }
+
+    @Test
+    fun rateThisRead_savesTheChosenStars() {
+        val reads = twoReads()
+        setContent(ready(book = book(title = "Dune"), details = details(), reads = reads, ratePrompt = reads[1]))
+
+        composeRule.onNodeWithText(context.getString(R.string.rate_read_title)).assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(TestTags.BookDetail.RATE_STARS)
+            .performTouchInput {
+                click(
+                    androidx.compose.ui.geometry
+                        .Offset(width * 9.5f / 10f, height / 2f),
+                )
+            }
+        composeRule.onNodeWithText(context.getString(R.string.rate_read_save)).performClick()
+
+        assertEquals(listOf("rate:r2:10"), readCalls)
+    }
+
+    @Test
+    fun rateThisRead_skip_dismisses() {
+        val reads = twoReads()
+        setContent(ready(book = book(), details = details(), reads = reads, ratePrompt = reads[1]))
+
+        composeRule.onNodeWithText(context.getString(R.string.rate_read_skip)).performClick()
+
+        assertEquals(listOf("dismiss"), readCalls)
     }
 
     private companion object {

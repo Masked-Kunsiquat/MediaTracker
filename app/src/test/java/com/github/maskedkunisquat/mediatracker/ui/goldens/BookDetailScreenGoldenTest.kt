@@ -5,6 +5,7 @@ import android.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.screens.BookDetailScreen
+import com.github.maskedkunisquat.mediatracker.ui.screens.BookReadActions
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -132,6 +133,7 @@ class BookDetailScreenGoldenTest {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
         )
     }
 
@@ -165,6 +167,7 @@ class BookDetailScreenGoldenTest {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
         )
     }
 

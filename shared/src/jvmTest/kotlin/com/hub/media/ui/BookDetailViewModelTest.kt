@@ -3,8 +3,11 @@ package com.hub.media.ui
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.insertTestBook
 import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
+import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
@@ -13,6 +16,7 @@ import com.hub.media.core.storage.createTestTempDir
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.data.ReadThroughRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
@@ -189,6 +193,7 @@ class BookDetailViewModelTest {
                 logReadingSessionUseCase = useCase,
                 refetchCoverUseCase = refetchCoverUseCase,
                 deleteMediaUseCase = deleteMediaUseCase,
+                readThroughRepository = ReadThroughRepository(db),
             ),
         )
 
@@ -1005,5 +1010,114 @@ class BookDetailViewModelTest {
                 (viewModel.uiState.value as BookDetailUiState.Ready).pendingSession,
                 "a second stop must not overwrite the pending session the first one produced",
             )
+        }
+
+    // ---- Reads and ratings (#230) -------------------------------------------------------------
+
+    private fun ready(state: BookDetailUiState) = state as? BookDetailUiState.Ready
+
+    /** Finishing a read offers "Rate this read?" for that read. */
+    @Test
+    fun finishing_asksToRateThatRead() =
+        runTest {
+            val readOne = db.insertTestBook(mediaId, status = ReadingStatus.READING)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+
+            viewModel.updateStatus(ReadingStatus.FINISHED)
+
+            val state = viewModel.uiState.first { ready(it)?.ratePrompt != null } as BookDetailUiState.Ready
+            assertEquals(readOne, state.ratePrompt!!.id)
+        }
+
+    /** Did not finish asks too -- a read you gave up on can still be rated -- but going back to Reading does not. */
+    @Test
+    fun dnf_asks_butReading_doesNot() =
+        runTest {
+            db.insertTestBook(mediaId, status = ReadingStatus.FINISHED)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+
+            viewModel.updateStatus(ReadingStatus.READING)
+            viewModel.uiState.first { ready(it)?.status == ReadingStatus.READING }
+            assertEquals(null, ready(viewModel.uiState.first { ready(it) != null })!!.ratePrompt)
+
+            viewModel.updateStatus(ReadingStatus.DNF)
+            // Both, not either: the prompt is local state and can arrive a step before the status does.
+            val state =
+                viewModel.uiState.first {
+                    ready(it)?.let { r -> r.ratePrompt != null && r.status == ReadingStatus.DNF } ==
+                        true
+                }
+                    as BookDetailUiState.Ready
+            assertEquals(state.latestRead!!.id, state.ratePrompt!!.id)
+        }
+
+    @Test
+    fun rateRead_savesTheRating_andClosesThePrompt() =
+        runTest {
+            val readOne = db.insertTestBook(mediaId, status = ReadingStatus.READING)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+            viewModel.updateStatus(ReadingStatus.FINISHED)
+            viewModel.uiState.first { ready(it)?.ratePrompt != null }
+
+            viewModel.rateRead(readOne, 9)
+
+            val state =
+                viewModel.uiState.first {
+                    ready(it)?.let { r ->
+                        r.ratePrompt == null && r.titleRating != null
+                    } == true
+                }
+                    as BookDetailUiState.Ready
+            assertEquals(4.5, state.titleRating!!.latestStars)
+        }
+
+    @Test
+    fun dismissingThePrompt_leavesTheReadUnrated() =
+        runTest {
+            val readOne = db.insertTestBook(mediaId, status = ReadingStatus.READING)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+            viewModel.updateStatus(ReadingStatus.FINISHED)
+            viewModel.uiState.first { ready(it)?.ratePrompt != null }
+
+            viewModel.dismissRatePrompt()
+
+            viewModel.uiState.first { ready(it)?.ratePrompt == null }
+            assertEquals(null, db.readThroughDao().getById(readOne)!!.rating)
+        }
+
+    /** Read again starts read #2 at Reading, and its progress starts from the beginning. */
+    @Test
+    fun readAgain_startsAFreshRead() =
+        runTest {
+            db.insertTestBook(mediaId, status = ReadingStatus.FINISHED)
+            db.readingSessionDao().insertIntoLatestRead(sampleReadingSession(mediaId = mediaId, endUnit = 300.0))
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.currentProgress == 300.0 }
+
+            viewModel.readAgain()
+
+            val state = viewModel.uiState.first { ready(it)?.reads?.size == 2 } as BookDetailUiState.Ready
+            assertEquals(null, state.currentProgress, "read #2 has no sessions yet")
+            assertEquals(ReadingStatus.READING, state.status)
+            assertEquals(1, state.sessions.size, "read #1's session is still in the history")
+        }
+
+    @Test
+    fun removeRead_returnsTheBookToItsPreviousRead() =
+        runTest {
+            db.insertTestBook(mediaId, status = ReadingStatus.FINISHED)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+            viewModel.readAgain()
+            val two = (viewModel.uiState.first { ready(it)?.reads?.size == 2 } as BookDetailUiState.Ready).latestRead!!
+
+            viewModel.removeRead(two.id)
+
+            val state = viewModel.uiState.first { ready(it)?.reads?.size == 1 } as BookDetailUiState.Ready
+            assertEquals(ReadingStatus.FINISHED, state.status)
         }
 }

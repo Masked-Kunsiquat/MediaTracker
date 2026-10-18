@@ -44,6 +44,7 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.features.books.data.TitleRating
 import com.hub.media.features.books.timer.ReadingTimerState
 import kotlin.math.roundToInt
 import kotlin.time.Instant
@@ -65,6 +66,9 @@ internal fun BookDetailHeaderSection(
     finishedAt: Instant?,
     coverStorageDir: String,
     onStatusChange: (ReadingStatus) -> Unit,
+    titleRating: TitleRating? = null,
+    isReread: Boolean = false,
+    onReadAgain: () -> Unit = {},
 ) {
     var showEnlargedCover by remember { mutableStateOf(false) }
 
@@ -81,8 +85,9 @@ internal fun BookDetailHeaderSection(
         statusNote = finishedNote(status, finishedAt),
         onArtworkClick = { showEnlargedCover = true },
         artworkClickLabel = stringResource(R.string.cover_view_action_label),
+        yourRating = { YourRatingRow(titleRating) },
     ) {
-        DetailStatusChip(bookStatusControl(status, onStatusChange))
+        DetailStatusChip(bookStatusControl(status, onStatusChange, isReread = isReread, onReadAgain = onReadAgain))
     }
 
     if (showEnlargedCover) {
@@ -225,13 +230,21 @@ private fun EnlargedCoverDialog(
 internal fun bookStatusControl(
     status: ReadingStatus?,
     onStatusChange: (ReadingStatus) -> Unit,
+    isReread: Boolean = false,
+    onReadAgain: (() -> Unit)? = null,
 ): DetailStatus.Editable<ReadingStatus> =
     DetailStatus.Editable(
         value = status ?: ReadingStatus.TO_READ,
-        options = ReadingStatus.entries,
+        // Only read #1 may be To read (#230): on a re-read, removing the read is the undo instead.
+        options = if (isReread) ReadingStatus.entries - ReadingStatus.TO_READ else ReadingStatus.entries,
         label = { it.displayLabel() },
         onSelect = onStatusChange,
         onClickLabel = stringResource(R.string.detail_status_change_action_label),
+        // Read again, once the latest read has ended (#230).
+        menuAction =
+            onReadAgain
+                ?.takeIf { status == ReadingStatus.FINISHED || status == ReadingStatus.DNF }
+                ?.let { DetailStatus.StatusAction(stringResource(R.string.read_again), it) },
     )
 
 /**

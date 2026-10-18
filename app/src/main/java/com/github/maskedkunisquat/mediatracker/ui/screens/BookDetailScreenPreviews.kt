@@ -115,6 +115,7 @@ private fun BookDetailScreenReadyPreview() {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
         )
     }
 }
@@ -154,6 +155,7 @@ private fun BookDetailScreenPendingSessionPreview() {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
         )
     }
 }
@@ -182,6 +184,7 @@ private fun BookDetailScreenLoadingPreview() {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
         )
     }
 }
