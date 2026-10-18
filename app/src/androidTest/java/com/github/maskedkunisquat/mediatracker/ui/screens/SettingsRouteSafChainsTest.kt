@@ -200,7 +200,10 @@ class SettingsRouteSafChainsTest {
         awaitTextVisible(string(R.string.export_success_message))
         val read = ExportArchive.decode(destination.readBytes())
         assertTrue("the written file must decode as an export: $read", read is ArchiveReadResult.Read)
-        assertEquals(4, (read as ArchiveReadResult.Read).manifest.files.size)
+        // Library, reading logs, episodes, viewings, and reads (#230).
+        val names = (read as ArchiveReadResult.Read).manifest.files.map { it.name }
+        assertEquals(5, names.size)
+        assertTrue("the reads file is in the archive: $names", ExportArchive.READ_THROUGHS in names)
         composeRule.waitForIdle()
         assertEquals("one dialog, not a chain", 1, registry.launches.size)
     }
