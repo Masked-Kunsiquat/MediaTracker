@@ -12,6 +12,7 @@ import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
@@ -152,6 +153,36 @@ public interface ImportWriteDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertSession(session: ReadingSessionEntity)
 
+    /** Read #1 for a book that has none yet (#230); a no-op when it exists, via the unique (mediaId, number) index. */
+    @Query(
+        "INSERT OR IGNORE INTO read_throughs (id, mediaId, number, status, startedAt, finishedAt, rating) " +
+            "VALUES (:id, :mediaId, 1, :status, NULL, :finishedAt, NULL)",
+    )
+    public suspend fun insertFirstReadIfMissing(
+        id: String,
+        mediaId: String,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    )
+
+    @Query("SELECT id FROM read_throughs WHERE mediaId = :mediaId ORDER BY number DESC LIMIT 1")
+    public suspend fun latestReadId(mediaId: String): String?
+
+    /**
+     * [session] with its read filled in (#230): a session the import built from the file carries a blank
+     * `readThroughId` and joins its book's latest read, which this transaction has already created.
+     */
+    private suspend fun withRead(session: ReadingSessionEntity): ReadingSessionEntity =
+        if (session.readThroughId.isNotEmpty()) {
+            session
+        } else {
+            // A book with no read at all gets read #1 at Reading, as ReadingSessionDao.insertIntoLatestRead does.
+            val readId =
+                latestReadId(session.mediaId)
+                    ?: newId().also { insertFirstReadIfMissing(it, session.mediaId, ReadingStatus.READING, null) }
+            session.copy(readThroughId = readId)
+        }
+
     /** @return Rows affected -- see [updateMediaItem]'s KDoc; the same guard applies here. */
     @Update
     public suspend fun updateSession(session: ReadingSessionEntity): Int
@@ -203,7 +234,15 @@ public interface ImportWriteDao {
         for (insert in mediaInserts) {
             insertMediaItem(insert.mediaItem)
             when (val details = insert.details) {
-                is ImportDetails.Book -> insertBookDetails(details.details)
+                is ImportDetails.Book -> {
+                    insertBookDetails(details.details)
+                    insertFirstReadIfMissing(
+                        newId(),
+                        details.details.mediaId,
+                        details.details.status,
+                        details.details.finishedAt,
+                    )
+                }
                 is ImportDetails.Movie -> insertMovieDetails(details.details)
                 is ImportDetails.TVShow -> insertTvDetails(details.details)
             }
@@ -224,8 +263,15 @@ public interface ImportWriteDao {
             // present one line up. Before this, a book in that state would have aborted the entire
             // import, which is the opposite of the repair every other write path performs.
             when (val details = update.details) {
-                is ImportDetails.Book ->
+                is ImportDetails.Book -> {
                     if (updateBookDetails(details.details) == 0) insertBookDetails(details.details)
+                    insertFirstReadIfMissing(
+                        newId(),
+                        details.details.mediaId,
+                        details.details.status,
+                        details.details.finishedAt,
+                    )
+                }
                 is ImportDetails.Movie ->
                     if (updateMovieDetails(details.details) == 0) insertMovieDetails(details.details)
                 is ImportDetails.TVShow ->
@@ -237,10 +283,10 @@ public interface ImportWriteDao {
             update.identifiers.forEach { upsertExternalIdentifier(it) }
         }
         for (session in sessionInserts) {
-            insertSession(session)
+            insertSession(withRead(session))
         }
         for (session in sessionUpdates) {
-            check(updateSession(session) != 0) {
+            check(updateSession(withRead(session)) != 0) {
                 "Import update failed: reading session '${session.id}' no longer exists -- it may " +
                     "have been deleted after this import's duplicate-resolution snapshot was read"
             }

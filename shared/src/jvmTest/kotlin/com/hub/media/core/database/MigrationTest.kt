@@ -1417,4 +1417,136 @@ class MigrationTest {
             }
         }
     }
+
+    private fun androidx.sqlite.SQLiteConnection.seedV7Book(
+        id: String,
+        status: String?,
+        finishedAt: Long?,
+    ) {
+        execSQL(
+            "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash, " +
+                "communityRating, synopsis) VALUES ('$id', 'BOOK', 'Book $id', NULL, NULL, 1700000000000, NULL, NULL, NULL)",
+        )
+        if (status != null) {
+            execSQL(
+                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt, trackingMode, authors) " +
+                    "VALUES ('$id', NULL, 'PHYSICAL', 300, '$status', ${finishedAt ?: "NULL"}, 'PAGES', NULL)",
+            )
+        }
+    }
+
+    private fun androidx.sqlite.SQLiteConnection.seedV7Session(
+        id: String,
+        mediaId: String,
+        start: Long,
+    ) {
+        execSQL(
+            "INSERT INTO reading_sessions (id, mediaId, timestampStart, timestampEnd, durationSeconds, startUnit, " +
+                "endUnit, deltaPages, notes) VALUES ('$id', '$mediaId', $start, ${start + 600_000}, 600, 1.0, 10.0, 9, NULL)",
+        )
+    }
+
+    /** Every book gets read #1 carrying its status and finish date; started = its first session (#230). */
+    @Test
+    fun migrate7To8_everyBookGetsReadOne_withItsStatusAndDates() {
+        helper.createDatabase(7).use { db ->
+            db.seedV7Book("finished", "FINISHED", 1_700_500_000_000)
+            db.seedV7Book("reading", "READING", null)
+            db.seedV7Book("toread", "TO_READ", null)
+            db.seedV7Book("dnf", "DNF", null)
+            db.seedV7Session("s1", "reading", 1_700_100_000_000)
+            db.seedV7Session("s2", "reading", 1_700_000_000_000)
+        }
+
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            val uuid = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+            val reads = mutableMapOf<String, List<Any?>>()
+            val ids = mutableSetOf<String>()
+            db.prepare("SELECT mediaId, number, status, startedAt, finishedAt, rating, id FROM read_throughs").use { s ->
+                while (s.step()) {
+                    reads[s.getText(0)] =
+                        listOf(
+                            s.getLong(1),
+                            s.getText(2),
+                            if (s.isNull(3)) null else s.getLong(3),
+                            if (s.isNull(4)) null else s.getLong(4),
+                            if (s.isNull(5)) null else s.getLong(5),
+                        )
+                    assertTrue(uuid.matches(s.getText(6)), "read id '${s.getText(6)}' must be a UUID")
+                    ids += s.getText(6)
+                }
+            }
+            assertEquals(4, ids.size, "each read gets its own id")
+            assertEquals(
+                mapOf<String, List<Any?>>(
+                    "finished" to listOf(1L, "FINISHED", null, 1_700_500_000_000L, null),
+                    "reading" to listOf(1L, "READING", 1_700_000_000_000L, null, null),
+                    "toread" to listOf(1L, "TO_READ", null, null, null),
+                    "dnf" to listOf(1L, "DNF", null, null, null),
+                ),
+                reads,
+            )
+        }
+    }
+
+    /** Every session joins its book's read #1, and nothing is lost (#230). */
+    @Test
+    fun migrate7To8_everySessionJoinsReadOne() {
+        helper.createDatabase(7).use { db ->
+            db.seedV7Book("a", "READING", null)
+            db.seedV7Book("b", "FINISHED", 1_700_500_000_000)
+            db.seedV7Session("s1", "a", 1_700_000_000_000)
+            db.seedV7Session("s2", "a", 1_700_100_000_000)
+            db.seedV7Session("s3", "b", 1_700_200_000_000)
+        }
+
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            db.prepare(
+                "SELECT s.id, r.mediaId, r.number, s.timestampStart FROM reading_sessions s " +
+                    "JOIN read_throughs r ON r.id = s.readThroughId ORDER BY s.id",
+            ).use { s ->
+                val rows = mutableListOf<String>()
+                while (s.step()) rows += "${s.getText(0)}:${s.getText(1)}:${s.getLong(2)}:${s.getLong(3)}"
+                assertEquals(
+                    listOf("s1:a:1:1700000000000", "s2:a:1:1700100000000", "s3:b:1:1700200000000"),
+                    rows,
+                )
+            }
+        }
+    }
+
+    /** A book whose details row is missing still gets read #1, so its sessions have a read (#230 Review Focus 1). */
+    @Test
+    fun migrate7To8_bookWithoutDetails_stillGetsReadOne() {
+        helper.createDatabase(7).use { db ->
+            db.seedV7Book("orphan", status = null, finishedAt = null)
+            db.seedV7Book("never", status = null, finishedAt = null)
+            db.seedV7Session("s1", "orphan", 1_700_000_000_000)
+        }
+
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            db.prepare("SELECT mediaId, status FROM read_throughs ORDER BY mediaId").use { s ->
+                val rows = mutableListOf<String>()
+                while (s.step()) rows += "${s.getText(0)}:${s.getText(1)}"
+                // Same derivation MIGRATION_2_3 used: sessions mean Reading, none means To read.
+                assertEquals(listOf("never:TO_READ", "orphan:READING"), rows)
+            }
+            db.prepare("SELECT COUNT(*) FROM reading_sessions").use { s ->
+                assertTrue(s.step())
+                assertEquals(1, s.getInt(0), "the orphan's session survives")
+            }
+        }
+    }
+
+    /** A library with nothing in it migrates cleanly (#230). */
+    @Test
+    fun migrate7To8_emptyDatabase_validatesCleanly() {
+        helper.createDatabase(7).use { }
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            db.prepare("SELECT COUNT(*) FROM read_throughs").use { s ->
+                assertTrue(s.step())
+                assertEquals(0, s.getInt(0))
+            }
+        }
+    }
 }

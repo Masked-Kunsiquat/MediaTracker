@@ -61,7 +61,7 @@ class StatsRepositoryTest {
         durationSeconds: Long? = 600,
         deltaPages: Int? = 10,
     ) {
-        db.readingSessionDao().insert(
+        db.readingSessionDao().insertIntoLatestRead(
             sampleReadingSession(
                 mediaId = mediaId,
                 timestampStart = timestampStart,

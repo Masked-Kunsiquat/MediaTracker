@@ -41,7 +41,7 @@ class PeriodStatsDaoTest {
         durationSeconds: Long? = 300,
         deltaPages: Int? = 10,
     ) {
-        db.readingSessionDao().insert(
+        db.readingSessionDao().insertIntoLatestRead(
             sampleReadingSession(
                 mediaId = mediaId,
                 timestampStart = instant(at),

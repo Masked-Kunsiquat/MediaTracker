@@ -224,6 +224,7 @@ private val GOLDEN_SESSIONS =
             endUnit = 78.0,
             deltaPages = 36,
             notes = "Great chapter on the green light.",
+            readThroughId = "r1",
         ),
         ReadingSessionEntity(
             id = "session-1",
@@ -235,6 +236,7 @@ private val GOLDEN_SESSIONS =
             endUnit = 42.0,
             deltaPages = 42,
             notes = null,
+            readThroughId = "r1",
         ),
     )
 
@@ -290,5 +292,6 @@ private val DUNE_SESSIONS =
             endUnit = 96.0,
             deltaPages = 96,
             notes = null,
+            readThroughId = "r1",
         ),
     )

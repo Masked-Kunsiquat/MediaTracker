@@ -79,7 +79,7 @@ class YearReviewViewModelTest {
     fun theYears_runFromTheFirstActivityToNow_newestFirst() =
         runTest {
             db.mediaItemDao().insert(sampleMediaItem(id = "b1"))
-            db.readingSessionDao().insert(sampleReadingSession(mediaId = "b1", timestampStart = on(2024)))
+            db.readingSessionDao().insertIntoLatestRead(sampleReadingSession(mediaId = "b1", timestampStart = on(2024)))
 
             val state = newViewModel().uiState.first { !it.isLoading }
 

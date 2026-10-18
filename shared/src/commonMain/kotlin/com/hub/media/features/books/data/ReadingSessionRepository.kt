@@ -94,9 +94,11 @@ public class ReadingSessionRepository(
                     endUnit = endUnit,
                     deltaPages = deltaPages,
                     notes = notes,
+                    // Filled in by insertIntoLatestRead (#230): a new session joins the current read.
+                    readThroughId = "",
                 )
 
-            db.readingSessionDao().insert(session)
+            db.readingSessionDao().insertIntoLatestRead(session)
             Resource.Success(sessionId)
         }
     }

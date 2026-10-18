@@ -428,7 +428,16 @@ public class ImportDataUseCase(
                                 when (duplicatePolicy) {
                                     DuplicatePolicy.SKIP -> sessionsSkipped++
                                     DuplicatePolicy.REPLACE -> {
-                                        sessionUpdates += toSessionEntity(row, resolvedMediaId)
+                                        // Keeps its read when it stays on the same book (#230); a
+                                        // session moved to another book joins that book's latest read.
+                                        sessionUpdates +=
+                                            toSessionEntity(row, resolvedMediaId).copy(
+                                                readThroughId =
+                                                    existing.readThroughId
+                                                        .takeIf {
+                                                            existing.mediaId == resolvedMediaId
+                                                        }.orEmpty(),
+                                            )
                                         sessionsReplaced++
                                     }
                                     DuplicatePolicy.MERGE -> {
@@ -1347,6 +1356,8 @@ public class ImportDataUseCase(
             endUnit = row.endUnit,
             deltaPages = row.deltaPages,
             notes = row.notes,
+            // Blank: ImportWriteDao.importAtomically puts it in the book's latest read (#230).
+            readThroughId = "",
         )
 
     private fun mergeSession(

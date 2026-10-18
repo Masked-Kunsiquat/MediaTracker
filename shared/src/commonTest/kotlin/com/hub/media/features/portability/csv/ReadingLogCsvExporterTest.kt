@@ -41,6 +41,7 @@ class ReadingLogCsvExporterTest {
                 endUnit = 25.0,
                 deltaPages = 15,
                 notes = "Great chapter",
+                readThroughId = "r1",
             )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
@@ -76,6 +77,7 @@ class ReadingLogCsvExporterTest {
                 endUnit = 10.0,
                 deltaPages = null,
                 notes = null,
+                readThroughId = "r1",
             )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
@@ -101,6 +103,7 @@ class ReadingLogCsvExporterTest {
                 endUnit = 5.0,
                 deltaPages = 0,
                 notes = null,
+                readThroughId = "r1",
             )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
@@ -123,6 +126,7 @@ class ReadingLogCsvExporterTest {
                 endUnit = 2.0,
                 deltaPages = null,
                 notes = null,
+                readThroughId = "r1",
             )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
@@ -146,6 +150,7 @@ class ReadingLogCsvExporterTest {
                 endUnit = 2.0,
                 deltaPages = 1,
                 notes = "First paragraph.\nSecond paragraph.",
+                readThroughId = "r1",
             )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
@@ -169,6 +174,7 @@ class ReadingLogCsvExporterTest {
                 endUnit = 2.0,
                 deltaPages = null,
                 notes = "Loved it, especially the \"twist\" ending",
+                readThroughId = "r1",
             )
 
         val csv = ReadingLogCsvExporter.export(listOf(session))
@@ -180,9 +186,9 @@ class ReadingLogCsvExporterTest {
     fun export_multipleSessions_producesOneRowPerSession() {
         val sessions =
             listOf(
-                ReadingSessionEntity("s1", "m1", start, end, 100L, 0.0, 10.0, 10, null),
-                ReadingSessionEntity("s2", "m1", start, end, null, 10.0, 20.0, null, null),
-                ReadingSessionEntity("s3", "m2", start, end, 0L, 0.0, 0.0, 0, null),
+                ReadingSessionEntity("s1", "m1", start, end, 100L, 0.0, 10.0, 10, null, "r1"),
+                ReadingSessionEntity("s2", "m1", start, end, null, 10.0, 20.0, null, null, "r1"),
+                ReadingSessionEntity("s3", "m2", start, end, 0L, 0.0, 0.0, 0, null, "r1"),
             )
         val csv = ReadingLogCsvExporter.export(sessions)
         val lines = csv.trimEnd().split(CsvUtil.LINE_ENDING)

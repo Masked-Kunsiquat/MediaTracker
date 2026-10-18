@@ -92,6 +92,7 @@ class BookDetailScreenTest {
         endUnit = endUnit,
         deltaPages = (endUnit - startUnit).toInt(),
         notes = null,
+        readThroughId = "r1",
     )
 
     /** #172: Delete and Re-fetch cover live behind the shared "More options" menu. */

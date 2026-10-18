@@ -12,6 +12,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
 /**
@@ -32,6 +33,18 @@ interface BookWriteDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertExternalIdentifier(identifier: ExternalIdentifierEntity)
+
+    /** Read #1 for a book that has none yet (#230); a no-op when it exists, via the unique (mediaId, number) index. */
+    @Query(
+        "INSERT OR IGNORE INTO read_throughs (id, mediaId, number, status, startedAt, finishedAt, rating) " +
+            "VALUES (:id, :mediaId, 1, :status, NULL, :finishedAt, NULL)",
+    )
+    suspend fun insertFirstReadIfMissing(
+        id: String,
+        mediaId: String,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    )
 
     /**
      * [OnConflictStrategy.REPLACE] counterpart of [insertExternalIdentifier], for *backfilling* an
@@ -155,6 +168,7 @@ interface BookWriteDao {
                     trackingMode = trackingMode,
                 ),
             )
+            insertFirstReadIfMissing(newId(), mediaId, status, finishedAt)
         }
         return mediaRowsAffected
     }
@@ -267,6 +281,7 @@ interface BookWriteDao {
     ) {
         insertMediaItem(mediaItem)
         insertBookDetails(bookDetails)
+        insertFirstReadIfMissing(newId(), mediaItem.id, bookDetails.status, bookDetails.finishedAt)
         externalIdentifiers.forEach { insertExternalIdentifier(it) }
     }
 }

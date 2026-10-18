@@ -96,7 +96,7 @@ class StatsViewModelTest {
         durationSeconds: Long? = 300,
         deltaPages: Int? = 5,
     ) {
-        db.readingSessionDao().insert(
+        db.readingSessionDao().insertIntoLatestRead(
             sampleReadingSession(
                 mediaId = mediaId,
                 timestampStart = at,

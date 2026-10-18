@@ -49,7 +49,7 @@ class TimedSessionsDaoTest {
         start: Long,
         durationSeconds: Long?,
     ) {
-        db.readingSessionDao().insert(
+        db.readingSessionDao().insertIntoLatestRead(
             sampleReadingSession(mediaId = mediaId, timestampStart = at(start), durationSeconds = durationSeconds),
         )
     }

@@ -71,6 +71,8 @@ internal fun sampleReadingSession(
     endUnit: Double = 25.0,
     deltaPages: Int? = 15,
     notes: String? = null,
+    // Insert with ReadingSessionDao.insertIntoLatestRead, which fills it in (#230).
+    readThroughId: String = "",
 ): ReadingSessionEntity =
     ReadingSessionEntity(
         id = id,
@@ -82,4 +84,5 @@ internal fun sampleReadingSession(
         endUnit = endUnit,
         deltaPages = deltaPages,
         notes = notes,
+        readThroughId = readThroughId,
     )
