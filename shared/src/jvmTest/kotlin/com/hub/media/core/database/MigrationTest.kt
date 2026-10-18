@@ -1429,7 +1429,8 @@ class MigrationTest {
         )
         if (status != null) {
             execSQL(
-                "INSERT INTO book_details (mediaId, isbn, format, totalPages, status, finishedAt, trackingMode, authors) " +
+                "INSERT INTO book_details " +
+                    "(mediaId, isbn, format, totalPages, status, finishedAt, trackingMode, authors) " +
                     "VALUES ('$id', NULL, 'PHYSICAL', 300, '$status', ${finishedAt ?: "NULL"}, 'PAGES', NULL)",
             )
         }
@@ -1462,7 +1463,8 @@ class MigrationTest {
             val uuid = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
             val reads = mutableMapOf<String, List<Any?>>()
             val ids = mutableSetOf<String>()
-            db.prepare("SELECT mediaId, number, status, startedAt, finishedAt, rating, id FROM read_throughs").use { s ->
+            val select = "SELECT mediaId, number, status, startedAt, finishedAt, rating, id FROM read_throughs"
+            db.prepare(select).use { s ->
                 while (s.step()) {
                     reads[s.getText(0)] =
                         listOf(
@@ -1501,17 +1503,18 @@ class MigrationTest {
         }
 
         helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
-            db.prepare(
-                "SELECT s.id, r.mediaId, r.number, s.timestampStart FROM reading_sessions s " +
-                    "JOIN read_throughs r ON r.id = s.readThroughId ORDER BY s.id",
-            ).use { s ->
-                val rows = mutableListOf<String>()
-                while (s.step()) rows += "${s.getText(0)}:${s.getText(1)}:${s.getLong(2)}:${s.getLong(3)}"
-                assertEquals(
-                    listOf("s1:a:1:1700000000000", "s2:a:1:1700100000000", "s3:b:1:1700200000000"),
-                    rows,
-                )
-            }
+            db
+                .prepare(
+                    "SELECT s.id, r.mediaId, r.number, s.timestampStart FROM reading_sessions s " +
+                        "JOIN read_throughs r ON r.id = s.readThroughId ORDER BY s.id",
+                ).use { s ->
+                    val rows = mutableListOf<String>()
+                    while (s.step()) rows += "${s.getText(0)}:${s.getText(1)}:${s.getLong(2)}:${s.getLong(3)}"
+                    assertEquals(
+                        listOf("s1:a:1:1700000000000", "s2:a:1:1700100000000", "s3:b:1:1700200000000"),
+                        rows,
+                    )
+                }
         }
     }
 

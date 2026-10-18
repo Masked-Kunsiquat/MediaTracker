@@ -416,7 +416,10 @@ class ImportDataUseCaseTest {
             val importedSessions = sessionRepository.observeAllSessions().first()
             val originalSessions = sourceSessionRepository.observeAllSessions().first()
             // Read ids are generated per database (#230), so the sessions match on everything else.
-            assertEquals(originalSessions.map { it.copy(readThroughId = "") }, importedSessions.map { it.copy(readThroughId = "") })
+            assertEquals(
+                originalSessions.map { it.copy(readThroughId = "") },
+                importedSessions.map { it.copy(readThroughId = "") },
+            )
         }
 
     @Test

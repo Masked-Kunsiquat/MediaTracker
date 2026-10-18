@@ -32,7 +32,10 @@ class ReadThroughDaoTest {
     @Test
     fun addBook_createsReadOne_withTheBooksStatus() =
         runTest {
-            val result = BookRepository(db).addBook(title = "Dune", format = BookFormat.PHYSICAL, status = ReadingStatus.READING)
+            val result =
+                BookRepository(
+                    db,
+                ).addBook(title = "Dune", format = BookFormat.PHYSICAL, status = ReadingStatus.READING)
             val mediaId = (result as Resource.Success).data
 
             val reads = db.readThroughDao().observeForMedia(mediaId).first()
