@@ -52,6 +52,9 @@ object TestTags {
 
         /** The stars in "Rate this watch-through?". */
         const val RATE_STARS = "tv_show_detail_rate_stars"
+
+        /** An earlier watch-through's folded card, by run id. */
+        fun runCard(runId: String): String = "tv_show_detail_run:$runId"
     }
 
     /** The film detail screen (#231). */

@@ -341,6 +341,7 @@ fun TVShowDetailScreen(
     // than captured when the dialog opened, so pre-filled length and the cost shown below always
     // match the show's current state, not a stale snapshot from when the menu was tapped.
     val readySeasons = (uiState as? TVShowDetailUiState.Ready)?.seasons.orEmpty()
+    val readyViewingCounts = (uiState as? TVShowDetailUiState.Ready)?.viewingCounts.orEmpty()
 
     // Fold multi-season shows once, when the seasons first arrive -- not on every recomposition, or
     // ticking an episode would slam shut the season being ticked. Guarded by a flag rather than
@@ -399,7 +400,7 @@ fun TVShowDetailScreen(
             // repository call. Matches TVShowRepository.setSeasonLength's own definition of what a
             // shrink removes: every episode numbered above the new count.
             val removedEpisodes = shrinkingSeason.episodes.filter { it.episodeNumber > shrinkNewCount }
-            val removedWatchedCount = removedEpisodes.count { it.watchedAt != null }
+            val removedWatchedCount = removedEpisodes.count { it.watchedInAnyRun(readyViewingCounts) }
             AlertDialog(
                 onDismissRequest = {
                     pendingShrinkSeasonNumber = null
@@ -462,14 +463,15 @@ fun TVShowDetailScreen(
                                 seasonToRemove.episodes.size,
                             ),
                         )
+                        val lostCount = seasonToRemove.episodes.count { it.watchedInAnyRun(readyViewingCounts) }
                         Text(
-                            if (seasonToRemove.watchedCount == 0) {
+                            if (lostCount == 0) {
                                 stringResource(R.string.tv_show_detail_removal_undone_warning)
                             } else {
                                 pluralStringResource(
                                     R.plurals.tv_show_detail_episodes_watched_warning,
-                                    seasonToRemove.watchedCount,
-                                    seasonToRemove.watchedCount,
+                                    lostCount,
+                                    lostCount,
                                 )
                             },
                         )
@@ -737,6 +739,8 @@ fun TVShowDetailScreen(
                                     expandedRunIds =
                                         if (expanded) expandedRunIds - run.id else expandedRunIds + run.id
                                 },
+                                onRate = { runActions.onRateRun(run.id, it) },
+                                modifier = Modifier.testTag(TestTags.TVShowDetail.runCard(run.id)),
                             )
                         }
                     }
@@ -1288,3 +1292,11 @@ private fun showSubline(
 @OptIn(ExperimentalTime::class)
 private fun formatFirstAirDate(epochMillis: Long): String =
     DATE_ONLY_FORMATTER.format(instantToLocalDateTime(Instant.fromEpochMilliseconds(epochMillis)))
+
+/**
+ * Whether deleting [this] episode loses watch history (#231 review): ticked in the current watch-through,
+ * or viewed in any earlier one -- deleting an episode takes every run's viewings with it, not just the ticks.
+ */
+@OptIn(kotlin.time.ExperimentalTime::class)
+private fun EpisodeEntity.watchedInAnyRun(viewingCounts: Map<String, Int>): Boolean =
+    watchedAt != null || (viewingCounts[id] ?: 0) > 0

@@ -471,12 +471,13 @@ public interface ImportWriteDao {
     )
     public suspend fun recomputeFilmWatchedAt(mediaId: String): Int
 
-    /** Viewings of the episode at [watchedAt] in its show's latest run (#231). */
-    @Query(
-        "SELECT COUNT(*) FROM watch_logs l WHERE l.episodeId = :episodeId AND l.watchedAt = :watchedAt " +
-            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = l.mediaId " +
-            "ORDER BY w.number DESC LIMIT 1)",
-    )
+    /**
+     * Viewings of the episode at [watchedAt] in **any** watch-through. Deliberately not scoped to the latest
+     * run (#231 review): runs from the file are written before this check, so an episode's `watchedAt` can
+     * still be an earlier run's date here, and a latest-run check would invent a viewing for it in the new
+     * run. The run-scoped recompute after it puts the tick right.
+     */
+    @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId AND watchedAt = :watchedAt")
     public suspend fun viewingCountAt(
         episodeId: String,
         watchedAt: Instant,

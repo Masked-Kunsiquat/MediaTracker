@@ -140,7 +140,7 @@ internal fun LatestRunCard(
 /**
  * An earlier watch-through, folded (#231): "Watch-through #1 · Watched · <date>", its stars and its
  * episode count. Open, it lists what each season held in that run -- a summary, never a checklist, since
- * only the current run can be ticked.
+ * only the current run can be ticked -- and editable stars, so it can still be rated or corrected.
  */
 @Composable
 internal fun FoldedRunCard(
@@ -148,23 +148,27 @@ internal fun FoldedRunCard(
     summary: RunSummary?,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onRate: (Int?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state = if (run.abandoned) RunState.ABANDONED else RunState.FINISHED
     val title = stringResource(R.string.run_number_state, run.number, state.label())
     val dateLine = runDateLine(state, summary)
     Card(
-        modifier =
-            modifier
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        // Only the summary row toggles, so the stars below stay their own control, for touch and TalkBack.
+        Row(
+            Modifier
                 .fillMaxWidth()
                 .clickable(
                     onClickLabel =
                         stringResource(if (expanded) R.string.run_collapse else R.string.run_expand, run.number),
                     onClick = onToggle,
-                ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+                ).padding(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
             Icon(
                 if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
@@ -194,6 +198,12 @@ internal fun FoldedRunCard(
                         )
                     }
                 }
+            }
+        }
+        if (expanded) {
+            // Still ratable once folded away (#231 review): a skipped prompt can be answered later.
+            Column(Modifier.padding(start = 48.dp, end = 16.dp, bottom = 16.dp)) {
+                RunRatingRow(halves = run.rating, onRate = onRate)
             }
         }
     }

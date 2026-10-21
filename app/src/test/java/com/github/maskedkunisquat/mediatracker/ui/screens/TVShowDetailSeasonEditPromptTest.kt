@@ -62,6 +62,19 @@ class TVShowDetailSeasonEditPromptTest {
         assertEquals(listOf(1), removed)
     }
 
+    /**
+     * Review fix (#231): straight after Watch again nothing is ticked, but removing the season still deletes
+     * the earlier watch-throughs' viewings -- the warning counts every episode with a viewing in any run.
+     */
+    @Test
+    fun removeSeason_countsEpisodesWatchedInAnEarlierRun() {
+        setContent(season(watched = setOf(1)), viewingCounts = mapOf("ep-1-1" to 2, "ep-1-2" to 1, "ep-1-3" to 1))
+
+        openRemoveSeasonPrompt(seasonNumber = 1)
+
+        composeRule.onNodeWithText(plural(R.plurals.tv_show_detail_episodes_watched_warning, 3)).assertExists()
+    }
+
     @Test
     fun removeSeason_withNothingWatched_saysOnlyThatItCannotBeUndone() {
         setContent(season(watched = emptySet()))
@@ -105,6 +118,7 @@ class TVShowDetailSeasonEditPromptTest {
     private fun setContent(
         season: SeasonGroup,
         onRemoveSeason: (Int) -> Unit = {},
+        viewingCounts: Map<String, Int> = emptyMap(),
     ) {
         composeRule.setContent {
             TVShowDetailScreen(
@@ -116,6 +130,7 @@ class TVShowDetailSeasonEditPromptTest {
                         watchedEpisodes = season.watchedCount,
                         totalEpisodes = season.episodes.size,
                         isAbandoned = false,
+                        viewingCounts = viewingCounts,
                     ),
                 onEpisodeWatchedChange = { _, _ -> },
                 onSeasonWatchedChange = { _, _ -> },

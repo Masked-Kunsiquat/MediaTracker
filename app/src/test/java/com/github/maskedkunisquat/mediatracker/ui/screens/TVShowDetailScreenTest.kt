@@ -794,6 +794,36 @@ class TVShowDetailScreenTest {
         composeRule.onNodeWithText(seasonLine).assertIsDisplayed()
     }
 
+    /** Review fix (#231): an earlier watch-through stays ratable -- opened, its card has editable stars. */
+    @Test
+    fun anOlderRun_opened_canBeRated() {
+        val summary = RunSummary("run-1", day, day, episodes = 2, perSeason = mapOf(1 to 2))
+        setContent(
+            runsState(
+                listOf(runOne.copy(rating = null), runTwo),
+                watched = 0,
+                state = RunState.NOT_STARTED,
+                mapOf(
+                    "run-1" to summary,
+                ),
+            ),
+        )
+
+        val folded = context.getString(R.string.run_number, 1)
+        composeRule.onNodeWithTag(TestTags.TVShowDetail.LIST).performScrollToNode(hasText(folded, substring = true))
+        composeRule.onNodeWithText(folded, substring = true).performClick()
+        composeRule
+            .onNodeWithTag(
+                TestTags.TVShowDetail.LIST,
+            ).performScrollToNode(hasTestTag(TestTags.TVShowDetail.runCard("run-1")))
+        composeRule
+            .onNode(
+                hasAnyAncestor(hasTestTag(TestTags.TVShowDetail.runCard("run-1"))) and
+                    SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress),
+            ).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
+        assertEquals(listOf("rate:run-1:6"), runCalls)
+    }
+
     @Test
     fun watchAgain_isOffered_onceTheRunIsFinished() {
         setContent(runsState(listOf(runOne), watched = 2, state = RunState.FINISHED))

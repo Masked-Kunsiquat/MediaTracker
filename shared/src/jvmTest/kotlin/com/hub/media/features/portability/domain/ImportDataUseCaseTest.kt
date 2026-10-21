@@ -41,6 +41,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
@@ -2350,5 +2351,58 @@ class ImportDataUseCaseTest {
             importBundle(bundle, watchLogsCsv = v7Logs, watchThroughsCsv = null)
 
             assertEquals(1, db.watchThroughDao().viewingCount(two.id), "run #2 keeps exactly its own viewing")
+        }
+
+    /**
+     * Review fix (#231): a v8 file merged over a show the device holds as one run. The file's run #2 becomes
+     * the latest before the episodes are normalised, so a stale tick from run #1 must not be turned into an
+     * invented viewing in run #2 -- that would tick an episode run #2 never watched.
+     */
+    @Test
+    fun v8OverAShowHeldAsOneRun_inventsNoViewingsInTheNewRun() =
+        runTest {
+            for (policy in listOf(DuplicatePolicy.MERGE, DuplicatePolicy.SKIP)) {
+                db.close()
+                db = testAppDatabase()
+                mediaRepository = MediaRepository(db)
+                bookRepository = BookRepository(db)
+                sessionRepository = ReadingSessionRepository(db)
+                useCase =
+                    ImportDataUseCase(mediaRepository, bookRepository, sessionRepository, ImportWriteRepository(db))
+                sourceDb.close()
+                sourceDb = testAppDatabase()
+                sourceBookRepository = BookRepository(sourceDb)
+                sourceSessionRepository = ReadingSessionRepository(sourceDb)
+
+                val bundle = seedWatchThroughs()
+                // The device first: the same show from an old export, so all its history is one run.
+                val v7Logs =
+                    bundle.watchLogsCsv
+                        .trim()
+                        .lines()
+                        .mapIndexed { i, line ->
+                            val cols = line.split(",").dropLast(2)
+                            (if (i == 0) cols else listOf("7") + cols.drop(1)).joinToString(",")
+                        }.joinToString("\n") + "\n"
+                importBundle(bundle, watchLogsCsv = v7Logs, watchThroughsCsv = null)
+                val showId = importedShowId()
+                assertEquals(
+                    1,
+                    db.watchThroughDao().getForMedia(showId).size,
+                    "positive control: one run on the device",
+                )
+
+                importBundle(bundle, policy)
+
+                val two = db.watchThroughDao().getForMedia(showId).single { it.number == 2 }
+                assertEquals(
+                    1,
+                    db.watchThroughDao().viewingCount(two.id),
+                    "$policy: run #2 holds only the file's viewing",
+                )
+                val (e1, e2) = db.episodeDao().getByMediaIdAndSeason(showId, 1)
+                assertEquals(runT2, e1.watchedAt, "$policy: run #2's one tick")
+                assertNull(e2.watchedAt, "$policy: run #2 never watched episode 2")
+            }
         }
 }
