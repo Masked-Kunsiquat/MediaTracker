@@ -655,7 +655,7 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.rating_yours)).assertIsDisplayed()
         composeRule
             .onNodeWithText(
-                context.getString(R.string.rating_average_of_reads, "4.5", 2, "5"),
+                context.resources.getQuantityString(R.plurals.rating_average_of_reads, 2, "4.5", 2, "5"),
             ).assertIsDisplayed()
     }
 

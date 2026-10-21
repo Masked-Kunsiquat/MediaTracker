@@ -50,6 +50,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailMenuAction
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
+import com.github.maskedkunisquat.mediatracker.ui.components.RateDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
@@ -484,9 +485,12 @@ fun BookDetailScreen(
 
         if (uiState is BookDetailUiState.Ready) {
             uiState.ratePrompt?.let { read ->
-                RateReadDialog(
-                    bookTitle = uiState.book.title,
-                    read = read,
+                RateDialog(
+                    title = stringResource(R.string.rate_read_title),
+                    body = stringResource(R.string.rate_read_body, uiState.book.title, read.number),
+                    key = read.id,
+                    initial = read.rating,
+                    starsTag = TestTags.BookDetail.RATE_STARS,
                     onSave = { readActions.onRateRead(read.id, it) },
                     onSkip = readActions.onDismissRatePrompt,
                 )

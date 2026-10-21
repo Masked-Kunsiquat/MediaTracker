@@ -39,6 +39,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailProgressCard
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
+import com.github.maskedkunisquat.mediatracker.ui.components.YourRatingRow
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
@@ -85,7 +86,7 @@ internal fun BookDetailHeaderSection(
         statusNote = finishedNote(status, finishedAt),
         onArtworkClick = { showEnlargedCover = true },
         artworkClickLabel = stringResource(R.string.cover_view_action_label),
-        yourRating = { YourRatingRow(titleRating) },
+        yourRating = { YourRatingRow(titleRating, R.plurals.rating_average_of_reads) },
     ) {
         DetailStatusChip(bookStatusControl(status, onStatusChange, isReread = isReread, onReadAgain = onReadAgain))
     }

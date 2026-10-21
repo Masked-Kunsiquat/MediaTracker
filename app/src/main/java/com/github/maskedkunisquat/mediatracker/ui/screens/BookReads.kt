@@ -11,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -20,31 +19,24 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
-import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.RatingStars
-import com.github.maskedkunisquat.mediatracker.ui.components.formatStars
+import com.github.maskedkunisquat.mediatracker.ui.components.RunRatingRow
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
-import com.hub.media.features.books.data.TitleRating
-import kotlin.math.roundToInt
 
 /**
  * What the book detail screen does with a book's reads (#230): start a re-read, remove an empty one,
@@ -57,52 +49,6 @@ data class BookReadActions(
     val onRateRead: (readId: String, halves: Int?) -> Unit,
     val onDismissRatePrompt: () -> Unit,
 )
-
-/**
- * The header's "Yours" (#230): stars at your average across rated reads, then "4.5 average of 2 reads ·
- * latest 5" when two or more reads are rated, nothing more for one, and "Not rated yet" for none.
- * Read-only: a rating is set on a read, never on the book.
- */
-@Composable
-internal fun YourRatingRow(rating: TitleRating?) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = stringResource(R.string.rating_yours),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            RatingStars(halves = rating?.let { (it.averageStars * 2).roundToInt() })
-        }
-        when {
-            rating == null ->
-                Text(
-                    text = stringResource(R.string.rating_not_yet),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            rating.rated >= 2 ->
-                Text(
-                    text =
-                        stringResource(
-                            R.string.rating_average_of_reads,
-                            formatAverage(rating.averageStars),
-                            rating.rated,
-                            formatStars((rating.latestStars * 2).roundToInt()),
-                        ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-        }
-    }
-}
-
-/** An average in stars, one decimal, in the viewer's locale: "4.5", "4.2". */
-@Composable
-private fun formatAverage(stars: Double): String {
-    val locale = LocalConfiguration.current.locales[0]
-    return String.format(locale, "%.1f", stars)
-}
 
 /** "Read #2 · Finished", the status in a read's own words. */
 @Composable
@@ -193,10 +139,7 @@ internal fun ReadHeaderCard(
                     }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(text = stringResource(R.string.rating_your_rating), style = MaterialTheme.typography.labelLarge)
-                RatingStars(halves = read.rating, starSize = 28.dp, onRate = onRate)
-            }
+            RunRatingRow(halves = read.rating, onRate = onRate)
         }
     }
 }
@@ -249,48 +192,4 @@ internal fun FoldedReadCard(
             }
         }
     }
-}
-
-/**
- * "Rate this read?" (#230), offered once when a read becomes Finished or Did not finish. Skip leaves it
- * unrated; Save stores the stars chosen, and is enabled once some are.
- */
-@Composable
-internal fun RateReadDialog(
-    bookTitle: String,
-    read: ReadThroughEntity,
-    onSave: (halves: Int) -> Unit,
-    onSkip: () -> Unit,
-) {
-    var halves by rememberSaveable(read.id) { mutableStateOf(read.rating) }
-    AlertDialog(
-        onDismissRequest = onSkip,
-        title = { Text(stringResource(R.string.rate_read_title)) },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(stringResource(R.string.rate_read_body, bookTitle, read.number))
-                RatingStars(
-                    halves = halves,
-                    starSize = 40.dp,
-                    onRate = { halves = it },
-                    modifier = Modifier.testTag(TestTags.BookDetail.RATE_STARS),
-                )
-                Text(
-                    text = halves?.let { formatStars(it) }.orEmpty(),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { halves?.let(onSave) }, enabled = halves != null) {
-                Text(stringResource(R.string.rate_read_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onSkip) { Text(stringResource(R.string.rate_read_skip)) }
-        },
-    )
 }

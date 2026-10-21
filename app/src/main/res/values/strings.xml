@@ -820,7 +820,10 @@
     <string name="rating_value">Your rating, %1$s of 5</string>
     <string name="rating_yours">Yours</string>
     <string name="rating_not_yet">Not rated yet</string>
-    <string name="rating_average_of_reads">%1$s average of %2$d reads · latest %3$s</string>
+    <plurals name="rating_average_of_reads">
+        <item quantity="one">%1$s average of %2$d read · latest %3$s</item>
+        <item quantity="other">%1$s average of %2$d reads · latest %3$s</item>
+    </plurals>
     <string name="rating_your_rating">Your rating</string>
     <string name="read_number">Read #%1$d</string>
     <string name="read_number_status">Read #%1$d · %2$s</string>
