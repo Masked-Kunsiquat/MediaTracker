@@ -1,7 +1,6 @@
 package com.hub.media.features.portability.csv
 
 import com.hub.media.core.database.entities.ReadingStatus
-import com.hub.media.features.books.data.starsToHalves
 import kotlin.time.Instant
 
 /** One parsed row of `read_throughs_export.csv` (#230). [rating] is in half-steps, `null` when unrated. */
@@ -48,11 +47,7 @@ public object ReadThroughCsvImporter {
         if (status == ReadingStatus.TO_READ && number > 1) reject("only read 1 can be To read")
         val startedAt = parseOptionalInstant(row[COL_STARTED_AT], "started_at")
         val finishedAt = parseOptionalInstant(row[COL_FINISHED_AT], "finished_at")
-        val rating =
-            row[COL_RATING].ifBlank { null }?.let { raw ->
-                raw.toDoubleOrNull()?.let(::starsToHalves)
-                    ?: reject("rating '$raw' must be half a star to five stars, in half stars")
-            }
+        val rating = parseRating(row[COL_RATING])
         return ParsedReadThrough(mediaId, number, status, startedAt, finishedAt, rating)
     }
 

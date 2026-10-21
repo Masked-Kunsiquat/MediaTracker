@@ -80,7 +80,12 @@ class SampleLibraryCsvTest {
     @Test
     fun sampleWatchLogs_parse_referenceRealEpisodes_andKeepARewatch() {
         val table =
-            CsvTableReader.read(sampleFile("watch_logs_sample.csv").readText(), WatchLogCsvExporter.HEADER)
+            CsvTableReader.read(
+                sampleFile("watch_logs_sample.csv").readText(),
+                WatchLogCsvExporter.HEADER,
+                // The fixture predates CSV v8's run number and rating (#231), as a real old export would.
+                legacyHeaders = mapOf(WatchLogCsvExporter.HEADER_V7 to WatchLogCsvImporter::padLegacyV7Row),
+            )
         val viewings =
             assertIs<CsvTableResult.Success>(
                 table,

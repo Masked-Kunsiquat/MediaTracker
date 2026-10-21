@@ -47,8 +47,10 @@ public sealed class ImportDetails {
         public val details: MovieDetailsEntity,
     ) : ImportDetails()
 
+    /** @property runOne A new show's watch-through #1 (#231), planned so viewings can point at it before it exists. */
     public data class TVShow(
         public val details: TVDetailsEntity,
+        public val runOne: WatchThroughEntity? = null,
     ) : ImportDetails()
 }
 
@@ -273,6 +275,9 @@ public interface ImportWriteDao {
         filmViewingDeletes: Collection<String> = emptyList(),
         touchedFilmIds: Collection<String> = emptyList(),
         readUpserts: List<ReadThroughEntity> = emptyList(),
+        runUpserts: List<WatchThroughEntity> = emptyList(),
+        filmRatingUpdates: Map<String, Int> = emptyMap(),
+        touchedShowIds: Collection<String> = emptyList(),
     ) {
         for (insert in mediaInserts) {
             insertMediaItem(insert.mediaItem)
@@ -284,7 +289,9 @@ public interface ImportWriteDao {
                 is ImportDetails.Movie -> insertMovieDetails(details.details)
                 is ImportDetails.TVShow -> {
                     insertTvDetails(details.details)
-                    insertFirstRunIfMissing(WatchThroughEntity(id = newId(), mediaId = insert.mediaItem.id, number = 1))
+                    insertFirstRunIfMissing(
+                        details.runOne ?: WatchThroughEntity(id = newId(), mediaId = insert.mediaItem.id, number = 1),
+                    )
                 }
             }
             insert.identifiers.forEach { upsertExternalIdentifier(it) }
@@ -321,6 +328,9 @@ public interface ImportWriteDao {
         // Reads from read_throughs_export.csv (#230): after the books they belong to, before the sessions
         // that point at them.
         readUpserts.forEach { upsertRead(it) }
+        // Watch-throughs from watch_throughs_export.csv (#231): after their shows, before the viewings
+        // that point at them.
+        runUpserts.forEach { upsertRun(it) }
         for (session in sessionInserts) {
             insertSession(withRead(session))
         }
@@ -382,7 +392,42 @@ public interface ImportWriteDao {
             }
             recomputeFilmWatchedAt(filmId)
         }
+        // Merge filling a film viewing's empty rating (#231).
+        filmRatingUpdates.forEach { (logId, rating) -> setFilmViewingRating(logId, rating) }
+        // A show whose runs this import changed: its ticks follow its latest run (#231).
+        touchedShowIds.forEach { recomputeWatchedAtForShow(it) }
     }
+
+    @Query(
+        "UPDATE watch_throughs SET abandoned = :abandoned, rating = :rating WHERE mediaId = :mediaId AND number = :number",
+    )
+    public suspend fun updateRunByNumber(
+        mediaId: String,
+        number: Int,
+        abandoned: Boolean,
+        rating: Int?,
+    ): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    public suspend fun insertRun(run: WatchThroughEntity)
+
+    private suspend fun upsertRun(run: WatchThroughEntity) {
+        if (updateRunByNumber(run.mediaId, run.number, run.abandoned, run.rating) == 0) insertRun(run)
+    }
+
+    @Query("UPDATE watch_logs SET rating = :rating WHERE id = :logId AND episodeId IS NULL")
+    public suspend fun setFilmViewingRating(
+        logId: String,
+        rating: Int?,
+    ): Int
+
+    /** The same rule as [TVWriteDao.recomputeWatchedAtForShow]. */
+    @Query(
+        "UPDATE episodes SET watchedAt = (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.episodeId = episodes.id " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)) WHERE mediaId = :mediaId",
+    )
+    public suspend fun recomputeWatchedAtForShow(mediaId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertViewing(log: WatchLogEntity)

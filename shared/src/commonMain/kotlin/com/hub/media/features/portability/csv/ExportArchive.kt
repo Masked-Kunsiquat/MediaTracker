@@ -13,6 +13,7 @@ public sealed interface ArchiveReadResult {
         val episodesCsv: String?,
         val watchLogsCsv: String?,
         val readThroughsCsv: String? = null,
+        val watchThroughsCsv: String? = null,
     ) : ArchiveReadResult
 
     /** [reason] is shown to the user as is. */
@@ -32,9 +33,10 @@ public object ExportArchive {
     public const val EPISODES: String = "episodes_export.csv"
     public const val WATCH_LOGS: String = "watch_logs_export.csv"
     public const val READ_THROUGHS: String = "read_throughs_export.csv"
+    public const val WATCH_THROUGHS: String = "watch_throughs_export.csv"
 
     /** The only entries an import keeps; anything else in the zip is drained and discarded. */
-    private val ENTRIES = setOf(MANIFEST, LIBRARY, READING_LOGS, EPISODES, WATCH_LOGS, READ_THROUGHS)
+    private val ENTRIES = setOf(MANIFEST, LIBRARY, READING_LOGS, EPISODES, WATCH_LOGS, READ_THROUGHS, WATCH_THROUGHS)
 
     public const val NOT_OURS: String = "Not a Media Tracker export"
     public const val NEWER: String =
@@ -65,6 +67,7 @@ public object ExportArchive {
                 EPISODES to bundle.episodesCsv.encodeToByteArray(),
                 WATCH_LOGS to bundle.watchLogsCsv.encodeToByteArray(),
                 READ_THROUGHS to bundle.readThroughsCsv.encodeToByteArray(),
+                WATCH_THROUGHS to bundle.watchThroughsCsv.encodeToByteArray(),
             ),
         )
 
@@ -121,6 +124,7 @@ public object ExportArchive {
             episodesCsv = layout[EPISODES]?.decodeToString(),
             watchLogsCsv = layout[WATCH_LOGS]?.decodeToString(),
             readThroughsCsv = layout[READ_THROUGHS]?.decodeToString(),
+            watchThroughsCsv = layout[WATCH_THROUGHS]?.decodeToString(),
         )
     }
 

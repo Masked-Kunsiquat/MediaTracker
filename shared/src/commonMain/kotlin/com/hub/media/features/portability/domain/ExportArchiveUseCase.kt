@@ -62,6 +62,7 @@ public class ExportArchiveUseCase(
                     ExportArchive.EPISODES to bundle.episodesCsv,
                     ExportArchive.WATCH_LOGS to bundle.watchLogsCsv,
                     ExportArchive.READ_THROUGHS to bundle.readThroughsCsv,
+                    ExportArchive.WATCH_THROUGHS to bundle.watchThroughsCsv,
                 ).map { (name, csv) -> ExportManifestFile(name, CSV_SCHEMA_VERSION, ExportArchive.dataRowCount(csv)) }
             // Stored values as they are, for allowlisted keys only; one never set is left out.
             val settings =

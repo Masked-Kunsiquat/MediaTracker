@@ -15,6 +15,7 @@ import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -46,6 +47,9 @@ import com.hub.media.features.portability.csv.SessionRowParseResult
 import com.hub.media.features.portability.csv.WatchLogCsvExporter
 import com.hub.media.features.portability.csv.WatchLogCsvImporter
 import com.hub.media.features.portability.csv.WatchLogRowParseResult
+import com.hub.media.features.portability.csv.WatchThroughCsvExporter
+import com.hub.media.features.portability.csv.WatchThroughCsvImporter
+import com.hub.media.features.portability.csv.WatchThroughRowParseResult
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import com.hub.media.features.portability.goodreads.GoodreadsCsvTableReader
@@ -61,6 +65,7 @@ public interface ImportUseCase {
         duplicatePolicy: DuplicatePolicy,
         watchLogsCsv: String? = null,
         readThroughsCsv: String? = null,
+        watchThroughsCsv: String? = null,
     ): Resource<ImportSummary>
 
     public suspend fun executeGoodreads(
@@ -287,12 +292,14 @@ public class ImportDataUseCase(
         duplicatePolicy: DuplicatePolicy,
         watchLogsCsv: String?,
         readThroughsCsv: String?,
+        watchThroughsCsv: String?,
     ): Resource<ImportSummary> {
         if (libraryCsv == null &&
             readingLogsCsv == null &&
             episodesCsv == null &&
             watchLogsCsv == null &&
-            readThroughsCsv == null
+            readThroughsCsv == null &&
+            watchThroughsCsv == null
         ) {
             return refuse("Nothing to import -- no file was selected.")
         }
@@ -375,8 +382,26 @@ public class ImportDataUseCase(
 
         val watchLogDataRows =
             if (watchLogsCsv != null) {
-                when (val table = CsvTableReader.read(watchLogsCsv, WatchLogCsvExporter.HEADER)) {
+                when (
+                    val table =
+                        CsvTableReader.read(
+                            watchLogsCsv,
+                            WatchLogCsvExporter.HEADER,
+                            // A v7 watch log predates the run number and rating (#231): every viewing is run #1's.
+                            legacyHeaders = mapOf(WatchLogCsvExporter.HEADER_V7 to WatchLogCsvImporter::padLegacyV7Row),
+                        )
+                ) {
                     is CsvTableResult.Failure -> return refuse("watch_logs_export.csv: ${table.message}")
+                    is CsvTableResult.Success -> table.rows
+                }
+            } else {
+                emptyList()
+            }
+
+        val runDataRows =
+            if (watchThroughsCsv != null) {
+                when (val table = CsvTableReader.read(watchThroughsCsv, WatchThroughCsvExporter.HEADER)) {
+                    is CsvTableResult.Failure -> return refuse("watch_throughs_export.csv: ${table.message}")
                     is CsvTableResult.Success -> table.rows
                 }
             } else {
@@ -516,6 +541,65 @@ public class ImportDataUseCase(
                                                 finishedAt = existing.finishedAt ?: row.finishedAt,
                                                 rating = existing.rating ?: row.rating,
                                             )
+                                }
+                        }
+                    }
+                }
+            }
+
+            // Watch-throughs (#231), planned the way reads are: every run this import ends with, by (show,
+            // number), so a viewing can point at its run before anything is written.
+            val existingRunsByKey =
+                existingMedia
+                    .filterIsInstance<MediaWithDetails.TVShow>()
+                    .flatMap { it.runs }
+                    .associateBy { it.mediaId to it.number }
+            val runIdByKey = existingRunsByKey.mapValuesTo(mutableMapOf()) { it.value.id }
+            mediaResolution.inserts
+                .mapNotNull { (it.details as? ImportDetails.TVShow)?.runOne }
+                .forEach { runIdByKey.getOrPut(it.mediaId to it.number) { it.id } }
+            val showIds =
+                existingMedia.filter { it is MediaWithDetails.TVShow }.map { it.item.id }.toSet() +
+                    mediaResolution.inserts.filter { it.details is ImportDetails.TVShow }.map { it.mediaItem.id }
+            val runUpserts = mutableListOf<WatchThroughEntity>()
+            val plannedRunKeys = mutableSetOf<Pair<String, Int>>()
+            runDataRows.forEachIndexed { index, rawRow ->
+                val rowNumber = index + 2
+                when (val parsed = WatchThroughCsvImporter.parseRow(rawRow)) {
+                    is WatchThroughRowParseResult.Rejected ->
+                        rejections += ImportRejection(ImportRowSource.WATCH_THROUGH, rowNumber, parsed.reason)
+                    is WatchThroughRowParseResult.Parsed -> {
+                        val row = parsed.run
+                        val mediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
+                        val key = mediaId to row.number
+                        val existing = existingRunsByKey[key]
+                        when {
+                            mediaId !in showIds ->
+                                rejections +=
+                                    ImportRejection(
+                                        ImportRowSource.WATCH_THROUGH,
+                                        rowNumber,
+                                        "media_id '${row.mediaId}' is not a known show -- watch-through skipped",
+                                    )
+                            // The same run twice in one file: the first row stands.
+                            !plannedRunKeys.add(key) -> Unit
+                            existing == null ->
+                                runUpserts +=
+                                    WatchThroughEntity(
+                                        id = runIdByKey.getOrPut(key) { newId() },
+                                        mediaId = mediaId,
+                                        number = row.number,
+                                        abandoned = row.abandoned,
+                                        rating = row.rating,
+                                    )
+                            else ->
+                                when (duplicatePolicy) {
+                                    DuplicatePolicy.SKIP -> Unit
+                                    DuplicatePolicy.REPLACE ->
+                                        runUpserts += existing.copy(abandoned = row.abandoned, rating = row.rating)
+                                    // What you watched on this device stands; only a missing rating is filled.
+                                    DuplicatePolicy.MERGE ->
+                                        runUpserts += existing.copy(rating = existing.rating ?: row.rating)
                                 }
                         }
                     }
@@ -694,11 +778,17 @@ public class ImportDataUseCase(
             // viewings collide. Under REPLACE, an episode this import replaced has its stored viewings
             // dropped in favour of the file's, so the dedup set for it starts empty.
             val existingViewings = mediaRepository.observeAllViewings().first()
+            // Per episode, (moment, run) (#231): the same moment in another watch-through is another viewing.
             val seenViewings =
                 existingViewings
                     .filter { it.episodeId != null }
                     .groupBy { it.episodeId }
-                    .mapValuesTo(mutableMapOf()) { (_, logs) -> logs.mapTo(mutableSetOf()) { it.watchedAt } }
+                    .mapValuesTo(mutableMapOf()) { (_, logs) ->
+                        logs.mapTo(mutableSetOf()) {
+                            it.watchedAt to
+                                it.watchThroughId
+                        }
+                    }
             val takenViewingIds = existingViewings.mapTo(mutableSetOf()) { it.id }
             // REPLACE means the file wins, for viewings too: every episode this import replaced drops its
             // stored viewings, whether or not the watch-log file mentions it. Normalisation then
@@ -716,6 +806,10 @@ public class ImportDataUseCase(
                     .filter { it.episodeId == null }
                     .groupBy { it.mediaId }
                     .mapValuesTo(mutableMapOf()) { (_, logs) -> logs.mapTo(mutableSetOf()) { it.watchedAt } }
+            // An existing film viewing by (film, moment), so Merge can fill its empty rating (#231).
+            val existingFilmViewingByKey =
+                existingViewings.filter { it.episodeId == null }.associateBy { it.mediaId to it.watchedAt }
+            val filmRatingUpdates = mutableMapOf<String, Int>()
             val filmIds =
                 existingMedia.filter { it.item.type == MediaType.MOVIE }.mapTo(mutableSetOf()) { it.item.id } +
                     mediaResolution.inserts.filter { it.details is ImportDetails.Movie }.map { it.mediaItem.id }
@@ -757,6 +851,14 @@ public class ImportDataUseCase(
                                             "viewing skipped",
                                     )
                             } else if (!seenFilmViewings.getOrPut(filmId) { mutableSetOf() }.add(row.watchedAt)) {
+                                val onDevice = existingFilmViewingByKey[filmId to row.watchedAt]
+                                if (duplicatePolicy == DuplicatePolicy.MERGE &&
+                                    onDevice != null &&
+                                    onDevice.rating == null &&
+                                    row.rating != null
+                                ) {
+                                    filmRatingUpdates[onDevice.id] = row.rating
+                                }
                                 viewingsSkipped++
                             } else {
                                 val id =
@@ -775,6 +877,7 @@ public class ImportDataUseCase(
                                         episodeId = null,
                                         watchedAt = row.watchedAt,
                                         durationSeconds = row.durationSeconds,
+                                        rating = row.rating,
                                     )
                                 viewingsImported++
                             }
@@ -796,8 +899,22 @@ public class ImportDataUseCase(
                                         "library, and not present in the episodes file being imported) -- " +
                                         "viewing skipped",
                                 )
+                        } else if (row.runNumber != null &&
+                            row.runNumber > 1 &&
+                            runIdByKey[episode.mediaId to row.runNumber] == null
+                        ) {
+                            rejections +=
+                                ImportRejection(
+                                    ImportRowSource.WATCH_LOG,
+                                    rowNumber,
+                                    "watch-through ${row.runNumber} of this show is not in your library or the " +
+                                        "watch-throughs file -- viewing skipped",
+                                )
                         } else {
-                            if (!seenViewings.getOrPut(episode.id) { mutableSetOf() }.add(row.watchedAt)) {
+                            // A file older than CSV v8 names no run: all its history is watch-through #1 (#231).
+                            // Unknown only for a show with no run at all yet, which the write fills in.
+                            val runId = runIdByKey[episode.mediaId to (row.runNumber ?: 1)]
+                            if (!seenViewings.getOrPut(episode.id) { mutableSetOf() }.add(row.watchedAt to runId)) {
                                 viewingsSkipped++
                             } else {
                                 val id =
@@ -816,6 +933,7 @@ public class ImportDataUseCase(
                                         episodeId = episode.id,
                                         watchedAt = row.watchedAt,
                                         durationSeconds = row.durationSeconds,
+                                        watchThroughId = runId,
                                     )
                                 viewingsImported++
                             }
@@ -849,6 +967,9 @@ public class ImportDataUseCase(
                     filmViewingDeletes = replacedFilmIds,
                     touchedFilmIds = touchedFilmIds,
                     readUpserts = readUpserts,
+                    runUpserts = runUpserts,
+                    filmRatingUpdates = filmRatingUpdates,
+                    touchedShowIds = runUpserts.map { it.mediaId }.toSet(),
                 )
             if (writeResult is Resource.Error) return writeResult
 
@@ -1227,7 +1348,12 @@ public class ImportDataUseCase(
                 )
             }
             is ImportDetails.Movie -> MediaWithDetails.Movie(mediaItem, details.details)
-            is ImportDetails.TVShow -> MediaWithDetails.TVShow(mediaItem, details.details)
+            is ImportDetails.TVShow ->
+                MediaWithDetails.TVShow(
+                    mediaItem,
+                    details.details,
+                    runs = (previous as? MediaWithDetails.TVShow)?.runs ?: listOfNotNull(details.runOne),
+                )
         }
 
     private fun titleYearKey(
@@ -1290,6 +1416,11 @@ public class ImportDataUseCase(
                             ),
                     )
                 }
+                // A new show's watch-through #1 (#231), so its viewings have a run before it is written.
+                is ImportDetails.TVShow ->
+                    fresh.copy(
+                        runOne = WatchThroughEntity(id = newId(), mediaId = row.mediaId, number = 1),
+                    )
                 else -> fresh
             }
         return ImportMediaInsert(mediaItem, details, identifiers)
