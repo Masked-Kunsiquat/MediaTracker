@@ -20,6 +20,7 @@ import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.data.WatchThroughRepository
 import com.hub.media.features.tv.data.asksToRateRun
 import com.hub.media.features.tv.data.isComplete
+import com.hub.media.features.tv.data.offersWatchAgain
 import com.hub.media.features.tv.data.runState
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
@@ -143,8 +144,7 @@ public sealed class TVShowDetailUiState {
         val titleRating: TitleRating? get() = show.rating
 
         /** Watch again is offered once the current run is finished, caught up, or given up on (#231). */
-        val canWatchAgain: Boolean
-            get() = latestRunState in setOf(RunState.FINISHED, RunState.UP_TO_DATE, RunState.ABANDONED)
+        val canWatchAgain: Boolean get() = latestRunState.offersWatchAgain()
 
         /** Remove this watch-through: only an empty latest run after #1, the undo for a mistaken Watch again. */
         val canRemoveLatestRun: Boolean
@@ -195,6 +195,9 @@ public class TVShowDetailViewModel(
 
     /** Backs [TVShowDetailUiState.Ready.ratePromptRunId] (#231). */
     private val ratePromptRunId = MutableStateFlow<String?>(null)
+
+    /** Runs whose prompt was skipped on this screen (#231 review): not asked again; "Rate" still opens it. */
+    private val skippedRunIds = mutableSetOf<String>()
 
     /** Holds a second Watch again tap off while the first is in flight (#231). */
     private var watchAgainInFlight = false
@@ -428,17 +431,7 @@ public class TVShowDetailViewModel(
         pendingTick.value = null
         viewModelScope.launch {
             val ids = tick.targetIds + if (includeEarlier) tick.earlierIds else emptyList()
-            val wasComplete = latestRunComplete()
-            val result = markEpisodesWatched.execute(ids, watchedWhen, targetIsExplicit = !tick.isSeason)
-            if (result is Resource.Error) {
-                errorMessage.value = result.message
-            } else {
-                // The tick that finishes a watch-through asks for its rating, once (#231).
-                val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number }
-                if (run != null && asksToRateRun(wasComplete, latestRunComplete(), run.rating)) {
-                    ratePromptRunId.value = run.id
-                }
-            }
+            writeThenAskIfFinished { markEpisodesWatched.execute(ids, watchedWhen, targetIsExplicit = !tick.isSeason) }
         }
     }
 
@@ -451,8 +444,8 @@ public class TVShowDetailViewModel(
     public fun undo(event: UntickEvent) {
         consumeUntick(event.id)
         viewModelScope.launch {
-            val result = tvShowRepository.restoreWatched(event.previous)
-            if (result is Resource.Error) errorMessage.value = result.message
+            // Putting ticks back can finish the run (#231 review).
+            writeThenAskIfFinished { tvShowRepository.restoreWatched(event.previous) }
         }
     }
 
@@ -561,8 +554,8 @@ public class TVShowDetailViewModel(
         episodeCount: Int,
     ) {
         viewModelScope.launch {
-            val result = tvShowRepository.setSeasonLength(showId, seasonNumber, episodeCount)
-            if (result is Resource.Error) errorMessage.value = result.message
+            // Shrinking away the unwatched episodes can finish the run (#231 review).
+            writeThenAskIfFinished { tvShowRepository.setSeasonLength(showId, seasonNumber, episodeCount) }
         }
     }
 
@@ -573,8 +566,7 @@ public class TVShowDetailViewModel(
      */
     public fun removeSeason(seasonNumber: Int) {
         viewModelScope.launch {
-            val result = tvShowRepository.removeSeason(showId, seasonNumber)
-            if (result is Resource.Error) errorMessage.value = result.message
+            writeThenAskIfFinished { tvShowRepository.removeSeason(showId, seasonNumber) }
         }
     }
 
@@ -592,7 +584,7 @@ public class TVShowDetailViewModel(
             } else if (abandoned) {
                 // Giving up on a watch-through asks for its rating too, as a book's Did not finish does.
                 val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number }
-                if (run != null && run.rating == null) ratePromptRunId.value = run.id
+                if (run != null && run.rating == null && run.id !in skippedRunIds) ratePromptRunId.value = run.id
             }
         }
     }
@@ -631,8 +623,32 @@ public class TVShowDetailViewModel(
         }
     }
 
+    /** Skip: leaves the run unrated, and is remembered -- this screen does not ask about that run again. */
     public fun dismissRatePrompt() {
+        ratePromptRunId.value?.let { skippedRunIds += it }
         ratePromptRunId.value = null
+    }
+
+    /** "Rate" in the status row (#231 review): reopens the prompt for the current watch-through, after a Skip. */
+    public fun requestRatePrompt() {
+        (uiState.value as? TVShowDetailUiState.Ready)?.latestRun?.let { ratePromptRunId.value = it.id }
+    }
+
+    /**
+     * Runs [write]; when it is what finishes the current watch-through, asks for its rating -- once, and
+     * never for a run this screen was already told to skip (#231).
+     */
+    private suspend fun writeThenAskIfFinished(write: suspend () -> Resource<*>) {
+        val wasComplete = latestRunComplete()
+        val result = write()
+        if (result is Resource.Error) {
+            errorMessage.value = result.message
+            return
+        }
+        val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number } ?: return
+        if (run.id !in skippedRunIds && asksToRateRun(wasComplete, latestRunComplete(), run.rating)) {
+            ratePromptRunId.value = run.id
+        }
     }
 
     /** Whether every counted episode is ticked in the current watch-through, read fresh from the store. */

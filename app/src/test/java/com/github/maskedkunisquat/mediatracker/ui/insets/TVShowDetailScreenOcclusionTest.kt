@@ -114,7 +114,7 @@ class TVShowDetailScreenOcclusionTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
-            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 

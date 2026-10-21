@@ -7,10 +7,11 @@ import com.hub.media.core.database.entities.AiringStatus
 /**
  * How many shows are finished (#217), by exactly the rule the library files them under "Finished":
  * [LibraryStatusFilter.ofShow] over the same episode progress, honouring the "include specials"
- * setting. So Stats and the library can never disagree about whether a show is done -- a fully
- * watched show that is still airing is in progress, not finished, in both.
+ * setting, so a fully watched show that is still airing is in progress, not finished, in both.
  *
- * A show being rewatched still counts: an earlier watch-through finished it (#231).
+ * One deliberate difference (#231): a show being rewatched still counts here, because an earlier
+ * watch-through finished it, while the library files it by its current run -- In progress, or Not started
+ * right after Watch again.
  *
  * A show has no "finished on" date, so this is an All time number only.
  *

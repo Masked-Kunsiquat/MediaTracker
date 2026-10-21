@@ -7,15 +7,14 @@ import androidx.room.Query
 import com.hub.media.core.database.entities.WatchThroughEntity
 import kotlinx.coroutines.flow.Flow
 
-/** A show's watch-throughs (#231). Writes that also move ticks live in [TVWriteDao]'s transactions. */
+/**
+ * A show's watch-throughs (#231). Writes that also move ticks -- Watch again, Remove this watch-through --
+ * live in [TVWriteDao]'s transactions, and only there.
+ */
 @Dao
 interface WatchThroughDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(run: WatchThroughEntity)
-
-    /** Creates watch-through #1 unless the show already has it (the unique index makes this a no-op). */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertFirstIfMissing(run: WatchThroughEntity): Long
 
     @Query("SELECT * FROM watch_throughs WHERE mediaId = :mediaId ORDER BY number")
     fun observeForMedia(mediaId: String): Flow<List<WatchThroughEntity>>
@@ -35,9 +34,18 @@ interface WatchThroughDao {
     @Query("SELECT * FROM watch_throughs WHERE id = :id")
     suspend fun getById(id: String): WatchThroughEntity?
 
-    @Query("UPDATE watch_throughs SET abandoned = :abandoned WHERE id = :id")
-    suspend fun setAbandoned(
-        id: String,
+    /**
+     * Abandon or Resume the show's latest run, in one statement (#231 review): finding the latest and
+     * updating it as two steps could flag an older run if Watch again landed in between.
+     *
+     * @return 0 when the show has no run.
+     */
+    @Query(
+        "UPDATE watch_throughs SET abandoned = :abandoned WHERE id = " +
+            "(SELECT w.id FROM watch_throughs w WHERE w.mediaId = :mediaId ORDER BY w.number DESC LIMIT 1)",
+    )
+    suspend fun setLatestAbandoned(
+        mediaId: String,
         abandoned: Boolean,
     ): Int
 
@@ -49,12 +57,4 @@ interface WatchThroughDao {
 
     @Query("SELECT COUNT(*) FROM watch_logs WHERE watchThroughId = :id")
     suspend fun viewingCount(id: String): Int
-
-    /** Deletes [id] only if it is its show's latest run, not #1, and has no viewings -- one statement, no race. */
-    @Query(
-        "DELETE FROM watch_throughs WHERE id = :id AND number > 1 " +
-            "AND number = (SELECT MAX(w.number) FROM watch_throughs w WHERE w.mediaId = watch_throughs.mediaId) " +
-            "AND NOT EXISTS (SELECT 1 FROM watch_logs l WHERE l.watchThroughId = :id)",
-    )
-    suspend fun deleteIfRemovable(id: String): Int
 }

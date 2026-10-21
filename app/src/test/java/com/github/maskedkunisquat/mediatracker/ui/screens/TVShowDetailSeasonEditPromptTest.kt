@@ -146,7 +146,7 @@ class TVShowDetailSeasonEditPromptTest {
                 onUntickShown = {},
                 onEpisodeOpen = {},
                 onNavigateBack = {},
-                runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
+                runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
             )
         }
     }

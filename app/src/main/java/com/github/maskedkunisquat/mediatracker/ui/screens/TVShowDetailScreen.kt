@@ -87,6 +87,7 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.features.tv.data.RunState
+import com.hub.media.features.tv.data.offersWatchAgain
 import com.hub.media.features.tv.data.runState
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.features.tv.domain.isPickableDay
@@ -208,6 +209,7 @@ fun TVShowDetailScreenRoute(
                 onRemoveRun = viewModel::removeRun,
                 onRateRun = viewModel::rateRun,
                 onDismissRatePrompt = viewModel::dismissRatePrompt,
+                onRequestRate = viewModel::requestRatePrompt,
             ),
     )
 }
@@ -594,7 +596,7 @@ fun TVShowDetailScreen(
                                 YourRatingRow(uiState.titleRating, R.plurals.rating_average_of_watch_throughs)
                             },
                         ) {
-                            DetailStatusChip(showStatusControl(uiState, onAbandonedChange, runActions.onWatchAgain))
+                            DetailStatusChip(showStatusControl(uiState, onAbandonedChange, runActions))
                         }
                     }
                     item { DetailSynopsis(text = show.item.synopsis) }
@@ -741,6 +743,7 @@ fun TVShowDetailScreen(
                                 },
                                 onRate = { runActions.onRateRun(run.id, it) },
                                 modifier = Modifier.testTag(TestTags.TVShowDetail.runCard(run.id)),
+                                stillAiring = uiState.show.details?.airingStatus == AiringStatus.CONTINUING,
                             )
                         }
                     }
@@ -1214,7 +1217,7 @@ private fun SeasonLengthDialog(
 private fun showStatusControl(
     uiState: TVShowDetailUiState.Ready,
     onAbandonedChange: (Boolean) -> Unit,
-    onWatchAgain: () -> Unit,
+    runActions: ShowRunActions,
 ): DetailStatus.ReadOnly {
     val state = currentRunState(uiState)
     val actionLabel =
@@ -1225,15 +1228,23 @@ private fun showStatusControl(
                 R.string.detail_show_status_abandon_action
             },
         )
-    val watchAgain = stringResource(R.string.run_watch_again)
+    val ended = state.offersWatchAgain()
     return DetailStatus.ReadOnly(
         label = state.label(),
         action = DetailStatus.StatusAction(actionLabel) { onAbandonedChange(!uiState.isAbandoned) },
-        // Offered once the current watch-through is done with (#231): finished, caught up or given up on.
-        secondaryAction =
-            DetailStatus.StatusAction(watchAgain, onWatchAgain).takeIf {
-                state == RunState.FINISHED || state == RunState.UP_TO_DATE || state == RunState.ABANDONED
-            },
+        moreActions =
+            listOfNotNull(
+                // Offered once the current watch-through is done with (#231): finished, caught up or given up on.
+                DetailStatus
+                    .StatusAction(
+                        stringResource(R.string.run_watch_again),
+                        runActions.onWatchAgain,
+                    ).takeIf { ended },
+                // Back to a skipped "Rate this watch-through?" (#231 review); gone once it has a rating.
+                DetailStatus
+                    .StatusAction(stringResource(R.string.rate_action), runActions.onRequestRate)
+                    .takeIf { ended && uiState.latestRun != null && uiState.latestRun?.rating == null },
+            ),
     )
 }
 

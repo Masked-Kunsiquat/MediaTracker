@@ -1,5 +1,6 @@
 package com.hub.media.features.tv.data
 
+import androidx.sqlite.SQLiteException
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.testAppDatabase
@@ -11,6 +12,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -266,5 +268,16 @@ class WatchHistoryDaoTest {
             dao.addViewing(e1.id, t0)
             assertEquals(t1, watchedAt(e1.id))
             assertInvariant(e1.id)
+        }
+
+    /** The double-tap guard itself (#231 review): two Watch agains from the same checked run make one run. */
+    @Test
+    fun startNextRun_fromTheSameCheckedRun_twice_failsOnTheSecond() =
+        runTest {
+            val e1 = season(1).single()
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t1))
+            dao.startNextRun(e1.mediaId, newId(), afterNumber = 1)
+            assertFailsWith<SQLiteException> { dao.startNextRun(e1.mediaId, newId(), afterNumber = 1) }
+            assertEquals(listOf(1, 2), db.watchThroughDao().getForMedia(e1.mediaId).map { it.number })
         }
 }

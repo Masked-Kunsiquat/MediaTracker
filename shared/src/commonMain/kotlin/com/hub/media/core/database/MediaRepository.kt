@@ -5,6 +5,7 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -66,6 +67,9 @@ public class MediaRepository(
 
     /** Every viewing (#90), for `watch_logs_export.csv` and the import's duplicate check. */
     public fun observeAllViewings(): Flow<List<WatchLogEntity>> = db.watchLogDao().observeAll()
+
+    /** Every show's watch-throughs (#231), for `watch_throughs_export.csv`. */
+    public fun observeAllRuns(): Flow<List<WatchThroughEntity>> = db.watchThroughDao().observeAll()
 
     /**
      * Observes every media item together with its details as a reactive stream.

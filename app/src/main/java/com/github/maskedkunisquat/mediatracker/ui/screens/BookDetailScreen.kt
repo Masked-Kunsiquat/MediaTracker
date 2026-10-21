@@ -172,6 +172,7 @@ fun BookDetailScreenRoute(
                 onRemoveRead = viewModel::removeRead,
                 onRateRead = viewModel::rateRead,
                 onDismissRatePrompt = viewModel::dismissRatePrompt,
+                onRequestRate = viewModel::requestRatePrompt,
             ),
     )
 }
@@ -402,6 +403,13 @@ fun BookDetailScreen(
                             titleRating = uiState.titleRating,
                             isReread = (uiState.latestRead?.number ?: 1) > 1,
                             onReadAgain = readActions.onReadAgain,
+                            onRate =
+                                readActions.onRequestRate.takeIf {
+                                    uiState.latestRead?.let { read ->
+                                        (read.status == ReadingStatus.FINISHED || read.status == ReadingStatus.DNF) &&
+                                            read.rating == null
+                                    } == true
+                                },
                         )
                     }
                     item { DetailSynopsis(text = book.synopsis) }

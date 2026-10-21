@@ -714,6 +714,7 @@ class TVShowDetailScreenTest {
             onRemoveRun = { runCalls += "remove:$it" },
             onRateRun = { id, halves -> runCalls += "rate:$id:$halves" },
             onDismissRatePrompt = { runCalls += "dismiss" },
+            onRequestRate = { runCalls += "rateRequest" },
         )
 
     private val day = Instant.parse("2025-03-01T12:00:00Z")
@@ -822,6 +823,40 @@ class TVShowDetailScreenTest {
                     SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress),
             ).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
         assertEquals(listOf("rate:run-1:6"), runCalls)
+    }
+
+    /** "Rate" beside the status (#231 review): back to a skipped prompt in one tap, gone once rated. */
+    @Test
+    fun rateAction_isOffered_forAFinishedUnratedRun_andGoneOnceRated() {
+        setContent(runsState(listOf(runOne.copy(rating = null)), watched = 2, state = RunState.FINISHED))
+
+        composeRule.onNodeWithText(context.getString(R.string.rate_action)).performClick()
+        assertEquals(listOf("rateRequest"), runCalls)
+    }
+
+    @Test
+    fun rateAction_isAbsent_forARatedRun() {
+        setContent(runsState(listOf(runOne), watched = 2, state = RunState.FINISHED))
+
+        composeRule.onNodeWithText(context.getString(R.string.run_watch_again)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.rate_action)).assertDoesNotExist()
+    }
+
+    /** An earlier run on a show still airing was caught up, not finished (#231 review). */
+    @Test
+    fun anOlderRun_ofAShowStillAiring_readsUpToDate() {
+        setContent(
+            runsState(
+                listOf(runOne, runTwo),
+                watched = 0,
+                state = RunState.NOT_STARTED,
+                airingStatus = AiringStatus.CONTINUING,
+            ),
+        )
+
+        val label = context.getString(R.string.run_number_state, 1, context.getString(R.string.run_state_up_to_date))
+        composeRule.onNodeWithTag(TestTags.TVShowDetail.LIST).performScrollToNode(hasText(label, substring = true))
+        composeRule.onNodeWithText(label, substring = true).assertIsDisplayed()
     }
 
     @Test

@@ -48,6 +48,8 @@ data class BookReadActions(
     val onRemoveRead: (readId: String) -> Unit,
     val onRateRead: (readId: String, halves: Int?) -> Unit,
     val onDismissRatePrompt: () -> Unit,
+    /** "Rate" beside the status: reopens "Rate this read?" for the latest read (#231 review). */
+    val onRequestRate: () -> Unit,
 )
 
 /** "Read #2 · Finished", the status in a read's own words. */

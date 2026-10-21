@@ -1137,4 +1137,18 @@ class BookDetailViewModelTest {
             assertEquals(null, ready(viewModel.uiState.first { ready(it) != null })!!.errorMessage)
             assertEquals(2, state.reads.size)
         }
+
+    /** "Rate" in the status row (#231 review): a skipped prompt can be reopened for the latest read. */
+    @Test
+    fun requestRatePrompt_reopensItForTheLatestRead() =
+        runTest {
+            val readOne = db.insertTestBook(mediaId, status = ReadingStatus.FINISHED)
+            val viewModel = newViewModel()
+            viewModel.uiState.first { ready(it)?.reads?.isNotEmpty() == true }
+
+            viewModel.requestRatePrompt()
+
+            val state = viewModel.uiState.first { ready(it)?.ratePrompt != null } as BookDetailUiState.Ready
+            assertEquals(readOne, state.ratePrompt!!.id)
+        }
 }

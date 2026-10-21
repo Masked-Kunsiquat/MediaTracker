@@ -45,6 +45,8 @@ sealed interface DetailStatus {
         val onClickLabel: String,
         /** An action listed below the statuses, e.g. a book's Read again (#230); `null` for none. */
         val menuAction: StatusAction? = null,
+        /** A button beside the chip -- a book's Rate, once its latest read ends unrated (#231 review). */
+        val sideAction: StatusAction? = null,
     ) : DetailStatus
 
     /**
@@ -55,8 +57,8 @@ sealed interface DetailStatus {
     data class ReadOnly(
         val label: String,
         val action: StatusAction? = null,
-        /** A second action beside [action] -- a show's Watch again (#231). */
-        val secondaryAction: StatusAction? = null,
+        /** More actions beside [action] -- a show's Watch again and Rate (#231). */
+        val moreActions: List<StatusAction> = emptyList(),
     ) : DetailStatus
 
     /** One [ReadOnly] side action: its label and what tapping it does. */
@@ -87,15 +89,26 @@ private fun <T> EditableStatusChip(
     status: DetailStatus.Editable<T>,
     modifier: Modifier,
 ) {
-    StatusDropdownChip(
-        value = status.value,
-        options = status.options,
-        label = status.label,
-        onSelect = status.onSelect,
-        onClickLabel = status.onClickLabel,
+    Row(
         modifier = modifier,
-        menuAction = status.menuAction,
-    )
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        StatusDropdownChip(
+            value = status.value,
+            options = status.options,
+            label = status.label,
+            onSelect = status.onSelect,
+            onClickLabel = status.onClickLabel,
+            modifier = Modifier.weight(1f, fill = false),
+            menuAction = status.menuAction,
+        )
+        status.sideAction?.let { side ->
+            TextButton(onClick = side.onClick) {
+                Text(side.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 }
 
 /**
@@ -151,9 +164,9 @@ private fun ReadOnlyStatusChip(
                 Text(status.action.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (status.secondaryAction != null) {
-            TextButton(onClick = status.secondaryAction.onClick) {
-                Text(status.secondaryAction.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        status.moreActions.forEach { extra ->
+            TextButton(onClick = extra.onClick) {
+                Text(extra.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

@@ -1660,4 +1660,28 @@ class MigrationTest {
             }
         }
     }
+
+    /** A show whose tv_details row is missing still gets run #1, so its viewings have a run (#231 review). */
+    @Test
+    fun migrate7To8_showWithoutDetails_stillGetsRunOne() {
+        helper.createDatabase(7).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash, " +
+                    "communityRating, synopsis) VALUES ('bare', 'TV_SHOW', 'Bare', NULL, NULL, 1700000000000, NULL, NULL, NULL)",
+            )
+            db.seedV7Episode("e1", "bare", 1, 1_700_000_000_000)
+            db.seedV7Viewing("l1", "bare", "e1", 1_700_000_000_000)
+        }
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            db
+                .prepare(
+                    "SELECT w.number, w.abandoned FROM watch_logs l JOIN watch_throughs w ON w.id = l.watchThroughId " +
+                        "WHERE l.id = 'l1'",
+                ).use { s ->
+                    assertTrue(s.step(), "the viewing joins a run")
+                    assertEquals(1L, s.getLong(0))
+                    assertEquals(0L, s.getLong(1), "no details row means not abandoned")
+                }
+        }
+    }
 }

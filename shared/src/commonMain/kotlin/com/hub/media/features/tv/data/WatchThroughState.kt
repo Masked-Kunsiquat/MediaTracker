@@ -56,3 +56,7 @@ public fun runSummaries(rows: List<RunSeasonRow>): Map<String, RunSummary> =
             perSeason = seasons.associate { it.seasonNumber to it.episodes }.toSortedMap(),
         )
     }
+
+/** Watch again is offered once a run is done with: finished, caught up, or given up on (#231). */
+public fun RunState.offersWatchAgain(): Boolean =
+    this == RunState.FINISHED || this == RunState.UP_TO_DATE || this == RunState.ABANDONED

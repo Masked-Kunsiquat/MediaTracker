@@ -70,6 +70,7 @@ internal fun BookDetailHeaderSection(
     titleRating: TitleRating? = null,
     isReread: Boolean = false,
     onReadAgain: () -> Unit = {},
+    onRate: (() -> Unit)? = null,
 ) {
     var showEnlargedCover by remember { mutableStateOf(false) }
 
@@ -88,7 +89,9 @@ internal fun BookDetailHeaderSection(
         artworkClickLabel = stringResource(R.string.cover_view_action_label),
         yourRating = { YourRatingRow(titleRating, R.plurals.rating_average_of_reads) },
     ) {
-        DetailStatusChip(bookStatusControl(status, onStatusChange, isReread = isReread, onReadAgain = onReadAgain))
+        DetailStatusChip(
+            bookStatusControl(status, onStatusChange, isReread = isReread, onReadAgain = onReadAgain, onRate = onRate),
+        )
     }
 
     if (showEnlargedCover) {
@@ -233,6 +236,7 @@ internal fun bookStatusControl(
     onStatusChange: (ReadingStatus) -> Unit,
     isReread: Boolean = false,
     onReadAgain: (() -> Unit)? = null,
+    onRate: (() -> Unit)? = null,
 ): DetailStatus.Editable<ReadingStatus> =
     DetailStatus.Editable(
         value = status ?: ReadingStatus.TO_READ,
@@ -246,6 +250,8 @@ internal fun bookStatusControl(
             onReadAgain
                 ?.takeIf { status == ReadingStatus.FINISHED || status == ReadingStatus.DNF }
                 ?.let { DetailStatus.StatusAction(stringResource(R.string.read_again), it) },
+        // Back to a skipped "Rate this read?" (#231 review); the caller passes it only for an ended, unrated read.
+        sideAction = onRate?.let { DetailStatus.StatusAction(stringResource(R.string.rate_action), it) },
     )
 
 /**

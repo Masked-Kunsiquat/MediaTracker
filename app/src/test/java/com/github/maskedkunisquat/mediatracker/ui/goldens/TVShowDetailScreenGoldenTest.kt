@@ -174,7 +174,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
-            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -214,7 +214,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
-            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -267,7 +267,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
-            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -392,7 +392,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
-            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 

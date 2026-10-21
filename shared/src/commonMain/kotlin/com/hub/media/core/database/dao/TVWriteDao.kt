@@ -646,7 +646,8 @@ interface TVWriteDao {
     /**
      * Undo for an untick or Clear season. Per episode, only if it **still exists** (a season shrink
      * may have deleted it -- re-inserting would violate the foreign key), is **unwatched** and has
-     * **no viewings** (a re-tick or rewatch made since wins).
+     * **no viewings in the latest run** (a re-tick or rewatch made since wins), and only while the runs
+     * the viewings belonged to still exist (#231).
      *
      * @return How many episodes were restored.
      */

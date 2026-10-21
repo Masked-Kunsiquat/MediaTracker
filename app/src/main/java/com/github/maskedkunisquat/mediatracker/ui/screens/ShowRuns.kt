@@ -46,6 +46,8 @@ data class ShowRunActions(
     val onRemoveRun: (runId: String) -> Unit,
     val onRateRun: (runId: String, halves: Int?) -> Unit,
     val onDismissRatePrompt: () -> Unit,
+    /** "Rate" in the status row: reopens the prompt for the current watch-through (#231 review). */
+    val onRequestRate: () -> Unit,
 )
 
 /** A watch-through's state in the words the show's status chip already uses. */
@@ -150,8 +152,15 @@ internal fun FoldedRunCard(
     onToggle: () -> Unit,
     onRate: (Int?) -> Unit,
     modifier: Modifier = Modifier,
+    stillAiring: Boolean = false,
 ) {
-    val state = if (run.abandoned) RunState.ABANDONED else RunState.FINISHED
+    // An earlier run was finished or given up on -- or, on a show still airing, caught up (#231 review).
+    val state =
+        when {
+            run.abandoned -> RunState.ABANDONED
+            stillAiring -> RunState.UP_TO_DATE
+            else -> RunState.FINISHED
+        }
     val title = stringResource(R.string.run_number_state, run.number, state.label())
     val dateLine = runDateLine(state, summary)
     Card(

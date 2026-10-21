@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rate each read of a book in half stars, when you finish it or any time after. The book shows your average and your latest rating. Goodreads imports bring your star ratings in, and importing an old Goodreads export again fills them in for books you already have. (#230)
 - Re-watch a show: Watch again starts a new watch-through with an empty checklist, while earlier ones fold away below the seasons with their dates and ratings. Abandoning a rewatch leaves the first one finished. (#231)
 - Rate each watch-through of a show when you finish or abandon it, and each viewing of a film from the Watched dialog or its History. Films and shows show your average and latest rating, like books. (#231)
+- Skipped a rating? A Rate button sits beside the status of a finished book or show until you rate it, and an earlier watch-through can be rated when you open it. (#231)
 
 ### Changed
 - A show that is fully watched but still airing now reads "Up to date" on its page instead of "Watching". (#231)

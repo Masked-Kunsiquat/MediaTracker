@@ -825,6 +825,7 @@
         <item quantity="other">%1$s average of %2$d reads · latest %3$s</item>
     </plurals>
     <string name="rating_your_rating">Your rating</string>
+    <string name="rate_action">Rate</string>
     <plurals name="rating_average_of_viewings">
         <item quantity="one">%1$s average of %2$d viewing · latest %3$s</item>
         <item quantity="other">%1$s average of %2$d viewings · latest %3$s</item>

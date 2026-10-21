@@ -65,9 +65,9 @@ class WatchThroughDaoTest {
         runTest {
             val id = show()
             val one = db.watchThroughDao().getLatest(id)!!
-            assertEquals(0, db.watchThroughDao().deleteIfRemovable(one.id), "#1 never goes")
+            assertEquals(false, db.tvWriteDao().removeRun(one.id), "#1 never goes")
             val two = WatchThroughEntity(newId(), id, 2)
             db.watchThroughDao().insert(two)
-            assertEquals(1, db.watchThroughDao().deleteIfRemovable(two.id))
+            assertEquals(true, db.tvWriteDao().removeRun(two.id))
         }
 }

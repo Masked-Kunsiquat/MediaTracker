@@ -76,11 +76,9 @@ public class WatchThroughRepository(
             failure = "Failed to update show status",
             logMessage = { "Failed to update status for show: id=$mediaId" },
         ) {
-            val latest = db.watchThroughDao().getLatest(mediaId)
-            if (latest == null) {
+            if (db.watchThroughDao().setLatestAbandoned(mediaId, abandoned) == 0) {
                 Resource.Error("TV show with id=$mediaId not found")
             } else {
-                db.watchThroughDao().setAbandoned(latest.id, abandoned)
                 Resource.Success(Unit)
             }
         }

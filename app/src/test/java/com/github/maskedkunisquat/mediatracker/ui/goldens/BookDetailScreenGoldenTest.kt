@@ -155,7 +155,7 @@ class BookDetailScreenGoldenTest {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
-            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -186,7 +186,7 @@ class BookDetailScreenGoldenTest {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
-            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -220,7 +220,7 @@ class BookDetailScreenGoldenTest {
             onEditBook = {},
             onStatusChange = {},
             onRefetchCover = {},
-            readActions = BookReadActions({}, {}, { _, _ -> }, {}),
+            readActions = BookReadActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 

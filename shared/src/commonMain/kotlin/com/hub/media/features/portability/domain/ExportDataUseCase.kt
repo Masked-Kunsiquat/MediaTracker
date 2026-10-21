@@ -111,8 +111,10 @@ public class ExportDataUseCase(
             val viewings = mediaRepository.observeAllViewings().first()
             // Every book's reads (#230), carried on the books already read above.
             val reads = media.filterIsInstance<MediaWithDetails.Book>().flatMap { it.reads }
-            // Every show's watch-throughs (#231), carried on the shows already read above.
-            val runs = media.filterIsInstance<MediaWithDetails.TVShow>().flatMap { it.runs }
+            // Every show's watch-throughs (#231), read after the viewings rather than taken from the shows above:
+            // a run started between those reads would leave a viewing with no run number in the file, and an
+            // import would then put it in run #1 (#231 review). A run read here with no viewing yet is harmless.
+            val runs = mediaRepository.observeAllRuns().first()
 
             // NOT one database snapshot. The four reads above are four separate queries, so a write
             // landing between them can put the files slightly out of step with each other -- a show

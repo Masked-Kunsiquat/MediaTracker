@@ -1,5 +1,6 @@
 package com.hub.media.ui
 
+import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.EpisodeEntity
@@ -35,6 +36,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -47,6 +49,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
@@ -165,6 +168,15 @@ class TVShowDetailViewModelTest {
                 ),
             )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
+        // Its idle job count (#231 review): the lowest seen while its start-up reads finish, for settle().
+        var idle = viewModel.activeJobs()
+        withContext(Dispatchers.Default) {
+            repeat(20) {
+                delay(10)
+                idle = minOf(idle, viewModel.activeJobs())
+            }
+        }
+        idleJobs[viewModel] = idle
         return viewModel
     }
 
@@ -1163,12 +1175,26 @@ class TVShowDetailViewModelTest {
 
     // ---- #231: watch-throughs ---------------------------------------------------------------------
 
+    /** Coroutines the VM keeps running while idle (its shared state), counted once it is ready. */
+    private val idleJobs = mutableMapOf<TVShowDetailViewModel, Int>()
+
+    private fun TVShowDetailViewModel.activeJobs(): Int =
+        viewModelScope.coroutineContext[Job]!!.children.count { it.isActive }
+
     /**
-     * Lets the VM finish deciding whether to ask: its write and its completion check run on Room's own
-     * threads, which [runCurrent] does not drive, so a "nothing asked" assertion waits in real time.
+     * Waits until the VM has finished what the last action launched -- its write and its "ask?" decision run
+     * partly on Room's own threads, which [runCurrent] does not drive. Polls the VM's own jobs back down to
+     * their idle count, rather than a fixed delay that a loaded machine could outrun (#231 review).
      */
-    private suspend fun TestScope.settle() {
-        withContext(Dispatchers.Default) { delay(400) }
+    private suspend fun TestScope.settle(viewModel: TVShowDetailViewModel) {
+        val idle = idleJobs.getValue(viewModel)
+        withTimeout(5_000) {
+            while (true) {
+                runCurrent()
+                if (viewModel.activeJobs() <= idle) break
+                withContext(Dispatchers.Default) { delay(10) }
+            }
+        }
         runCurrent()
     }
 
@@ -1190,7 +1216,7 @@ class TVShowDetailViewModelTest {
             val viewModel = readyViewModel(showId)
             tick(viewModel, e1.id)
             ready(viewModel) { it.watchedEpisodes == 1 }
-            settle()
+            settle(viewModel)
             assertNull(
                 (viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId,
                 "a tick that does not finish the run asks nothing",
@@ -1211,7 +1237,7 @@ class TVShowDetailViewModelTest {
             val viewModel = readyViewModel(showId)
             tick(viewModel, e1.id)
             ready(viewModel) { it.latestRunState == RunState.FINISHED }
-            settle()
+            settle(viewModel)
             assertNull((viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId)
         }
 
@@ -1276,7 +1302,55 @@ class TVShowDetailViewModelTest {
             ready(viewModel) { it.pendingRewatch != null }
             viewModel.confirmRewatch(WatchedWhen.Now)
             ready(viewModel) { it.pendingRewatch == null && (it.viewingCounts[e1.id] ?: 0) == 2 }
-            settle()
+            settle(viewModel)
             assertNull((viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId)
+        }
+
+    /** "Rate" in the status row (#231 review): reopens the prompt for the current watch-through. */
+    @Test
+    fun requestRatePrompt_reopensItForTheLatestRun() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val viewModel = readyViewModel(showId)
+            val run = db.watchThroughDao().getLatest(showId)!!.id
+            viewModel.requestRatePrompt()
+            ready(viewModel) { it.ratePromptRunId == run }
+        }
+
+    /** A skip is remembered (#231 review): finishing the same run again does not ask again -- "Rate" does. */
+    @Test
+    fun aSkippedRun_isNotAskedAgain_whenItCompletesAgain() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val e1 = episodesOf(showId).single()
+            val viewModel = readyViewModel(showId)
+            tick(viewModel, e1.id)
+            ready(viewModel) { it.ratePromptRunId != null }
+            viewModel.dismissRatePrompt()
+            ready(viewModel) { it.ratePromptRunId == null }
+
+            viewModel.setEpisodeWatched(e1.id, watched = false)
+            ready(viewModel) { it.watchedEpisodes == 0 }
+            tick(viewModel, e1.id)
+            ready(viewModel) { it.watchedEpisodes == 1 }
+            settle(viewModel)
+            assertNull((viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId)
+        }
+
+    /** Undoing an untick can finish a run, and asks then (#231 review). */
+    @Test
+    fun undoThatFinishesTheRun_asksToRate() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to clock.now, e2.id to clock.now))
+            val viewModel = readyViewModel(showId)
+            viewModel.setEpisodeWatched(e2.id, watched = false)
+            val event = ready(viewModel) { it.untickEvent != null }.untickEvent!!
+
+            viewModel.undo(event)
+
+            val run = db.watchThroughDao().getLatest(showId)!!.id
+            ready(viewModel) { it.ratePromptRunId == run }
         }
 }
