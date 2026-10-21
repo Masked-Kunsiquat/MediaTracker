@@ -252,6 +252,13 @@ interface MovieWriteDao {
     @Query("SELECT COUNT(*) FROM watch_logs WHERE mediaId = :mediaId AND episodeId IS NULL")
     suspend fun filmViewingCount(mediaId: String): Int
 
+    /** Rates one film viewing (#231); an episode's viewing never matches, being rated per watch-through. */
+    @Query("UPDATE watch_logs SET rating = :rating WHERE id = :logId AND episodeId IS NULL")
+    suspend fun setFilmViewingRating(
+        logId: String,
+        rating: Int?,
+    ): Int
+
     @Query("SELECT status FROM movie_details WHERE mediaId = :mediaId")
     suspend fun statusOf(mediaId: String): WatchStatus?
 
@@ -280,10 +287,13 @@ interface MovieWriteDao {
         mediaId: String,
         status: WatchStatus,
         at: Instant,
+        rating: Int? = null,
     ): WatchStatus? {
         val previous = statusOf(mediaId) ?: return null
         setStatus(mediaId, status)
-        if (status == WatchStatus.WATCHED && previous != WatchStatus.WATCHED) insertViewing(filmViewing(mediaId, at))
+        if (status == WatchStatus.WATCHED && previous != WatchStatus.WATCHED) {
+            insertViewing(filmViewing(mediaId, at, rating))
+        }
         recomputeFilmWatchedAt(mediaId)
         return previous
     }
@@ -293,9 +303,10 @@ interface MovieWriteDao {
     suspend fun addFilmViewing(
         mediaId: String,
         at: Instant,
+        rating: Int? = null,
     ): Boolean {
         if (statusOf(mediaId) != WatchStatus.WATCHED) return false
-        insertViewing(filmViewing(mediaId, at))
+        insertViewing(filmViewing(mediaId, at, rating))
         recomputeFilmWatchedAt(mediaId)
         return true
     }
@@ -421,4 +432,5 @@ public data class FilmViewingDeletion(
 private fun filmViewing(
     mediaId: String,
     at: Instant,
-) = WatchLogEntity(id = newId(), mediaId = mediaId, episodeId = null, watchedAt = at)
+    rating: Int? = null,
+) = WatchLogEntity(id = newId(), mediaId = mediaId, episodeId = null, watchedAt = at, rating = rating)

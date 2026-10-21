@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.data.TitleRating
+import com.hub.media.features.books.data.titleRating
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.movies.data.MovieRepository
@@ -46,7 +48,10 @@ public sealed class MovieDetailUiState {
         val pendingWatchedAgain: Boolean = false,
         val viewingUndo: FilmViewingUndo? = null,
         val statusUndo: StatusUndo? = null,
-    ) : MovieDetailUiState()
+    ) : MovieDetailUiState() {
+        /** Your rating across this film's rated viewings (#231): [viewings] are newest first, so oldest first here. */
+        val titleRating: TitleRating? get() = titleRating(viewings.reversed().map { it.rating })
+    }
 }
 
 /**
@@ -149,11 +154,15 @@ public class MovieDetailViewModel(
         }
     }
 
-    public fun confirmWatched(watchedWhen: WatchedWhen) {
+    /** Becomes Watched at [watchedWhen], rating that viewing with the dialog's stars when chosen (#231). */
+    public fun confirmWatched(
+        watchedWhen: WatchedWhen,
+        rating: Int? = null,
+    ) {
         // Cleared before the launch, so a recomposition cannot show the prompt a second time.
         pendingWatched.value = false
         viewModelScope.launch {
-            val result = movieRepository.updateWatchStatus(movieId, WatchStatus.WATCHED, watchedWhen)
+            val result = movieRepository.updateWatchStatus(movieId, WatchStatus.WATCHED, watchedWhen, rating)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }
@@ -166,10 +175,24 @@ public class MovieDetailViewModel(
         pendingWatchedAgain.value = true
     }
 
-    public fun confirmWatchedAgain(watchedWhen: WatchedWhen) {
+    public fun confirmWatchedAgain(
+        watchedWhen: WatchedWhen,
+        rating: Int? = null,
+    ) {
         pendingWatchedAgain.value = false
         viewModelScope.launch {
-            val result = movieRepository.addViewing(movieId, watchedWhen)
+            val result = movieRepository.addViewing(movieId, watchedWhen, rating)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    /** Rates one viewing from the History list (#231); `null` clears it. */
+    public fun rateViewing(
+        logId: String,
+        halves: Int?,
+    ) {
+        viewModelScope.launch {
+            val result = movieRepository.setViewingRating(logId, halves)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }

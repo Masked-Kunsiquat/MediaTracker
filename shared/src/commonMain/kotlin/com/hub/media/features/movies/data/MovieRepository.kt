@@ -14,6 +14,7 @@ import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.newId
+import com.hub.media.features.books.data.isValidRating
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.tv.domain.WatchedWhen
 import com.hub.media.features.tv.domain.resolveWatchedAt
@@ -24,6 +25,9 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 private const val TAG = "MovieRepository"
+
+/** The refusal for a rating off the half-star scale (#231). */
+private const val RATING_RANGE = "A rating is half a star to five stars"
 
 /**
  * Movie data operations (ROADMAP Task 13 Phase B) — the movie counterpart of
@@ -235,13 +239,15 @@ public class MovieRepository(
         mediaId: String,
         status: WatchStatus,
         watchedWhen: WatchedWhen? = null,
+        rating: Int? = null,
     ): Resource<WatchStatus> =
         logger.guardResource(
             tag = TAG,
             failure = "Failed to update movie status",
             logMessage = { "Failed to update status for movie: id=$mediaId" },
         ) {
-            val previous = db.movieWriteDao().changeStatus(mediaId, status, instantFor(watchedWhen))
+            if (rating != null && !isValidRating(rating)) return@guardResource Resource.Error(RATING_RANGE)
+            val previous = db.movieWriteDao().changeStatus(mediaId, status, instantFor(watchedWhen), rating)
             if (previous == null) Resource.Error("Movie with id=$mediaId not found") else Resource.Success(previous)
         }
 
@@ -250,13 +256,16 @@ public class MovieRepository(
     /** A film's viewings, newest first. */
     public fun observeViewings(mediaId: String): Flow<List<WatchLogEntity>> = db.watchLogDao().observeForFilm(mediaId)
 
-    /** "Watched again": one more viewing of a Watched film. */
+    /** "Watched again": one more viewing of a Watched film, optionally rated (#231). */
     public suspend fun addViewing(
         mediaId: String,
         watchedWhen: WatchedWhen,
+        rating: Int? = null,
     ): Resource<Unit> =
         write("record a viewing of movie id=$mediaId") {
-            if (db.movieWriteDao().addFilmViewing(mediaId, instantFor(watchedWhen))) {
+            if (rating != null && !isValidRating(rating)) {
+                Resource.Error(RATING_RANGE)
+            } else if (db.movieWriteDao().addFilmViewing(mediaId, instantFor(watchedWhen), rating)) {
                 Resource.Success(Unit)
             } else {
                 Resource.Error("Movie with id=$mediaId not found, or not watched")
@@ -294,6 +303,19 @@ public class MovieRepository(
                 Resource.Success(Unit)
             } else {
                 Resource.Error("Couldn't undo: the film changed since")
+            }
+        }
+
+    /** Rates one film viewing (#231), or clears it with `null`. */
+    public suspend fun setViewingRating(
+        logId: String,
+        halves: Int?,
+    ): Resource<Unit> =
+        write("rate viewing id=$logId") {
+            when {
+                halves != null && !isValidRating(halves) -> Resource.Error(RATING_RANGE)
+                db.movieWriteDao().setFilmViewingRating(logId, halves) == 0 -> Resource.Error("Viewing not found")
+                else -> Resource.Success(Unit)
             }
         }
 

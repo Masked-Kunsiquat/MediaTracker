@@ -173,4 +173,29 @@ class MovieDetailViewModelTest {
             vm.editViewingDate(log, WatchedWhen.On(LocalDate(2024, 3, 3)))
             vm.awaitReady { it.movie.details?.watchedAt == Instant.parse("2024-03-03T12:00:00Z") }
         }
+
+    /** The Watched dialog's stars land on the viewing it records (#231). */
+    @Test
+    fun confirmWatched_withStars_savesTheRatingOnTheViewing() =
+        runTest {
+            val vm = ready()
+            vm.requestStatus(WatchStatus.WATCHED)
+            vm.awaitReady { it.pendingWatched }
+            vm.confirmWatched(WatchedWhen.Now, rating = 7)
+            vm.awaitReady { it.viewings.singleOrNull()?.rating == 7 }
+        }
+
+    /** Rating viewings changes the film's average and latest (#231). */
+    @Test
+    fun rateViewing_changesIt_andTitleRatingAverages() =
+        runTest {
+            val vm = ready(watched = true)
+            vm.requestWatchedAgain()
+            vm.awaitReady { it.pendingWatchedAgain }
+            vm.confirmWatchedAgain(WatchedWhen.Now, rating = 10)
+            val first = vm.awaitReady { it.viewings.size == 2 }.viewings.single { it.rating == null }
+            vm.rateViewing(first.id, 6)
+            val s = vm.awaitReady { it.titleRating?.rated == 2 }
+            assertEquals(4.0, s.titleRating?.averageStars)
+        }
 }

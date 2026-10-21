@@ -11,6 +11,8 @@ import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -923,5 +925,84 @@ class MovieRepositoryTest {
                 repo.restoreStatus("nope", WatchStatus.WATCHED, expectedCurrent = WatchStatus.WATCHING),
             )
             assertIs<Resource.Error>(repo.updateWatchStatus("nope", WatchStatus.WATCHED))
+        }
+
+    /** A film viewing carries its own rating (#231), validated to half-steps 1..10. */
+    @Test
+    fun aFilmViewing_keepsItsRating_andRatingIsValidated() =
+        runTest {
+            val r = historyRepo()
+            val id = (r.addMovie(title = "Heat", status = WatchStatus.WATCHED) as Resource.Success).data
+            assertIs<Resource.Success<Unit>>(r.addViewing(id, WatchedWhen.Now, rating = 9))
+            assertEquals(
+                listOf(null, 9),
+                db.watchLogDao().observeForFilm(id).first().map { it.rating }.sortedBy {
+                    it
+                        ?: 0
+                },
+            )
+            assertIs<Resource.Error>(r.addViewing(id, WatchedWhen.Now, rating = 11), "off the scale is refused")
+            val rated =
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .single { it.rating == 9 }
+            assertIs<Resource.Error>(r.setViewingRating(rated.id, 0))
+            assertIs<Resource.Success<Unit>>(r.setViewingRating(rated.id, null))
+            assertNull(
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .single { it.id == rated.id }
+                    .rating,
+            )
+        }
+
+    /** Becoming Watched records its viewing with the stars chosen in the same dialog (#231). */
+    @Test
+    fun updateWatchStatus_toWatched_withRating_ratesThatViewing() =
+        runTest {
+            val r = historyRepo()
+            val id = (r.addMovie(title = "Heat") as Resource.Success).data
+            r.updateWatchStatus(id, WatchStatus.WATCHED, WatchedWhen.Now, rating = 7)
+            assertEquals(
+                listOf(7),
+                db
+                    .watchLogDao()
+                    .observeForFilm(id)
+                    .first()
+                    .map { it.rating },
+            )
+        }
+
+    /** An episode's viewing is rated per watch-through, never as a film (#231). */
+    @Test
+    fun anEpisodeViewing_cannotBeRatedAsAFilm() =
+        runTest {
+            val show =
+                (
+                    TVShowRepository(
+                        db,
+                    ).addShow("S", seasons = listOf(SeasonQuickFill(1, 1))) as Resource.Success
+                ).data
+            val e = db.episodeDao().getByMediaIdAndSeason(show, 1).single()
+            db.tvWriteDao().markEpisodesWatchedAt(mapOf(e.id to historyNow))
+            val log =
+                db
+                    .watchLogDao()
+                    .observeForEpisode(e.id)
+                    .first()
+                    .single()
+            assertIs<Resource.Error>(historyRepo().setViewingRating(log.id, 8))
+            assertNull(
+                db
+                    .watchLogDao()
+                    .observeForEpisode(e.id)
+                    .first()
+                    .single()
+                    .rating,
+            )
         }
 }
