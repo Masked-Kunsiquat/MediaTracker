@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import com.github.maskedkunisquat.mediatracker.ui.screens.ShowRunActions
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreen
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
@@ -170,6 +171,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
         )
     }
 
@@ -209,6 +211,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
         )
     }
 
@@ -261,6 +264,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
         )
     }
 

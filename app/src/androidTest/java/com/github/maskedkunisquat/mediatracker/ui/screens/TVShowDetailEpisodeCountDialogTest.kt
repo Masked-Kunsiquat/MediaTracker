@@ -192,6 +192,7 @@ class TVShowDetailEpisodeCountDialogTest {
                                 onAddMissingEpisodes = onAddMissingEpisodes,
                                 onAddAllMissingEpisodes = onAddAllMissingEpisodes,
                                 onNavigateToEdit = onNavigateToEdit,
+                                runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
                             )
                         }
                     if (narrowWidth) {

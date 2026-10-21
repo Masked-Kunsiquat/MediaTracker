@@ -55,6 +55,8 @@ sealed interface DetailStatus {
     data class ReadOnly(
         val label: String,
         val action: StatusAction? = null,
+        /** A second action beside [action] -- a show's Watch again (#231). */
+        val secondaryAction: StatusAction? = null,
     ) : DetailStatus
 
     /** One [ReadOnly] side action: its label and what tapping it does. */
@@ -147,6 +149,11 @@ private fun ReadOnlyStatusChip(
         if (status.action != null) {
             TextButton(onClick = status.action.onClick) {
                 Text(status.action.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (status.secondaryAction != null) {
+            TextButton(onClick = status.secondaryAction.onClick) {
+                Text(status.secondaryAction.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

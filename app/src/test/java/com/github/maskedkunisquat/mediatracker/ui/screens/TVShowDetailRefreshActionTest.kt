@@ -130,6 +130,7 @@ class TVShowDetailRefreshActionTest {
                 onUntickShown = {},
                 onEpisodeOpen = {},
                 onNavigateBack = {},
+                runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
             )
         }
     }

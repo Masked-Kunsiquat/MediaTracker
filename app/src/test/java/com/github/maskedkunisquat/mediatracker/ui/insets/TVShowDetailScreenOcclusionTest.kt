@@ -14,6 +14,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.github.maskedkunisquat.mediatracker.ui.screens.ShowRunActions
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreen
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.EpisodeEntity
@@ -113,6 +114,7 @@ class TVShowDetailScreenOcclusionTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
         )
     }
 

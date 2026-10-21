@@ -6,23 +6,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
@@ -31,6 +39,8 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.features.tv.data.RunState
+import com.hub.media.features.tv.data.RunSummary
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
@@ -178,6 +188,7 @@ class TVShowDetailScreenTest {
         onAddMissingEpisodes: (Int) -> Unit = {},
         onAddAllMissingEpisodes: () -> Unit = {},
         onNavigateToEdit: () -> Unit = {},
+        runActions: ShowRunActions = recordingRunActions,
         // Pins the composable to a narrow-phone logical width instead of letting it fill this test
         // device's actual (much wider) screen. The #83 layout regression this test class guards
         // against only reproduces once the season header row is genuinely over its width budget --
@@ -214,6 +225,7 @@ class TVShowDetailScreenTest {
                                 onAddMissingEpisodes = onAddMissingEpisodes,
                                 onAddAllMissingEpisodes = onAddAllMissingEpisodes,
                                 onNavigateToEdit = onNavigateToEdit,
+                                runActions = runActions,
                             )
                         }
                     if (narrowWidth) {
@@ -500,12 +512,12 @@ class TVShowDetailScreenTest {
     }
 
     @Test
-    fun statusChip_showsWatching_whenFullyWatchedButStillContinuing() {
-        // LibraryStatusFilter.ofShow's KDoc: a fully-watched show still in production is
-        // IN_PROGRESS, not FINISHED -- there is more of it, and the viewer is only caught up.
+    fun statusChip_showsUpToDate_whenFullyWatchedButStillContinuing() {
+        // A fully-watched show still in production is not finished -- there is more of it, and the viewer is
+        // only caught up. Since #231 the chip says so: "Up to date" (the library still files it In progress).
         setContent(readyStateForBucket(watched = 5, total = 5, airingStatus = AiringStatus.CONTINUING))
 
-        composeRule.onNodeWithText(context.getString(R.string.watch_status_watching)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.run_state_up_to_date)).assertIsDisplayed()
     }
 
     @Test
@@ -690,6 +702,151 @@ class TVShowDetailScreenTest {
 
         val addLabel = context.getString(R.string.mismatch_review_add_all_format, 10)
         composeRule.onNodeWithText(addLabel).assertIsNotEnabled()
+    }
+
+    // ---- #231: watch-throughs on the show screen -------------------------------------------------
+
+    private val runCalls = mutableListOf<String>()
+
+    private val recordingRunActions =
+        ShowRunActions(
+            onWatchAgain = { runCalls += "again" },
+            onRemoveRun = { runCalls += "remove:$it" },
+            onRateRun = { id, halves -> runCalls += "rate:$id:$halves" },
+            onDismissRatePrompt = { runCalls += "dismiss" },
+        )
+
+    private val day = Instant.parse("2025-03-01T12:00:00Z")
+
+    /** A 2-episode show with [runs]; the latest run has [watched] ticks and reads as [state]. */
+    private fun runsState(
+        runs: List<WatchThroughEntity>,
+        watched: Int,
+        state: RunState,
+        summaries: Map<String, RunSummary> = emptyMap(),
+        ratePromptRunId: String? = null,
+        airingStatus: AiringStatus? = null,
+    ): TVShowDetailUiState.Ready {
+        val episodes =
+            (1..2).map { n -> episode(1, n).copy(watchedAt = if (n <= watched) day else null) }
+        return TVShowDetailUiState.Ready(
+            show = show(airingStatus = airingStatus).copy(runs = runs),
+            seasons = listOf(SeasonGroup(seasonNumber = 1, episodes = episodes, watchedCount = watched)),
+            watchedEpisodes = watched,
+            totalEpisodes = 2,
+            isAbandoned = runs.maxBy { it.number }.abandoned,
+            latestRunState = state,
+            runSummaries = summaries,
+            ratePromptRunId = ratePromptRunId,
+        )
+    }
+
+    private val runOne = WatchThroughEntity("run-1", "show-1", 1, rating = 8)
+    private val runTwo = WatchThroughEntity("run-2", "show-1", 2, rating = 10)
+
+    private fun scrollTo(text: String) {
+        composeRule.onNodeWithTag(TestTags.TVShowDetail.LIST).performScrollToNode(hasText(text, substring = true))
+    }
+
+    @Test
+    fun header_showsYourRating_averageOfWatchThroughs() {
+        setContent(runsState(listOf(runOne, runTwo), watched = 0, state = RunState.NOT_STARTED))
+
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.rating_average_of_watch_throughs, 2, "4.5", 2, "5"),
+            ).assertIsDisplayed()
+    }
+
+    @Test
+    fun latestRunCard_showsItsState_andRatesThatRun() {
+        setContent(runsState(listOf(runOne.copy(rating = null)), watched = 1, state = RunState.WATCHING))
+
+        val title = context.getString(R.string.run_number_state, 1, context.getString(R.string.watch_status_watching))
+        scrollTo(title)
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+        composeRule
+            .onNode(
+                hasAnyAncestor(hasTestTag(TestTags.TVShowDetail.LATEST_RUN)) and
+                    SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress),
+            ).performSemanticsAction(SemanticsActions.SetProgress) { it(4.5f) }
+        assertEquals(listOf("rate:run-1:9"), runCalls)
+    }
+
+    @Test
+    fun olderRuns_areFolded_andExpandToTheirSeasonSummary() {
+        val summary = RunSummary("run-1", day, day, episodes = 2, perSeason = mapOf(1 to 2))
+        setContent(
+            runsState(listOf(runOne, runTwo), watched = 0, state = RunState.NOT_STARTED, mapOf("run-1" to summary)),
+        )
+
+        val seasonLine = context.getString(R.string.run_season_summary, 1, 2)
+        val folded = context.getString(R.string.run_number, 1)
+        composeRule.onNodeWithTag(TestTags.TVShowDetail.LIST).performScrollToNode(hasText(folded, substring = true))
+        composeRule
+            .onNodeWithText(
+                context.resources.getQuantityString(R.plurals.run_episodes_summary, 2, 2),
+            ).assertIsDisplayed()
+        composeRule.onNodeWithText(seasonLine).assertDoesNotExist()
+
+        composeRule.onNodeWithText(folded, substring = true).performClick()
+        scrollTo(seasonLine)
+        composeRule.onNodeWithText(seasonLine).assertIsDisplayed()
+    }
+
+    @Test
+    fun watchAgain_isOffered_onceTheRunIsFinished() {
+        setContent(runsState(listOf(runOne), watched = 2, state = RunState.FINISHED))
+
+        composeRule.onNodeWithText(context.getString(R.string.run_watch_again)).performClick()
+        assertEquals(listOf("again"), runCalls)
+    }
+
+    @Test
+    fun watchAgain_isNotOffered_whileWatching() {
+        setContent(runsState(listOf(runOne), watched = 1, state = RunState.WATCHING))
+
+        composeRule.onNodeWithText(context.getString(R.string.detail_show_status_abandon_action)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.run_watch_again)).assertDoesNotExist()
+    }
+
+    @Test
+    fun removeThisWatchThrough_onlyInTheMenuOfAnEmptyLatestRun() {
+        setContent(runsState(listOf(runOne, runTwo.copy(rating = null)), watched = 0, state = RunState.NOT_STARTED))
+
+        val menu = context.getString(R.string.run_menu, 2)
+        composeRule.onNodeWithTag(TestTags.TVShowDetail.LIST).performScrollToNode(hasContentDescription(menu))
+        composeRule.onNodeWithContentDescription(menu).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.run_remove)).performClick()
+        assertEquals(listOf("remove:run-2"), runCalls)
+    }
+
+    @Test
+    fun removeThisWatchThrough_isAbsent_forARunWithViewings() {
+        val summary = RunSummary("run-2", day, day, episodes = 1, perSeason = mapOf(1 to 1))
+        setContent(runsState(listOf(runOne, runTwo), watched = 1, state = RunState.WATCHING, mapOf("run-2" to summary)))
+
+        scrollTo(context.getString(R.string.run_number_state, 2, context.getString(R.string.watch_status_watching)))
+        composeRule.onNodeWithContentDescription(context.getString(R.string.run_menu, 2)).assertDoesNotExist()
+    }
+
+    @Test
+    fun ratePrompt_opens_andSaves() {
+        setContent(
+            runsState(
+                listOf(runOne, runTwo.copy(rating = null)),
+                watched = 2,
+                state = RunState.FINISHED,
+                ratePromptRunId = "run-2",
+            ),
+        )
+
+        composeRule.onNodeWithText(context.getString(R.string.rate_run_title)).assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(TestTags.TVShowDetail.RATE_STARS)
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
+        composeRule.onNodeWithText(context.getString(R.string.rate_read_save)).performClick()
+        assertEquals(listOf("rate:run-2:6"), runCalls)
     }
 
     private companion object {

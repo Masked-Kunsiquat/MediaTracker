@@ -141,6 +141,7 @@ class TVShowDetailSeasonFoldTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
         )
     }
 

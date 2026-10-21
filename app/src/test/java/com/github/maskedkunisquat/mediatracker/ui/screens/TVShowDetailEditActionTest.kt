@@ -94,6 +94,7 @@ class TVShowDetailEditActionTest {
                 onEpisodeOpen = {},
                 onNavigateBack = {},
                 onNavigateToEdit = onEdit,
+                runActions = ShowRunActions({}, {}, { _, _ -> }, {}),
             )
         }
     }
