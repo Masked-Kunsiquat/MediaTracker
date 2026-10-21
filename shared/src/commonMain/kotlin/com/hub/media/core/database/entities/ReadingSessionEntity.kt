@@ -33,8 +33,14 @@ import kotlin.time.Instant
             childColumns = ["mediaId"],
             onDelete = ForeignKey.CASCADE,
         ),
+        ForeignKey(
+            entity = ReadThroughEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["readThroughId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
-    indices = [Index(value = ["mediaId"])],
+    indices = [Index(value = ["mediaId"]), Index(value = ["readThroughId"])],
 )
 data class ReadingSessionEntity(
     @PrimaryKey val id: String,
@@ -46,4 +52,6 @@ data class ReadingSessionEntity(
     val endUnit: Double,
     val deltaPages: Int?,
     val notes: String?,
+    /** The read this session belongs to (#230); new sessions go to the book's latest read. */
+    val readThroughId: String,
 )

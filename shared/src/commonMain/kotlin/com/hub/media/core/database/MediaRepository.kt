@@ -76,8 +76,10 @@ public class MediaRepository(
             db.bookDetailsDao().observeAll(),
             db.movieDetailsDao().observeAll(),
             db.tvDetailsDao().observeAll(),
-        ) { mediaItems, bookDetails, movieDetails, tvDetails ->
+            db.readThroughDao().observeAll(),
+        ) { mediaItems, bookDetails, movieDetails, tvDetails, reads ->
             val bookDetailsByMediaId = bookDetails.associateBy { it.mediaId }
+            val readsByMediaId = reads.groupBy { it.mediaId }
             val movieDetailsByMediaId = movieDetails.associateBy { it.mediaId }
             val tvDetailsByMediaId = tvDetails.associateBy { it.mediaId }
             mediaItems.map { mediaItem ->
@@ -86,6 +88,7 @@ public class MediaRepository(
                         MediaWithDetails.Book(
                             item = mediaItem,
                             details = bookDetailsByMediaId[mediaItem.id],
+                            reads = readsByMediaId[mediaItem.id].orEmpty(),
                         )
                     MediaType.MOVIE ->
                         MediaWithDetails.Movie(

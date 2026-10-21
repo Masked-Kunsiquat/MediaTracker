@@ -68,7 +68,7 @@ public class HubViewModel(
             HubUiState(
                 isLoading = false,
                 readingBooks =
-                    media.count { it is MediaWithDetails.Book && it.details?.status == ReadingStatus.READING },
+                    media.count { it is MediaWithDetails.Book && it.status == ReadingStatus.READING },
                 watchlistFilms =
                     media.count { it is MediaWithDetails.Movie && it.details?.status == WatchStatus.WATCHLIST },
                 showsUpNext = upNext.size,

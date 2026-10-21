@@ -6,6 +6,7 @@ import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.data.ReadThroughRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.LogReadingSessionUseCase
 import com.hub.media.features.books.domain.RefetchCoverUseCase
@@ -73,6 +74,7 @@ public class BookDetailViewModel(
     private val logReadingSessionUseCase: LogReadingSessionUseCase,
     private val refetchCoverUseCase: RefetchCoverUseCase,
     private val deleteMediaUseCase: BulkDeleteUseCase,
+    private val readThroughRepository: ReadThroughRepository,
     clock: Clock = Clock.System,
 ) : ViewModel() {
     private val timer = ReadingTimer(clock = clock, scope = viewModelScope)
@@ -88,6 +90,8 @@ public class BookDetailViewModel(
         val pendingSession: ReadingTimerResult? = null,
         val errorMessage: String? = null,
         val isRefetchingCover: Boolean = false,
+        /** The read "Rate this read?" is open for (#230), or `null`. */
+        val ratePromptReadId: String? = null,
     )
 
     private val localState = MutableStateFlow(LocalState())
@@ -119,6 +123,8 @@ public class BookDetailViewModel(
                     pendingSession = local.pendingSession,
                     errorMessage = local.errorMessage,
                     isRefetchingCover = local.isRefetchingCover,
+                    reads = bookDetail.reads,
+                    ratePrompt = local.ratePromptReadId?.let { id -> bookDetail.reads.firstOrNull { it.id == id } },
                 )
             }
         }.stateIn(
@@ -409,11 +415,61 @@ public class BookDetailViewModel(
      * mutating method on this class.
      */
     public fun updateStatus(status: ReadingStatus) {
+        // The read the change lands on: a status change never creates a read, so it is the latest now.
+        val read = (uiState.value as? BookDetailUiState.Ready)?.latestRead
+        val readId = read?.id
+        val asks = asksToRate(from = read?.status, to = status)
         viewModelScope.launch {
             when (val result = bookRepository.updateReadingStatus(bookId, status)) {
-                is Resource.Success -> Unit
+                // A read that just ended -- finished or abandoned -- is offered "Rate this read?" (#230).
+                is Resource.Success ->
+                    if (readId != null && asks) {
+                        localState.update { it.copy(ratePromptReadId = readId) }
+                    }
                 is Resource.Error -> localState.update { it.copy(errorMessage = result.message) }
             }
+        }
+    }
+
+    /** Rates [readId] in half-steps, or clears it with `null` (#230), and closes "Rate this read?". */
+    public fun rateRead(
+        readId: String,
+        halves: Int?,
+    ) {
+        localState.update { it.copy(ratePromptReadId = null) }
+        viewModelScope.launch {
+            val result = readThroughRepository.setRating(readId, halves)
+            if (result is Resource.Error) localState.update { it.copy(errorMessage = result.message) }
+        }
+    }
+
+    /** Closes "Rate this read?" without rating (#230). */
+    public fun dismissRatePrompt() {
+        localState.update { it.copy(ratePromptReadId = null) }
+    }
+
+    /** Set while a Read again is in flight, so a double tap is one read and no error (#230 review). */
+    private var readAgainInFlight: Boolean = false
+
+    /** Starts the next read (#230). A second tap while the first is saving is ignored. */
+    public fun readAgain() {
+        if (readAgainInFlight) return
+        readAgainInFlight = true
+        viewModelScope.launch {
+            try {
+                val result = readThroughRepository.readAgain(bookId)
+                if (result is Resource.Error) localState.update { it.copy(errorMessage = result.message) }
+            } finally {
+                readAgainInFlight = false
+            }
+        }
+    }
+
+    /** Removes an empty re-read, the undo for a mistaken Read again (#230). */
+    public fun removeRead(readId: String) {
+        viewModelScope.launch {
+            val result = readThroughRepository.removeRead(readId)
+            if (result is Resource.Error) localState.update { it.copy(errorMessage = result.message) }
         }
     }
 
@@ -450,4 +506,17 @@ public class BookDetailViewModel(
             }
         }
     }
+}
+
+/**
+ * Whether changing a read from [from] to [to] opens "Rate this read?" (#230): only when a read that had
+ * not ended ends -- Finished or Did not finish. Choosing Finished again, or moving between the two, is
+ * not a read ending, so it does not ask again.
+ */
+internal fun asksToRate(
+    from: ReadingStatus?,
+    to: ReadingStatus,
+): Boolean {
+    val ended = setOf(ReadingStatus.FINISHED, ReadingStatus.DNF)
+    return to in ended && from !in ended
 }

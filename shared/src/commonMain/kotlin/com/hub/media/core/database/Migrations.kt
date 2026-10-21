@@ -438,3 +438,94 @@ public val MIGRATION_6_7: Migration =
                 connection.execSQL("ALTER TABLE `tv_details_new` RENAME TO `tv_details`")
             }
     }
+
+/** A version-4 UUID built in SQL, one per row: the migration has no Kotlin to call `newId()` from. */
+private const val SQL_UUID: String =
+    "lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || " +
+        "substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || " +
+        "substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))"
+
+/**
+ * Schema v7 -> v8 (#230, ROADMAP Task 10): read-throughs.
+ *
+ * 1. Creates `read_throughs`, and gives every book read #1:
+ *    - status and finish date come from `book_details`;
+ *    - a book with no details row (the edge case `MediaWithDetails.Book.details` allows) gets
+ *      `READING` when it has sessions and `TO_READ` when it has none, the rule [MIGRATION_2_3] used;
+ *    - `startedAt` is its earliest session.
+ * 2. Rebuilds `reading_sessions` with a `NOT NULL` `readThroughId` (a foreign key SQLite cannot
+ *    `ALTER` in), pointing every existing session at its book's read #1.
+ * 3. Rebuilds `book_details` without `status` and `finishedAt`: a book's state is its latest read's now.
+ *
+ * Nothing is lost: every session keeps its values and now belongs to read #1, and every book's status
+ * and finish date are unchanged, read through its only read.
+ */
+public val MIGRATION_7_8: Migration =
+    object : Migration(7, 8) {
+        override fun migrate(connection: SQLiteConnection) =
+            loggedMigration(7, 8) {
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `read_throughs` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                        "`number` INTEGER NOT NULL, `status` TEXT NOT NULL, `startedAt` INTEGER, " +
+                        "`finishedAt` INTEGER, " +
+                        "`rating` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_read_throughs_mediaId_number` " +
+                        "ON `read_throughs` (`mediaId`, `number`)",
+                )
+                connection.execSQL(
+                    "INSERT INTO `read_throughs` " +
+                        "(`id`, `mediaId`, `number`, `status`, `startedAt`, `finishedAt`, `rating`) " +
+                        "SELECT $SQL_UUID, m.`id`, 1, " +
+                        "COALESCE(b.`status`, CASE WHEN EXISTS (SELECT 1 FROM `reading_sessions` s " +
+                        "WHERE s.`mediaId` = m.`id`) THEN 'READING' ELSE 'TO_READ' END), " +
+                        "(SELECT MIN(s.`timestampStart`) FROM `reading_sessions` s WHERE s.`mediaId` = m.`id`), " +
+                        "b.`finishedAt`, NULL " +
+                        "FROM `media_items` m LEFT JOIN `book_details` b ON b.`mediaId` = m.`id` " +
+                        "WHERE m.`type` = 'BOOK' OR EXISTS (SELECT 1 FROM `reading_sessions` s WHERE s.`mediaId` = m.`id`)",
+                )
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reading_sessions_new` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                        "`timestampStart` INTEGER NOT NULL, `timestampEnd` INTEGER NOT NULL, " +
+                        "`durationSeconds` INTEGER, " +
+                        "`startUnit` REAL NOT NULL, `endUnit` REAL NOT NULL, `deltaPages` INTEGER, `notes` TEXT, " +
+                        "`readThroughId` TEXT NOT NULL, PRIMARY KEY(`id`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`readThroughId`) REFERENCES `read_throughs`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `reading_sessions_new` (`id`, `mediaId`, `timestampStart`, `timestampEnd`, " +
+                        "`durationSeconds`, `startUnit`, `endUnit`, `deltaPages`, `notes`, `readThroughId`) " +
+                        "SELECT s.`id`, s.`mediaId`, s.`timestampStart`, s.`timestampEnd`, s.`durationSeconds`, " +
+                        "s.`startUnit`, s.`endUnit`, s.`deltaPages`, s.`notes`, r.`id` FROM `reading_sessions` s " +
+                        "JOIN `read_throughs` r ON r.`mediaId` = s.`mediaId` AND r.`number` = 1",
+                )
+                connection.execSQL("DROP TABLE `reading_sessions`")
+                connection.execSQL("ALTER TABLE `reading_sessions_new` RENAME TO `reading_sessions`")
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_reading_sessions_mediaId` ON `reading_sessions` (`mediaId`)",
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_reading_sessions_readThroughId` " +
+                        "ON `reading_sessions` (`readThroughId`)",
+                )
+                // 3. The status and finish date now live on the reads, copied there in step 1.
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `book_details_new` (`mediaId` TEXT NOT NULL, `isbn` TEXT, " +
+                        "`format` TEXT NOT NULL, `totalPages` INTEGER, `trackingMode` TEXT NOT NULL, `authors` TEXT, " +
+                        "PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `book_details_new` (`mediaId`, `isbn`, `format`, `totalPages`, `trackingMode`, " +
+                        "`authors`) SELECT `mediaId`, `isbn`, `format`, `totalPages`, `trackingMode`, `authors` " +
+                        "FROM `book_details`",
+                )
+                connection.execSQL("DROP TABLE `book_details`")
+                connection.execSQL("ALTER TABLE `book_details_new` RENAME TO `book_details`")
+            }
+    }

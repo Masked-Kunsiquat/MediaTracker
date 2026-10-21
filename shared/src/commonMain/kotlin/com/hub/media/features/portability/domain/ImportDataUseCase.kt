@@ -10,6 +10,7 @@ import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
@@ -36,6 +37,9 @@ import com.hub.media.features.portability.csv.ParsedEpisodeRow
 import com.hub.media.features.portability.csv.ParsedLibraryRow
 import com.hub.media.features.portability.csv.ParsedRowDetails
 import com.hub.media.features.portability.csv.ParsedSessionRow
+import com.hub.media.features.portability.csv.ReadThroughCsvExporter
+import com.hub.media.features.portability.csv.ReadThroughCsvImporter
+import com.hub.media.features.portability.csv.ReadThroughRowParseResult
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvImporter
 import com.hub.media.features.portability.csv.SessionRowParseResult
@@ -56,6 +60,7 @@ public interface ImportUseCase {
         episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
         watchLogsCsv: String? = null,
+        readThroughsCsv: String? = null,
     ): Resource<ImportSummary>
 
     public suspend fun executeGoodreads(
@@ -281,11 +286,19 @@ public class ImportDataUseCase(
         episodesCsv: String?,
         duplicatePolicy: DuplicatePolicy,
         watchLogsCsv: String?,
+        readThroughsCsv: String?,
     ): Resource<ImportSummary> {
-        if (libraryCsv == null && readingLogsCsv == null && episodesCsv == null && watchLogsCsv == null) {
+        if (libraryCsv == null &&
+            readingLogsCsv == null &&
+            episodesCsv == null &&
+            watchLogsCsv == null &&
+            readThroughsCsv == null
+        ) {
             return refuse("Nothing to import -- no file was selected.")
         }
 
+        // The library file's CSV version (#230): from v7 a row's status is the book's latest read's, not read #1's.
+        var libraryFileVersion: Int? = null
         val libraryParseResults =
             if (libraryCsv != null) {
                 when (
@@ -306,7 +319,14 @@ public class ImportDataUseCase(
                         )
                 ) {
                     is CsvTableResult.Failure -> return refuse("library_export.csv: ${table.message}")
-                    is CsvTableResult.Success -> table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
+                    is CsvTableResult.Success -> {
+                        libraryFileVersion =
+                            table.rows
+                                .firstOrNull()
+                                ?.firstOrNull()
+                                ?.toIntOrNull()
+                        table.rows.map { row -> LibraryCsvImporter.parseRow(row) }
+                    }
                 }
             } else {
                 emptyList()
@@ -314,7 +334,16 @@ public class ImportDataUseCase(
 
         val sessionDataRows =
             if (readingLogsCsv != null) {
-                when (val table = CsvTableReader.read(readingLogsCsv, ReadingLogCsvExporter.HEADER)) {
+                when (
+                    val table =
+                        CsvTableReader.read(
+                            readingLogsCsv,
+                            ReadingLogCsvExporter.HEADER,
+                            // A v6 log predates read_number (#230): every session in it is read #1's.
+                            legacyHeaders =
+                                mapOf(ReadingLogCsvExporter.HEADER_V6 to ReadingLogCsvImporter::padLegacyV6Row),
+                        )
+                ) {
                     is CsvTableResult.Failure -> return refuse("reading_logs_export.csv: ${table.message}")
                     is CsvTableResult.Success -> table.rows
                 }
@@ -348,6 +377,16 @@ public class ImportDataUseCase(
             if (watchLogsCsv != null) {
                 when (val table = CsvTableReader.read(watchLogsCsv, WatchLogCsvExporter.HEADER)) {
                     is CsvTableResult.Failure -> return refuse("watch_logs_export.csv: ${table.message}")
+                    is CsvTableResult.Success -> table.rows
+                }
+            } else {
+                emptyList()
+            }
+
+        val readDataRows =
+            if (readThroughsCsv != null) {
+                when (val table = CsvTableReader.read(readThroughsCsv, ReadThroughCsvExporter.HEADER)) {
+                    is CsvTableResult.Failure -> return refuse("read_throughs_export.csv: ${table.message}")
                     is CsvTableResult.Success -> table.rows
                 }
             } else {
@@ -389,6 +428,100 @@ public class ImportDataUseCase(
             val rejections = mediaResolution.rejections.toMutableList()
             val knownMediaIds = mediaResolution.knownMediaIds.toMutableSet()
 
+            // Reads (#230). Every read this import ends with, by (book, number), so a session can point at its
+            // read before anything is written: existing reads keep their ids, new ones get theirs now.
+            val existingReadsByKey =
+                existingMedia
+                    .filterIsInstance<MediaWithDetails.Book>()
+                    .flatMap { it.reads }
+                    .associateBy { it.mediaId to it.number }
+            // With a reads file, it is the record of every read, and a library row's status (the latest
+            // read's) must not be written onto an existing book's read #1 first.
+            // A book's existing reads count, to tell a re-read book from one read once.
+            val readCountByMediaId = existingReadsByKey.keys.groupingBy { it.first }.eachCount()
+            val libraryRowsAreLatestReads = (libraryFileVersion ?: 0) >= 7
+            val mediaUpdates =
+                mediaResolution.updates.map { update ->
+                    val details = update.details
+                    val leaveReadsAlone =
+                        readThroughsCsv != null ||
+                            // A v7+ row without its reads file describes the latest read: on a book read more
+                            // than once that is not read #1, so the book's reads are left as they are.
+                            (libraryRowsAreLatestReads && (readCountByMediaId[update.mediaItem.id] ?: 0) > 1)
+                    if (details is ImportDetails.Book && leaveReadsAlone) {
+                        update.copy(details = details.copy(readOne = null))
+                    } else {
+                        update
+                    }
+                }
+            val readIdByKey = existingReadsByKey.mapValuesTo(mutableMapOf()) { it.value.id }
+            (mediaResolution.inserts.map { it.details } + mediaUpdates.map { it.details })
+                .filterIsInstance<ImportDetails.Book>()
+                .mapNotNull { it.readOne }
+                .forEach { readIdByKey.getOrPut(it.mediaId to it.number) { it.id } }
+            val bookIds =
+                existingMedia.filter { it is MediaWithDetails.Book }.map { it.item.id }.toSet() +
+                    mediaResolution.inserts.filter { it.details is ImportDetails.Book }.map { it.mediaItem.id }
+            val readUpserts = mutableListOf<ReadThroughEntity>()
+            val plannedReadKeys = mutableSetOf<Pair<String, Int>>()
+            readDataRows.forEachIndexed { index, rawRow ->
+                val rowNumber = index + 2
+                when (val parsed = ReadThroughCsvImporter.parseRow(rawRow)) {
+                    is ReadThroughRowParseResult.Rejected ->
+                        rejections += ImportRejection(ImportRowSource.READ, rowNumber, parsed.reason)
+                    is ReadThroughRowParseResult.Parsed -> {
+                        val row = parsed.read
+                        val mediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
+                        val key = mediaId to row.number
+                        val existing = existingReadsByKey[key]
+                        when {
+                            mediaId !in bookIds ->
+                                rejections +=
+                                    ImportRejection(
+                                        ImportRowSource.READ,
+                                        rowNumber,
+                                        "media_id '${row.mediaId}' is not a known book -- read skipped",
+                                    )
+                            // The same read twice in one file: the first row stands.
+                            !plannedReadKeys.add(key) -> Unit
+                            existing == null -> {
+                                val id = readIdByKey.getOrPut(key) { newId() }
+                                readUpserts +=
+                                    ReadThroughEntity(
+                                        id = id,
+                                        mediaId = mediaId,
+                                        number = row.number,
+                                        status = row.status,
+                                        startedAt = row.startedAt,
+                                        finishedAt = row.finishedAt,
+                                        rating = row.rating,
+                                    )
+                            }
+                            else ->
+                                when (duplicatePolicy) {
+                                    DuplicatePolicy.SKIP -> Unit
+                                    DuplicatePolicy.REPLACE ->
+                                        readUpserts +=
+                                            existing.copy(
+                                                status = row.status,
+                                                startedAt = row.startedAt,
+                                                finishedAt = row.finishedAt,
+                                                rating = row.rating,
+                                            )
+                                    // What you have read on this device stands; only what is missing is filled.
+                                    DuplicatePolicy.MERGE ->
+                                        readUpserts +=
+                                            existing.copy(
+                                                startedAt = existing.startedAt ?: row.startedAt,
+                                                finishedAt = existing.finishedAt ?: row.finishedAt,
+                                                rating = existing.rating ?: row.rating,
+                                            )
+                                }
+                        }
+                    }
+                }
+            }
+
             val sessionInserts = mutableListOf<ReadingSessionEntity>()
             val sessionUpdates = mutableListOf<ReadingSessionEntity>()
             var sessionsImported = 0
@@ -421,14 +554,28 @@ public class ImportDataUseCase(
                             // already in the database and untouched by this import's library file.
                             val resolvedMediaId = mediaResolution.resolvedMediaId[row.mediaId] ?: row.mediaId
                             val existing = existingSessionsById[row.sessionId]
-                            if (existing == null) {
-                                sessionInserts += toSessionEntity(row, resolvedMediaId)
+                            // The read this session belongs to (#230). Blank only for read #1 of a book that
+                            // has no read at all yet, which the write fills in.
+                            val readId = readIdByKey[resolvedMediaId to row.readNumber]
+                            if (readId == null && row.readNumber > 1) {
+                                rejections +=
+                                    ImportRejection(
+                                        ImportRowSource.SESSION,
+                                        rowNumber,
+                                        "read ${row.readNumber} of this book is not in your library or the " +
+                                            "reads file -- session skipped",
+                                    )
+                            } else if (existing == null) {
+                                sessionInserts +=
+                                    toSessionEntity(row, resolvedMediaId).copy(readThroughId = readId.orEmpty())
                                 sessionsImported++
                             } else {
                                 when (duplicatePolicy) {
                                     DuplicatePolicy.SKIP -> sessionsSkipped++
                                     DuplicatePolicy.REPLACE -> {
-                                        sessionUpdates += toSessionEntity(row, resolvedMediaId)
+                                        // The file says which read it belongs to (#230).
+                                        sessionUpdates +=
+                                            toSessionEntity(row, resolvedMediaId).copy(readThroughId = readId.orEmpty())
                                         sessionsReplaced++
                                     }
                                     DuplicatePolicy.MERGE -> {
@@ -691,7 +838,7 @@ public class ImportDataUseCase(
             val writeResult =
                 importWriteRepository.importAtomically(
                     mediaInserts = mediaResolution.inserts,
-                    mediaUpdates = mediaResolution.updates,
+                    mediaUpdates = mediaUpdates,
                     sessionInserts = sessionInserts,
                     sessionUpdates = sessionUpdates,
                     episodeInserts = episodeInserts,
@@ -701,6 +848,7 @@ public class ImportDataUseCase(
                     touchedEpisodeIds = touchedEpisodeIds,
                     filmViewingDeletes = replacedFilmIds,
                     touchedFilmIds = touchedFilmIds,
+                    readUpserts = readUpserts,
                 )
             if (writeResult is Resource.Error) return writeResult
 
@@ -1018,7 +1166,7 @@ public class ImportDataUseCase(
                                 replaced++
                                 registerCurrentState(
                                     matchedId,
-                                    stateOf(update.mediaItem, update.details),
+                                    stateOf(update.mediaItem, update.details, previous = match),
                                     update.identifiers,
                                 )
                             }
@@ -1029,7 +1177,7 @@ public class ImportDataUseCase(
                                 merged++
                                 registerCurrentState(
                                     matchedId,
-                                    stateOf(update.mediaItem, update.details),
+                                    stateOf(update.mediaItem, update.details, previous = match),
                                     existingIdentifiers + update.identifiers,
                                 )
                             }
@@ -1059,13 +1207,25 @@ public class ImportDataUseCase(
      * Re-pairs an item with its details as a [MediaWithDetails], so a row this import just resolved
      * can be matched against by a later row in the same file (see `registerCurrentState`). The
      * inverse of the [ImportDetails] split, and exhaustive over it for the same reason.
+     *
+     * A book keeps its reads (#230): [previous]'s, with read #1 replaced by the one this row plans, so a
+     * second row for the same book merges against the reads it really has rather than none.
      */
     private fun stateOf(
         mediaItem: MediaItemEntity,
         details: ImportDetails,
+        previous: MediaWithDetails? = null,
     ): MediaWithDetails =
         when (details) {
-            is ImportDetails.Book -> MediaWithDetails.Book(mediaItem, details.details)
+            is ImportDetails.Book -> {
+                val reads = (previous as? MediaWithDetails.Book)?.reads.orEmpty()
+                val readOne = details.readOne
+                MediaWithDetails.Book(
+                    mediaItem,
+                    details.details,
+                    reads = if (readOne == null) reads else reads.filter { it.number != 1 } + readOne,
+                )
+            }
             is ImportDetails.Movie -> MediaWithDetails.Movie(mediaItem, details.details)
             is ImportDetails.TVShow -> MediaWithDetails.TVShow(mediaItem, details.details)
         }
@@ -1113,7 +1273,26 @@ public class ImportDataUseCase(
             row.externalIdentifiers.map { (provider, id) ->
                 ExternalIdentifierEntity(mediaId = row.mediaId, provider = provider, externalId = id)
             }
-        return ImportMediaInsert(mediaItem, freshDetails(row.mediaId, row.details), identifiers)
+        val details =
+            when (val fresh = freshDetails(row.mediaId, row.details)) {
+                // A new book's read #1, from the row (#230).
+                is ImportDetails.Book -> {
+                    val book = row.details as ParsedRowDetails.Book
+                    fresh.copy(
+                        readOne =
+                            ReadThroughEntity(
+                                id = newId(),
+                                mediaId = row.mediaId,
+                                number = 1,
+                                status = book.status,
+                                finishedAt = book.finishedAt,
+                                rating = book.rating,
+                            ),
+                    )
+                }
+                else -> fresh
+            }
+        return ImportMediaInsert(mediaItem, details, identifiers)
     }
 
     /**
@@ -1139,8 +1318,6 @@ public class ImportDataUseCase(
                         isbn = details.isbn,
                         format = details.format,
                         totalPages = details.totalPages,
-                        status = details.status,
-                        finishedAt = details.finishedAt,
                         trackingMode = details.trackingMode,
                         authors = details.authors,
                     ),
@@ -1185,7 +1362,7 @@ public class ImportDataUseCase(
             }
         return ImportMediaUpdate(
             mediaItem,
-            replacedDetails(mediaId, existing, row.details),
+            withReadOne(replacedDetails(mediaId, existing, row.details), existing, row.details, merge = false),
             identifiers,
             replaceIdentifiers = true,
         )
@@ -1252,10 +1429,40 @@ public class ImportDataUseCase(
                 }
         return ImportMediaUpdate(
             mediaItem,
-            mergedDetails(mediaId, existing, row.details),
+            withReadOne(mergedDetails(mediaId, existing, row.details), existing, row.details, merge = true),
             newIdentifiers,
             replaceIdentifiers = false,
         )
+    }
+
+    /**
+     * An existing book's read #1 as a library row leaves it (#230). The file's status and finish date are
+     * read #1's (a file from before reads describes the one read there was): REPLACE writes them, MERGE keeps
+     * what is there and only fills a missing finish date. A Goodreads rating fills read #1's under either,
+     * REPLACE overwriting and MERGE only filling an empty one; a library row carries no rating and never
+     * clears one.
+     */
+    private fun withReadOne(
+        details: ImportDetails,
+        existing: MediaWithDetails,
+        row: ParsedRowDetails,
+        merge: Boolean,
+    ): ImportDetails {
+        if (details !is ImportDetails.Book || row !is ParsedRowDetails.Book) return details
+        val current = (existing as? MediaWithDetails.Book)?.reads?.firstOrNull { it.number == 1 }
+        val base =
+            current ?: ReadThroughEntity(id = newId(), mediaId = existing.item.id, number = 1, status = row.status)
+        val readOne =
+            if (merge) {
+                base.copy(
+                    status = current?.status ?: row.status,
+                    finishedAt = current?.finishedAt ?: row.finishedAt,
+                    rating = current?.rating ?: row.rating,
+                )
+            } else {
+                base.copy(status = row.status, finishedAt = row.finishedAt, rating = row.rating ?: current?.rating)
+            }
+        return details.copy(readOne = readOne)
     }
 
     /**
@@ -1289,8 +1496,6 @@ public class ImportDataUseCase(
                         isbn = existingDetails?.isbn?.takeIf { it.isNotBlank() } ?: row.isbn,
                         format = existingDetails?.format ?: row.format,
                         totalPages = existingDetails?.totalPages ?: row.totalPages,
-                        status = existingDetails?.status ?: row.status,
-                        finishedAt = existingDetails?.finishedAt ?: row.finishedAt,
                         trackingMode = existingDetails?.trackingMode ?: row.trackingMode,
                         authors = existingDetails?.authors?.takeIf { it.isNotBlank() } ?: row.authors,
                     ),
@@ -1347,6 +1552,8 @@ public class ImportDataUseCase(
             endUnit = row.endUnit,
             deltaPages = row.deltaPages,
             notes = row.notes,
+            // Blank: ImportWriteDao.importAtomically puts it in the book's latest read (#230).
+            readThroughId = "",
         )
 
     private fun mergeSession(

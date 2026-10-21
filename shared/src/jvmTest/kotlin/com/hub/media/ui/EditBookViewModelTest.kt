@@ -3,6 +3,7 @@ package com.hub.media.ui
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.sampleBookDetails
@@ -81,10 +82,10 @@ class EditBookViewModelTest {
                 mediaId = mediaId,
                 format = format,
                 totalPages = totalPages,
-                status = status,
                 trackingMode = trackingMode,
             ),
         )
+        db.readThroughDao().insert(ReadThroughEntity(newId(), mediaId, 1, status))
     }
 
     private fun newViewModel(id: String = mediaId) =
@@ -177,9 +178,11 @@ class EditBookViewModelTest {
             val details = db.bookDetailsDao().getByMediaId(mediaId)
             assertEquals(366, details?.totalPages)
             assertEquals(BookFormat.HARDCOVER, details?.format)
-            assertEquals(ReadingStatus.FINISHED, details?.status)
             assertEquals(TrackingMode.PERCENT, details?.trackingMode)
-            assertTrue(details?.finishedAt != null)
+            // The status and its finish date live on the latest read (#230).
+            val read = db.readThroughDao().getLatest(mediaId)
+            assertEquals(ReadingStatus.FINISHED, read?.status)
+            assertTrue(read?.finishedAt != null)
         }
 
     @Test
@@ -419,5 +422,17 @@ class EditBookViewModelTest {
             val ready = newViewModel().uiState.first { it is EditBookUiState.Ready } as EditBookUiState.Ready
 
             assertEquals("abc123", ready.coverImageHash)
+        }
+
+    /** On a re-read the form must not offer To read (#230 review): it marks the state as a re-read. */
+    @Test
+    fun aReread_isMarked_soTheFormLeavesOutToRead() =
+        runTest {
+            insertBook(status = ReadingStatus.FINISHED)
+            db.readThroughDao().insert(ReadThroughEntity(newId(), mediaId, 2, ReadingStatus.READING))
+            val viewModel = newViewModel()
+
+            val ready = viewModel.uiState.first { it is EditBookUiState.Ready && it.status == ReadingStatus.READING }
+            assertTrue((ready as EditBookUiState.Ready).isReread)
         }
 }

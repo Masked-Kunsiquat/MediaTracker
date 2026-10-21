@@ -15,6 +15,7 @@ import com.hub.media.core.database.dao.ImportWriteDao
 import com.hub.media.core.database.dao.MediaItemDao
 import com.hub.media.core.database.dao.MovieDetailsDao
 import com.hub.media.core.database.dao.MovieWriteDao
+import com.hub.media.core.database.dao.ReadThroughDao
 import com.hub.media.core.database.dao.ReadingSessionDao
 import com.hub.media.core.database.dao.StatsDao
 import com.hub.media.core.database.dao.TVDetailsDao
@@ -26,6 +27,7 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ExternalIdentifierEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
@@ -40,7 +42,7 @@ import com.hub.media.core.database.entities.WatchLogEntity
  * here and by [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase]) means the
  * two can never silently drift apart the way two independent literals could.
  */
-public const val APP_DATABASE_VERSION: Int = 7
+public const val APP_DATABASE_VERSION: Int = 8
 
 /**
  * The single local SQLite database for the app (AGENTS.md §1: "single local SQLite database,
@@ -85,6 +87,11 @@ public const val APP_DATABASE_VERSION: Int = 7
  * This version is **purely additive**: it creates four new tables and alters none, so no
  * pre-existing row in any table is read, rewritten, or at risk. See [MIGRATION_5_6]'s KDoc for why
  * that mattered to how the status columns were modelled.
+ *
+ * Version 8 (#230, ROADMAP Task 10) adds [ReadThroughEntity] -- a book's numbered reads, each with its
+ * own status, dates and rating -- and groups every [ReadingSessionEntity] into one, via
+ * [MIGRATION_7_8] (`Migrations.kt`). [BookDetailsEntity] loses `status` and `finishedAt`, which
+ * move onto the reads: a book's state is its latest read's.
  */
 @Database(
     entities = [
@@ -97,6 +104,7 @@ public const val APP_DATABASE_VERSION: Int = 7
         TVDetailsEntity::class,
         EpisodeEntity::class,
         WatchLogEntity::class,
+        ReadThroughEntity::class,
     ],
     version = APP_DATABASE_VERSION,
     exportSchema = true,
@@ -131,6 +139,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tvWriteDao(): TVWriteDao
 
     abstract fun watchLogDao(): WatchLogDao
+
+    abstract fun readThroughDao(): ReadThroughDao
 }
 
 /**

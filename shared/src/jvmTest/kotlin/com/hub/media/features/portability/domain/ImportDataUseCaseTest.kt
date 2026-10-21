@@ -15,6 +15,7 @@ import com.hub.media.core.util.LogLevel
 import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.Resource
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.data.ReadThroughRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.movies.data.MovieRepository
@@ -22,6 +23,7 @@ import com.hub.media.features.portability.csv.CSV_SCHEMA_VERSION
 import com.hub.media.features.portability.csv.CsvUtil
 import com.hub.media.features.portability.csv.EpisodeCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvExporter
+import com.hub.media.features.portability.csv.ReadThroughCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.data.ImportWriteRepository
 import com.hub.media.features.portability.goodreads.GoodreadsColumns
@@ -407,7 +409,13 @@ class ImportDataUseCaseTest {
 
             val importedMedia = bookRepository.observeAllBooksWithDetails().first()
             val originalMedia = sourceBookRepository.observeAllBooksWithDetails().first()
-            assertEquals(originalMedia, importedMedia)
+
+            // Read ids are generated per database (#230), so compare the books with their reads' ids blanked.
+            fun List<MediaWithDetails.Book>.withoutReadIds() =
+                map { b ->
+                    b.copy(reads = b.reads.map { it.copy(id = "") })
+                }
+            assertEquals(originalMedia.withoutReadIds(), importedMedia.withoutReadIds())
 
             val importedIdentifiers = bookRepository.observeAllExternalIdentifiers().first().toSet()
             val originalIdentifiers = sourceBookRepository.observeAllExternalIdentifiers().first().toSet()
@@ -415,7 +423,11 @@ class ImportDataUseCaseTest {
 
             val importedSessions = sessionRepository.observeAllSessions().first()
             val originalSessions = sourceSessionRepository.observeAllSessions().first()
-            assertEquals(originalSessions, importedSessions)
+            // Read ids are generated per database (#230), so the sessions match on everything else.
+            assertEquals(
+                originalSessions.map { it.copy(readThroughId = "") },
+                importedSessions.map { it.copy(readThroughId = "") },
+            )
         }
 
     @Test
@@ -1206,19 +1218,19 @@ class ImportDataUseCaseTest {
             assertEquals("9780593135204", atlas.details?.isbn)
             assertEquals(BookFormat.HARDCOVER, atlas.details?.format)
             assertEquals(412, atlas.details?.totalPages)
-            assertEquals(ReadingStatus.FINISHED, atlas.details?.status)
-            assertTrue(atlas.details?.finishedAt != null)
+            assertEquals(ReadingStatus.FINISHED, atlas.status)
+            assertTrue(atlas.finishedAt != null)
 
             val nebula = items.getValue("Nebula's Edge")
             assertEquals(2015, nebula.item.releaseYear)
             assertEquals(null, nebula.details?.isbn)
-            assertEquals(ReadingStatus.READING, nebula.details?.status)
-            assertEquals(null, nebula.details?.finishedAt)
+            assertEquals(ReadingStatus.READING, nebula.status)
+            assertEquals(null, nebula.finishedAt)
 
             val salt = items.getValue("Salt and Ember")
             assertEquals(null, salt.item.releaseYear)
             assertEquals(BookFormat.PHYSICAL, salt.details?.format)
-            assertEquals(ReadingStatus.TO_READ, salt.details?.status)
+            assertEquals(ReadingStatus.TO_READ, salt.status)
         }
 
     @Test
@@ -1881,5 +1893,274 @@ class ImportDataUseCaseTest {
         buildString {
             append(CsvUtil.buildLine(EpisodeCsvExporter.HEADER))
             rows.forEach { append(CsvUtil.buildLine(it)) }
+        }
+
+    // ---- Reads and ratings (#230) -------------------------------------------------------------
+
+    /** A v7 export of [db] or [sourceDb]: library, reading log with read numbers, and the reads file. */
+    private suspend fun exportV7(from: AppDatabase): Triple<String, String, String> {
+        val books = BookRepository(from).observeAllBooksWithDetails().first()
+        val identifiers = BookRepository(from).observeAllExternalIdentifiers().first().groupBy { it.mediaId }
+        val sessions = ReadingSessionRepository(from).observeAllSessions().first()
+        val reads = from.readThroughDao().getAll()
+        return Triple(
+            LibraryCsvExporter.export(books, identifiers),
+            ReadingLogCsvExporter.export(sessions, readNumberById = reads.associate { it.id to it.number }),
+            ReadThroughCsvExporter.export(reads),
+        )
+    }
+
+    /** A v7 archive brings back every read with its rating, and every session in its own read (#230). */
+    @Test
+    fun v7Archive_roundTripsReadsAndRatings() =
+        runTest {
+            val sourceReads = ReadThroughRepository(sourceDb)
+            val mediaId = addBook(title = "Dune", status = ReadingStatus.READING)
+            sourceSessionRepository.logSession(
+                mediaId = mediaId,
+                timestampStart = Instant.fromEpochMilliseconds(1_700_000_000_000),
+                timestampEnd = Instant.fromEpochMilliseconds(1_700_000_600_000),
+                durationSeconds = 600,
+                startUnit = 0.0,
+                endUnit = 40.0,
+            )
+            sourceBookRepository.updateReadingStatus(mediaId, ReadingStatus.FINISHED)
+            val readOne = sourceDb.readThroughDao().getLatest(mediaId)!!
+            sourceReads.setRating(readOne.id, 8)
+            sourceReads.readAgain(mediaId)
+            sourceSessionRepository.logSession(
+                mediaId = mediaId,
+                timestampStart = Instant.fromEpochMilliseconds(1_800_000_000_000),
+                timestampEnd = Instant.fromEpochMilliseconds(1_800_000_600_000),
+                durationSeconds = 600,
+                startUnit = 0.0,
+                endUnit = 10.0,
+            )
+            val (libraryCsv, logsCsv, readsCsv) = exportV7(sourceDb)
+
+            val result = useCase.execute(libraryCsv, logsCsv, null, DuplicatePolicy.SKIP, readThroughsCsv = readsCsv)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertTrue(result.data.rejections.isEmpty(), result.data.rejections.toString())
+            val reads = db.readThroughDao().getForMedia(mediaId)
+            assertEquals(
+                listOf(Triple(1, ReadingStatus.FINISHED, 8), Triple(2, ReadingStatus.READING, null)),
+                reads.map { Triple(it.number, it.status, it.rating) },
+            )
+            assertEquals(readOne.finishedAt, reads[0].finishedAt)
+            val readNumberById = reads.associate { it.id to it.number }
+            val sessionReads =
+                sessionRepository.observeAllSessions().first().sortedBy { it.timestampStart }.map {
+                    readNumberById[it.readThroughId]
+                }
+            assertEquals(listOf(1, 2), sessionReads, "each session lands in its own read")
+        }
+
+    /** Old files mean read #1: sessions and status land there even when the book now has two reads (#230 Review Focus 4). */
+    @Test
+    fun oldArchive_overBookWithTwoReads_writesReadOne() =
+        runTest {
+            // The library already holds the book, finished once and now being re-read.
+            val mediaId =
+                addBook(
+                    title = "Dune",
+                    isbn = "9780441013593",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            val readOne = db.readThroughDao().getLatest(mediaId)!!
+            val readTwoId = (ReadThroughRepository(db).readAgain(mediaId) as Resource.Success).data
+            // An export from before reads: a library row and a reading log with no read_number column.
+            val oldLog =
+                buildString {
+                    append(CsvUtil.buildLine(ReadingLogCsvExporter.HEADER_V6))
+                    append(
+                        CsvUtil.buildLine(
+                            listOf(
+                                "6",
+                                "old-session",
+                                mediaId,
+                                "2023-01-01T00:00:00Z",
+                                "2023-01-01T01:00:00Z",
+                                "3600",
+                                "0.0",
+                                "50.0",
+                                "50",
+                                "",
+                            ),
+                        ),
+                    )
+                }
+            val library = LibraryCsvExporter.export(bookRepository.observeAllBooksWithDetails().first(), emptyMap())
+
+            val result = useCase.execute(library, oldLog, null, DuplicatePolicy.MERGE)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(1, result.data.sessionsImported)
+            val session = sessionRepository.observeAllSessions().first().single { it.id == "old-session" }
+            assertEquals(readOne.id, session.readThroughId, "an old file's session belongs to read #1")
+            val readTwo = db.readThroughDao().getById(readTwoId)!!
+            assertEquals(ReadingStatus.READING, readTwo.status, "read #2 is untouched")
+            assertEquals(ReadingStatus.FINISHED, db.readThroughDao().getById(readOne.id)!!.status)
+        }
+
+    /** Goodreads re-import with MERGE fills read #1's empty rating and never overwrites a set one (#230, Task 10's promise). */
+    @Test
+    fun goodreadsMerge_backfillsAnEmptyRatingOnly() =
+        runTest {
+            val first =
+                goodreadsCsv(
+                    goodreadsRow(
+                        bookId = "1",
+                        title = "Unrated",
+                        isbn13 = "=\"9781111111111\"",
+                        exclusiveShelf = "read",
+                    ),
+                    goodreadsRow(bookId = "2", title = "Rated", isbn13 = "=\"9782222222222\"", exclusiveShelf = "read"),
+                )
+            assertIs<Resource.Success<ImportSummary>>(useCase.executeGoodreads(first, DuplicatePolicy.MERGE))
+            val books = bookRepository.observeAllBooksWithDetails().first().associateBy { it.item.title }
+            ReadThroughRepository(db).setRating(books.getValue("Rated").latestRead!!.id, 6)
+
+            val second =
+                goodreadsCsv(
+                    goodreadsRow(
+                        bookId = "1",
+                        title = "Unrated",
+                        isbn13 = "=\"9781111111111\"",
+                        myRating = "4",
+                        exclusiveShelf = "read",
+                    ),
+                    goodreadsRow(
+                        bookId = "2",
+                        title = "Rated",
+                        isbn13 = "=\"9782222222222\"",
+                        myRating = "4",
+                        exclusiveShelf = "read",
+                    ),
+                )
+            assertIs<Resource.Success<ImportSummary>>(useCase.executeGoodreads(second, DuplicatePolicy.MERGE))
+
+            val after = bookRepository.observeAllBooksWithDetails().first().associateBy { it.item.title }
+            assertEquals(
+                8,
+                after
+                    .getValue("Unrated")
+                    .reads
+                    .single()
+                    .rating,
+                "the empty rating is filled",
+            )
+            assertEquals(
+                6,
+                after
+                    .getValue("Rated")
+                    .reads
+                    .single()
+                    .rating,
+                "a set rating is kept",
+            )
+        }
+
+    /** Each duplicate policy on a read's rating: SKIP leaves it, MERGE fills only empty, REPLACE overwrites (#230). */
+    @Test
+    fun readRatings_followTheDuplicatePolicy() =
+        runTest {
+            val rated =
+                addBook(
+                    title = "Rated",
+                    isbn = "9781111111111",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            val empty =
+                addBook(
+                    title = "Empty",
+                    isbn = "9782222222222",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            val reads = ReadThroughRepository(db)
+            reads.setRating(db.readThroughDao().getLatest(rated)!!.id, 6)
+            val file =
+                buildString {
+                    append(CsvUtil.buildLine(ReadThroughCsvExporter.HEADER))
+                    append(CsvUtil.buildLine(listOf("$CSV_SCHEMA_VERSION", rated, "1", "FINISHED", "", "", "4")))
+                    append(CsvUtil.buildLine(listOf("$CSV_SCHEMA_VERSION", empty, "1", "FINISHED", "", "", "4")))
+                }
+
+            suspend fun ratingsAfter(policy: DuplicatePolicy): Pair<Int?, Int?> {
+                assertIs<Resource.Success<ImportSummary>>(
+                    useCase.execute(null, null, null, policy, readThroughsCsv = file),
+                )
+                return db.readThroughDao().getLatest(rated)!!.rating to db.readThroughDao().getLatest(empty)!!.rating
+            }
+
+            assertEquals(6 to null, ratingsAfter(DuplicatePolicy.SKIP))
+            assertEquals(6 to 8, ratingsAfter(DuplicatePolicy.MERGE))
+            assertEquals(8 to 8, ratingsAfter(DuplicatePolicy.REPLACE))
+        }
+
+    /**
+     * A v7 library row's status is the book's latest read's, not read #1's (#230 review). Imported on its
+     * own over a book with two reads, it must not rewrite read #1 -- even under Replace.
+     */
+    @Test
+    fun loneV7Library_overBookWithTwoReads_leavesItsReadsAlone() =
+        runTest {
+            val mediaId =
+                addBook(
+                    title = "Dune",
+                    isbn = "9780441013593",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            val readOne = db.readThroughDao().getLatest(mediaId)!!
+            ReadThroughRepository(db).readAgain(mediaId)
+            // A v7 export of this library: its row says READING (the re-read), with no finish date.
+            val library = LibraryCsvExporter.export(bookRepository.observeAllBooksWithDetails().first(), emptyMap())
+
+            val result = useCase.execute(library, null, null, DuplicatePolicy.REPLACE)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            val after = db.readThroughDao().getById(readOne.id)!!
+            assertEquals(ReadingStatus.FINISHED, after.status, "read #1 keeps its finish")
+            assertEquals(readOne.finishedAt, after.finishedAt)
+            assertEquals(2, db.readThroughDao().getForMedia(mediaId).size)
+        }
+
+    /**
+     * The same book twice in one file, under Merge (#230 review): the second row is merged against the first
+     * row's result, which must still hold the book's reads -- or read #1 is rebuilt from nothing and takes
+     * the file's status over the device's.
+     */
+    @Test
+    fun aBookRepeatedInOneFile_mergeKeepsReadOne() =
+        runTest {
+            val mediaId =
+                addBook(
+                    title = "Dune",
+                    isbn = "9780441013593",
+                    status = ReadingStatus.FINISHED,
+                    repository = bookRepository,
+                )
+            addBook(title = "Dune", isbn = "9780441013593", status = ReadingStatus.READING)
+            val lines =
+                LibraryCsvExporter
+                    .export(
+                        sourceBookRepository.observeAllBooksWithDetails().first(),
+                        emptyMap(),
+                    ).trim()
+                    .lines()
+            val repeated = (lines + lines[1]).joinToString("\n") + "\n"
+
+            val result = useCase.execute(repeated, null, null, DuplicatePolicy.MERGE)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(
+                ReadingStatus.FINISHED,
+                db.readThroughDao().getLatest(mediaId)!!.status,
+                "the device's status stands",
+            )
         }
 }

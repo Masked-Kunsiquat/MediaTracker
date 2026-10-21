@@ -91,7 +91,8 @@ class BookRepositoryTest {
             val id = newId()
             db.mediaItemDao().insert(sampleMediaItem(id = id, type = MediaType.BOOK, title = "Doomed"))
             db.bookDetailsDao().insert(sampleBookDetails(mediaId = id))
-            db.useWriterConnection { connection -> connection.execSQL("DROP TABLE book_details") }
+            // The status lives on the book's read since #230, so that is the write broken here.
+            db.useWriterConnection { connection -> connection.execSQL("DROP TABLE read_throughs") }
 
             val result = repo.updateReadingStatus(id, ReadingStatus.FINISHED)
 
@@ -351,7 +352,7 @@ class BookRepositoryTest {
             val details = db.bookDetailsDao().getByMediaId(mediaId)
             assertEquals(366, details?.totalPages)
             assertEquals(BookFormat.HARDCOVER, details?.format)
-            assertEquals(ReadingStatus.READING, details?.status)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
             assertEquals(TrackingMode.PERCENT, details?.trackingMode)
             // ISBN is not editable in this phase -- must be untouched.
             assertEquals("9780593135204", details?.isbn)
@@ -599,7 +600,7 @@ class BookRepositoryTest {
             assertEquals(null, details?.isbn)
             assertEquals(150, details?.totalPages)
             assertEquals(BookFormat.PAPERBACK, details?.format)
-            assertEquals(ReadingStatus.READING, details?.status)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
             assertEquals(TrackingMode.PAGES, details?.trackingMode)
         }
 
@@ -621,8 +622,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.FINISHED, details?.status)
-            assertTrue(details?.finishedAt != null, "finishedAt must be stamped on the FINISHED transition")
+            assertEquals(ReadingStatus.FINISHED, db.readThroughDao().getLatest(mediaId)?.status)
+            assertTrue(
+                db.readThroughDao().getLatest(mediaId)?.finishedAt != null,
+                "finishedAt must be stamped on the FINISHED transition",
+            )
         }
 
     @Test
@@ -638,7 +642,7 @@ class BookRepositoryTest {
                 status = ReadingStatus.FINISHED,
                 trackingMode = TrackingMode.PERCENT,
             )
-            val firstFinishedAt = db.bookDetailsDao().getByMediaId(mediaId)?.finishedAt
+            val firstFinishedAt = db.readThroughDao().getLatest(mediaId)?.finishedAt
 
             val result =
                 repo.updateBookMetadata(
@@ -651,7 +655,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(firstFinishedAt, details?.finishedAt, "re-saving while FINISHED must not bump finishedAt")
+            assertEquals(
+                firstFinishedAt,
+                db.readThroughDao().getLatest(mediaId)?.finishedAt,
+                "re-saving while FINISHED must not bump finishedAt",
+            )
         }
 
     @Test
@@ -679,8 +687,12 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.READING, details?.status)
-            assertEquals(null, details?.finishedAt, "moving away from FINISHED must clear finishedAt")
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
+            assertEquals(
+                null,
+                db.readThroughDao().getLatest(mediaId)?.finishedAt,
+                "moving away from FINISHED must clear finishedAt",
+            )
         }
 
     @Test
@@ -694,8 +706,8 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.READING, details?.status)
-            assertEquals(null, details?.finishedAt)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)?.status)
+            assertEquals(null, db.readThroughDao().getLatest(mediaId)?.finishedAt)
         }
 
     @Test
@@ -726,7 +738,11 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(fixedInstant, details?.finishedAt, "finishedAt must come from the injected Clock")
+            assertEquals(
+                fixedInstant,
+                db.readThroughDao().getLatest(mediaId)?.finishedAt,
+                "finishedAt must come from the injected Clock",
+            )
         }
 
     @Test
@@ -740,8 +756,8 @@ class BookRepositoryTest {
             assertIs<Resource.Success<Unit>>(result)
 
             val details = db.bookDetailsDao().getByMediaId(mediaId)
-            assertEquals(ReadingStatus.FINISHED, details?.status)
-            assertTrue(details?.finishedAt != null)
+            assertEquals(ReadingStatus.FINISHED, db.readThroughDao().getLatest(mediaId)?.status)
+            assertTrue(db.readThroughDao().getLatest(mediaId)?.finishedAt != null)
         }
 
     @Test
@@ -1024,5 +1040,32 @@ class BookRepositoryTest {
             assertEquals(mediaId, bookWithDetails.item.id)
             assertEquals("Book Without Details", bookWithDetails.item.title)
             assertEquals(null, bookWithDetails.details)
+        }
+
+    /** The edit form's save refuses To read on a re-read too, not only the status menu (#230 Review Focus 3). */
+    @Test
+    fun updateBookMetadata_toReadOnARereadIsRefused() =
+        runTest {
+            val mediaId =
+                (
+                    repo.addBook(
+                        title = "Dune",
+                        format = BookFormat.PHYSICAL,
+                        status = ReadingStatus.FINISHED,
+                    ) as Resource.Success
+                ).data
+            ReadThroughRepository(db).readAgain(mediaId)
+
+            val result =
+                repo.updateBookMetadata(
+                    mediaId = mediaId,
+                    title = "Dune",
+                    format = BookFormat.PHYSICAL,
+                    status = ReadingStatus.TO_READ,
+                    trackingMode = TrackingMode.PAGES,
+                )
+
+            assertIs<Resource.Error>(result)
+            assertEquals(ReadingStatus.READING, db.readThroughDao().getLatest(mediaId)!!.status)
         }
 }

@@ -8,8 +8,10 @@ import com.hub.media.core.util.guardResource
 import com.hub.media.core.util.info
 import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
+import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.portability.csv.EpisodeCsvExporter
 import com.hub.media.features.portability.csv.LibraryCsvExporter
+import com.hub.media.features.portability.csv.ReadThroughCsvExporter
 import com.hub.media.features.portability.csv.ReadingLogCsvExporter
 import com.hub.media.features.portability.csv.WatchLogCsvExporter
 import kotlinx.coroutines.flow.first
@@ -106,6 +108,8 @@ public class ExportDataUseCase(
             // dependency to this class just for one whole-table read.
             val episodes = mediaRepository.observeAllEpisodes().first()
             val viewings = mediaRepository.observeAllViewings().first()
+            // Every book's reads (#230), carried on the books already read above.
+            val reads = media.filterIsInstance<MediaWithDetails.Book>().flatMap { it.reads }
 
             // NOT one database snapshot. The four reads above are four separate queries, so a write
             // landing between them can put the files slightly out of step with each other -- a show
@@ -128,9 +132,11 @@ public class ExportDataUseCase(
             val bundle =
                 CsvExportBundle(
                     libraryCsv = LibraryCsvExporter.export(media, identifiersByMediaId),
-                    readingLogsCsv = ReadingLogCsvExporter.export(sessions),
+                    readingLogsCsv =
+                        ReadingLogCsvExporter.export(sessions, readNumberById = reads.associate { it.id to it.number }),
                     episodesCsv = EpisodeCsvExporter.export(episodes),
                     watchLogsCsv = WatchLogCsvExporter.export(viewings),
+                    readThroughsCsv = ReadThroughCsvExporter.export(reads),
                 )
             logger.info(TAG) {
                 "Export completed: ${media.size} item(s), ${sessions.size} session(s), " +

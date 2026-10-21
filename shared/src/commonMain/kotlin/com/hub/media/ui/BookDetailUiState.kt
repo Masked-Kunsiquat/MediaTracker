@@ -2,8 +2,13 @@ package com.hub.media.ui
 
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
+import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.features.books.data.TitleRating
+import com.hub.media.features.books.data.titleRating
 import com.hub.media.features.books.timer.ReadingTimerResult
+import kotlin.time.Instant
 
 /** UI state for the book detail screen (ROADMAP Task 4 Phase B). */
 public sealed class BookDetailUiState {
@@ -50,7 +55,27 @@ public sealed class BookDetailUiState {
         val pendingSession: ReadingTimerResult? = null,
         val errorMessage: String? = null,
         val isRefetchingCover: Boolean = false,
+        val reads: List<ReadThroughEntity> = emptyList(),
+        val ratePrompt: ReadThroughEntity? = null,
     ) : BookDetailUiState() {
+        /** The latest read (#230): the book's state. */
+        val latestRead: ReadThroughEntity? get() = reads.maxByOrNull { it.number }
+
+        /** The latest read's status (#230); To read for a book with no read at all. */
+        val status: ReadingStatus get() = latestRead?.status ?: ReadingStatus.TO_READ
+
+        val finishedAt: Instant? get() = latestRead?.finishedAt
+
+        /** Your rating across the book's rated reads (#230): the average and the latest, or `null`. */
+        val titleRating: TitleRating? get() = titleRating(reads)
+
+        /**
+         * The latest read's sessions (#230), most recent first -- what progress is measured from, so a
+         * re-read starts from the beginning. Every session when the book has no read yet.
+         */
+        val latestReadSessions: List<ReadingSessionEntity>
+            get() = latestRead?.let { read -> sessions.filter { it.readThroughId == read.id } } ?: sessions
+
         /**
          * Current reading progress: the [ReadingSessionEntity.endUnit] of the most recent session
          * (`sessions` is already most-recent-first, so this is simply `sessions.firstOrNull()`),
@@ -60,6 +85,6 @@ public sealed class BookDetailUiState {
          * parameter is omitted from a specific `copy()`/constructor call, not recomputed from the
          * new field values — a derived `get()` sidesteps that trap entirely).
          */
-        val currentProgress: Double? get() = sessions.firstOrNull()?.endUnit
+        val currentProgress: Double? get() = latestReadSessions.firstOrNull()?.endUnit
     }
 }

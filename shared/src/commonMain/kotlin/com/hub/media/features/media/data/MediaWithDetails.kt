@@ -3,7 +3,12 @@ package com.hub.media.features.media.data
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.ReadThroughEntity
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.features.books.data.TitleRating
+import com.hub.media.features.books.data.titleRating
+import kotlin.time.Instant
 
 /**
  * Polymorphic representation of a media item with its type-specific details (ROADMAP Task 13 foundation).
@@ -12,10 +17,24 @@ import com.hub.media.core.database.entities.TVDetailsEntity
 public sealed class MediaWithDetails {
     public abstract val item: MediaItemEntity
 
+    /**
+     * @property reads The book's read-throughs, in any order (#230). Its [status], [finishedAt] and
+     *   [rating] come from them -- the latest read (highest number) is the book's state.
+     */
     public data class Book(
         override val item: MediaItemEntity,
         val details: BookDetailsEntity?,
-    ) : MediaWithDetails()
+        val reads: List<ReadThroughEntity> = emptyList(),
+    ) : MediaWithDetails() {
+        val latestRead: ReadThroughEntity? get() = reads.maxByOrNull { it.number }
+
+        /** The latest read's status; To read for a book with no read at all. */
+        val status: ReadingStatus get() = latestRead?.status ?: ReadingStatus.TO_READ
+
+        val finishedAt: Instant? get() = latestRead?.finishedAt
+
+        val rating: TitleRating? get() = titleRating(reads)
+    }
 
     /**
      * @property details Movie-specific metadata, or `null` in the same data-integrity edge case

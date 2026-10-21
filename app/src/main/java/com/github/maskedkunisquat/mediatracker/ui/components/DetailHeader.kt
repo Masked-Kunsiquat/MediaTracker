@@ -18,6 +18,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -95,6 +96,7 @@ fun DetailHeader(
     ratingScale: Int = 10,
     onArtworkClick: (() -> Unit)? = null,
     artworkClickLabel: String? = null,
+    yourRating: (@Composable () -> Unit)? = null,
     statusControl: @Composable () -> Unit,
 ) {
     Row(
@@ -159,6 +161,8 @@ fun DetailHeader(
             if (rating != null) {
                 RatingRow(rating = rating, scale = ratingScale)
             }
+            // Your own rating (#230), under the community's so the two read as different things.
+            yourRating?.invoke()
             Box(modifier = Modifier.padding(top = 4.dp)) {
                 statusControl()
             }
@@ -258,6 +262,7 @@ fun <T> StatusDropdownChip(
     onClickLabel: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    menuAction: DetailStatus.StatusAction? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val open = { expanded = true }
@@ -303,6 +308,17 @@ fun <T> StatusDropdownChip(
                     onClick = {
                         expanded = false
                         if (enabled) onSelect(option)
+                    },
+                )
+            }
+            // An action beside the statuses rather than one of them, e.g. a book's Read again (#230).
+            if (menuAction != null) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(menuAction.label) },
+                    onClick = {
+                        expanded = false
+                        if (enabled) menuAction.onClick()
                     },
                 )
             }

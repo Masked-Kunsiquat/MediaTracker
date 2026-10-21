@@ -36,7 +36,8 @@ class YearReviewTest {
         timeRead: Long? = null,
         sessions: Int = 0,
         timedSessions: Int = 0,
-    ) = PeriodStatsRow(timeRead, sessions, null, booksFinished, timedSessions, null, null, null)
+        firstFinishes: Int = booksFinished,
+    ) = PeriodStatsRow(timeRead, sessions, null, booksFinished, timedSessions, null, null, null, firstFinishes)
 
     private fun session(
         at: Instant,
@@ -260,5 +261,14 @@ class YearReviewTest {
             0,
             review(periodStats = stats(timeRead = 600, sessions = 2, timedSessions = 2)).totals.untimedSessions,
         )
+    }
+
+    /** The goal counts first finishes; a re-read still counts as a book finished (#230). */
+    @Test
+    fun theGoal_countsFirstFinishes_notRereads() {
+        val r = review(periodStats = stats(booksFinished = 3, firstFinishes = 2), goal = ReadingGoal(2026, 2))
+
+        assertEquals(GoalResult(goal = 2, finished = 2, reached = true), r.goal)
+        assertEquals(3, r.totals.booksFinished)
     }
 }

@@ -133,6 +133,7 @@ class BookDetailViewModelFactory
                     logReadingSessionUseCase = appContainer.logReadingSessionUseCase,
                     refetchCoverUseCase = appContainer.refetchCoverUseCase,
                     deleteMediaUseCase = appContainer.deleteMediaUseCase,
+                    readThroughRepository = appContainer.readThroughRepository,
                 )
             },
         )

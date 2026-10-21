@@ -734,7 +734,8 @@ private fun MediaCard(
             }
             val status =
                 when (media) {
-                    is MediaWithDetails.Book -> media.details?.status
+                    // The latest read's (#230); none for a book missing its details row, as before.
+                    is MediaWithDetails.Book -> media.details?.let { media.status }
                     is MediaWithDetails.Movie,
                     is MediaWithDetails.TVShow,
                     -> null

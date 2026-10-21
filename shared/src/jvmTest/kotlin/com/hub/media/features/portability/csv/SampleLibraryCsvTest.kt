@@ -217,6 +217,8 @@ class SampleLibraryCsvTest {
             CsvTableReader.read(
                 sampleFile("reading_logs_sample.csv").readText(),
                 ReadingLogCsvExporter.HEADER,
+                // The sample log predates read_number (#230); the importer reads it through the same adapter.
+                legacyHeaders = mapOf(ReadingLogCsvExporter.HEADER_V6 to ReadingLogCsvImporter::padLegacyV6Row),
             )
         val rows =
             assertIs<CsvTableResult.Success>(

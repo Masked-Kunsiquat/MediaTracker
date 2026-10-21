@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - A year in review: swipe through your year in books, films and shows, from your totals to your longest book, biggest binge and busiest month, for this year so far or any earlier year. Open it from Stats' Year view or the hub. (#221)
 - Your reading goal is now kept for every year, instead of only the current one. (#221)
+- Re-reads: start reading a book again from its status menu. Each read keeps its own dates, sessions and rating, and earlier reads fold away in the reading history. (#230)
+- Rate each read of a book in half stars, when you finish it or any time after. The book shows your average and your latest rating. Goodreads imports bring your star ratings in, and importing an old Goodreads export again fills them in for books you already have. (#230)
+
+### Changed
+- Your reading goal counts books new to you: a re-read still counts as a book finished, but not toward the goal. (#230)
+
+### Internal
+- Schema v8: `read_throughs` holds each read's status, dates and rating; reading sessions belong to a read; a book's status and finish date moved off `book_details`. CSV schema 7 adds `read_throughs_export.csv` and `read_number` on the reading log; older exports still import, as read #1. (#230)
 
 ## [0.28.0] - 2026-10-17
 

@@ -55,9 +55,11 @@ public class ImportArchiveUseCase(
             val text = bytes.decodeToString()
             val header = text.removePrefix("\uFEFF").lineSequence().first()
             if (!header.startsWith(CSV_SCHEMA_VERSION_COLUMN)) return Resource.Error(ExportArchive.NOT_OURS)
-            // One of this app's other CSVs -- an old loose export's reading logs, episodes or watch logs --
-            // picked by mistake: its second column is not `media_id`. Say which file to pick instead.
-            if (header.split(',').getOrNull(1)?.trim('"') != "media_id") {
+            // One of this app's other CSVs -- an old loose export's reading logs, episodes or watch logs, or a
+            // reads file (#230), which also has `media_id` second -- picked by mistake. A library file is the
+            // one with `media_id` then `type`. Say which file to pick instead.
+            val columns = header.split(',').map { it.trim('"') }
+            if (columns.getOrNull(1) != "media_id" || columns.getOrNull(2) != "type") {
                 return Resource.Error(ExportArchive.NOT_LIBRARY_CSV)
             }
             return importUseCase.execute(text, null, null, duplicatePolicy, null)
@@ -77,6 +79,7 @@ public class ImportArchiveUseCase(
                         read.episodesCsv,
                         duplicatePolicy,
                         read.watchLogsCsv,
+                        read.readThroughsCsv,
                     )
             ) {
                 is Resource.Error -> return result
@@ -90,6 +93,7 @@ public class ImportArchiveUseCase(
                 ExportArchive.READING_LOGS to read.readingLogsCsv,
                 ExportArchive.EPISODES to read.episodesCsv,
                 ExportArchive.WATCH_LOGS to read.watchLogsCsv,
+                ExportArchive.READ_THROUGHS to read.readThroughsCsv,
             )
         for (file in read.manifest.files) {
             val csv = present[file.name] ?: continue

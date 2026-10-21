@@ -45,7 +45,11 @@ public object ReadingLogCsvExporter {
             "end_unit",
             "delta_pages",
             "notes",
+            "read_number",
         )
+
+    /** The header before #230 (CSV schema v6 and earlier): no `read_number`. */
+    public val HEADER_V6: List<String> = HEADER.dropLast(1)
 
     /**
      * Builds the complete CSV text for [sessions], including the header row.
@@ -55,15 +59,26 @@ public object ReadingLogCsvExporter {
      *   carries no semantic meaning here, since every row is fully self-identified by
      *   `session_id`/`media_id`).
      */
-    public fun export(sessions: List<ReadingSessionEntity>): String =
+    public fun export(
+        sessions: List<ReadingSessionEntity>,
+        readNumberById: Map<String, Int> = emptyMap(),
+    ): String =
         buildString {
             append(CsvUtil.buildLine(HEADER))
             for (session in sessions) {
-                append(CsvUtil.buildLine(rowFor(session)))
+                append(CsvUtil.buildLine(rowFor(session, readNumberById)))
             }
         }
 
-    private fun rowFor(session: ReadingSessionEntity): List<String> =
+    /**
+     * @param readNumberById Each read's number by its id (#230), so a session is written with the read it
+     *   belongs to; a session whose read is missing from it is written with an empty `read_number`, which
+     *   imports as read #1.
+     */
+    private fun rowFor(
+        session: ReadingSessionEntity,
+        readNumberById: Map<String, Int>,
+    ): List<String> =
         listOf(
             CSV_SCHEMA_VERSION.toString(),
             session.id,
@@ -76,5 +91,6 @@ public object ReadingLogCsvExporter {
             session.endUnit.toString(),
             session.deltaPages?.toString().orEmpty(),
             session.notes.orEmpty(),
+            readNumberById[session.readThroughId]?.toString().orEmpty(),
         )
 }

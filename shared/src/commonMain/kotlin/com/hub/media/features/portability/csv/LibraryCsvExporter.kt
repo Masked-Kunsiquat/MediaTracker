@@ -231,22 +231,15 @@ public object LibraryCsvExporter {
             }
         val status =
             when (media) {
-                is MediaWithDetails.Book ->
-                    media.details
-                        ?.status
-                        ?.name
-                        .orEmpty()
+                // The latest read's (#230); still blank for a book missing its details row, as before.
+                is MediaWithDetails.Book -> media.details?.let { media.status.name }.orEmpty()
                 is MediaWithDetails.Movie,
                 is MediaWithDetails.TVShow,
                 -> ""
             }
         val finishedAt =
             when (media) {
-                is MediaWithDetails.Book ->
-                    media.details
-                        ?.finishedAt
-                        ?.toString()
-                        .orEmpty()
+                is MediaWithDetails.Book -> media.details?.let { media.finishedAt?.toString() }.orEmpty()
                 is MediaWithDetails.Movie,
                 is MediaWithDetails.TVShow,
                 -> ""

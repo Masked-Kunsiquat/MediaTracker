@@ -51,7 +51,7 @@ public enum class LibraryStatusFilter {
         tvProgress: TVProgressRow? = null,
     ): Boolean =
         when (media) {
-            is MediaWithDetails.Book -> media.details?.status?.let(::of) == this
+            is MediaWithDetails.Book -> of(media.status) == this
             is MediaWithDetails.Movie -> media.details?.status?.let(::of) == this
             is MediaWithDetails.TVShow -> media.details?.let { ofShow(it.status, tvProgress, it.airingStatus) } == this
         }

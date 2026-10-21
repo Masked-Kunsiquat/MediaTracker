@@ -9,6 +9,7 @@ import com.hub.media.core.network.tmdbPacer
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.storage.LogFileStore
 import com.hub.media.features.books.data.BookRepository
+import com.hub.media.features.books.data.ReadThroughRepository
 import com.hub.media.features.books.data.ReadingSessionRepository
 import com.hub.media.features.books.domain.AddBookByIsbnUseCase
 import com.hub.media.features.books.domain.BulkBackfillUseCase
@@ -127,6 +128,9 @@ public class AppContainer(
 
     /** Reactive book CRUD, shared by [LibraryViewModel] and future book-detail screens. */
     public val bookRepository: BookRepository = BookRepository(database)
+
+    /** A book's reads: re-reads, removing one, rating one (#230). */
+    public val readThroughRepository: ReadThroughRepository = ReadThroughRepository(database)
 
     /** Movie data operations (ROADMAP Task 13 Phase B). */
     public val movieRepository: MovieRepository = MovieRepository(database)

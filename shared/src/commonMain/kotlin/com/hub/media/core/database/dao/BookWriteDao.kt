@@ -12,6 +12,7 @@ import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
+import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
 /**
@@ -32,6 +33,18 @@ interface BookWriteDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertExternalIdentifier(identifier: ExternalIdentifierEntity)
+
+    /** Read #1 for a book that has none yet (#230); a no-op when it exists, via the unique (mediaId, number) index. */
+    @Query(
+        "INSERT OR IGNORE INTO read_throughs (id, mediaId, number, status, startedAt, finishedAt, rating) " +
+            "VALUES (:id, :mediaId, 1, :status, NULL, :finishedAt, NULL)",
+    )
+    suspend fun insertFirstReadIfMissing(
+        id: String,
+        mediaId: String,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    )
 
     /**
      * [OnConflictStrategy.REPLACE] counterpart of [insertExternalIdentifier], for *backfilling* an
@@ -86,14 +99,12 @@ interface BookWriteDao {
      */
     @Query(
         "UPDATE book_details SET format = :format, totalPages = :totalPages, " +
-            "status = :status, finishedAt = :finishedAt, trackingMode = :trackingMode WHERE mediaId = :mediaId",
+            "trackingMode = :trackingMode WHERE mediaId = :mediaId",
     )
     suspend fun updateBookDetailsMetadata(
         mediaId: String,
         format: BookFormat,
         totalPages: Int?,
-        status: ReadingStatus,
-        finishedAt: Instant?,
         trackingMode: TrackingMode,
     ): Int
 
@@ -118,7 +129,7 @@ interface BookWriteDao {
      * before the transaction opened, which could already be stale by the time this method runs
      * (concurrent insert/delete of that row). Zero rows affected means no [BookDetailsEntity] row
      * exists yet, so this self-heals by inserting a fresh one with the given format/totalPages/
-     * status/finishedAt/trackingMode and a `null` isbn (see
+     * trackingMode and a `null` isbn (see
      * [com.hub.media.features.books.data.BookRepository.updateBookMetadata] KDoc for the full
      * data-integrity edge case this covers).
      *
@@ -141,8 +152,7 @@ interface BookWriteDao {
         val mediaRowsAffected = updateMediaItemMetadata(mediaId, title, releaseYear, purchasePrice)
         if (mediaRowsAffected == 0) return 0
 
-        val detailsRowsAffected =
-            updateBookDetailsMetadata(mediaId, format, totalPages, status, finishedAt, trackingMode)
+        val detailsRowsAffected = updateBookDetailsMetadata(mediaId, format, totalPages, trackingMode)
         if (detailsRowsAffected == 0) {
             insertBookDetails(
                 BookDetailsEntity(
@@ -150,12 +160,13 @@ interface BookWriteDao {
                     isbn = null,
                     format = format,
                     totalPages = totalPages,
-                    status = status,
-                    finishedAt = finishedAt,
                     trackingMode = trackingMode,
                 ),
             )
         }
+        // The status lives on the latest read (#230); a book with none gets read #1 with it.
+        updateLatestReadStatus(mediaId, status, finishedAt)
+        insertFirstReadIfMissing(newId(), mediaId, status, finishedAt)
         return mediaRowsAffected
     }
 
@@ -185,6 +196,18 @@ interface BookWriteDao {
      *   `0` otherwise. Unlike [updateBookMetadataAtomically], a `0` here is never self-healed --
      *   see [applyBackfilledMetadata]'s KDoc.
      */
+
+    /** The book's status lives on its latest read (#230): the edit form's status goes there. */
+    @Query(
+        "UPDATE read_throughs SET status = :status, finishedAt = :finishedAt WHERE mediaId = :mediaId " +
+            "AND number = (SELECT MAX(number) FROM read_throughs WHERE mediaId = :mediaId)",
+    )
+    suspend fun updateLatestReadStatus(
+        mediaId: String,
+        status: ReadingStatus,
+        finishedAt: Instant?,
+    )
+
     @Query("UPDATE book_details SET authors = :authors WHERE mediaId = :mediaId")
     suspend fun updateAuthorsOnly(
         mediaId: String,
@@ -264,9 +287,13 @@ interface BookWriteDao {
         mediaItem: MediaItemEntity,
         bookDetails: BookDetailsEntity,
         externalIdentifiers: List<ExternalIdentifierEntity>,
+        status: ReadingStatus = ReadingStatus.TO_READ,
+        finishedAt: Instant? = null,
     ) {
         insertMediaItem(mediaItem)
         insertBookDetails(bookDetails)
+        // Read #1 carries the book's status (#230).
+        insertFirstReadIfMissing(newId(), mediaItem.id, status, finishedAt)
         externalIdentifiers.forEach { insertExternalIdentifier(it) }
     }
 }

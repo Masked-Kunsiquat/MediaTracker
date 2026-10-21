@@ -42,8 +42,8 @@ class StatsDaoTest {
             insertBook()
             val t1 = instant(1_100)
             val t2 = instant(1_200)
-            db.readingSessionDao().insert(sampleReadingSession(mediaId = mediaId, timestampStart = t1))
-            db.readingSessionDao().insert(sampleReadingSession(mediaId = mediaId, timestampStart = t2))
+            db.readingSessionDao().insertIntoLatestRead(sampleReadingSession(mediaId = mediaId, timestampStart = t1))
+            db.readingSessionDao().insertIntoLatestRead(sampleReadingSession(mediaId = mediaId, timestampStart = t2))
 
             val timestamps = db.statsDao().observeSessionStartTimestampsInRange(instant(1_000), instant(2_000)).first()
 

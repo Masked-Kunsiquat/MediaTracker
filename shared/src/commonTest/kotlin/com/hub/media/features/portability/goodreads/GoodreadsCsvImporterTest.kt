@@ -397,4 +397,25 @@ class GoodreadsCsvImporterTest {
     }
 
     private fun instantYear(instant: Instant): Int = instant.toLocalDateTime(TimeZone.currentSystemDefault()).year
+
+    /** Goodreads' My Rating comes in as read #1's rating, in half-steps; 0 means unrated (#230). */
+    @Test
+    fun parseRow_myRating_becomesAHalfStepRating() {
+        val (columnIndex, rated) = rowOf(GoodreadsColumns.TITLE to "Rated", GoodreadsColumns.MY_RATING to "4")
+        val result = GoodreadsCsvImporter.parseRow(columnIndex, rated)
+        assertIs<LibraryRowParseResult.Parsed>(result)
+        assertEquals(8, result.row.book.rating)
+
+        val (zeroIndex, unrated) = rowOf(GoodreadsColumns.TITLE to "Unrated", GoodreadsColumns.MY_RATING to "0")
+        val zero = GoodreadsCsvImporter.parseRow(zeroIndex, unrated)
+        assertIs<LibraryRowParseResult.Parsed>(zero)
+        assertNull(zero.row.book.rating)
+    }
+
+    /** My Rating is imported now (#230), so the notice no longer says it is dropped. */
+    @Test
+    fun theNotImportedNotice_noLongerNamesMyRating() {
+        assertEquals(false, GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE.contains(GoodreadsColumns.MY_RATING))
+        assertEquals(true, GoodreadsCsvImporter.NOT_IMPORTED_COLUMNS_NOTICE.contains(GoodreadsColumns.READ_COUNT))
+    }
 }

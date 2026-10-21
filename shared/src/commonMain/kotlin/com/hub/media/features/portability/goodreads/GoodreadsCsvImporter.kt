@@ -105,30 +105,25 @@ import kotlin.time.Instant
  */
 public object GoodreadsCsvImporter {
     /**
-     * User-facing notice for the three Goodreads columns this importer cannot store anywhere yet
-     * (ROADMAP Task 8's Goodreads bullet, and the Phase D user decision built on top of it):
-     * [GoodreadsColumns.MY_RATING] (no rating field exists on any entity), [GoodreadsColumns.BOOKSHELVES]
-     * (genres/shelves don't exist until Task 12), and [GoodreadsColumns.READ_COUNT] (read-through
-     * history doesn't exist until Task 10). Rather than a staging table or delaying this phase
-     * until those tasks land, the decision made was: import everything else *now*, drop these
-     * three, and tell the user plainly -- silently discarding `My Rating` is exactly the failure
-     * this phase exists to avoid.
+     * User-facing notice for the two Goodreads columns this importer cannot store anywhere yet:
+     * [GoodreadsColumns.BOOKSHELVES] (genres/shelves don't exist until Task 12) and
+     * [GoodreadsColumns.READ_COUNT] (it counts reads but gives no dates for the earlier ones, so there is
+     * nothing to build those reads from). Rather than a staging table, the decision made was: import
+     * everything else *now*, drop these, and tell the user plainly.
      *
-     * The recovery path is [com.hub.media.features.portability.domain.DuplicatePolicy.MERGE]: once
-     * Tasks 10/12 add homes for these columns, re-running the *same* `goodreads_library_export.csv`
-     * through this importer again will match every book it already imported (by ISBN, or by
-     * title+year) and backfill the new fields -- MERGE only fills a blank, never overwrites a value
-     * already set, so a second import is always safe to run and never loses anything recorded
-     * between the two runs. That recovery only works if the user still *has* the export file, which
-     * is why this notice says so explicitly rather than just naming the dropped columns.
+     * [GoodreadsColumns.MY_RATING] used to be on this list. Since #230 it is imported as read #1's rating,
+     * and the recovery path this notice promised for it works: re-running an old
+     * `goodreads_library_export.csv` with [com.hub.media.features.portability.domain.DuplicatePolicy.MERGE]
+     * fills the rating of every book it already imported, without overwriting one set since. The same
+     * path will serve the columns still listed here once they have somewhere to go, which is why the
+     * notice still tells the user to keep the file.
      */
     public val NOT_IMPORTED_COLUMNS_NOTICE: String =
-        "Goodreads columns not imported: '${GoodreadsColumns.MY_RATING}', '${GoodreadsColumns.BOOKSHELVES}', " +
-            "and '${GoodreadsColumns.READ_COUNT}' -- MediaTracker doesn't have a place to store ratings, " +
-            "shelves/genres, or read-through counts yet. Nothing is lost forever: keep your " +
-            "goodreads_library_export.csv file, and importing it again later (once those features " +
-            "exist) will automatically fill this information in for the books you just imported -- " +
-            "Merge only fills in blanks and never overwrites anything you've already recorded."
+        "Goodreads columns not imported: '${GoodreadsColumns.BOOKSHELVES}' and '${GoodreadsColumns.READ_COUNT}' -- " +
+            "MediaTracker doesn't have a place to store shelves/genres or earlier reads' dates yet. Nothing is " +
+            "lost forever: keep your goodreads_library_export.csv file, and importing it again later (once " +
+            "those features exist) will fill this information in for the books you just imported -- Merge " +
+            "only fills in blanks and never overwrites anything you've already recorded."
 
     /**
      * @param columnIndex From [GoodreadsCsvTableReader.read]'s [GoodreadsCsvTableResult.Success] --
@@ -208,6 +203,15 @@ public object GoodreadsCsvImporter {
 
         val createdAt = parseGoodreadsDate(row.column(columnIndex, GoodreadsColumns.DATE_ADDED)) ?: clock.now()
 
+        // My Rating is whole stars 1..5, with 0 for unrated (#230): read #1's rating, in half-steps.
+        val rating =
+            row
+                .column(columnIndex, GoodreadsColumns.MY_RATING)
+                .trim()
+                .toIntOrNull()
+                ?.takeIf { it in 1..5 }
+                ?.let { it * 2 }
+
         val trackingMode = if (totalPages != null) TrackingMode.PAGES else TrackingMode.PERCENT
 
         // Always a book -- a Goodreads export has no other media type in it, so this is the one
@@ -230,6 +234,7 @@ public object GoodreadsCsvImporter {
                     status = status,
                     finishedAt = finishedAt,
                     trackingMode = trackingMode,
+                    rating = rating,
                 ),
         )
     }

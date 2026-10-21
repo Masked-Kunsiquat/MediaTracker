@@ -84,6 +84,7 @@ class ExportArchiveUseCaseTest {
             assertEquals(bundle.libraryCsv, read.libraryCsv)
             assertEquals(bundle.episodesCsv, read.episodesCsv)
             assertEquals(bundle.watchLogsCsv, read.watchLogsCsv)
+            assertEquals(bundle.readThroughsCsv, read.readThroughsCsv)
             assertEquals("0.25.0", read.manifest.appVersion)
             assertEquals("2026-10-14T03:00:00Z", read.manifest.exportedAt)
             assertEquals(
@@ -92,6 +93,7 @@ class ExportArchiveUseCaseTest {
                     ExportArchive.READING_LOGS,
                     ExportArchive.EPISODES,
                     ExportArchive.WATCH_LOGS,
+                    ExportArchive.READ_THROUGHS,
                 ),
                 read.manifest.files.map { it.name },
             )

@@ -29,9 +29,12 @@ class ReadingSessionDaoTest {
             db.mediaItemDao().insert(media)
             val session = sampleReadingSession(mediaId = media.id)
 
-            db.readingSessionDao().insert(session)
+            db.readingSessionDao().insertIntoLatestRead(session)
 
-            assertEquals(listOf(session), db.readingSessionDao().observeSessionsForMedia(media.id).first())
+            val stored = db.readingSessionDao().observeSessionsForMedia(media.id).first()
+            // The read is filled in on insert (#230), so compare everything else, then the read itself.
+            assertEquals(listOf(session), stored.map { it.copy(readThroughId = "") })
+            assertTrue(stored.single().readThroughId.isNotEmpty())
         }
 
     /**
@@ -58,9 +61,12 @@ class ReadingSessionDaoTest {
                     deltaPages = 0,
                 )
 
-            db.readingSessionDao().insert(session)
+            db.readingSessionDao().insertIntoLatestRead(session)
 
-            assertEquals(session, db.readingSessionDao().getById(session.id))
+            val stored = db.readingSessionDao().getById(session.id)!!
+            // The read is filled in on insert (#230), so compare everything else, then the read itself.
+            assertEquals(session, stored.copy(readThroughId = ""))
+            assertTrue(stored.readThroughId.isNotEmpty())
         }
 
     @Test
@@ -68,7 +74,7 @@ class ReadingSessionDaoTest {
         runTest {
             val media = sampleMediaItem()
             db.mediaItemDao().insert(media)
-            db.readingSessionDao().insert(sampleReadingSession(mediaId = media.id))
+            db.readingSessionDao().insertIntoLatestRead(sampleReadingSession(mediaId = media.id))
 
             db.mediaItemDao().delete(media)
 
