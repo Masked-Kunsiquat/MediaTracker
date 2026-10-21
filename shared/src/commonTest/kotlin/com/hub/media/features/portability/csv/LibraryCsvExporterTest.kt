@@ -277,7 +277,7 @@ class LibraryCsvExporterTest {
                 createdAt = createdAt,
                 coverImageHash = null,
             )
-        val details = TVDetailsEntity(mediaId = "media-6", totalSeasons = 1, status = WatchStatus.WATCHED)
+        val details = TVDetailsEntity(mediaId = "media-6", totalSeasons = 1)
 
         val csv = LibraryCsvExporter.export(listOf(MediaWithDetails.TVShow(mediaItem, details)), emptyMap())
         val fields = csv.split(CsvUtil.LINE_ENDING)[1].split(",")

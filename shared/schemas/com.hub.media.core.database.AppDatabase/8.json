@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "48a6804fc06c7a7d29aee4b980a075de",
+    "identityHash": "4028451d56e629b22d79cb8c2a6d4a89",
     "entities": [
       {
         "tableName": "media_items",
@@ -364,7 +364,7 @@
       },
       {
         "tableName": "tv_details",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `totalSeasons` INTEGER, `status` TEXT NOT NULL, `airingStatus` TEXT, `firstAirDate` INTEGER, `lastAirDate` INTEGER, PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` TEXT NOT NULL, `totalSeasons` INTEGER, `airingStatus` TEXT, `firstAirDate` INTEGER, `lastAirDate` INTEGER, PRIMARY KEY(`mediaId`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "mediaId",
@@ -376,12 +376,6 @@
             "fieldPath": "totalSeasons",
             "columnName": "totalSeasons",
             "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "status",
-            "columnName": "status",
-            "affinity": "TEXT",
-            "notNull": true
           },
           {
             "fieldPath": "airingStatus",
@@ -788,7 +782,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '48a6804fc06c7a7d29aee4b980a075de')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4028451d56e629b22d79cb8c2a6d4a89')"
     ]
   }
 }

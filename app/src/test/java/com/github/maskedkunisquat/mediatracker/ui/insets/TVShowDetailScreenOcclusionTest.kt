@@ -20,7 +20,6 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
@@ -129,7 +128,7 @@ class TVShowDetailScreenOcclusionTest {
                     createdAt = Instant.fromEpochMilliseconds(0),
                     coverImageHash = null,
                 ),
-            details = TVDetailsEntity(mediaId = id, totalSeasons = 1, status = WatchStatus.WATCHLIST),
+            details = TVDetailsEntity(mediaId = id, totalSeasons = 1),
         )
 
     private fun episode(

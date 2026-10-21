@@ -459,6 +459,7 @@ private const val SQL_UUID: String =
  * 4. Creates `watch_throughs` (#231) and gives every show watch-through #1, abandoned when the show was.
  * 5. Rebuilds `watch_logs` with `watchThroughId` (episode viewings join their show's #1; film viewings none)
  *    and `rating` (null for all).
+ * 6. Rebuilds `tv_details` without `status`: a show's abandoned flag is its latest watch-through's now.
  *
  * Nothing is lost: every session keeps its values and now belongs to read #1, and every book's status
  * and finish date are unchanged, read through its only read.
@@ -574,5 +575,18 @@ public val MIGRATION_7_8: Migration =
                 connection.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_watch_logs_watchThroughId` ON `watch_logs` (`watchThroughId`)",
                 )
+                // 6. A show's abandoned flag now lives on its watch-through, copied there in step 4.
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tv_details_new` (`mediaId` TEXT NOT NULL, `totalSeasons` INTEGER, " +
+                        "`airingStatus` TEXT, `firstAirDate` INTEGER, `lastAirDate` INTEGER, PRIMARY KEY(`mediaId`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `tv_details_new` (`mediaId`, `totalSeasons`, `airingStatus`, `firstAirDate`, " +
+                        "`lastAirDate`) SELECT `mediaId`, `totalSeasons`, `airingStatus`, `firstAirDate`, " +
+                        "`lastAirDate` FROM `tv_details`",
+                )
+                connection.execSQL("DROP TABLE `tv_details`")
+                connection.execSQL("ALTER TABLE `tv_details_new` RENAME TO `tv_details`")
             }
     }

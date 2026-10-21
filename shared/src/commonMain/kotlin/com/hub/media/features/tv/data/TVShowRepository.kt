@@ -10,7 +10,6 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -325,7 +324,6 @@ public class TVShowRepository(
                     TVDetailsEntity(
                         mediaId = mediaId,
                         totalSeasons = totalSeasons,
-                        status = WatchStatus.WATCHLIST,
                         airingStatus = airingStatus,
                         firstAirDate = firstAirDate?.toEpochMilliseconds(),
                         lastAirDate = lastAirDate?.toEpochMilliseconds(),

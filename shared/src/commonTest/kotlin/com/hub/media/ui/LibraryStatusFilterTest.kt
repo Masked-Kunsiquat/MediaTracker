@@ -203,7 +203,6 @@ class LibraryStatusFilterTest {
                 TVDetailsEntity(
                     mediaId = "show-1",
                     totalSeasons = 1,
-                    status = WatchStatus.WATCHLIST,
                     airingStatus = airingStatus,
                 ),
         )

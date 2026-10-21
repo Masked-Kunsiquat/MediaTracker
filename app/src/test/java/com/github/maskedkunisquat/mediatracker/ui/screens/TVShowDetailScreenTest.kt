@@ -29,7 +29,7 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
-import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
@@ -67,7 +67,7 @@ class TVShowDetailScreenTest {
         title: String = "Chernobyl",
         releaseYear: Int? = 2019,
         synopsis: String? = null,
-        status: WatchStatus = WatchStatus.WATCHLIST,
+        abandoned: Boolean = false,
         airingStatus: AiringStatus? = null,
         totalSeasons: Int? = 1,
     ) = MediaWithDetails.TVShow(
@@ -86,9 +86,9 @@ class TVShowDetailScreenTest {
             TVDetailsEntity(
                 mediaId = id,
                 totalSeasons = totalSeasons,
-                status = status,
                 airingStatus = airingStatus,
             ),
+        runs = listOf(WatchThroughEntity(id = "run-1", mediaId = id, number = 1, abandoned = abandoned)),
     )
 
     private fun episode(
@@ -138,7 +138,7 @@ class TVShowDetailScreenTest {
     private fun readyStateForBucket(
         watched: Int,
         total: Int,
-        status: WatchStatus = WatchStatus.WATCHLIST,
+        abandoned: Boolean = false,
         airingStatus: AiringStatus? = null,
     ): TVShowDetailUiState.Ready {
         val episodes =
@@ -148,11 +148,11 @@ class TVShowDetailScreenTest {
                 )
             }
         return TVShowDetailUiState.Ready(
-            show = show(status = status, airingStatus = airingStatus),
+            show = show(abandoned = abandoned, airingStatus = airingStatus),
             seasons = listOf(SeasonGroup(seasonNumber = 1, episodes = episodes, watchedCount = watched)),
             watchedEpisodes = watched,
             totalEpisodes = total,
-            isAbandoned = status == WatchStatus.ABANDONED,
+            isAbandoned = abandoned,
         )
     }
 
@@ -509,8 +509,8 @@ class TVShowDetailScreenTest {
     }
 
     @Test
-    fun statusChip_showsAbandoned_whenStoredStatusIsAbandoned() {
-        setContent(readyStateForBucket(watched = 0, total = 5, status = WatchStatus.ABANDONED))
+    fun statusChip_showsAbandoned_whenTheWatchThroughIsAbandoned() {
+        setContent(readyStateForBucket(watched = 0, total = 5, abandoned = true))
 
         composeRule.onNodeWithText(context.getString(R.string.library_filter_abandoned)).assertIsDisplayed()
     }

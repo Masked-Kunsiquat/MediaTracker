@@ -27,7 +27,6 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
@@ -59,7 +58,6 @@ class TVShowDetailEpisodeCountDialogTest {
         title: String = "Chernobyl",
         releaseYear: Int? = 2019,
         synopsis: String? = null,
-        status: WatchStatus = WatchStatus.WATCHLIST,
         airingStatus: AiringStatus? = null,
         totalSeasons: Int? = 1,
     ) = MediaWithDetails.TVShow(
@@ -78,7 +76,6 @@ class TVShowDetailEpisodeCountDialogTest {
             TVDetailsEntity(
                 mediaId = id,
                 totalSeasons = totalSeasons,
-                status = status,
                 airingStatus = airingStatus,
             ),
     )
@@ -124,13 +121,12 @@ class TVShowDetailEpisodeCountDialogTest {
 
     /**
      * A [TVShowDetailUiState.Ready] built for the read-only status chip's derived-bucket tests
-     * (#141 step 2): independent control over stored status, watched/total episodes and airing
-     * status -- the three inputs [com.hub.media.ui.LibraryStatusFilter.ofShow] combines.
+     * (#141 step 2): independent control over watched/total episodes and airing status --
+     * two of the inputs [com.hub.media.ui.LibraryStatusFilter.ofShow] combines.
      */
     private fun readyStateForBucket(
         watched: Int,
         total: Int,
-        status: WatchStatus = WatchStatus.WATCHLIST,
         airingStatus: AiringStatus? = null,
     ): TVShowDetailUiState.Ready {
         val episodes =
@@ -140,11 +136,11 @@ class TVShowDetailEpisodeCountDialogTest {
                 )
             }
         return TVShowDetailUiState.Ready(
-            show = show(status = status, airingStatus = airingStatus),
+            show = show(airingStatus = airingStatus),
             seasons = listOf(SeasonGroup(seasonNumber = 1, episodes = episodes, watchedCount = watched)),
             watchedEpisodes = watched,
             totalEpisodes = total,
-            isAbandoned = status == WatchStatus.ABANDONED,
+            isAbandoned = false,
         )
     }
 

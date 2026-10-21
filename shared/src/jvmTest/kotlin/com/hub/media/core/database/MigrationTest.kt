@@ -1616,6 +1616,12 @@ class MigrationTest {
                 while (s.step()) cols += s.getText(1)
                 assertTrue("watchThroughId" in cols && "rating" in cols && "durationSeconds" in cols, "$cols")
             }
+            db.prepare("PRAGMA table_info(tv_details)").use { s ->
+                val cols = mutableListOf<String>()
+                while (s.step()) cols += s.getText(1)
+                assertFalse("status" in cols, "tv_details keeps $cols")
+                assertTrue("airingStatus" in cols && "lastAirDate" in cols, "every other column survives: $cols")
+            }
         }
     }
 

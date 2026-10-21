@@ -1336,7 +1336,6 @@ public class ImportDataUseCase(
                     TVDetailsEntity(
                         mediaId = mediaId,
                         totalSeasons = details.totalSeasons,
-                        status = details.status,
                     ),
                 )
         }
@@ -1393,7 +1392,6 @@ public class ImportDataUseCase(
                     TVDetailsEntity(
                         mediaId = mediaId,
                         totalSeasons = row.totalSeasons,
-                        status = row.status,
                         airingStatus = existingDetails?.airingStatus,
                         firstAirDate = existingDetails?.firstAirDate,
                         lastAirDate = existingDetails?.lastAirDate,
@@ -1522,11 +1520,6 @@ public class ImportDataUseCase(
                     TVDetailsEntity(
                         mediaId = mediaId,
                         totalSeasons = existingDetails?.totalSeasons ?: row.totalSeasons,
-                        status =
-                            existingDetails
-                                ?.status
-                                ?.takeIf { it != WatchStatus.WATCHLIST }
-                                ?: row.status,
                         // Phase D's columns are preserved rather than defaulted away: they are not
                         // in the file, so a merge has nothing to say about them and must not blank
                         // what a backfill already wrote.

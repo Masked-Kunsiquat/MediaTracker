@@ -7,7 +7,6 @@ import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
@@ -133,7 +132,7 @@ class TVShowRepositoryTest {
             val details = db.tvDetailsDao().getByMediaId(mediaId)
             assertEquals(mediaId, details?.mediaId)
             assertEquals(1, details?.totalSeasons)
-            assertEquals(WatchStatus.WATCHLIST, details?.status)
+            assertEquals(listOf(1), db.watchThroughDao().getForMedia(mediaId).map { it.number }, "a show starts at #1")
 
             val episodes = db.episodeDao().getByMediaId(mediaId)
             assertEquals(3, episodes.size, "quick-fill must generate exactly one row per episode")
@@ -1390,7 +1389,6 @@ class TVShowRepositoryTest {
 
             val details = db.tvDetailsDao().getByMediaId(mediaId)
             assertEquals(2, details?.totalSeasons)
-            assertEquals(WatchStatus.WATCHLIST, details?.status, "an edit leaves status as it was")
         }
 
     @Test
@@ -1472,7 +1470,6 @@ class TVShowRepositoryTest {
 
             val details = db.tvDetailsDao().getByMediaId(mediaId)
             assertEquals(4, details?.totalSeasons, "the missing details row must be created, not skipped")
-            assertEquals(WatchStatus.WATCHLIST, details?.status, "the repair invents only the meaningless default")
         }
 
     @Test

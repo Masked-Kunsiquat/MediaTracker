@@ -11,7 +11,6 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
@@ -286,7 +285,7 @@ class TVShowDetailScreenGoldenTest {
                 communityRating = communityRating,
                 synopsis = synopsis,
             ),
-        details = TVDetailsEntity(mediaId = id, totalSeasons = totalSeasons, status = WatchStatus.WATCHING),
+        details = TVDetailsEntity(mediaId = id, totalSeasons = totalSeasons),
     )
 
     private fun episode(
