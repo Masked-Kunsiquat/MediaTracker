@@ -12,12 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Your reading goal is now kept for every year, instead of only the current one. (#221)
 - Re-reads: start reading a book again from its status menu. Each read keeps its own dates, sessions and rating, and earlier reads fold away in the reading history. (#230)
 - Rate each read of a book in half stars, when you finish it or any time after. The book shows your average and your latest rating. Goodreads imports bring your star ratings in, and importing an old Goodreads export again fills them in for books you already have. (#230)
+- Re-watch a show: Watch again starts a new watch-through with an empty checklist, while earlier ones fold away below the seasons with their dates and ratings. Abandoning a rewatch leaves the first one finished. (#231)
+- Rate each watch-through of a show when you finish or abandon it, and each viewing of a film from the Watched dialog or its History. Films and shows show your average and latest rating, like books. (#231)
 
 ### Changed
+- A show that is fully watched but still airing now reads "Up to date" on its page instead of "Watching". (#231)
 - Your reading goal counts books new to you: a re-read still counts as a book finished, but not toward the goal. (#230)
 
 ### Internal
 - Schema v8: `read_throughs` holds each read's status, dates and rating; reading sessions belong to a read; a book's status and finish date moved off `book_details`. CSV schema 7 adds `read_throughs_export.csv` and `read_number` on the reading log; older exports still import, as read #1. (#230)
+- Schema v8 extended in place (still unreleased): `watch_throughs` holds each show's runs and their abandoned flag and rating; `watch_logs` gains `watchThroughId` (episodes) and `rating` (films); `tv_details.status` is removed, and `episodes.watchedAt` now means the latest viewing in the current watch-through. CSV schema 8 adds `watch_throughs_export.csv` and `watch_through_number`/`rating` on the watch log; older exports still import, as watch-through #1. (#231)
 
 ## [0.28.0] - 2026-10-17
 
