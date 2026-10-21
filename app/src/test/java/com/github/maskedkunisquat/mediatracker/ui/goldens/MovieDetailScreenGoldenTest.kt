@@ -76,8 +76,17 @@ class MovieDetailScreenGoldenTest {
         ) { WithPosterFixture(coverDir.absolutePath, coverHash) }
     }
 
+    /** Two rated viewings (#231): the header's average and latest, and each History row's own stars. */
+    @Test
+    fun filmDetail_ratedViewings() {
+        composeRule.captureGolden(
+            name = "film-detail-rated",
+            alsoAssert = { assertTextIsShown("4.5 average of 2 viewings · latest 5", "History") },
+        ) { Fixture(ratings = listOf(10, 8)) }
+    }
+
     @Composable
-    private fun Fixture() {
+    private fun Fixture(ratings: List<Int?> = listOf(null)) {
         MovieDetailScreen(
             coverStorageDir = NO_COVERS,
             uiState =
@@ -103,15 +112,17 @@ class MovieDetailScreenGoldenTest {
                                 ),
                         ),
                     // A Watched film always has the viewing its watchedAt came from (#192).
+                    // Newest first, the first at the film's watchedAt; one per rating (#231).
                     viewings =
-                        listOf(
+                        ratings.mapIndexed { i, rating ->
                             WatchLogEntity(
-                                id = "v1",
+                                id = "v${i + 1}",
                                 mediaId = "film-1",
                                 episodeId = null,
-                                watchedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L),
-                            ),
-                        ),
+                                watchedAt = Instant.fromEpochMilliseconds(1_700_000_000_000L - i * 86_400_000L * 400),
+                                rating = rating,
+                            )
+                        },
                 ),
             onStatusChange = {},
             onDelete = {},
