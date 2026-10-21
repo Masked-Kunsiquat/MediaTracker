@@ -17,6 +17,7 @@ import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
@@ -281,7 +282,10 @@ public interface ImportWriteDao {
                     writeReadOne(details)
                 }
                 is ImportDetails.Movie -> insertMovieDetails(details.details)
-                is ImportDetails.TVShow -> insertTvDetails(details.details)
+                is ImportDetails.TVShow -> {
+                    insertTvDetails(details.details)
+                    insertFirstRunIfMissing(WatchThroughEntity(id = newId(), mediaId = insert.mediaItem.id, number = 1))
+                }
             }
             insert.identifiers.forEach { upsertExternalIdentifier(it) }
         }
@@ -342,13 +346,28 @@ public interface ImportWriteDao {
         // gets that viewing, so the recompute can never move its date backwards.
         viewingDeletesForEpisodes.forEach { deleteViewingsForEpisode(it) }
         filmViewingDeletes.forEach { deleteFilmViewings(it) }
-        viewingInserts.forEach { insertViewing(it) }
+        // An episode viewing joins its show's latest run when the plan left it unassigned (#231).
+        viewingInserts.forEach {
+            insertViewing(
+                if (it.episodeId != null && it.watchThroughId == null) {
+                    it.copy(watchThroughId = latestRunId(it.mediaId))
+                } else {
+                    it
+                },
+            )
+        }
         for (episodeId in touchedEpisodeIds) {
             val episode = episodeById(episodeId) ?: continue
             val at = episode.watchedAt
             if (at != null && viewingCountAt(episodeId, at) == 0) {
                 insertViewing(
-                    WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = episodeId, watchedAt = at),
+                    WatchLogEntity(
+                        id = newId(),
+                        mediaId = episode.mediaId,
+                        episodeId = episodeId,
+                        watchedAt = at,
+                        watchThroughId = latestRunId(episode.mediaId),
+                    ),
                 )
             }
             recomputeEpisodeWatchedAt(episodeId)
@@ -367,6 +386,20 @@ public interface ImportWriteDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertViewing(log: WatchLogEntity)
+
+    /** See [TVWriteDao.insertFirstRunIfMissing]. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    public suspend fun insertFirstRunIfMissing(run: WatchThroughEntity): Long
+
+    @Query("SELECT id FROM watch_throughs WHERE mediaId = :mediaId ORDER BY number DESC LIMIT 1")
+    public suspend fun latestRunIdOrNull(mediaId: String): String?
+
+    /** See [TVWriteDao.latestRunId]. */
+    public suspend fun latestRunId(mediaId: String): String =
+        latestRunIdOrNull(mediaId) ?: run {
+            insertFirstRunIfMissing(WatchThroughEntity(id = newId(), mediaId = mediaId, number = 1))
+            checkNotNull(latestRunIdOrNull(mediaId))
+        }
 
     @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
     public suspend fun deleteViewingsForEpisode(episodeId: String): Int

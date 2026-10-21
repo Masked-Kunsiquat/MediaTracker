@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "bda0e72478d3eaca3333f77fc2981117",
+    "identityHash": "48a6804fc06c7a7d29aee4b980a075de",
     "entities": [
       {
         "tableName": "media_items",
@@ -528,7 +528,7 @@
       },
       {
         "tableName": "watch_logs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`episodeId`, `mediaId`) REFERENCES `episodes`(`id`, `mediaId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, `watchThroughId` TEXT, `rating` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`episodeId`, `mediaId`) REFERENCES `episodes`(`id`, `mediaId`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`watchThroughId`) REFERENCES `watch_throughs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -557,6 +557,16 @@
             "fieldPath": "durationSeconds",
             "columnName": "durationSeconds",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "watchThroughId",
+            "columnName": "watchThroughId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -584,6 +594,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId_mediaId` ON `${TABLE_NAME}` (`episodeId`, `mediaId`)"
+          },
+          {
+            "name": "index_watch_logs_watchThroughId",
+            "unique": false,
+            "columnNames": [
+              "watchThroughId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_logs_watchThroughId` ON `${TABLE_NAME}` (`watchThroughId`)"
           }
         ],
         "foreignKeys": [
@@ -609,6 +628,17 @@
             "referencedColumns": [
               "id",
               "mediaId"
+            ]
+          },
+          {
+            "table": "watch_throughs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "watchThroughId"
+            ],
+            "referencedColumns": [
+              "id"
             ]
           }
         ]
@@ -688,11 +718,77 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "watch_throughs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, `number` INTEGER NOT NULL, `abandoned` INTEGER NOT NULL, `rating` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaId",
+            "columnName": "mediaId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "number",
+            "columnName": "number",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "abandoned",
+            "columnName": "abandoned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_watch_throughs_mediaId_number",
+            "unique": true,
+            "columnNames": [
+              "mediaId",
+              "number"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_watch_throughs_mediaId_number` ON `${TABLE_NAME}` (`mediaId`, `number`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "media_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "mediaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bda0e72478d3eaca3333f77fc2981117')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '48a6804fc06c7a7d29aee4b980a075de')"
     ]
   }
 }

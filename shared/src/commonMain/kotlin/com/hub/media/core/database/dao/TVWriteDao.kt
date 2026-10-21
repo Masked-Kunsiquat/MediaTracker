@@ -12,6 +12,7 @@ import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
@@ -70,6 +71,7 @@ interface TVWriteDao {
     ) {
         insertMediaItem(item)
         insertTVDetails(details)
+        insertFirstRunIfMissing(WatchThroughEntity(id = newId(), mediaId = item.id, number = 1))
         insertEpisodes(episodes)
         externalIdentifiers.forEach { insertExternalIdentifier(it) }
     }
@@ -423,6 +425,20 @@ interface TVWriteDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertViewing(log: WatchLogEntity)
 
+    /** Creates watch-through #1 unless the show has it (#231); the unique (mediaId, number) index makes this a no-op. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFirstRunIfMissing(run: WatchThroughEntity): Long
+
+    @Query("SELECT id FROM watch_throughs WHERE mediaId = :mediaId ORDER BY number DESC LIMIT 1")
+    suspend fun latestRunIdOrNull(mediaId: String): String?
+
+    /** The show's latest run, creating #1 if it has none -- the self-heal #230's `insertIntoLatestRead` does. */
+    suspend fun latestRunId(mediaId: String): String =
+        latestRunIdOrNull(mediaId) ?: run {
+            insertFirstRunIfMissing(WatchThroughEntity(id = newId(), mediaId = mediaId, number = 1))
+            checkNotNull(latestRunIdOrNull(mediaId))
+        }
+
     @Query("SELECT * FROM watch_logs WHERE episodeId = :episodeId")
     suspend fun viewingsFor(episodeId: String): List<WatchLogEntity>
 
@@ -474,7 +490,15 @@ interface TVWriteDao {
         for ((id, at) in stamps) {
             if (markEpisodeWatchedIfUnwatched(id, at) == 1) {
                 val episode = getByIds(listOf(id)).single()
-                insertViewing(WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = id, watchedAt = at))
+                insertViewing(
+                    WatchLogEntity(
+                        id = newId(),
+                        mediaId = episode.mediaId,
+                        episodeId = id,
+                        watchedAt = at,
+                        watchThroughId = latestRunId(episode.mediaId),
+                    ),
+                )
                 changed++
             }
         }
@@ -493,7 +517,15 @@ interface TVWriteDao {
         at: Instant,
     ): Boolean {
         val episode = getByIds(listOf(episodeId)).singleOrNull() ?: return false
-        insertViewing(WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = episodeId, watchedAt = at))
+        insertViewing(
+            WatchLogEntity(
+                id = newId(),
+                mediaId = episode.mediaId,
+                episodeId = episodeId,
+                watchedAt = at,
+                watchThroughId = latestRunId(episode.mediaId),
+            ),
+        )
         recomputeWatchedAt(episodeId)
         return true
     }
@@ -599,6 +631,7 @@ interface TVWriteDao {
                         mediaId = episode.mediaId,
                         episodeId = episode.id,
                         watchedAt = checkNotNull(episode.watchedAt),
+                        watchThroughId = latestRunId(episode.mediaId),
                     ),
                 )
             }.size
