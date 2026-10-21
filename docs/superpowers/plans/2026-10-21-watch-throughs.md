@@ -517,7 +517,7 @@ class WatchThroughDaoTest {
         runTest {
             val (e1) = season(1)
             val two = dao.startNextRun(e1.mediaId, newId())
-            db.episodeDao().let { _ -> dao.markEpisodeWatchedIfUnwatched(e1.id, t1) }
+            dao.markEpisodeWatchedIfUnwatched(e1.id, t1) // watched with no viewing, as an old library can be
             dao.ensureViewingsForWatchedEpisodes()
             assertEquals(two, viewings(e1.id).single().watchThroughId)
         }
@@ -710,7 +710,7 @@ Then:
 - wire `watchThroughRepository` in `AppContainer` beside `readThroughRepository`, passing `settingsRepository::getIncludeSpecials`.
 
 - [ ] **Step 7: Move abandonment readers onto the latest run.**
-  - **`MediaWithDetails.TVShow`:** add `val runs: List<WatchThroughEntity> = emptyList()`, `val latestRun get() = runs.maxByOrNull { it.number }`, `val isAbandoned: Boolean get() = latestRun?.abandoned == true`, and `val rating: TitleRating? get() = titleRating(runs.sortedBy { it.number }.map { it.rating })`. That overload comes in Task 4 Step 3; until then use a private local computation, or move that step here first.
+  - **`MediaWithDetails.TVShow`:** add `val runs: List<WatchThroughEntity> = emptyList()`, `val latestRun get() = runs.maxByOrNull { it.number }`, `val isAbandoned: Boolean get() = latestRun?.abandoned == true`, and `val rating: TitleRating? get() = titleRating(runs.sortedBy { it.number }.map { it.rating })`. That `List<Int?>` overload is Task 4 Step 3's: do that self-contained change (with its `RatingTest`) first, here.
   - **Observers attach runs:**
     - `TVShowRepository.observeAllShowsWithDetails` and `observeShowDetail` combine `db.watchThroughDao().observeAll()` / `observeForMedia(id)` and pass `runs`;
     - `MediaRepository`'s TV branch takes `runsByMediaId` from `observeAll()`.
