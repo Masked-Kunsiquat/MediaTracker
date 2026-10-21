@@ -33,6 +33,15 @@ interface WatchLogDao {
     /** Every viewing, in a stable order -- `watch_logs_export.csv`. */
     @Query("SELECT * FROM watch_logs ORDER BY mediaId, episodeId, watchedAt")
     fun observeAll(): Flow<List<WatchLogEntity>>
+
+    /** Per run and season: distinct episodes viewed, and the run's first and last viewing there (#231). */
+    @Query(
+        "SELECT l.watchThroughId AS runId, e.seasonNumber AS seasonNumber, COUNT(DISTINCT l.episodeId) AS episodes, " +
+            "MIN(l.watchedAt) AS firstAt, MAX(l.watchedAt) AS lastAt FROM watch_logs l " +
+            "JOIN episodes e ON e.id = l.episodeId WHERE l.mediaId = :mediaId AND l.watchThroughId IS NOT NULL " +
+            "GROUP BY l.watchThroughId, e.seasonNumber",
+    )
+    fun observeRunSeasonRows(mediaId: String): Flow<List<RunSeasonRow>>
 }
 
 /** A projection of [WatchLogDao.observeViewingCounts]. */

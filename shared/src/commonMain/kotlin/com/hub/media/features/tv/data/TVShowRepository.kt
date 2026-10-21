@@ -182,6 +182,10 @@ public class TVShowRepository(
             }
         }
 
+    /** Each of the show's watch-throughs summarised (#231): dates, episodes, and per-season counts. */
+    public fun observeRunSummaries(mediaId: String): Flow<Map<String, RunSummary>> =
+        db.watchLogDao().observeRunSeasonRows(mediaId).map(::runSummaries)
+
     /**
      * The id of the show already recorded as coming from [externalId] at [provider], or `null`.
      *

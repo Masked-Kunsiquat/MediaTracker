@@ -6,14 +6,21 @@ import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.data.TitleRating
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.observeIncludeSpecials
+import com.hub.media.features.tv.data.RunState
+import com.hub.media.features.tv.data.RunSummary
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.data.WatchThroughRepository
+import com.hub.media.features.tv.data.asksToRateRun
+import com.hub.media.features.tv.data.isComplete
+import com.hub.media.features.tv.data.runState
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
@@ -121,7 +128,28 @@ public sealed class TVShowDetailUiState {
         val viewingUndo: ViewingUndo? = null,
         /** Viewings per episode (#90), for the "Watched N×" row label; absent means none. */
         val viewingCounts: Map<String, Int> = emptyMap(),
-    ) : TVShowDetailUiState()
+        /** What the current watch-through reads as (#231), from the counted ticks. */
+        val latestRunState: RunState = RunState.NOT_STARTED,
+        /** Each watch-through's viewings summarised, by run id (#231); a run with none is absent. */
+        val runSummaries: Map<String, RunSummary> = emptyMap(),
+        /** The watch-through "Rate this watch-through?" is open for (#231), if any. */
+        val ratePromptRunId: String? = null,
+    ) : TVShowDetailUiState() {
+        /** The show's watch-throughs, oldest first (#231). */
+        val runs: List<WatchThroughEntity> get() = show.runs.sortedBy { it.number }
+
+        val latestRun: WatchThroughEntity? get() = show.latestRun
+
+        val titleRating: TitleRating? get() = show.rating
+
+        /** Watch again is offered once the current run is finished, caught up, or given up on (#231). */
+        val canWatchAgain: Boolean
+            get() = latestRunState in setOf(RunState.FINISHED, RunState.UP_TO_DATE, RunState.ABANDONED)
+
+        /** Remove this watch-through: only an empty latest run after #1, the undo for a mistaken Watch again. */
+        val canRemoveLatestRun: Boolean
+            get() = latestRun?.let { it.number > 1 && runSummaries[it.id] == null } == true
+    }
 }
 
 /**
@@ -164,6 +192,12 @@ public class TVShowDetailViewModel(
 
     /** Backs [TVShowDetailUiState.Ready.viewingUndo]. */
     private val viewingUndo = MutableStateFlow<ViewingUndo?>(null)
+
+    /** Backs [TVShowDetailUiState.Ready.ratePromptRunId] (#231). */
+    private val ratePromptRunId = MutableStateFlow<String?>(null)
+
+    /** Holds a second Watch again tap off while the first is in flight (#231). */
+    private var watchAgainInFlight = false
     private var viewingUndoSeq = 0L
 
     /** The open episode's viewings, re-read as they change; `null` while no sheet is open. */
@@ -180,6 +214,8 @@ public class TVShowDetailViewModel(
         val viewingUndo: ViewingUndo?,
         val open: Pair<String, List<WatchLogEntity>>?,
         val counts: Map<String, Int>,
+        val summaries: Map<String, RunSummary>,
+        val ratePrompt: String?,
     )
 
     private val overlay: Flow<Overlay> =
@@ -188,8 +224,16 @@ public class TVShowDetailViewModel(
             untickEvent,
             pendingRewatch,
             viewingUndo,
-            combine(openViewings, tvShowRepository.observeViewingCounts(showId), ::Pair),
-        ) { tick, untick, rewatch, undo, (open, counts) -> Overlay(tick, untick, rewatch, undo, open, counts) }
+            combine(
+                openViewings,
+                tvShowRepository.observeViewingCounts(showId),
+                tvShowRepository.observeRunSummaries(showId),
+                ratePromptRunId,
+                ::Quadruple,
+            ),
+        ) { tick, untick, rewatch, undo, (open, counts, summaries, prompt) ->
+            Overlay(tick, untick, rewatch, undo, open, counts, summaries, prompt)
+        }
     private val isRefreshing = MutableStateFlow(false)
 
     /** Backs [TVShowDetailUiState.Ready.seasonFindings] -- see that property's KDoc. */
@@ -277,10 +321,15 @@ public class TVShowDetailViewModel(
                         extra.open?.let { (id, viewings) ->
                             base.seasons
                                 .firstNotNullOfOrNull { season -> season.episodes.firstOrNull { it.id == id } }
-                                ?.let { OpenEpisode(it, viewings) }
+                                ?.let { OpenEpisode(it, viewings, base.show.runs.associate { r -> r.id to r.number }) }
                         },
                     watchedEpisodes = counted.watchedEpisodes,
                     totalEpisodes = counted.totalEpisodes,
+                    latestRunState =
+                        base.show.latestRun?.let { runState(it, counted, base.show.details?.airingStatus) }
+                            ?: RunState.NOT_STARTED,
+                    runSummaries = extra.summaries,
+                    ratePromptRunId = extra.ratePrompt,
                 )
             } else {
                 base
@@ -379,8 +428,17 @@ public class TVShowDetailViewModel(
         pendingTick.value = null
         viewModelScope.launch {
             val ids = tick.targetIds + if (includeEarlier) tick.earlierIds else emptyList()
+            val wasComplete = latestRunComplete()
             val result = markEpisodesWatched.execute(ids, watchedWhen, targetIsExplicit = !tick.isSeason)
-            if (result is Resource.Error) errorMessage.value = result.message
+            if (result is Resource.Error) {
+                errorMessage.value = result.message
+            } else {
+                // The tick that finishes a watch-through asks for its rating, once (#231).
+                val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number }
+                if (run != null && asksToRateRun(wasComplete, latestRunComplete(), run.rating)) {
+                    ratePromptRunId.value = run.id
+                }
+            }
         }
     }
 
@@ -529,8 +587,58 @@ public class TVShowDetailViewModel(
     public fun setAbandoned(abandoned: Boolean) {
         viewModelScope.launch {
             val result = watchThroughRepository.setAbandoned(showId, abandoned)
+            if (result is Resource.Error) {
+                errorMessage.value = result.message
+            } else if (abandoned) {
+                // Giving up on a watch-through asks for its rating too, as a book's Did not finish does.
+                val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number }
+                if (run != null && run.rating == null) ratePromptRunId.value = run.id
+            }
+        }
+    }
+
+    /** Watch again (#231): watch-through n+1 with an empty checklist. A second tap meanwhile is ignored. */
+    public fun watchAgain() {
+        if (watchAgainInFlight) return
+        watchAgainInFlight = true
+        viewModelScope.launch {
+            try {
+                val result = watchThroughRepository.watchAgain(showId)
+                if (result is Resource.Error) errorMessage.value = result.message
+            } finally {
+                watchAgainInFlight = false
+            }
+        }
+    }
+
+    /** Remove this watch-through (#231): the undo for a mistaken Watch again. */
+    public fun removeRun(runId: String) {
+        viewModelScope.launch {
+            val result = watchThroughRepository.removeRun(runId)
             if (result is Resource.Error) errorMessage.value = result.message
         }
+    }
+
+    /** Rates [runId], or clears its rating with `null`, and closes "Rate this watch-through?" (#231). */
+    public fun rateRun(
+        runId: String,
+        halves: Int?,
+    ) {
+        ratePromptRunId.value = null
+        viewModelScope.launch {
+            val result = watchThroughRepository.setRating(runId, halves)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    public fun dismissRatePrompt() {
+        ratePromptRunId.value = null
+    }
+
+    /** Whether every counted episode is ticked in the current watch-through, read fresh from the store. */
+    private suspend fun latestRunComplete(): Boolean {
+        val episodes = tvShowRepository.observeEpisodes(showId).first()
+        return isComplete(TVProgressCounts.of(showId, episodes).counted(settingsRepository.getIncludeSpecials()))
     }
 
     /** Deletes this show via [BulkDeleteUseCase], so an unreferenced poster file is cleaned up. */
@@ -711,3 +819,11 @@ internal fun EpisodeBackfillReport.describe(): String {
     }
     return parts.joinToString(" ")
 }
+
+/** Four values from one `combine`, so the overlay stays within the outer combine's five sources. */
+private data class Quadruple<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+)

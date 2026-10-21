@@ -17,6 +17,7 @@ import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.setIncludeSpecials
+import com.hub.media.features.tv.data.RunState
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.data.WatchThroughRepository
@@ -34,6 +35,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -44,6 +46,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
@@ -1156,5 +1159,124 @@ class TVShowDetailViewModelTest {
 
             viewModel.undoViewing(merged.viewingUndo!!)
             ready(viewModel) { it.openEpisode?.viewings?.size == 3 }
+        }
+
+    // ---- #231: watch-throughs ---------------------------------------------------------------------
+
+    /**
+     * Lets the VM finish deciding whether to ask: its write and its completion check run on Room's own
+     * threads, which [runCurrent] does not drive, so a "nothing asked" assertion waits in real time.
+     */
+    private suspend fun TestScope.settle() {
+        withContext(Dispatchers.Default) { delay(400) }
+        runCurrent()
+    }
+
+    /** Ticks [episodeId] through the prompt, as a tap does. */
+    private suspend fun tick(
+        viewModel: TVShowDetailViewModel,
+        episodeId: String,
+    ) {
+        viewModel.setEpisodeWatched(episodeId, watched = true)
+        ready(viewModel) { it.pendingTick != null }
+        viewModel.confirmTick(WatchedWhen.Now, includeEarlier = false)
+    }
+
+    @Test
+    fun tickingTheLastEpisode_asksToRateTheRun() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            val viewModel = readyViewModel(showId)
+            tick(viewModel, e1.id)
+            ready(viewModel) { it.watchedEpisodes == 1 }
+            settle()
+            assertNull(
+                (viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId,
+                "a tick that does not finish the run asks nothing",
+            )
+
+            tick(viewModel, e2.id)
+            val run = db.watchThroughDao().getLatest(showId)!!
+            val s = ready(viewModel) { it.ratePromptRunId == run.id }
+            assertEquals(RunState.FINISHED, s.latestRunState)
+        }
+
+    @Test
+    fun tickingTheLastEpisode_ofARatedRun_doesNotAsk() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val e1 = episodesOf(showId).single()
+            db.watchThroughDao().updateRating(db.watchThroughDao().getLatest(showId)!!.id, 8)
+            val viewModel = readyViewModel(showId)
+            tick(viewModel, e1.id)
+            ready(viewModel) { it.latestRunState == RunState.FINISHED }
+            settle()
+            assertNull((viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId)
+        }
+
+    @Test
+    fun abandoning_asksToRate() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val viewModel = readyViewModel(showId)
+            viewModel.setAbandoned(true)
+            ready(viewModel) { it.ratePromptRunId != null && it.latestRunState == RunState.ABANDONED }
+        }
+
+    @Test
+    fun watchAgain_startsRunTwo_withAnEmptyChecklist_andRemoveBringsTheTicksBack() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            val viewModel = readyViewModel(showId)
+            tick(viewModel, e1.id)
+            ready(viewModel) { it.watchedEpisodes == 1 }
+            tick(viewModel, e2.id)
+            val finished = ready(viewModel) { it.canWatchAgain }
+            assertEquals(1, finished.runs.size)
+
+            viewModel.watchAgain()
+            val two = ready(viewModel) { it.runs.size == 2 && it.watchedEpisodes == 0 }
+            assertTrue(two.canRemoveLatestRun, "an empty run #2 can be removed")
+            assertEquals(RunState.NOT_STARTED, two.latestRunState)
+
+            viewModel.removeRun(two.latestRun!!.id)
+            ready(viewModel) { it.runs.size == 1 && it.watchedEpisodes == 2 }
+        }
+
+    @Test
+    fun rateRun_storesIt_andClosesThePrompt() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 1)))
+            val viewModel = readyViewModel(showId)
+            tick(viewModel, episodesOf(showId).single().id)
+            val prompting = ready(viewModel) { it.ratePromptRunId != null }
+            viewModel.rateRun(prompting.ratePromptRunId!!, 9)
+            val s = ready(viewModel) { it.ratePromptRunId == null && it.titleRating?.latestStars == 4.5 }
+            assertEquals(9, s.latestRun?.rating)
+        }
+
+    /** Untick then re-tick a finished, unrated run: the run completes again, so it asks again -- but only then. */
+    @Test
+    fun anUntickThatLeavesTheRunUnfinished_doesNotAsk() =
+        runTest {
+            val showId = insertShow(seasons = listOf(SeasonQuickFill(1, episodeCount = 2)))
+            val (e1, e2) = episodesOf(showId)
+            val viewModel = readyViewModel(showId)
+            tick(viewModel, e1.id)
+            ready(viewModel) { it.watchedEpisodes == 1 }
+            tick(viewModel, e2.id)
+            ready(viewModel) { it.ratePromptRunId != null }
+            viewModel.dismissRatePrompt()
+            ready(viewModel) { it.ratePromptRunId == null }
+            // Watched again on a ticked episode is a viewing in a complete run: nothing to ask.
+            viewModel.openEpisode(e1.id)
+            viewModel.requestRewatch()
+            ready(viewModel) { it.pendingRewatch != null }
+            viewModel.confirmRewatch(WatchedWhen.Now)
+            ready(viewModel) { it.pendingRewatch == null && (it.viewingCounts[e1.id] ?: 0) == 2 }
+            settle()
+            assertNull((viewModel.uiState.value as TVShowDetailUiState.Ready).ratePromptRunId)
         }
 }
