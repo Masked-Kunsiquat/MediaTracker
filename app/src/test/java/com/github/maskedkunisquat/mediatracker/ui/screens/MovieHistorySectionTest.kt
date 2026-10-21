@@ -50,6 +50,7 @@ class MovieHistorySectionTest {
                     onWatchedAgain = { again++ },
                     onEditViewing = { edited += it.id },
                     onDeleteViewing = { deleted += it.id },
+                    onRateViewing = { _, _ -> },
                 )
             }
         }

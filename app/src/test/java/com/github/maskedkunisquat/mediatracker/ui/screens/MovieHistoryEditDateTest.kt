@@ -55,6 +55,7 @@ class MovieHistoryEditDateTest {
                     onWatchedAgain = {},
                     onEditViewing = { editing = it },
                     onDeleteViewing = {},
+                    onRateViewing = { _, _ -> },
                 )
                 editing?.let { log ->
                     WatchedDatePickerDialog(

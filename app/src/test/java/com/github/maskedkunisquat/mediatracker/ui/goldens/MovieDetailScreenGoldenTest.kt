@@ -120,6 +120,7 @@ class MovieDetailScreenGoldenTest {
             onWatchedAgain = {},
             onEditViewing = {},
             onDeleteViewing = {},
+            onRateViewing = { _, _ -> },
             onNavigateToEditMovie = {},
         )
     }
@@ -167,6 +168,7 @@ class MovieDetailScreenGoldenTest {
             onWatchedAgain = {},
             onEditViewing = {},
             onDeleteViewing = {},
+            onRateViewing = { _, _ -> },
             onNavigateToEditMovie = {},
         )
     }

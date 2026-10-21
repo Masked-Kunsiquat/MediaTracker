@@ -38,6 +38,7 @@ class MovieDetailHistoryGoldenTest {
                 onWatchedAgain = {},
                 onEditViewing = {},
                 onDeleteViewing = {},
+                onRateViewing = { _, _ -> },
             )
         }
     }

@@ -54,6 +54,15 @@ object TestTags {
         const val RATE_STARS = "tv_show_detail_rate_stars"
     }
 
+    /** The film detail screen (#231). */
+    object MovieDetail {
+        /** The stars in the "Watched" dialog. */
+        const val WATCHED_STARS = "movie_detail_watched_stars"
+
+        /** One History row's stars, by viewing id. */
+        fun viewingStars(viewingId: String): String = "movie_detail_viewing_stars:$viewingId"
+    }
+
     object DetailTopBar {
         const val OVERFLOW = "detail-top-bar:overflow"
         const val DELETE = "detail-top-bar:delete"
