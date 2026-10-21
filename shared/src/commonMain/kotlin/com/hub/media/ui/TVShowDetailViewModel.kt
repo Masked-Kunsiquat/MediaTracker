@@ -6,7 +6,6 @@ import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchLogEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.util.Resource
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
@@ -14,6 +13,7 @@ import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.observeIncludeSpecials
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.data.WatchThroughRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
@@ -75,9 +75,7 @@ public sealed class TVShowDetailUiState {
      *   would be a second source of truth for something [EpisodeEntity.watchedAt] already records —
      *   see [com.hub.media.core.database.entities.TVDetailsEntity]'s KDoc for why that shape of bug
      *   is refused here specifically.
-     * @property isAbandoned Whether the show's stored status is [WatchStatus.ABANDONED] — see
-     *   [setAbandoned] for why this is the only piece of [com.hub.media.core.database.entities.TVDetailsEntity.status]
-     *   this screen reads.
+     * @property isAbandoned Whether the current watch-through is abandoned (#231) — see [setAbandoned].
      */
     public data class Ready(
         val show: MediaWithDetails.TVShow,
@@ -147,6 +145,7 @@ public class TVShowDetailViewModel(
     private val settingsRepository: SettingsRepository,
     private val markEpisodesWatched: MarkEpisodesWatchedUseCase,
     private val recordRewatch: RecordRewatchUseCase,
+    private val watchThroughRepository: WatchThroughRepository,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
 
@@ -246,7 +245,7 @@ public class TVShowDetailViewModel(
                         seasons = seasons,
                         watchedEpisodes = episodes.count { it.watchedAt != null },
                         totalEpisodes = episodes.size,
-                        isAbandoned = show.details?.status == WatchStatus.ABANDONED,
+                        isAbandoned = show.isAbandoned,
                         errorMessage = error,
                         canRefreshMetadata = tmdb?.toIntOrNull() != null,
                         isRefreshingMetadata = refreshing,
@@ -522,26 +521,14 @@ public class TVShowDetailViewModel(
     }
 
     /**
-     * Toggles between "abandoned" and "watchlist" — deliberately an Abandon/Resume toggle rather
-     * than the four-way [com.hub.media.core.database.entities.WatchStatus] picker
-     * [MovieDetailScreen] offers, because a show's place on the library shelf is **derived** from
-     * its episodes, not read from this column — see
-     * [LibraryStatusFilter.ofShow]'s KDoc. Offering WATCHING/WATCHED alongside WATCHLIST/ABANDONED
-     * here would let the user set a value the library chip then silently ignores (every value but
-     * ABANDONED is), which reads as a bug: "I set it to Watched but it still shows as in progress."
-     * Abandon/Resume is the one axis this column actually controls, so it is the only one exposed.
-     *
-     * Writes [WatchStatus.ABANDONED] for `true`, [WatchStatus.WATCHLIST] for `false` — WATCHLIST
-     * rather than the show's prior derived placement, because there is no prior derived value to
-     * restore: [WatchStatus.WATCHING]/[WatchStatus.WATCHED] are never written by this app (see
-     * [com.hub.media.core.database.entities.TVDetailsEntity]'s KDoc) and the filter recomputes the
-     * real placement from episodes regardless of which of those the column holds once it is not
-     * ABANDONED.
+     * Abandon or Resume the current watch-through (#231). An Abandon/Resume toggle rather than a status
+     * picker, because a show's place on the library shelf is **derived** from its episodes -- see
+     * [LibraryStatusFilter.ofShow]'s KDoc -- and giving up is the one state no tick count expresses.
+     * Earlier watch-throughs keep their own flag, so abandoning a rewatch leaves #1 finished.
      */
     public fun setAbandoned(abandoned: Boolean) {
         viewModelScope.launch {
-            val status = if (abandoned) WatchStatus.ABANDONED else WatchStatus.WATCHLIST
-            val result = tvShowRepository.updateWatchStatus(showId, status)
+            val result = watchThroughRepository.setAbandoned(showId, abandoned)
             if (result is Resource.Error) errorMessage.value = result.message
         }
     }

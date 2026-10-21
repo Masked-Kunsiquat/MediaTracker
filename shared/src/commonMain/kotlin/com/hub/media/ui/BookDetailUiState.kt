@@ -6,7 +6,7 @@ import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.features.books.data.TitleRating
-import com.hub.media.features.books.data.titleRating
+import com.hub.media.features.books.data.readsRating
 import com.hub.media.features.books.timer.ReadingTimerResult
 import kotlin.time.Instant
 
@@ -67,7 +67,7 @@ public sealed class BookDetailUiState {
         val finishedAt: Instant? get() = latestRead?.finishedAt
 
         /** Your rating across the book's rated reads (#230): the average and the latest, or `null`. */
-        val titleRating: TitleRating? get() = titleRating(reads)
+        val titleRating: TitleRating? get() = readsRating(reads)
 
         /**
          * The latest read's sessions (#230), most recent first -- what progress is measured from, so a

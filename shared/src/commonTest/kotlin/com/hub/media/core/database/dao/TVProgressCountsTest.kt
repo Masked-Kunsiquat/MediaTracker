@@ -2,7 +2,6 @@ package com.hub.media.core.database.dao
 
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.LibraryStatusFilter
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,7 +26,7 @@ class TVProgressCountsTest {
         assertEquals(TVProgressRow("severance", 20, 19), row)
         assertEquals(
             LibraryStatusFilter.IN_PROGRESS,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, row, AiringStatus.ENDED),
+            LibraryStatusFilter.ofShow(abandoned = false, row, AiringStatus.ENDED),
         )
     }
 
@@ -37,7 +36,7 @@ class TVProgressCountsTest {
         assertEquals(TVProgressRow("severance", 19, 19), row)
         assertEquals(
             LibraryStatusFilter.FINISHED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, row, AiringStatus.ENDED),
+            LibraryStatusFilter.ofShow(abandoned = false, row, AiringStatus.ENDED),
         )
     }
 
@@ -48,7 +47,7 @@ class TVProgressCountsTest {
         }
         assertEquals(
             LibraryStatusFilter.FINISHED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, chernobyl.counted(includeSpecials = false)),
+            LibraryStatusFilter.ofShow(abandoned = false, chernobyl.counted(includeSpecials = false)),
         )
     }
 
@@ -58,7 +57,7 @@ class TVProgressCountsTest {
         val specialsOnly = TVProgressCounts("x", totalEpisodes = 2, watchedEpisodes = 2, totalMain = 0, watchedMain = 0)
         val row = specialsOnly.counted(includeSpecials = false)
         assertEquals(TVProgressRow("x", 2, 2), row)
-        assertEquals(LibraryStatusFilter.FINISHED, LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, row))
+        assertEquals(LibraryStatusFilter.FINISHED, LibraryStatusFilter.ofShow(abandoned = false, row))
     }
 
     @Test

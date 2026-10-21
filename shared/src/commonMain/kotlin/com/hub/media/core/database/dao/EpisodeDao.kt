@@ -148,7 +148,8 @@ interface EpisodeDao {
      * would sit at the front of the queue and block it -- the owner decided against that.
      *
      * ### Which shows appear
-     * Only shows with at least one watched episode (started), and never an abandoned one. A show
+     * Only shows with at least one episode watched in the current watch-through (started), and never one
+     * whose current watch-through is abandoned (#231). A show
      * nobody has started belongs in the library, not in a queue of things in progress.
      *
      * [nowMillis] is a parameter rather than SQL's own clock so tests control time.
@@ -172,7 +173,8 @@ interface EpisodeDao {
                AND (n.seasonNumber > 0 OR :includeSpecials)
              ORDER BY (n.seasonNumber = 0), n.seasonNumber, n.episodeNumber
              LIMIT 1)
-        WHERE t.status != 'ABANDONED'
+        WHERE COALESCE((SELECT a.abandoned FROM watch_throughs a WHERE a.mediaId = m.id
+                         ORDER BY a.number DESC LIMIT 1), 0) = 0
           AND EXISTS (SELECT 1 FROM episodes s WHERE s.mediaId = m.id AND s.watchedAt IS NOT NULL)
         ORDER BY lastWatchedAt DESC, m.title COLLATE NOCASE ASC
         """,

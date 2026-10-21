@@ -1145,7 +1145,6 @@ private fun showStatusControl(
     onAbandonedChange: (Boolean) -> Unit,
 ): DetailStatus.ReadOnly {
     val details = uiState.show.details
-    val storedStatus = details?.status ?: WatchStatus.WATCHLIST
     val progress =
         if (uiState.totalEpisodes > 0) {
             TVProgressRow(
@@ -1156,7 +1155,7 @@ private fun showStatusControl(
         } else {
             null
         }
-    val filterStatus = LibraryStatusFilter.ofShow(storedStatus, progress, details?.airingStatus)
+    val filterStatus = LibraryStatusFilter.ofShow(uiState.isAbandoned, progress, details?.airingStatus)
     val actionLabel =
         stringResource(
             if (uiState.isAbandoned) {

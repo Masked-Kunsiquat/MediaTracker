@@ -24,23 +24,23 @@ public fun starsToHalves(stars: Double): Int? {
 }
 
 /**
- * A title's rating from its rated reads (#230): the average and the latest, in stars.
+ * A title's rating from its rated viewings (#230, #231): the average and the latest, in stars.
  *
- * @property ratedReads How many reads carry a rating; unrated reads are ignored.
+ * @property rated How many viewings carry a rating; unrated ones are ignored.
  */
 public data class TitleRating(
     val averageStars: Double,
     val latestStars: Double,
-    val ratedReads: Int,
+    val rated: Int,
 )
 
-/** [reads]' rating, or `null` when none is rated. "Latest" is the highest-numbered rated read. */
-public fun titleRating(reads: List<ReadThroughEntity>): TitleRating? {
-    val rated = reads.filter { it.rating != null }.sortedBy { it.number }
+/** A title's rating from its viewings' ratings, **oldest first** (#231); "latest" is the last rated one. */
+public fun titleRating(ratings: List<Int?>): TitleRating? {
+    val rated = ratings.filterNotNull()
     if (rated.isEmpty()) return null
-    return TitleRating(
-        averageStars = rated.map { it.rating!! }.average() / 2.0,
-        latestStars = rated.last().rating!!.toStars(),
-        ratedReads = rated.size,
-    )
+    return TitleRating(averageStars = rated.average() / 2.0, latestStars = rated.last().toStars(), rated = rated.size)
 }
+
+/** [reads]' rating, or `null` when none is rated. "Latest" is the highest-numbered rated read. */
+public fun readsRating(reads: List<ReadThroughEntity>): TitleRating? =
+    titleRating(reads.sortedBy { it.number }.map { it.rating })

@@ -151,9 +151,17 @@ public class TVShowRepository(
         combine(
             db.mediaItemDao().observeByType(MediaType.TV_SHOW),
             db.tvDetailsDao().observeAll(),
-        ) { mediaItems, allDetails ->
+            db.watchThroughDao().observeAll(),
+        ) { mediaItems, allDetails, allRuns ->
             val detailsByMediaId = allDetails.associateBy { it.mediaId }
-            mediaItems.map { MediaWithDetails.TVShow(item = it, details = detailsByMediaId[it.id]) }
+            val runsByMediaId = allRuns.groupBy { it.mediaId }
+            mediaItems.map {
+                MediaWithDetails.TVShow(
+                    item = it,
+                    details = detailsByMediaId[it.id],
+                    runs = runsByMediaId[it.id].orEmpty(),
+                )
+            }
         }
 
     /**
@@ -166,9 +174,10 @@ public class TVShowRepository(
         combine(
             db.mediaItemDao().observeById(id),
             db.tvDetailsDao().observeByMediaId(id),
-        ) { mediaItem, details ->
+            db.watchThroughDao().observeForMedia(id),
+        ) { mediaItem, details, runs ->
             if (mediaItem != null && mediaItem.type == MediaType.TV_SHOW) {
-                MediaWithDetails.TVShow(item = mediaItem, details = details)
+                MediaWithDetails.TVShow(item = mediaItem, details = details, runs = runs)
             } else {
                 null
             }
@@ -793,35 +802,4 @@ public class TVShowRepository(
             if (rows == 0) Resource.Error("TV show with id=$mediaId not found") else Resource.Success(Unit)
         }
     }
-
-    /**
-     * Changes only a show's [WatchStatus].
-     *
-     * Separate from [updateShowMetadata] rather than a call into it, because a status tap is not an
-     * edit of everything else -- same reasoning as
-     * [com.hub.media.features.movies.data.MovieRepository.updateWatchStatus]'s KDoc: re-sending
-     * title/year/price/totalSeasons to change one column would put those values back through
-     * [TVMetadataValidation], and could no longer change status alone on a row whose stored
-     * release year predates [TVMetadataValidation.MIN_RELEASE_YEAR] or is otherwise
-     * unreachable through this app's own forms. Writing only the status column also means a status
-     * tap can no longer overwrite a title someone edited in between.
-     *
-     * Unlike the movie equivalent, there is no `watchedAt` to derive here: TV progress is never
-     * stored on [TVDetailsEntity] (see its KDoc) -- only the per-episode [EpisodeEntity.watchedAt]
-     * columns [setEpisodeWatched] manages are timestamped.
-     *
-     * @return [Resource.Error] if [mediaId] has no `tv_details` row (deleted, or never a show).
-     */
-    public suspend fun updateWatchStatus(
-        mediaId: String,
-        status: WatchStatus,
-    ): Resource<Unit> =
-        logger.guardResource(
-            tag = TAG,
-            failure = "Failed to update show status",
-            logMessage = { "Failed to update status for show: id=$mediaId" },
-        ) {
-            val rows = db.tvWriteDao().updateStatusFields(mediaId, status)
-            if (rows == 0) Resource.Error("TV show with id=$mediaId not found") else Resource.Success(Unit)
-        }
 }

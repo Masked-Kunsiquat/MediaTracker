@@ -4,7 +4,6 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.MediaRepository
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.IdentifierProvider
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.network.tmdbImagePacer
@@ -23,6 +22,7 @@ import com.hub.media.features.tv.data.NewEpisode
 import com.hub.media.features.tv.data.SeasonEpisodes
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.data.WatchThroughRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
 import com.hub.media.features.tv.network.TmdbClient
@@ -327,7 +327,7 @@ class BulkTmdbBackfillUseCaseTest {
             val episode = db.episodeDao().getByMediaId(mediaId).first { it.episodeNumber == 1 }
             val watchedAt = Instant.parse("2020-01-01T00:00:00Z")
             db.tvWriteDao().markEpisodesWatchedAt(mapOf(episode.id to watchedAt))
-            shows.updateWatchStatus(mediaId, WatchStatus.ABANDONED)
+            WatchThroughRepository(db, includeSpecials = { false }).setAbandoned(mediaId, true)
 
             useCase().execute()
 
@@ -335,8 +335,8 @@ class BulkTmdbBackfillUseCaseTest {
             assertEquals(watchedAt, after.watchedAt, "a watch date must survive a background pass")
             assertEquals("1:23:45", after.title, "and the row must still have been enriched")
             assertEquals(
-                WatchStatus.ABANDONED,
-                db.tvDetailsDao().getByMediaId(mediaId)?.status,
+                true,
+                db.watchThroughDao().getLatest(mediaId)?.abandoned,
                 "giving up on a show is a decision no pass may revisit",
             )
         }

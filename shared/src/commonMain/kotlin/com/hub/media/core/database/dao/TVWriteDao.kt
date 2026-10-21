@@ -184,28 +184,13 @@ interface TVWriteDao {
      * The `tv_details` half of [updateShowMetadataAtomically]: `totalSeasons` only.
      *
      * `status` is deliberately absent (#173). The edit form has no status control -- abandoning is
-     * the detail screen's toggle via [updateStatusFields] -- so writing it here could only ever put
+     * the detail screen's toggle on the show's watch-through (#231) -- so writing it here could only ever put
      * back a value read when the form opened, silently undoing an abandon made since.
      */
     @Query("UPDATE tv_details SET totalSeasons = :totalSeasons WHERE mediaId = :mediaId")
     suspend fun updateTVDetailFields(
         mediaId: String,
         totalSeasons: Int?,
-    ): Int
-
-    /**
-     * Targeted update of just the status column, leaving `totalSeasons` alone. Backs
-     * [com.hub.media.features.tv.data.TVShowRepository.updateWatchStatus], which exists so a status
-     * tap does not have to re-send `totalSeasons` just to change this one column -- same reasoning
-     * as [MovieWriteDao.updateWatchStatusFields].
-     *
-     * No `type` predicate, and none is needed: `tv_details` holds TV rows only, so its affected-row
-     * count already means "no such show" on its own.
-     */
-    @Query("UPDATE tv_details SET status = :status WHERE mediaId = :mediaId")
-    suspend fun updateStatusFields(
-        mediaId: String,
-        status: WatchStatus,
     ): Int
 
     /**
@@ -410,7 +395,8 @@ interface TVWriteDao {
     // ---- Watched state and viewings (#90) --------------------------------------------------------
     //
     // Viewings are the truth: every method below leaves `episodes.watchedAt` equal to the episode's
-    // latest `watch_logs` row, or `null` when it has none, inside its own transaction. Nothing else
+    // latest `watch_logs` row *in the show's latest watch-through* (#231), or `null` when it has none
+    // there, inside its own transaction. Nothing else
     // in the app writes `watchedAt` -- see docs/superpowers/specs/2026-10-13-watch-history-design.md.
 
     @Query("SELECT * FROM episodes WHERE id IN (:ids)")
@@ -448,21 +434,89 @@ interface TVWriteDao {
     @Query("DELETE FROM watch_logs WHERE id = :logId")
     suspend fun deleteViewingRow(logId: String): Int
 
-    @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
-    suspend fun deleteViewingsFor(episodeId: String): Int
-
     @Query("UPDATE watch_logs SET watchedAt = :at WHERE id = :logId")
     suspend fun setViewingDate(
         logId: String,
         at: Instant,
     ): Int
 
-    /** Re-derives `watchedAt` from the episode's viewings: their latest date, or `null` with none. */
+    /** Re-derives `watchedAt` from the episode's viewings in its show's latest run, or `null` with none (#231). */
     @Query(
-        "UPDATE episodes SET watchedAt = (SELECT MAX(watchedAt) FROM watch_logs WHERE episodeId = :episodeId) " +
-            "WHERE id = :episodeId",
+        "UPDATE episodes SET watchedAt = (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.episodeId = :episodeId " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)) WHERE id = :episodeId",
     )
     suspend fun recomputeWatchedAt(episodeId: String): Int
+
+    /** [recomputeWatchedAt] for every episode of a show: after Watch again or Remove this watch-through. */
+    @Query(
+        "UPDATE episodes SET watchedAt = (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.episodeId = episodes.id " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)) WHERE mediaId = :mediaId",
+    )
+    suspend fun recomputeWatchedAtForShow(mediaId: String): Int
+
+    @Query("SELECT * FROM watch_logs WHERE episodeId = :episodeId AND watchThroughId = :runId")
+    suspend fun viewingsInRun(
+        episodeId: String,
+        runId: String,
+    ): List<WatchLogEntity>
+
+    @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId AND watchThroughId = :runId")
+    suspend fun deleteViewingsInRun(
+        episodeId: String,
+        runId: String,
+    ): Int
+
+    @Query("SELECT COUNT(*) FROM watch_throughs WHERE id = :runId")
+    suspend fun runExists(runId: String): Int
+
+    @Query("SELECT COALESCE(MAX(number), 0) FROM watch_throughs WHERE mediaId = :mediaId")
+    suspend fun maxRunNumber(mediaId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertRun(run: WatchThroughEntity)
+
+    @Query(
+        "DELETE FROM watch_throughs WHERE id = :id AND number > 1 " +
+            "AND number = (SELECT MAX(w.number) FROM watch_throughs w WHERE w.mediaId = watch_throughs.mediaId) " +
+            "AND NOT EXISTS (SELECT 1 FROM watch_logs l WHERE l.watchThroughId = :id)",
+    )
+    suspend fun deleteRunIfRemovable(id: String): Int
+
+    @Query("SELECT mediaId FROM watch_throughs WHERE id = :id")
+    suspend fun runMediaId(id: String): String?
+
+    /**
+     * Watch again (#231): run *n+1*, and every episode unticked in the same transaction.
+     *
+     * [afterNumber] is the run the caller checked was complete or abandoned, so a second call racing the
+     * first inserts the same number again and fails on the unique (mediaId, number) index, which the
+     * repository reports -- rather than stacking an empty run #3 on top of the new #2.
+     *
+     * @return the new run's id.
+     */
+    @Transaction
+    suspend fun startNextRun(
+        mediaId: String,
+        newRunId: String,
+        afterNumber: Int? = null,
+    ): String {
+        latestRunId(mediaId)
+        val number = (afterNumber ?: maxRunNumber(mediaId)) + 1
+        insertRun(WatchThroughEntity(id = newRunId, mediaId = mediaId, number = number))
+        recomputeWatchedAtForShow(mediaId)
+        return newRunId
+    }
+
+    /** Remove this watch-through (#231): the latest, not #1, no viewings. The previous run's ticks come back. */
+    @Transaction
+    suspend fun removeRun(runId: String): Boolean {
+        val mediaId = runMediaId(runId) ?: return false
+        if (deleteRunIfRemovable(runId) == 0) return false
+        recomputeWatchedAtForShow(mediaId)
+        return true
+    }
 
     /**
      * Sets `watchedAt` only on a still-unwatched episode, so the count is the number that actually
@@ -473,9 +527,6 @@ interface TVWriteDao {
         episodeId: String,
         watchedAt: Instant,
     ): Int
-
-    @Query("UPDATE episodes SET watchedAt = NULL WHERE id = :episodeId")
-    suspend fun clearWatchedAtRow(episodeId: String): Int
 
     /**
      * Marks each episode watched at its own time (#131), and records that viewing (#90). Only rows
@@ -563,20 +614,25 @@ interface TVWriteDao {
     suspend fun restoreViewing(log: WatchLogEntity): Boolean {
         val episodeId = log.episodeId ?: return false
         if (getByIds(listOf(episodeId)).isEmpty() || viewingById(log.id) != null) return false
+        // Its run was removed since (#231): nothing to put it back into.
+        if (log.watchThroughId != null && runExists(log.watchThroughId) == 0) return false
         insertViewing(log)
         recomputeWatchedAt(episodeId)
         return true
     }
 
     /**
-     * Unticks one episode: removes its viewings and clears `watchedAt`, returning the viewings so
-     * Undo can put back exactly what was removed. Empty when it was not watched.
+     * Unticks one episode: removes its viewings **in the latest run** (#231) and clears `watchedAt`,
+     * returning them so Undo can put back exactly what was removed. Earlier runs keep their history.
+     * Empty when it was not watched in this run.
      */
     @Transaction
     suspend fun clearEpisodeReturningPrevious(episodeId: String): List<WatchLogEntity> {
-        val previous = viewingsFor(episodeId)
-        deleteViewingsFor(episodeId)
-        clearWatchedAtRow(episodeId)
+        val episode = getByIds(listOf(episodeId)).singleOrNull() ?: return emptyList()
+        val run = latestRunId(episode.mediaId)
+        val previous = viewingsInRun(episodeId, run)
+        deleteViewingsInRun(episodeId, run)
+        recomputeWatchedAt(episodeId)
         return previous
     }
 
@@ -599,7 +655,10 @@ interface TVWriteDao {
         var restored = 0
         for ((episodeId, logs) in previous.filter { it.episodeId != null }.groupBy { it.episodeId!! }) {
             val episode = getByIds(listOf(episodeId)).singleOrNull() ?: continue
-            if (episode.watchedAt != null || viewingsFor(episodeId).isNotEmpty()) continue
+            if (episode.watchedAt != null) continue
+            // A run removed since (#231) cannot take its viewings back; the foreign key would refuse them.
+            if (logs.any { log -> log.watchThroughId?.let { runExists(it) == 0 } == true }) continue
+            if (viewingsInRun(episodeId, latestRunId(episode.mediaId)).isNotEmpty()) continue
             logs.forEach { insertViewing(it) }
             recomputeWatchedAt(episodeId)
             restored++
@@ -607,9 +666,11 @@ interface TVWriteDao {
         return restored
     }
 
+    /** Watched episodes with no viewing in their show's latest run (#231). */
     @Query(
         "SELECT * FROM episodes WHERE watchedAt IS NOT NULL AND NOT EXISTS " +
-            "(SELECT 1 FROM watch_logs WHERE watch_logs.episodeId = episodes.id)",
+            "(SELECT 1 FROM watch_logs l WHERE l.episodeId = episodes.id AND l.watchThroughId = " +
+            "(SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId ORDER BY w.number DESC LIMIT 1))",
     )
     suspend fun watchedWithoutViewings(): List<EpisodeEntity>
 

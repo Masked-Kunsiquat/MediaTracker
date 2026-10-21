@@ -1481,13 +1481,15 @@ class TVShowRepositoryTest {
             // The edit form has no status control (#173): abandoning is the detail screen's toggle.
             // So the save must not write the column at all, or an edit would silently un-abandon.
             val mediaId = (repo.addShow(title = "Lost", releaseYear = 2004) as Resource.Success).data
-            assertIs<Resource.Success<Unit>>(repo.updateWatchStatus(mediaId, WatchStatus.ABANDONED))
+            assertIs<Resource.Success<Unit>>(
+                WatchThroughRepository(db, includeSpecials = { false }).setAbandoned(mediaId, true),
+            )
 
             val result = repo.updateShowMetadata(mediaId = mediaId, title = "LOST", releaseYear = 2004)
             assertIs<Resource.Success<Unit>>(result)
 
             assertEquals("LOST", db.mediaItemDao().getById(mediaId)?.title, "positive control: the edit landed")
-            assertEquals(WatchStatus.ABANDONED, db.tvDetailsDao().getByMediaId(mediaId)?.status)
+            assertEquals(true, db.watchThroughDao().getLatest(mediaId)?.abandoned)
         }
 
     @Test
@@ -1593,42 +1595,6 @@ class TVShowRepositoryTest {
 
             assertEquals(1, db.tvDetailsDao().getByMediaId(mediaId)?.totalSeasons)
             assertEquals(5, repo.observeEpisodes(mediaId).first().size)
-        }
-
-    // ---- updateWatchStatus -----------------------------------------------------------------------
-
-    @Test
-    fun updateWatchStatus_changesStatusOnlyLeavesRestAlone() =
-        runTest {
-            val addResult =
-                repo.addShow(
-                    title = "Heat: The Series",
-                    releaseYear = 1995,
-                    purchasePrice = 7.99,
-                    totalSeasons = 3,
-                )
-            assertIs<Resource.Success<String>>(addResult)
-            val mediaId = addResult.data
-
-            val result = repo.updateWatchStatus(mediaId = mediaId, status = WatchStatus.WATCHED)
-            assertIs<Resource.Success<Unit>>(result)
-
-            val item = db.mediaItemDao().getById(mediaId)
-            assertEquals("Heat: The Series", item?.title, "a status change must not rewrite the title")
-            assertEquals(1995, item?.releaseYear)
-            assertEquals(7.99, item?.purchasePrice)
-
-            val details = db.tvDetailsDao().getByMediaId(mediaId)
-            assertEquals(WatchStatus.WATCHED, details?.status)
-            assertEquals(3, details?.totalSeasons, "a status change must not rewrite totalSeasons")
-        }
-
-    @Test
-    fun updateWatchStatus_unknownMediaId_returnsError() =
-        runTest {
-            val result = repo.updateWatchStatus(mediaId = newId(), status = WatchStatus.WATCHED)
-            assertIs<Resource.Error>(result)
-            assertTrue(result.message.contains("not found"))
         }
 
     // ---- observeShowDetail / observeAllShowsWithDetails: type gate against books and movies ----

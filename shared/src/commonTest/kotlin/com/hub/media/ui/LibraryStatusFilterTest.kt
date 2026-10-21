@@ -49,7 +49,7 @@ class LibraryStatusFilterTest {
     fun ofShow_noEpisodesWatched_isNotStarted() {
         assertEquals(
             LibraryStatusFilter.NOT_STARTED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, progress(total = 10, watched = 0)),
+            LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 0)),
         )
     }
 
@@ -57,7 +57,7 @@ class LibraryStatusFilterTest {
     fun ofShow_someEpisodesWatched_isInProgress() {
         assertEquals(
             LibraryStatusFilter.IN_PROGRESS,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, progress(total = 10, watched = 4)),
+            LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 4)),
         )
     }
 
@@ -65,7 +65,7 @@ class LibraryStatusFilterTest {
     fun ofShow_everyEpisodeWatched_isFinished() {
         assertEquals(
             LibraryStatusFilter.FINISHED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, progress(total = 10, watched = 10)),
+            LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 10)),
         )
     }
 
@@ -77,7 +77,7 @@ class LibraryStatusFilterTest {
         assertEquals(
             LibraryStatusFilter.IN_PROGRESS,
             LibraryStatusFilter.ofShow(
-                WatchStatus.WATCHLIST,
+                abandoned = false,
                 progress(total = 10, watched = 10),
                 AiringStatus.CONTINUING,
             ),
@@ -92,7 +92,7 @@ class LibraryStatusFilterTest {
         for (over in listOf(AiringStatus.ENDED, AiringStatus.CANCELLED)) {
             assertEquals(
                 LibraryStatusFilter.FINISHED,
-                LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, progress(total = 10, watched = 10), over),
+                LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 10), over),
                 "$over means no more episodes are coming, so a fully-watched show is finished",
             )
         }
@@ -105,7 +105,7 @@ class LibraryStatusFilterTest {
         // unknown, which is a worse lie than the one this column exists to fix.
         assertEquals(
             LibraryStatusFilter.FINISHED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, progress(total = 10, watched = 10), airingStatus = null),
+            LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 10), airingStatus = null),
         )
     }
 
@@ -116,7 +116,7 @@ class LibraryStatusFilterTest {
         assertEquals(
             LibraryStatusFilter.IN_PROGRESS,
             LibraryStatusFilter.ofShow(
-                WatchStatus.WATCHLIST,
+                abandoned = false,
                 progress(total = 10, watched = 4),
                 AiringStatus.CONTINUING,
             ),
@@ -129,7 +129,7 @@ class LibraryStatusFilterTest {
         assertEquals(
             LibraryStatusFilter.ABANDONED,
             LibraryStatusFilter.ofShow(
-                WatchStatus.ABANDONED,
+                abandoned = true,
                 progress(total = 10, watched = 10),
                 AiringStatus.CONTINUING,
             ),
@@ -143,7 +143,7 @@ class LibraryStatusFilterTest {
         // show under Finished -- which is why the null case is spelled out rather than computed.
         assertEquals(
             LibraryStatusFilter.NOT_STARTED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, tvProgress = null),
+            LibraryStatusFilter.ofShow(abandoned = false, tvProgress = null),
         )
     }
 
@@ -151,10 +151,10 @@ class LibraryStatusFilterTest {
     fun ofShow_newSeasonQuickFilledAfterFinishing_returnsToInProgress() {
         // The case that decided derivation over the stored status: a show watched to the end, then
         // a new season added. A stored "finished" would survive here; the episodes cannot.
-        val finished = LibraryStatusFilter.ofShow(WatchStatus.WATCHED, progress(total = 10, watched = 10))
+        val finished = LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 10))
         assertEquals(LibraryStatusFilter.FINISHED, finished)
 
-        val afterNewSeason = LibraryStatusFilter.ofShow(WatchStatus.WATCHED, progress(total = 18, watched = 10))
+        val afterNewSeason = LibraryStatusFilter.ofShow(abandoned = false, progress(total = 18, watched = 10))
         assertEquals(
             LibraryStatusFilter.IN_PROGRESS,
             afterNewSeason,
@@ -164,26 +164,13 @@ class LibraryStatusFilterTest {
 
     @Test
     fun ofShow_abandoned_winsOverEveryDerivation() {
-        // Giving up is a decision no episode count can express, so it is the one value read from
-        // the column -- and it must hold whatever the episodes say, including none at all.
+        // Giving up is a decision no episode count can express, so it is the one value stored (on the
+        // latest watch-through since #231) -- and it must hold whatever the episodes say, including none at all.
         for (tvProgress in listOf(null, progress(total = 10, watched = 0), progress(total = 10, watched = 10))) {
             assertEquals(
                 LibraryStatusFilter.ABANDONED,
-                LibraryStatusFilter.ofShow(WatchStatus.ABANDONED, tvProgress),
+                LibraryStatusFilter.ofShow(abandoned = true, tvProgress),
                 "an abandoned show stays abandoned regardless of progress ($tvProgress)",
-            )
-        }
-    }
-
-    @Test
-    fun ofShow_storedStatusOtherThanAbandoned_isIgnored() {
-        // WATCHING/WATCHED are storable but meaningless for placement: nothing writes them, and a
-        // future reader must not be able to make one matter by setting it by hand.
-        for (stored in listOf(WatchStatus.WATCHLIST, WatchStatus.WATCHING, WatchStatus.WATCHED)) {
-            assertEquals(
-                LibraryStatusFilter.IN_PROGRESS,
-                LibraryStatusFilter.ofShow(stored, progress(total = 10, watched = 4)),
-                "stored status $stored must not override what the episodes say",
             )
         }
     }
@@ -194,7 +181,7 @@ class LibraryStatusFilterTest {
         // show out of every chip rather than merely being wrong about which one.
         assertEquals(
             LibraryStatusFilter.FINISHED,
-            LibraryStatusFilter.ofShow(WatchStatus.WATCHLIST, progress(total = 10, watched = 11)),
+            LibraryStatusFilter.ofShow(abandoned = false, progress(total = 10, watched = 11)),
         )
     }
 

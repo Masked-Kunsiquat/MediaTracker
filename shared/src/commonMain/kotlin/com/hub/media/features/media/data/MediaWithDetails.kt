@@ -6,7 +6,9 @@ import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.features.books.data.TitleRating
+import com.hub.media.features.books.data.readsRating
 import com.hub.media.features.books.data.titleRating
 import kotlin.time.Instant
 
@@ -33,7 +35,7 @@ public sealed class MediaWithDetails {
 
         val finishedAt: Instant? get() = latestRead?.finishedAt
 
-        val rating: TitleRating? get() = titleRating(reads)
+        val rating: TitleRating? get() = readsRating(reads)
     }
 
     /**
@@ -56,5 +58,14 @@ public sealed class MediaWithDetails {
     public data class TVShow(
         override val item: MediaItemEntity,
         val details: TVDetailsEntity?,
-    ) : MediaWithDetails()
+        /** The show's watch-throughs (#231), in any order; the latest (highest number) is the current one. */
+        val runs: List<WatchThroughEntity> = emptyList(),
+    ) : MediaWithDetails() {
+        val latestRun: WatchThroughEntity? get() = runs.maxByOrNull { it.number }
+
+        /** Whether the current watch-through was given up on (#231) -- earlier runs keep their own flag. */
+        val isAbandoned: Boolean get() = latestRun?.abandoned == true
+
+        val rating: TitleRating? get() = titleRating(runs.sortedBy { it.number }.map { it.rating })
+    }
 }

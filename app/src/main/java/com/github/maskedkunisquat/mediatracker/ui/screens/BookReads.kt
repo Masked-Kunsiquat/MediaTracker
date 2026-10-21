@@ -81,13 +81,13 @@ internal fun YourRatingRow(rating: TitleRating?) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            rating.ratedReads >= 2 ->
+            rating.rated >= 2 ->
                 Text(
                     text =
                         stringResource(
                             R.string.rating_average_of_reads,
                             formatAverage(rating.averageStars),
-                            rating.ratedReads,
+                            rating.rated,
                             formatStars((rating.latestStars * 2).roundToInt()),
                         ),
                     style = MaterialTheme.typography.bodySmall,

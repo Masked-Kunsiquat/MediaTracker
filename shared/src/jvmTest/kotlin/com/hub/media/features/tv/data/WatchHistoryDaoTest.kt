@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Instant
 
 /**
@@ -49,8 +50,15 @@ class WatchHistoryDaoTest {
 
     private suspend fun watchedAt(id: String) = db.episodeDao().getById(id)?.watchedAt
 
-    private suspend fun assertInvariant(id: String) =
-        assertEquals(viewings(id).maxOfOrNull { it.watchedAt }, watchedAt(id), "watchedAt must be the latest viewing")
+    /** `watchedAt` is the latest viewing in the show's latest run (#231). */
+    private suspend fun assertInvariant(id: String) {
+        val latestRun = db.watchThroughDao().getLatest(db.episodeDao().getById(id)!!.mediaId)?.id
+        assertEquals(
+            viewings(id).filter { it.watchThroughId == latestRun }.maxOfOrNull { it.watchedAt },
+            watchedAt(id),
+            "watchedAt must be the latest viewing in the latest run",
+        )
+    }
 
     @Test
     fun tick_writesOneViewingPerEpisodeChanged_andNoneForAlreadyWatched() =
@@ -186,5 +194,77 @@ class WatchHistoryDaoTest {
             assertEquals(0, dao.ensureViewingsForWatchedEpisodes())
             assertEquals(listOf(t2), viewings(watched.id).map { it.watchedAt })
             assertInvariant(watched.id)
+        }
+
+    @Test
+    fun watchAgain_clearsTicks_andRemoveRestoresThem() =
+        runTest {
+            val (e1, e2) = season(2)
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t1, e2.id to t2))
+            val two = dao.startNextRun(e1.mediaId, newId())
+            assertEquals(listOf(null, null), listOf(watchedAt(e1.id), watchedAt(e2.id)), "run #2 starts empty")
+            assertEquals(2, viewings(e1.id).size + viewings(e2.id).size, "run #1's history is kept")
+            assertTrue(dao.removeRun(two))
+            assertEquals(listOf(t1, t2), listOf(watchedAt(e1.id), watchedAt(e2.id)), "ticks come back exactly")
+        }
+
+    @Test
+    fun untickInRunTwo_keepsRunOneViewings() =
+        runTest {
+            val (e1) = season(1)
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t1))
+            dao.startNextRun(e1.mediaId, newId())
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t2))
+            val removed = dao.clearEpisodeReturningPrevious(e1.id)
+            assertEquals(listOf(t2), removed.map { it.watchedAt })
+            assertEquals(listOf(t1), viewings(e1.id).map { it.watchedAt })
+            assertEquals(null, watchedAt(e1.id))
+        }
+
+    @Test
+    fun deletingAnOlderRunsViewing_leavesTicksAlone() =
+        runTest {
+            val (e1) = season(1)
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t1))
+            val old = viewings(e1.id).single()
+            dao.startNextRun(e1.mediaId, newId())
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t2))
+            dao.deleteViewing(old.id)
+            assertEquals(t2, watchedAt(e1.id))
+        }
+
+    @Test
+    fun restoreAll_afterItsRunWasRemoved_skipsQuietly() =
+        runTest {
+            val (e1) = season(1)
+            val two = dao.startNextRun(e1.mediaId, newId())
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t1))
+            val previous = dao.clearEpisodeReturningPrevious(e1.id)
+            assertTrue(dao.removeRun(two))
+            assertEquals(0, dao.restoreAll(previous))
+            assertEquals(null, watchedAt(e1.id))
+        }
+
+    @Test
+    fun backfill_writesIntoTheLatestRun() =
+        runTest {
+            val (e1) = season(1)
+            val two = dao.startNextRun(e1.mediaId, newId())
+            dao.markEpisodeWatchedIfUnwatched(e1.id, t1) // watched with no viewing, as an old library can be
+            dao.ensureViewingsForWatchedEpisodes()
+            assertEquals(two, viewings(e1.id).single().watchThroughId)
+        }
+
+    /** A later viewing in an older run never shows as this run's date (#231). */
+    @Test
+    fun aLaterViewingInAnOlderRun_staysOutOfTheCurrentTick() =
+        runTest {
+            val e1 = season(1).single()
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t3))
+            dao.startNextRun(e1.mediaId, newId())
+            dao.markEpisodesWatchedAt(mapOf(e1.id to t1))
+            dao.addViewing(e1.id, t0)
+            assertEquals(t1, watchedAt(e1.id))
+            assertInvariant(e1.id)
         }
 }

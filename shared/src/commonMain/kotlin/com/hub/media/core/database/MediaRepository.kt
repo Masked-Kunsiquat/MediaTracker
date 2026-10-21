@@ -76,8 +76,10 @@ public class MediaRepository(
             db.bookDetailsDao().observeAll(),
             db.movieDetailsDao().observeAll(),
             db.tvDetailsDao().observeAll(),
-            db.readThroughDao().observeAll(),
-        ) { mediaItems, bookDetails, movieDetails, tvDetails, reads ->
+            // Nested: five sources is combine()'s named-arity limit, and shows' runs (#231) are a sixth.
+            combine(db.readThroughDao().observeAll(), db.watchThroughDao().observeAll(), ::Pair),
+        ) { mediaItems, bookDetails, movieDetails, tvDetails, (reads, runs) ->
+            val runsByMediaId = runs.groupBy { it.mediaId }
             val bookDetailsByMediaId = bookDetails.associateBy { it.mediaId }
             val readsByMediaId = reads.groupBy { it.mediaId }
             val movieDetailsByMediaId = movieDetails.associateBy { it.mediaId }
@@ -99,6 +101,7 @@ public class MediaRepository(
                         MediaWithDetails.TVShow(
                             item = mediaItem,
                             details = tvDetailsByMediaId[mediaItem.id],
+                            runs = runsByMediaId[mediaItem.id].orEmpty(),
                         )
                 }
             }

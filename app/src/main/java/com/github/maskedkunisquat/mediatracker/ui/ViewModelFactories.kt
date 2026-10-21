@@ -490,6 +490,7 @@ class TVShowDetailViewModelFactory(
                 settingsRepository = appContainer.settingsRepository,
                 markEpisodesWatched = appContainer.markEpisodesWatchedUseCase,
                 recordRewatch = appContainer.recordRewatchUseCase,
+                watchThroughRepository = appContainer.watchThroughRepository,
             )
         },
     )

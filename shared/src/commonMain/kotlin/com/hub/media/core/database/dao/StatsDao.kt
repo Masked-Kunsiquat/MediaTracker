@@ -191,8 +191,19 @@ interface StatsDao {
         type: MediaType,
     ): Flow<List<ViewingRow>>
 
-    /** Each show's stored status and airing state (#217), for "shows finished" (see `countFinishedShows`). */
-    @Query("SELECT mediaId, status, airingStatus FROM tv_details")
+    /**
+     * Each show's airing state, its latest watch-through's abandoned flag, and whether an earlier run was
+     * finished (#217, #231), for "shows finished" (see `countFinishedShows`). Watch again is offered only
+     * once a run is complete or abandoned, so an earlier run that is not abandoned was finished.
+     */
+    @Query(
+        "SELECT t.mediaId, t.airingStatus, " +
+            "COALESCE((SELECT w.abandoned FROM watch_throughs w WHERE w.mediaId = t.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1), 0) AS abandoned, " +
+            "EXISTS (SELECT 1 FROM watch_throughs w WHERE w.mediaId = t.mediaId AND w.abandoned = 0 AND w.number < " +
+            "(SELECT MAX(x.number) FROM watch_throughs x WHERE x.mediaId = t.mediaId)) AS finishedEarlierRun " +
+            "FROM tv_details t",
+    )
     fun observeShowStates(): Flow<List<ShowStateRow>>
 
     /**

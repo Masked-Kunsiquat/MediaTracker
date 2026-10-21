@@ -4,7 +4,6 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
 import com.hub.media.core.storage.LocalImageStorageManager
@@ -16,9 +15,11 @@ import com.hub.media.features.books.data.BookRepository
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.media.domain.DeleteMediaUseCase
 import com.hub.media.features.settings.data.SettingsRepository
+import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.setIncludeSpecials
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.data.WatchThroughRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
 import com.hub.media.features.tv.domain.RecordRewatchUseCase
@@ -77,6 +78,7 @@ class TVShowDetailViewModelTest {
     private lateinit var clock: SteppingClock
     private lateinit var markWatched: MarkEpisodesWatchedUseCase
     private lateinit var recordRewatch: RecordRewatchUseCase
+    private lateinit var watchThroughs: WatchThroughRepository
 
     private class SteppingClock(
         var now: Instant,
@@ -96,6 +98,7 @@ class TVShowDetailViewModelTest {
         clock = SteppingClock(Instant.parse("2026-10-12T20:00:00Z"))
         markWatched = MarkEpisodesWatchedUseCase(db, clock)
         recordRewatch = RecordRewatchUseCase(db, clock)
+        watchThroughs = WatchThroughRepository(db, includeSpecials = { settingsRepository.getIncludeSpecials() })
         tempDir = runBlocking { createTestTempDir() }
         deleteMediaUseCase = DeleteMediaUseCase(db, LocalImageStorageManager(tempDir))
         // Never reached by these tests -- none of them refresh -- but the ViewModel needs one, and a
@@ -155,6 +158,7 @@ class TVShowDetailViewModelTest {
                     settingsRepository,
                     markWatched,
                     recordRewatch,
+                    watchThroughs,
                 ),
             )
         viewModel.uiState.first { it is TVShowDetailUiState.Ready }
@@ -336,13 +340,13 @@ class TVShowDetailViewModelTest {
             viewModel.uiState.first {
                 it is TVShowDetailUiState.Ready && (it as TVShowDetailUiState.Ready).isAbandoned
             }
-            assertEquals(WatchStatus.ABANDONED, db.tvDetailsDao().getByMediaId(showId)?.status)
+            assertEquals(true, db.watchThroughDao().getLatest(showId)?.abandoned)
 
             viewModel.setAbandoned(false)
             viewModel.uiState.first {
                 it is TVShowDetailUiState.Ready && !(it as TVShowDetailUiState.Ready).isAbandoned
             }
-            assertEquals(WatchStatus.WATCHLIST, db.tvDetailsDao().getByMediaId(showId)?.status)
+            assertEquals(false, db.watchThroughDao().getLatest(showId)?.abandoned)
         }
 
     @Test
@@ -358,6 +362,7 @@ class TVShowDetailViewModelTest {
                         settingsRepository,
                         markWatched,
                         recordRewatch,
+                        watchThroughs,
                     ),
                 )
 
@@ -382,6 +387,7 @@ class TVShowDetailViewModelTest {
                         settingsRepository,
                         markWatched,
                         recordRewatch,
+                        watchThroughs,
                     ),
                 )
 
@@ -419,6 +425,7 @@ class TVShowDetailViewModelTest {
                         settingsRepository,
                         markWatched,
                         recordRewatch,
+                        watchThroughs,
                     ),
                 )
 
@@ -444,6 +451,7 @@ class TVShowDetailViewModelTest {
                         settingsRepository,
                         markWatched,
                         recordRewatch,
+                        watchThroughs,
                     ),
                 )
 
@@ -473,6 +481,7 @@ class TVShowDetailViewModelTest {
                         settingsRepository,
                         markWatched,
                         recordRewatch,
+                        watchThroughs,
                     ),
                 )
 

@@ -426,7 +426,12 @@ public interface ImportWriteDao {
     )
     public suspend fun recomputeFilmWatchedAt(mediaId: String): Int
 
-    @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId AND watchedAt = :watchedAt")
+    /** Viewings of the episode at [watchedAt] in its show's latest run (#231). */
+    @Query(
+        "SELECT COUNT(*) FROM watch_logs l WHERE l.episodeId = :episodeId AND l.watchedAt = :watchedAt " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = l.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)",
+    )
     public suspend fun viewingCountAt(
         episodeId: String,
         watchedAt: Instant,
@@ -435,10 +440,11 @@ public interface ImportWriteDao {
     @Query("SELECT * FROM episodes WHERE id = :episodeId")
     public suspend fun episodeById(episodeId: String): EpisodeEntity?
 
-    /** The same rule as [TVWriteDao.recomputeWatchedAt]: `watchedAt` is the latest viewing. */
+    /** The same rule as [TVWriteDao.recomputeWatchedAt]: `watchedAt` is the latest viewing in the latest run (#231). */
     @Query(
-        "UPDATE episodes SET watchedAt = (SELECT MAX(watchedAt) FROM watch_logs WHERE episodeId = :episodeId) " +
-            "WHERE id = :episodeId",
+        "UPDATE episodes SET watchedAt = (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.episodeId = :episodeId " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)) WHERE id = :episodeId",
     )
     public suspend fun recomputeEpisodeWatchedAt(episodeId: String): Int
 }
