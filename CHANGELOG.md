@@ -17,10 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Skipped a rating? A Rate button sits beside the status of a finished book or show until you rate it, and an earlier watch-through can be rated when you open it. (#231)
 - Your ratings in Stats: each tab shows your average rating, your top five and how your ratings spread, for the period you pick. Only ratings on what you read or watched in that period count. (#232)
 - The year in review shows your favorites just before its summary: your top-rated book, film and show of the year. (#232)
+- The year in review shows the covers and posters already on your phone: large on its highlight pages, small beside each favorite. A title without one looks as before. (#229)
 
 ### Changed
 - A show that is fully watched but still airing now reads "Up to date" on its page instead of "Watching". (#231)
 - Your reading goal counts books new to you: a re-read still counts as a book finished, but not toward the goal. (#230)
+- The app's wording uses American spelling: favorites, canceled, catalog.
+
+### Fixed
+- If Stats or the year in review can't load your data, it now says so instead of spinning forever. (#234)
 
 ### Internal
 - Schema v8: `read_throughs` holds each read's status, dates and rating; reading sessions belong to a read; a book's status and finish date moved off `book_details`. CSV schema 7 adds `read_throughs_export.csv` and `read_number` on the reading log; older exports still import, as read #1. (#230)
