@@ -19,7 +19,9 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.features.stats.data.DayPart
+import com.hub.media.features.stats.data.Favourites
 import com.hub.media.features.stats.data.LongestBook
+import com.hub.media.features.stats.data.RatedTitle
 import com.hub.media.features.stats.data.Rhythm
 import com.hub.media.features.stats.data.YearReview
 import com.hub.media.features.stats.data.YearTotals
@@ -222,5 +224,28 @@ class YearReviewScreenTest {
         next()
         page("TOTALS").assertExists()
         composeRule.onNodeWithText("plus 3 reading sessions without a time").assertExists()
+    }
+
+    /** #232: the favourites page sits before the summary and shows only the media rated that year. */
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    @Test
+    fun theFavouritesPage_showsEachRatedMedium_andLeavesOutTheRest() {
+        val favourites =
+            Favourites(
+                book = RatedTitle("b", "Project Hail Mary", 5.0, latestAt = null, rated = 1),
+                film = null,
+                show = RatedTitle("s", "Chernobyl", 4.5, latestAt = null, rated = 1),
+            )
+        setContent(review().copy(favourites = favourites))
+
+        next()
+        next()
+        page("FAVOURITES").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.year_review_favourites, 2026)).assertIsDisplayed()
+        composeRule.onNodeWithText("Project Hail Mary").assertIsDisplayed()
+        composeRule.onNodeWithText("Chernobyl").assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.year_review_favourite_film)).assertDoesNotExist()
+        next()
+        page("SUMMARY").assertIsDisplayed()
     }
 }

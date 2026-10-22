@@ -341,6 +341,10 @@
         <item quantity="other">%d short of your goal</item>
     </plurals>
     <string name="year_review_rewatched">Your most-watched film</string>
+    <string name="year_review_favourites">Your favourites of %d</string>
+    <string name="year_review_favourite_book">Book</string>
+    <string name="year_review_favourite_film">Film</string>
+    <string name="year_review_favourite_show">Show</string>
     <plurals name="year_review_times">
         <item quantity="one">%d time</item>
         <item quantity="other">%d times</item>
