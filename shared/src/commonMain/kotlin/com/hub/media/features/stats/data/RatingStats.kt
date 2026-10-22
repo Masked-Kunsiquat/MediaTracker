@@ -10,6 +10,7 @@ import kotlin.time.Instant
  * @property latestAt Its most recent dated rated item in the period, for breaking ties; `null` when
  *   none is dated (All time only).
  * @property rated How many of its items are rated in the period.
+ * @property coverImageHash Its stored cover (#229), for the year's favorites page; `null` when it has none.
  */
 public data class RatedTitle(
     val mediaId: String,
@@ -17,6 +18,7 @@ public data class RatedTitle(
     val stars: Double,
     val latestAt: Instant?,
     val rated: Int,
+    val coverImageHash: String? = null,
 ) {
     /** The score as the stars draw it: rounded to the nearest half, in halves. */
     val roundedHalves: Int get() = (stars * 2).roundToInt().coerceIn(1, 10)
@@ -57,6 +59,7 @@ public fun ratingStats(
                 stars = items.sumOf { it.rating } / 2.0 / items.size,
                 latestAt = items.mapNotNull { it.at }.maxOrNull(),
                 rated = items.size,
+                coverImageHash = items.firstNotNullOfOrNull { it.coverImageHash },
             )
         }
     val ranked =

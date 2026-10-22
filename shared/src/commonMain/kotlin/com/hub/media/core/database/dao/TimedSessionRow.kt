@@ -12,6 +12,7 @@ import kotlin.time.Instant
  * @property authors The book's stored authors, `"; "`-joined, or `null` when none is on record.
  * @property mediaId / [title] The book the session was for (#221): the year in review names the
  *   longest session's book.
+ * @property coverImageHash The title's stored cover (#229), for the year in review; `null` when it has none.
  */
 data class TimedSessionRow(
     val timestampStart: Instant,
@@ -20,4 +21,5 @@ data class TimedSessionRow(
     val authors: String?,
     val mediaId: String,
     val title: String,
+    val coverImageHash: String? = null,
 )

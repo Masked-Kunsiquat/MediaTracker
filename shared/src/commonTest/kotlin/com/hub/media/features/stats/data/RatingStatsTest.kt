@@ -17,7 +17,8 @@ class RatingStatsTest {
         rating: Int,
         at: Instant?,
         title: String = id,
-    ) = RatedItemRow(id, title, rating, at)
+        cover: String? = null,
+    ) = RatedItemRow(id, title, rating, at, coverImageHash = cover)
 
     @Test
     fun nothingRated_isNull() {
@@ -85,5 +86,12 @@ class RatingStatsTest {
         assertNull(f.film)
         assertEquals("t", f.show?.mediaId)
         assertNull(favorites(emptyList(), emptyList(), emptyList()))
+    }
+
+    /** #229: a favorite carries its title's cover, for the favorites page. */
+    @Test
+    fun aFavorite_carriesItsCover() {
+        val f = favorites(listOf(row("b", 8, at(1), cover = "b.jpg")), emptyList(), emptyList())!!
+        assertEquals("b.jpg", f.book?.coverImageHash)
     }
 }
