@@ -1029,6 +1029,56 @@ class ImportDataUseCaseTest {
             assertTrue(sessionRepository.observeSessionsForMedia("no-such-book-id").first().isEmpty())
         }
 
+    /**
+     * A reading session pointing at a film is a category error, not an orphan (#117), and is
+     * reported as one -- the same rule the episode loop applies to an episode on a book.
+     * `readingSessions.mediaId` only requires *some* media item, so without the check the session
+     * would insert cleanly against the film and no screen would ever show it.
+     */
+    @Test
+    fun execute_sessionWhoseMediaIdIsAFilm_isSkippedAndReported() =
+        runTest {
+            val filmAdded = MovieRepository(db).addMovie(title = "Arrival", releaseYear = 2016)
+            assertIs<Resource.Success<String>>(filmAdded)
+            val bookId = addBook(title = "Known Book", repository = bookRepository)
+            val logsCsv =
+                ReadingLogCsvExporter.export(
+                    listOf(sampleReadingSession(mediaId = bookId), sampleReadingSession(mediaId = filmAdded.data)),
+                )
+
+            val result = useCase.execute(null, logsCsv, null, DuplicatePolicy.SKIP)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(1, result.data.sessionsImported, "the book's session still imports")
+            val rejection = result.data.rejections.single()
+            assertEquals(ImportRowSource.SESSION, rejection.source)
+            assertTrue(
+                rejection.reason.contains("is a MOVIE, not a book"),
+                "the reason must name what it actually found: ${rejection.reason}",
+            )
+            assertTrue(sessionRepository.observeSessionsForMedia(filmAdded.data).first().isEmpty())
+        }
+
+    /** The show half of #117: a session on a TV show is skipped and named, like one on a film. */
+    @Test
+    fun execute_sessionWhoseMediaIdIsAShow_isSkippedAndReported() =
+        runTest {
+            val showAdded = TVShowRepository(db).addShow(title = "Chernobyl", releaseYear = 2019)
+            assertIs<Resource.Success<String>>(showAdded)
+            val logsCsv = ReadingLogCsvExporter.export(listOf(sampleReadingSession(mediaId = showAdded.data)))
+
+            val result = useCase.execute(null, logsCsv, null, DuplicatePolicy.SKIP)
+
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(0, result.data.sessionsImported)
+            val rejection = result.data.rejections.single()
+            assertTrue(
+                rejection.reason.contains("is a TV_SHOW, not a book"),
+                "the reason must name what it actually found: ${rejection.reason}",
+            )
+            assertTrue(sessionRepository.observeSessionsForMedia(showAdded.data).first().isEmpty())
+        }
+
     @Test
     fun execute_invalidBusinessRuleRow_isSkippedWithReport_othersStillImport() =
         runTest {
