@@ -3,7 +3,9 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -313,5 +315,31 @@ class YearReviewScreenTest {
             "the show title $lastRow is crushed or runs below the screen $screen",
             lastRow.height > 0.dp && lastRow.bottom <= screen.bottom,
         )
+    }
+
+    /** #234: a failed read says so, with the close button still there, instead of spinning forever. */
+    @Test
+    fun aFailedLoad_saysSo_andCanStillBeClosed() {
+        composeRule.setContent {
+            MediaTrackerTheme(dynamicColor = false) {
+                YearReviewScreen(
+                    uiState = YearReviewUiState(isLoading = false, loadFailed = true),
+                    thisYear = 2026,
+                    onSelectYear = {},
+                    onClose = { closed++ },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText(string(R.string.stats_load_failed)).assertIsDisplayed()
+        composeRule
+            .onNode(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
+                ),
+            ).assertDoesNotExist()
+        composeRule.onNodeWithTag(TestTags.YearReview.CLOSE).performClick()
+        assertEquals(1, closed)
     }
 }

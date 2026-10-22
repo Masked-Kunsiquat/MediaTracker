@@ -7,6 +7,8 @@ import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.stats.data.StatsRepository
@@ -25,7 +27,9 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -61,11 +65,13 @@ class YearReviewViewModelTest {
     ): Instant = LocalDateTime(year, month, 10, 20, 0).toInstant(zone)
 
     private fun newViewModel(initialYear: Int? = null) =
-        viewModels.track(YearReviewViewModel(StatsRepository(db), settings, zone, clock, initialYear))
+        viewModels.track(YearReviewViewModel(StatsRepository(db), settings, zone, clock, initialYear, logger))
 
     private fun TestScope.hold(viewModel: YearReviewViewModel) {
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect { } }
     }
+
+    private val logger = RecordingLogger()
 
     private var log = 0
 
@@ -192,6 +198,24 @@ class YearReviewViewModelTest {
                     .first { it.review?.year == 2025 }
                     .review!!
                     .favorites,
+            )
+        }
+
+    /** #234: a read that throws ends the spinner with a failure, and the log says which screen. */
+    @Test
+    fun aFailedRead_isLoadFailed_andLogged_notAnEndlessSpinner() =
+        runTest {
+            val vm = newViewModel()
+            db.close()
+
+            val state = vm.uiState.first { it.loadFailed }
+            assertFalse(state.isLoading)
+            assertTrue(
+                logger.entries.any {
+                    it.level == LogLevel.ERROR &&
+                        it.throwable != null &&
+                        it.tag == "YearReviewViewModel"
+                },
             )
         }
 }

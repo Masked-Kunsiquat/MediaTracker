@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.database.dao.PeriodStatsRow
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.error
 import com.hub.media.features.settings.data.MAX_READING_GOAL
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.WeekStartDay
@@ -30,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.emitAll
@@ -82,6 +86,7 @@ public class StatsViewModel(
     private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
     private val clock: Clock = Clock.System,
     private val initialDomain: MediaType? = null,
+    private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val periodSnapshot =
         combine(
@@ -155,11 +160,17 @@ public class StatsViewModel(
         }
 
     public val uiState: StateFlow<StatsUiState> =
-        periodSnapshot.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5.seconds),
-            initialValue = StatsUiState(isLoading = true),
-        )
+        periodSnapshot
+            .catch { e ->
+                // As the year in review (#234): a failed read ends the spinner and names this screen in the log.
+                // `catch` sees only upstream failures, so the collector's own cancellation still propagates.
+                logger.error(TAG, e) { "Could not read the stats" }
+                emit(StatsUiState(isLoading = false, loadFailed = true))
+            }.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5.seconds),
+                initialValue = StatsUiState(isLoading = true),
+            )
 
     /** Shows [period], and remembers it for the next visit; the screen follows the stored value. */
     public fun selectPeriod(period: StatsPeriod) {
@@ -283,3 +294,5 @@ private fun PeriodStatsRow.toPeriod() =
  */
 internal fun Flow<MediaType>.openingOn(domain: MediaType?): Flow<MediaType> =
     if (domain == null) this else dropWhile { it != domain }
+
+private const val TAG = "StatsViewModel"

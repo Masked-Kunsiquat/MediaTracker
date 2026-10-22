@@ -380,6 +380,7 @@
     <string name="stats_busiest">busiest</string>
     <string name="stats_show_larger">Show larger</string>
     <string name="stats_close">Close</string>
+    <string name="stats_load_failed">Couldn\'t load your stats.</string>
     <string name="stats_ratings_title">Your ratings</string>
     <plurals name="stats_ratings_summary_books">
         <item quantity="one">Average %1$s · %2$d book rated</item>

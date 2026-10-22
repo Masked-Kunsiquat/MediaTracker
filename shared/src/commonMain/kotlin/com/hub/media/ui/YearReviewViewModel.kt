@@ -7,6 +7,9 @@ import com.hub.media.core.database.dao.PeriodStatsRow
 import com.hub.media.core.database.dao.TimedSessionRow
 import com.hub.media.core.database.dao.ViewingRow
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.core.util.AppLogger
+import com.hub.media.core.util.Logger
+import com.hub.media.core.util.error
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.observeReadingGoal
 import com.hub.media.features.settings.data.observeWeekStartDay
@@ -21,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.WhileSubscribed
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -37,12 +41,14 @@ import kotlin.time.Duration.Companion.seconds
  *   year when nothing is logged.
  * @property year The year being shown.
  * @property review That year's pages, or `null` while it loads.
+ * @property loadFailed A read failed (#234): the screen says so instead of loading forever.
  */
 public data class YearReviewUiState(
     val isLoading: Boolean = true,
     val years: List<Int> = emptyList(),
     val year: Int = 0,
     val review: YearReview? = null,
+    val loadFailed: Boolean = false,
 )
 
 /**
@@ -59,6 +65,7 @@ public class YearReviewViewModel(
     private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
     private val clock: Clock = Clock.System,
     initialYear: Int? = null,
+    private val logger: Logger = AppLogger,
 ) : ViewModel() {
     private val thisYear = clock.now().toLocalDateTime(timeZone).year
     private val selected = MutableStateFlow(initialYear ?: thisYear)
@@ -113,6 +120,11 @@ public class YearReviewViewModel(
                         ),
                 )
             }.flowOn(Dispatchers.Default)
+        }.catch { e ->
+            // A failed read ends the spinner (#234) and names this screen in the log viewer. `catch` sees only
+            // upstream failures, so the collector's own cancellation still propagates.
+            logger.error(TAG, e) { "Could not build the year in review" }
+            emit(YearReviewUiState(isLoading = false, loadFailed = true))
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5.seconds),
@@ -133,3 +145,5 @@ private data class YearReads(
     val episodes: List<ViewingRow>,
     val finishedBooks: List<FinishedBookRow>,
 )
+
+private const val TAG = "YearReviewViewModel"

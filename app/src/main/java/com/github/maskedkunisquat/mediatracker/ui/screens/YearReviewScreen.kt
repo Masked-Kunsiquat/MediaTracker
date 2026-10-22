@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -86,6 +87,19 @@ fun YearReviewScreen(
     onSelectYear: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
+    if (uiState.loadFailed) {
+        // A failed read (#234): say so on a plain frame that keeps the close button, rather than spin forever.
+        YearPageFrame(
+            index = 0,
+            count = 0,
+            background = MaterialTheme.colorScheme.surface,
+            onBackground = MaterialTheme.colorScheme.onSurface,
+            onClose = onClose,
+        ) {
+            Text(text = stringResource(R.string.stats_load_failed), style = MaterialTheme.typography.titleLarge)
+        }
+        return
+    }
     val review = uiState.review
     if (review == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

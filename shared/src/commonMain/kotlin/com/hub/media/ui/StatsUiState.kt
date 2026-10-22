@@ -27,6 +27,7 @@ import com.hub.media.features.stats.data.ViewingBreakdown
  * @property finishesByMonth Books finished in each month of this year, January first, on the Year
  *   view only; `null` on every other period, which draws no chart (#219).
  * @property ratings The tab's ratings in [period] (#232), or `null` when nothing in it is rated.
+ * @property loadFailed A read failed (#234): the screen says so instead of loading forever.
  */
 public data class StatsUiState(
     val isLoading: Boolean = true,
@@ -41,6 +42,7 @@ public data class StatsUiState(
     val domain: MediaType = MediaType.BOOK,
     val viewing: ViewingStats? = null,
     val ratings: RatingStats? = null,
+    val loadFailed: Boolean = false,
 ) {
     /**
      * One period's aggregate numbers.

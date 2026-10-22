@@ -170,7 +170,18 @@ fun StatsScreen(
                     .fillMaxSize()
                     .consumeWindowInsets(innerPadding),
         ) {
-            if (uiState.isLoading) {
+            if (uiState.loadFailed) {
+                // A failed read (#234): said once, in place of the spinner that would otherwise never stop.
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.stats_load_failed),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            } else if (uiState.isLoading) {
                 // The spinner is not a scrolling container and has no reason to sit behind
                 // anything, so it keeps real padding and centres in the content area rather than
                 // in the window.
