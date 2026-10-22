@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.components.ClockDial
@@ -232,7 +233,15 @@ private fun FavouritesPage(
     ).forEach { (label, title) ->
         Spacer(Modifier.height(24.dp))
         Text(text = stringResource(label), style = MaterialTheme.typography.labelLarge)
-        Text(text = title.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        // Two lines at most: three long titles at a large font would otherwise outgrow a page that does not
+        // scroll, crushing the last row (#232 review).
+        Text(
+            text = title.title,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
         RatingStars(halves = title.roundedHalves, starSize = 28.dp)
     }
 }

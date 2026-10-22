@@ -709,4 +709,33 @@ class StatsViewModelTest {
             val state = newViewModel().uiState.first { !it.isLoading }
             assertNull(state.ratings)
         }
+
+    /**
+     * The Books tab's ratings come through the view model too (#232 review): a read given up in June, with no
+     * finish date, is dated by its session and counts in June -- the DNF dating rule end to end.
+     */
+    @Test
+    fun theBooksTab_carriesARatedDnfRead_datedByItsSession() =
+        runTest {
+            insertBook()
+            // Its own end time: the shared session() keeps the fixture's default end, in 2023.
+            db.readingSessionDao().insertIntoLatestRead(
+                sampleReadingSession(mediaId = mediaId, timestampStart = june(10), timestampEnd = june(10, hour = 13)),
+            )
+            val read = db.readThroughDao().getLatest(mediaId)!!
+            db.readThroughDao().updateStatus(read.id, ReadingStatus.DNF, null)
+            db.readThroughDao().updateRating(read.id, 3)
+            settingsRepository.setStatsPeriod(StatsPeriod.MONTH)
+
+            val state = newViewModel().uiState.first { it.ratings != null }
+
+            assertEquals(
+                1.5,
+                state.ratings!!
+                    .top
+                    .single()
+                    .stars,
+            )
+            assertEquals(MediaType.BOOK, state.domain)
+        }
 }
