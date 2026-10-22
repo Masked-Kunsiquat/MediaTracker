@@ -269,6 +269,11 @@ class TVShowDetailScreenTest {
         setContent(readyState(episodeCount = 10), narrowWidth = true, fontScale = 2.0f)
 
         val menuDesc = context.getString(R.string.tv_show_detail_season_menu_content_description, 1)
+        // Scrolled to first: at this size the status row wraps (#231 review) and the header starts below
+        // the fold. What #163 guards is the button's width, which scrolling does not change.
+        composeRule
+            .onNodeWithTag(TestTags.TVShowDetail.LIST)
+            .performScrollToNode(hasContentDescription(menuDesc))
         composeRule.onNodeWithContentDescription(menuDesc).assertIsDisplayed()
     }
 

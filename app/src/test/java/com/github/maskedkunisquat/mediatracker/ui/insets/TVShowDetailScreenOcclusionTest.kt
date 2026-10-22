@@ -10,8 +10,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.ui.screens.ShowRunActions
@@ -21,9 +24,12 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.features.tv.data.RunState
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +91,78 @@ class TVShowDetailScreenOcclusionTest {
                 .onNodeWithContentDescription("Season 1 options")
                 .assertIsDisplayed()
         }
+    }
+
+    /**
+     * #231 review: a finished, unrated watch-through puts Abandon, Watch again and Rate beside the status
+     * chip. In one Row at a large font they ran out of width -- the buttons are measured first, so the
+     * chip was squeezed to nothing and the last button clipped. They wrap onto another line instead.
+     */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun anEndedUnratedRun_keepsTheChipAndEveryStatusActionWhole_atTheLargestFontScale() {
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                MediaTrackerTheme { EndedUnratedFixture() }
+            }
+        }
+        val screenRight = composeRule.onRoot().getUnclippedBoundsInRoot().right
+        val bounds =
+            listOf("Watched", "Abandon", "Watch again", "Rate").associateWith { label ->
+                composeRule.onNodeWithText(label).assertIsDisplayed().getUnclippedBoundsInRoot()
+            }
+        bounds.forEach { (label, b) ->
+            assertTrue("'$label' starts off screen: $b", b.left >= 0.dp)
+            assertTrue("'$label' runs off screen: $b > $screenRight", b.right <= screenRight)
+        }
+        // A crushed chip keeps its 48dp touch target, centred on nothing, so width alone cannot see it;
+        // what it cannot hide is lying underneath the button beside it.
+        bounds.entries.toList().let { all ->
+            all.forEachIndexed { i, (a, ra) ->
+                all.drop(i + 1).forEach { (b, rb) ->
+                    val overlap = ra.left < rb.right && rb.left < ra.right && ra.top < rb.bottom && rb.top < ra.bottom
+                    assertTrue("'$a' $ra overlaps '$b' $rb", !overlap)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun EndedUnratedFixture() {
+        val episodes =
+            (1..2).map {
+                episode(
+                    seasonNumber = 1,
+                    episodeNumber = it,
+                ).copy(watchedAt = Instant.fromEpochMilliseconds(1))
+            }
+        TVShowDetailScreen(
+            coverStorageDir = NO_COVERS,
+            uiState =
+                TVShowDetailUiState.Ready(
+                    show = show().copy(runs = listOf(WatchThroughEntity("run-1", "show-1", 1))),
+                    seasons = listOf(SeasonGroup(seasonNumber = 1, episodes = episodes, watchedCount = 2)),
+                    watchedEpisodes = 2,
+                    totalEpisodes = 2,
+                    isAbandoned = false,
+                    latestRunState = RunState.FINISHED,
+                ),
+            onEpisodeWatchedChange = { _, _ -> },
+            onSeasonWatchedChange = { _, _ -> },
+            onSetSeasonLength = { _, _ -> },
+            onRemoveSeason = {},
+            onAbandonedChange = {},
+            onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
+            onDelete = {},
+            onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
+            onEpisodeOpen = {},
+            onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
+        )
     }
 
     @Composable
