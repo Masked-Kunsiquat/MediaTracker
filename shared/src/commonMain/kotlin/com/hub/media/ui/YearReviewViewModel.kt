@@ -12,7 +12,7 @@ import com.hub.media.features.settings.data.observeReadingGoal
 import com.hub.media.features.settings.data.observeWeekStartDay
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.stats.data.YearReview
-import com.hub.media.features.stats.data.favourites
+import com.hub.media.features.stats.data.favorites
 import com.hub.media.features.stats.data.yearBounds
 import com.hub.media.features.stats.data.yearReview
 import kotlinx.coroutines.Dispatchers
@@ -85,15 +85,15 @@ public class YearReviewViewModel(
                     statsRepository.observeFinishedBooks(bounds),
                     ::YearReads,
                 )
-            // The year's favourites (#232): each medium's best by that year's ratings only.
-            val favouritesInYear =
+            // The year's favorites (#232): each medium's best by that year's ratings only.
+            val favoritesInYear =
                 combine(
                     statsRepository.observeRatedItemsIn(bounds, MediaType.BOOK),
                     statsRepository.observeRatedItemsIn(bounds, MediaType.MOVIE),
                     statsRepository.observeRatedItemsIn(bounds, MediaType.TV_SHOW),
-                    ::favourites,
+                    ::favorites,
                 )
-            combine(reads, settingsRepository.observeReadingGoal(year), favouritesInYear) { r, goal, favs ->
+            combine(reads, settingsRepository.observeReadingGoal(year), favoritesInYear) { r, goal, favs ->
                 YearReviewUiState(
                     isLoading = false,
                     years = years,
@@ -109,7 +109,7 @@ public class YearReviewViewModel(
                             episodes = r.episodes,
                             finishedBooks = r.finishedBooks,
                             goal = goal,
-                            favourites = favs,
+                            favorites = favs,
                         ),
                 )
             }.flowOn(Dispatchers.Default)

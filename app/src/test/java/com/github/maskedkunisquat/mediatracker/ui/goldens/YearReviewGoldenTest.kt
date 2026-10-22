@@ -8,7 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.screens.YearReviewScreen
 import com.hub.media.features.stats.data.BingeDay
 import com.hub.media.features.stats.data.DayPart
-import com.hub.media.features.stats.data.Favourites
+import com.hub.media.features.stats.data.Favorites
 import com.hub.media.features.stats.data.RatedTitle
 import com.hub.media.features.stats.data.Rhythm
 import com.hub.media.features.stats.data.YearReview
@@ -148,22 +148,22 @@ class YearReviewGoldenTest {
         ) { Fixture() }
     }
 
-    /** Your favourites of the year (#232): a book, a film and a show, the show at four and a half stars. */
+    /** Your favorites of the year (#232): a book, a film and a show, the show at four and a half stars. */
     @OptIn(kotlin.time.ExperimentalTime::class)
     @Test
-    fun favourites() {
-        val favourites =
-            Favourites(
+    fun favorites() {
+        val favorites =
+            Favorites(
                 book = RatedTitle("b", "Project Hail Mary", 5.0, latestAt = null, rated = 1),
                 film = RatedTitle("f", "Arrival", 5.0, latestAt = null, rated = 1),
                 show = RatedTitle("s", "Chernobyl", 4.5, latestAt = null, rated = 1),
             )
         composeRule.captureGolden(
-            name = "year-review-favourites",
+            name = "year-review-favorites",
             alsoAssert = {
                 forward(4)
-                assertTextIsShown("Your favourites of 2026", "Project Hail Mary", "Arrival", "Chernobyl")
+                assertTextIsShown("Your favorites of 2026", "Project Hail Mary", "Arrival", "Chernobyl")
             },
-        ) { Fixture(review.copy(favourites = favourites)) }
+        ) { Fixture(review.copy(favorites = favorites)) }
     }
 }

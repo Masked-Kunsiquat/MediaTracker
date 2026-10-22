@@ -79,11 +79,11 @@ class RatingStatsTest {
     }
 
     @Test
-    fun favourites_takeEachMediumsTop_andAreNullWhenNothingIsRated() {
-        val f = favourites(listOf(row("b", 8, at(1))), emptyList(), listOf(row("s", 6, at(2)), row("t", 9, at(3))))!!
+    fun favorites_takeEachMediumsTop_andAreNullWhenNothingIsRated() {
+        val f = favorites(listOf(row("b", 8, at(1))), emptyList(), listOf(row("s", 6, at(2)), row("t", 9, at(3))))!!
         assertEquals("b", f.book?.mediaId)
         assertNull(f.film)
         assertEquals("t", f.show?.mediaId)
-        assertNull(favourites(emptyList(), emptyList(), emptyList()))
+        assertNull(favorites(emptyList(), emptyList(), emptyList()))
     }
 }

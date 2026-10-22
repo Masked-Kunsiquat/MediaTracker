@@ -26,7 +26,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.ClockDial
 import com.github.maskedkunisquat.mediatracker.ui.components.RatingStars
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.hub.media.features.stats.data.DayPart
-import com.hub.media.features.stats.data.Favourites
+import com.hub.media.features.stats.data.Favorites
 import com.hub.media.features.stats.data.YearReview
 import java.time.LocalDate
 import java.time.Month
@@ -50,7 +50,7 @@ internal enum class YearPage {
     REWATCHED_FILM,
     BINGE,
     RHYTHM,
-    FAVOURITES,
+    FAVORITES,
     SUMMARY,
 }
 
@@ -66,7 +66,7 @@ internal fun pagesOf(review: YearReview): List<YearPage> =
         review.rewatchedFilm?.let { YearPage.REWATCHED_FILM },
         review.bingeDay?.let { YearPage.BINGE },
         review.rhythm?.let { YearPage.RHYTHM },
-        review.favourites?.let { YearPage.FAVOURITES },
+        review.favorites?.let { YearPage.FAVORITES },
         YearPage.SUMMARY,
     )
 
@@ -131,7 +131,7 @@ internal fun YearPageContent(
             }
         YearPage.BINGE -> review.bingeDay?.let { BingePage(it) }
         YearPage.RHYTHM -> review.rhythm?.let { RhythmPage(it) }
-        YearPage.FAVOURITES -> review.favourites?.let { FavouritesPage(review.year, it) }
+        YearPage.FAVORITES -> review.favorites?.let { FavoritesPage(review.year, it) }
         YearPage.SUMMARY -> SummaryPage(review, thisYear)
     }
 }
@@ -219,17 +219,17 @@ private fun Highlight(
     Text(text = line, style = MaterialTheme.typography.titleMedium)
 }
 
-/** "Your favourites of 2026" (#232): each medium's top-rated title that year, with its stars. */
+/** "Your favorites of 2026" (#232): each medium's top-rated title that year, with its stars. */
 @Composable
-private fun FavouritesPage(
+private fun FavoritesPage(
     year: Int,
-    favourites: Favourites,
+    favorites: Favorites,
 ) {
-    Text(text = stringResource(R.string.year_review_favourites, year), style = MaterialTheme.typography.titleLarge)
+    Text(text = stringResource(R.string.year_review_favorites, year), style = MaterialTheme.typography.titleLarge)
     listOfNotNull(
-        favourites.book?.let { R.string.year_review_favourite_book to it },
-        favourites.film?.let { R.string.year_review_favourite_film to it },
-        favourites.show?.let { R.string.year_review_favourite_show to it },
+        favorites.book?.let { R.string.year_review_favorite_book to it },
+        favorites.film?.let { R.string.year_review_favorite_film to it },
+        favorites.show?.let { R.string.year_review_favorite_show to it },
     ).forEach { (label, title) ->
         Spacer(Modifier.height(24.dp))
         Text(text = stringResource(label), style = MaterialTheme.typography.labelLarge)

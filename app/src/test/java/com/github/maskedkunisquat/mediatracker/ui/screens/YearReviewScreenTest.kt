@@ -26,7 +26,7 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.features.stats.data.DayPart
-import com.hub.media.features.stats.data.Favourites
+import com.hub.media.features.stats.data.Favorites
 import com.hub.media.features.stats.data.LongestBook
 import com.hub.media.features.stats.data.RatedTitle
 import com.hub.media.features.stats.data.Rhythm
@@ -236,25 +236,25 @@ class YearReviewScreenTest {
         composeRule.onNodeWithText("plus 3 reading sessions without a time").assertExists()
     }
 
-    /** #232: the favourites page sits before the summary and shows only the media rated that year. */
+    /** #232: the favorites page sits before the summary and shows only the media rated that year. */
     @OptIn(kotlin.time.ExperimentalTime::class)
     @Test
-    fun theFavouritesPage_showsEachRatedMedium_andLeavesOutTheRest() {
-        val favourites =
-            Favourites(
+    fun theFavoritesPage_showsEachRatedMedium_andLeavesOutTheRest() {
+        val favorites =
+            Favorites(
                 book = RatedTitle("b", "Project Hail Mary", 5.0, latestAt = null, rated = 1),
                 film = null,
                 show = RatedTitle("s", "Chernobyl", 4.5, latestAt = null, rated = 1),
             )
-        setContent(review().copy(favourites = favourites))
+        setContent(review().copy(favorites = favorites))
 
         next()
         next()
-        page("FAVOURITES").assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.year_review_favourites, 2026)).assertIsDisplayed()
+        page("FAVORITES").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.year_review_favorites, 2026)).assertIsDisplayed()
         composeRule.onNodeWithText("Project Hail Mary").assertIsDisplayed()
         composeRule.onNodeWithText("Chernobyl").assertIsDisplayed()
-        composeRule.onNodeWithText(string(R.string.year_review_favourite_film)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(R.string.year_review_favorite_film)).assertDoesNotExist()
         next()
         page("SUMMARY").assertIsDisplayed()
     }
@@ -268,14 +268,14 @@ class YearReviewScreenTest {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     // A small phone: the class's 411x891dp screen holds even three wrapped titles.
     @Config(qualifiers = "w360dp-h640dp")
-    fun theFavouritesPage_keepsItsHeadingAndLastRowOnScreen_atTheLargestFont() {
-        val favourites =
-            Favourites(
+    fun theFavoritesPage_keepsItsHeadingAndLastRowOnScreen_atTheLargestFont() {
+        val favorites =
+            Favorites(
                 book = RatedTitle("b", "The Hitchhiker's Guide to the Galaxy", 5.0, latestAt = null, rated = 1),
                 film = RatedTitle("f", "Everything Everywhere All at Once", 4.5, latestAt = null, rated = 1),
                 show = RatedTitle("s", "The Marvelous Mrs. Maisel", 4.5, latestAt = null, rated = 1),
             )
-        val review = review().copy(favourites = favourites)
+        val review = review().copy(favorites = favorites)
         composeRule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
                 MediaTrackerTheme(dynamicColor = false) {
@@ -297,12 +297,12 @@ class YearReviewScreenTest {
 
         next()
         next()
-        page("FAVOURITES").assertIsDisplayed()
+        page("FAVORITES").assertIsDisplayed()
         val screen = composeRule.onRoot().getUnclippedBoundsInRoot()
         // Unmerged: each page merges its text for TalkBack, so the merged node is the whole page.
         val heading =
             composeRule
-                .onNodeWithText(context.getString(R.string.year_review_favourites, 2026), useUnmergedTree = true)
+                .onNodeWithText(context.getString(R.string.year_review_favorites, 2026), useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
         val lastRow =
             composeRule

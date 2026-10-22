@@ -164,10 +164,10 @@ class YearReviewViewModelTest {
             )
         }
 
-    // --- #232: the year's favourites --------------------------------------------------------------
+    // --- #232: the year's favorites --------------------------------------------------------------
 
     @Test
-    fun favourites_useOnlyThatYearsRatings() =
+    fun favorites_useOnlyThatYearsRatings() =
         runTest {
             db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "a", title = "Arrival", type = MediaType.MOVIE))
             db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "h", title = "Heat", type = MediaType.MOVIE))
@@ -178,12 +178,12 @@ class YearReviewViewModelTest {
             // Over all time Arrival averages 8.5 halves and would beat Heat's 8; in 2025 alone it has 7.
             val review = newViewModel(initialYear = 2025).uiState.first { it.review?.year == 2025 }.review!!
 
-            assertEquals("Heat", review.favourites?.film?.title, "Arrival's 2024 five stars do not count in 2025")
-            assertNull(review.favourites?.book)
+            assertEquals("Heat", review.favorites?.film?.title, "Arrival's 2024 five stars do not count in 2025")
+            assertNull(review.favorites?.book)
         }
 
     @Test
-    fun aYearWithNothingRated_hasNoFavourites() =
+    fun aYearWithNothingRated_hasNoFavorites() =
         runTest {
             filmWatchedOn(on(2025))
             assertNull(
@@ -191,7 +191,7 @@ class YearReviewViewModelTest {
                     .uiState
                     .first { it.review?.year == 2025 }
                     .review!!
-                    .favourites,
+                    .favorites,
             )
         }
 }

@@ -89,7 +89,7 @@ public data class Rhythm(
  *
  * @property quiet Nothing at all was logged in the year: no reading session (timed or not), no
  *   viewing and no finish. A year of untimed reading is not quiet, though its totals show no time.
- * @property favourites The year's top-rated book, film and show (#232); `null` in a quiet year or one
+ * @property favorites The year's top-rated book, film and show (#232); `null` in a quiet year or one
  *   with nothing rated.
  */
 public data class YearReview(
@@ -103,7 +103,7 @@ public data class YearReview(
     val bingeDay: BingeDay?,
     val rhythm: Rhythm?,
     val quiet: Boolean = false,
-    val favourites: Favourites? = null,
+    val favorites: Favorites? = null,
 )
 
 /**
@@ -122,7 +122,7 @@ public fun yearReview(
     episodes: List<ViewingRow>,
     finishedBooks: List<FinishedBookRow>,
     goal: ReadingGoal?,
-    favourites: Favourites? = null,
+    favorites: Favorites? = null,
 ): YearReview {
     val viewings = films + episodes
     val readSeconds = sessions.sumOf { it.durationSeconds }
@@ -167,7 +167,7 @@ public fun yearReview(
         bingeDay = bingeDay(episodes, timeZone),
         rhythm = rhythm(sessions, viewings, reading, readSeconds, timeZone),
         quiet = quiet,
-        favourites = favourites.takeUnless { quiet },
+        favorites = favorites.takeUnless { quiet },
     )
 }
 
