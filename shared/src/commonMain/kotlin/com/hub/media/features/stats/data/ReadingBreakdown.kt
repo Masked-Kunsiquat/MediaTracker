@@ -12,10 +12,16 @@ import kotlinx.datetime.toLocalDateTime
 /** The four parts of the day "when you read" is split into (#219); see [dayPartOf] for the hours. */
 public enum class DayPart { MORNING, AFTERNOON, EVENING, NIGHT }
 
-/** One of the top authors: the spelling shown, and the time read across all its spellings. */
+/**
+ * One of the top authors: the spelling shown, and the time read across all its spellings.
+ *
+ * @property coverImageHash The year in review's top author only (#229): the cover of their book read
+ *   longest that year. Always `null` on the Stats screen's list.
+ */
 public data class AuthorTime(
     val name: String,
     val seconds: Long,
+    val coverImageHash: String? = null,
 )
 
 /** Time read in one [format]. */

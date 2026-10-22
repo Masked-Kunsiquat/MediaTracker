@@ -674,7 +674,7 @@ rating once. "Shows finished" still counts a show being rewatched.
 
 **Status (2026-10-22): rating stats delivered in #232, part 3, completing this task.** Each Stats tab
 has a Your ratings card (average, top five, a half-star spread) counting only the ratings on what was
-read or watched in the chosen period, and the year in review shows that year's favourite book, film and
+read or watched in the chosen period, and the year in review shows that year's favorite book, film and
 show just before its summary. No schema change. The original plan follows.
 
 Today a re-read is invisible: sessions just keep appending to the same flat list, status flips

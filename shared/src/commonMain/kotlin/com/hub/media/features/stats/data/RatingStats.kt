@@ -10,6 +10,7 @@ import kotlin.time.Instant
  * @property latestAt Its most recent dated rated item in the period, for breaking ties; `null` when
  *   none is dated (All time only).
  * @property rated How many of its items are rated in the period.
+ * @property coverImageHash Its stored cover (#229), for the year's favorites page; `null` when it has none.
  */
 public data class RatedTitle(
     val mediaId: String,
@@ -17,6 +18,7 @@ public data class RatedTitle(
     val stars: Double,
     val latestAt: Instant?,
     val rated: Int,
+    val coverImageHash: String? = null,
 ) {
     /** The score as the stars draw it: rounded to the nearest half, in halves. */
     val roundedHalves: Int get() = (stars * 2).roundToInt().coerceIn(1, 10)
@@ -57,6 +59,7 @@ public fun ratingStats(
                 stars = items.sumOf { it.rating } / 2.0 / items.size,
                 latestAt = items.mapNotNull { it.at }.maxOrNull(),
                 rated = items.size,
+                coverImageHash = items.firstNotNullOfOrNull { it.coverImageHash },
             )
         }
     val ranked =
@@ -76,20 +79,20 @@ public fun ratingStats(
 }
 
 /** A year's top-rated book, film and show (#232); a medium with nothing rated that year is `null`. */
-public data class Favourites(
+public data class Favorites(
     val book: RatedTitle?,
     val film: RatedTitle?,
     val show: RatedTitle?,
 )
 
 /** Each medium's best of [books], [films] and [shows] by [ratingStats]'s order; `null` when none is rated. */
-public fun favourites(
+public fun favorites(
     books: List<RatedItemRow>,
     films: List<RatedItemRow>,
     shows: List<RatedItemRow>,
-): Favourites? {
+): Favorites? {
     val f =
-        Favourites(
+        Favorites(
             book = ratingStats(books, top = 1)?.top?.firstOrNull(),
             film = ratingStats(films, top = 1)?.top?.firstOrNull(),
             show = ratingStats(shows, top = 1)?.top?.firstOrNull(),

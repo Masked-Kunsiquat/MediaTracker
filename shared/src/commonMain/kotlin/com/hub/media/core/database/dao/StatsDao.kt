@@ -131,7 +131,7 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT s.timestampStart, s.durationSeconds, b.format, b.authors, s.mediaId, mi.title
+        SELECT s.timestampStart, s.durationSeconds, b.format, b.authors, s.mediaId, mi.title, mi.coverImageHash
           FROM reading_sessions s
           JOIN book_details b ON b.mediaId = s.mediaId
           JOIN media_items mi ON mi.id = s.mediaId
@@ -170,7 +170,7 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT w.watchedAt, w.mediaId, w.episodeId, m.title,
+        SELECT w.watchedAt, w.mediaId, w.episodeId, m.title, m.coverImageHash,
                COALESCE(e.runtimeMinutes, md.runtimeMinutes) AS runtimeMinutes,
                EXISTS (SELECT 1 FROM watch_logs p
                         WHERE p.mediaId = w.mediaId AND p.episodeId IS w.episodeId
@@ -199,19 +199,20 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT mediaId, title, rating, at FROM (
+        SELECT mediaId, title, rating, at, coverImageHash FROM (
             SELECT r.mediaId AS mediaId, m.title AS title, r.rating AS rating, m.type AS type,
+                   m.coverImageHash AS coverImageHash,
                    COALESCE(r.finishedAt,
                             (SELECT MAX(s.timestampEnd) FROM reading_sessions s WHERE s.readThroughId = r.id),
                             r.startedAt) AS at
               FROM read_throughs r JOIN media_items m ON m.id = r.mediaId
              WHERE r.rating IS NOT NULL
             UNION ALL
-            SELECT w.mediaId, m.title, w.rating, m.type, w.watchedAt
+            SELECT w.mediaId, m.title, w.rating, m.type, m.coverImageHash, w.watchedAt
               FROM watch_logs w JOIN media_items m ON m.id = w.mediaId
              WHERE w.episodeId IS NULL AND w.rating IS NOT NULL
             UNION ALL
-            SELECT t.mediaId, m.title, t.rating, m.type,
+            SELECT t.mediaId, m.title, t.rating, m.type, m.coverImageHash,
                    (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.watchThroughId = t.id)
               FROM watch_throughs t JOIN media_items m ON m.id = t.mediaId
              WHERE t.rating IS NOT NULL
@@ -247,7 +248,7 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT b.mediaId, mi.title, b.totalPages, b.authors, r.finishedAt
+        SELECT b.mediaId, mi.title, b.totalPages, b.authors, r.finishedAt, mi.coverImageHash
           FROM read_throughs r
           JOIN book_details b ON b.mediaId = r.mediaId
           JOIN media_items mi ON mi.id = r.mediaId

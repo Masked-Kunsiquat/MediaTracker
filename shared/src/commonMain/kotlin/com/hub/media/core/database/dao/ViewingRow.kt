@@ -11,6 +11,7 @@ import kotlin.time.Instant
  *   a stand-in. A viewing's own duration is never recorded, so this is the only source of time.
  * @property isRewatch An earlier viewing of the same film, or the same episode, exists -- at any
  *   time, including before the period being read.
+ * @property coverImageHash The title's stored cover (#229), for the year in review; `null` when it has none.
  */
 data class ViewingRow(
     val watchedAt: Instant,
@@ -19,4 +20,5 @@ data class ViewingRow(
     val title: String,
     val runtimeMinutes: Int?,
     val isRewatch: Boolean,
+    val coverImageHash: String? = null,
 )

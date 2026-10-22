@@ -1,14 +1,18 @@
 package com.github.maskedkunisquat.mediatracker.ui.goldens
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.YearReviewScreen
 import com.hub.media.features.stats.data.BingeDay
 import com.hub.media.features.stats.data.DayPart
-import com.hub.media.features.stats.data.Favourites
+import com.hub.media.features.stats.data.Favorites
 import com.hub.media.features.stats.data.RatedTitle
 import com.hub.media.features.stats.data.Rhythm
 import com.hub.media.features.stats.data.YearReview
@@ -16,9 +20,11 @@ import com.hub.media.features.stats.data.YearTotals
 import com.hub.media.ui.YearReviewUiState
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 /**
  * The year in review's pages (#221): the totals, a highlight and the rhythm clock. Each golden pages
@@ -34,6 +40,28 @@ import org.robolectric.annotation.GraphicsMode
 class YearReviewGoldenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @get:Rule
+    val folder = TemporaryFolder()
+
+    /** Where the fixture's covers are written (#229). */
+    private val covers by lazy { folder.newFolder() }
+
+    /** A solid [color] cover named [name] in [covers] (#229): enough to show where a cover sits. */
+    private fun cover(
+        name: String,
+        color: Int,
+    ): String {
+        val bitmap = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(color)
+        File(covers, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        return name
+    }
+
+    private fun ComposeContentTestRule.awaitCovers(count: Int) =
+        waitUntil(5_000) {
+            onAllNodesWithTag(TestTags.YearReview.COVER, useUnmergedTree = true).fetchSemanticsNodes().size == count
+        }
 
     // 100 hours of reading, mostly evenings: 360 000 seconds across the clock.
     private val hours: List<Long> =
@@ -81,7 +109,16 @@ class YearReviewGoldenTest {
             longestSession = null,
             goal = null,
             rewatchedFilm = null,
-            bingeDay = BingeDay(2026, 3, 14, dayOfWeekIso = 6, episodes = 7, topShow = "Severance"),
+            bingeDay =
+                BingeDay(
+                    2026,
+                    3,
+                    14,
+                    dayOfWeekIso = 6,
+                    episodes = 7,
+                    topShow = "Severance",
+                    coverImageHash = "severance.jpg",
+                ),
             rhythm = Rhythm(busiestMonth = 3, hours = hours, busiestPart = DayPart.EVENING, reading = true),
         )
 
@@ -90,6 +127,7 @@ class YearReviewGoldenTest {
         YearReviewScreen(
             uiState = YearReviewUiState(isLoading = false, years = listOf(2026, 2025), year = 2026, review = review),
             thisYear = 2026,
+            coverStorageDir = covers.path,
             onSelectYear = {},
             onClose = {},
         )
@@ -127,10 +165,12 @@ class YearReviewGoldenTest {
 
     @Test
     fun binge() {
+        cover("severance.jpg", Color.rgb(0x00, 0x9E, 0x73))
         composeRule.captureGolden(
             name = "year-review-binge",
             alsoAssert = {
                 forward(2)
+                awaitCovers(1)
                 assertTextIsShown("Your biggest binge", "Saturday, March 14", "mostly Severance")
             },
         ) { Fixture() }
@@ -148,22 +188,34 @@ class YearReviewGoldenTest {
         ) { Fixture() }
     }
 
-    /** Your favourites of the year (#232): a book, a film and a show, the show at four and a half stars. */
+    /**
+     * Your favorites of the year (#232): a book, a film and a show, the show at four and a half stars. The film
+     * has no cover, so its slot stays empty and the three titles still line up (#229).
+     */
     @OptIn(kotlin.time.ExperimentalTime::class)
     @Test
-    fun favourites() {
-        val favourites =
-            Favourites(
-                book = RatedTitle("b", "Project Hail Mary", 5.0, latestAt = null, rated = 1),
+    fun favorites() {
+        val favorites =
+            Favorites(
+                book =
+                    RatedTitle(
+                        "b",
+                        "Project Hail Mary",
+                        5.0,
+                        null,
+                        1,
+                        cover("hail-mary.jpg", Color.rgb(0xE6, 0x9F, 0x00)),
+                    ),
                 film = RatedTitle("f", "Arrival", 5.0, latestAt = null, rated = 1),
-                show = RatedTitle("s", "Chernobyl", 4.5, latestAt = null, rated = 1),
+                show = RatedTitle("s", "Chernobyl", 4.5, null, 1, cover("chernobyl.jpg", Color.rgb(0x00, 0x72, 0xB2))),
             )
         composeRule.captureGolden(
-            name = "year-review-favourites",
+            name = "year-review-favorites",
             alsoAssert = {
                 forward(4)
-                assertTextIsShown("Your favourites of 2026", "Project Hail Mary", "Arrival", "Chernobyl")
+                awaitCovers(2)
+                assertTextIsShown("Your favorites of 2026", "Project Hail Mary", "Arrival", "Chernobyl")
             },
-        ) { Fixture(review.copy(favourites = favourites)) }
+        ) { Fixture(review.copy(favorites = favorites)) }
     }
 }

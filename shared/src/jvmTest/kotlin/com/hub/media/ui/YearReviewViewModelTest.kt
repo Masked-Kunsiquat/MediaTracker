@@ -7,6 +7,8 @@ import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.stats.data.StatsRepository
@@ -25,7 +27,9 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -61,11 +65,13 @@ class YearReviewViewModelTest {
     ): Instant = LocalDateTime(year, month, 10, 20, 0).toInstant(zone)
 
     private fun newViewModel(initialYear: Int? = null) =
-        viewModels.track(YearReviewViewModel(StatsRepository(db), settings, zone, clock, initialYear))
+        viewModels.track(YearReviewViewModel(StatsRepository(db), settings, zone, clock, initialYear, logger))
 
     private fun TestScope.hold(viewModel: YearReviewViewModel) {
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect { } }
     }
+
+    private val logger = RecordingLogger()
 
     private var log = 0
 
@@ -164,10 +170,10 @@ class YearReviewViewModelTest {
             )
         }
 
-    // --- #232: the year's favourites --------------------------------------------------------------
+    // --- #232: the year's favorites --------------------------------------------------------------
 
     @Test
-    fun favourites_useOnlyThatYearsRatings() =
+    fun favorites_useOnlyThatYearsRatings() =
         runTest {
             db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "a", title = "Arrival", type = MediaType.MOVIE))
             db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "h", title = "Heat", type = MediaType.MOVIE))
@@ -178,12 +184,12 @@ class YearReviewViewModelTest {
             // Over all time Arrival averages 8.5 halves and would beat Heat's 8; in 2025 alone it has 7.
             val review = newViewModel(initialYear = 2025).uiState.first { it.review?.year == 2025 }.review!!
 
-            assertEquals("Heat", review.favourites?.film?.title, "Arrival's 2024 five stars do not count in 2025")
-            assertNull(review.favourites?.book)
+            assertEquals("Heat", review.favorites?.film?.title, "Arrival's 2024 five stars do not count in 2025")
+            assertNull(review.favorites?.book)
         }
 
     @Test
-    fun aYearWithNothingRated_hasNoFavourites() =
+    fun aYearWithNothingRated_hasNoFavorites() =
         runTest {
             filmWatchedOn(on(2025))
             assertNull(
@@ -191,7 +197,25 @@ class YearReviewViewModelTest {
                     .uiState
                     .first { it.review?.year == 2025 }
                     .review!!
-                    .favourites,
+                    .favorites,
+            )
+        }
+
+    /** #234: a read that throws ends the spinner with a failure, and the log says which screen. */
+    @Test
+    fun aFailedRead_isLoadFailed_andLogged_notAnEndlessSpinner() =
+        runTest {
+            val vm = newViewModel()
+            db.close()
+
+            val state = vm.uiState.first { it.loadFailed }
+            assertFalse(state.isLoading)
+            assertTrue(
+                logger.entries.any {
+                    it.level == LogLevel.ERROR &&
+                        it.throwable != null &&
+                        it.tag == "YearReviewViewModel"
+                },
             )
         }
 }

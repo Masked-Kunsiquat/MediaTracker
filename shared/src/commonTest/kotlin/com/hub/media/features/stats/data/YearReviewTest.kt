@@ -44,25 +44,37 @@ class YearReviewTest {
         seconds: Long,
         title: String = "Dune",
         authors: String? = "Frank Herbert",
-    ) = TimedSessionRow(at, seconds, BookFormat.PAPERBACK, authors, mediaId = title, title = title)
+        cover: String? = null,
+    ) = TimedSessionRow(
+        at,
+        seconds,
+        BookFormat.PAPERBACK,
+        authors,
+        mediaId = title,
+        title = title,
+        coverImageHash = cover,
+    )
 
     private fun film(
         at: Instant,
         title: String,
         runtime: Int? = 120,
-    ) = ViewingRow(at, title, null, title, runtime, isRewatch = false)
+        cover: String? = null,
+    ) = ViewingRow(at, title, null, title, runtime, isRewatch = false, coverImageHash = cover)
 
     private fun episode(
         at: Instant,
         show: String,
         runtime: Int? = 50,
-    ) = ViewingRow(at, show, "$show-${at.epochSeconds}", show, runtime, isRewatch = false)
+        cover: String? = null,
+    ) = ViewingRow(at, show, "$show-${at.epochSeconds}", show, runtime, isRewatch = false, coverImageHash = cover)
 
     private fun book(
         title: String,
         pages: Int?,
         finishedAt: Instant,
-    ) = FinishedBookRow(title, title, pages, null, finishedAt)
+        cover: String? = null,
+    ) = FinishedBookRow(title, title, pages, null, finishedAt, coverImageHash = cover)
 
     private fun review(
         periodStats: PeriodStatsRow = stats(),
@@ -270,5 +282,63 @@ class YearReviewTest {
 
         assertEquals(GoalResult(goal = 2, finished = 2, reached = true), r.goal)
         assertEquals(3, r.totals.booksFinished)
+    }
+
+    /** #229: each one-title highlight carries its subject's stored cover, for the page to show. */
+    @Test
+    fun eachHighlight_carriesItsSubjectsCover() {
+        val r =
+            review(
+                books =
+                    listOf(
+                        book("Long", 900, at(2, 1), cover = "long.jpg"),
+                        book("Short", 100, at(3, 1), cover = "short.jpg"),
+                    ),
+                sessions = listOf(session(at(4, 1), 9_000, title = "Marathon", cover = "marathon.jpg")),
+                films =
+                    listOf(
+                        film(at(5, 1), "Arrival", cover = "arrival.jpg"),
+                        film(at(5, 2), "Arrival", cover = "arrival.jpg"),
+                    ),
+                episodes =
+                    listOf(
+                        episode(at(6, 1, 20), "Severance", cover = "sev.jpg"),
+                        episode(at(6, 1, 21), "Severance", cover = "sev.jpg"),
+                    ),
+            )
+
+        assertEquals("long.jpg", r.longestBook?.coverImageHash)
+        assertEquals("marathon.jpg", r.longestSession?.coverImageHash)
+        assertEquals("arrival.jpg", r.rewatchedFilm?.coverImageHash)
+        assertEquals("sev.jpg", r.bingeDay?.coverImageHash)
+    }
+
+    /** #229 (owner): the top author's page shows the cover of their book read longest that year. */
+    @Test
+    fun theTopAuthor_carriesTheCoverOfTheirBookReadLongest() {
+        val r =
+            review(
+                sessions =
+                    listOf(
+                        session(at(1, 1), 3_000, title = "Dune", cover = "dune.jpg"),
+                        session(at(1, 2), 5_000, title = "Dune Messiah", cover = "messiah.jpg"),
+                        // Dune's two sessions outlast Messiah's one, though each is shorter: total time decides.
+                        session(at(1, 3), 3_000, title = "Dune", cover = "dune.jpg"),
+                        // Someone else's book, read longer than either, is never their cover.
+                        session(at(1, 4), 7_000, title = "Emma", authors = "Jane Austen", cover = "emma.jpg"),
+                    ),
+            )
+
+        assertEquals("Frank Herbert", r.topAuthor?.name)
+        assertEquals("dune.jpg", r.topAuthor?.coverImageHash)
+    }
+
+    /** #229: a subject with no stored cover leaves it null, so the page stays text-only. */
+    @Test
+    fun aHighlightWithoutACover_hasNone() {
+        val r = review(books = listOf(book("Long", 900, at(2, 1))))
+
+        assertNull(r.longestBook?.coverImageHash)
+        assertEquals("Long", r.longestBook?.title)
     }
 }

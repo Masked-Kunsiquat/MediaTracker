@@ -4,6 +4,7 @@ import com.hub.media.core.database.dao.FinishedBookRow
 import com.hub.media.core.database.dao.PeriodStatsRow
 import com.hub.media.core.database.dao.TimedSessionRow
 import com.hub.media.core.database.dao.ViewingRow
+import com.hub.media.core.database.entities.splitAuthors
 import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.WeekStartDay
 import kotlinx.datetime.TimeZone
@@ -29,16 +30,18 @@ public data class YearTotals(
     val untimedSessions: Int = 0,
 )
 
-/** The finished book with the most pages. */
+/** The finished book with the most pages, and its stored cover (#229) when it has one. */
 public data class LongestBook(
     val title: String,
     val pages: Int,
+    val coverImageHash: String? = null,
 )
 
-/** The longest timed reading session, and its book. */
+/** The longest timed reading session, and its book with its stored cover (#229) when it has one. */
 public data class LongestSession(
     val title: String,
     val seconds: Long,
+    val coverImageHash: String? = null,
 )
 
 /** That year's reading goal against the books finished. */
@@ -48,15 +51,18 @@ public data class GoalResult(
     val reached: Boolean,
 )
 
-/** The film watched most often, at least twice. */
+/** The film watched most often, at least twice, and its stored poster (#229) when it has one. */
 public data class RewatchedFilm(
     val title: String,
     val viewings: Int,
+    val coverImageHash: String? = null,
 )
 
 /**
  * The local day with the most episodes, at least two, and the show with the most episodes that day.
  * The date travels as numbers ([dayOfWeekIso] is 1 = Monday): `:app` sees no kotlinx-datetime types.
+ *
+ * @property coverImageHash That show's stored poster (#229), or `null` when it has none.
  */
 public data class BingeDay(
     val year: Int,
@@ -65,6 +71,7 @@ public data class BingeDay(
     val dayOfWeekIso: Int,
     val episodes: Int,
     val topShow: String,
+    val coverImageHash: String? = null,
 )
 
 /**
@@ -89,7 +96,7 @@ public data class Rhythm(
  *
  * @property quiet Nothing at all was logged in the year: no reading session (timed or not), no
  *   viewing and no finish. A year of untimed reading is not quiet, though its totals show no time.
- * @property favourites The year's top-rated book, film and show (#232); `null` in a quiet year or one
+ * @property favorites The year's top-rated book, film and show (#232); `null` in a quiet year or one
  *   with nothing rated.
  */
 public data class YearReview(
@@ -103,7 +110,7 @@ public data class YearReview(
     val bingeDay: BingeDay?,
     val rhythm: Rhythm?,
     val quiet: Boolean = false,
-    val favourites: Favourites? = null,
+    val favorites: Favorites? = null,
 )
 
 /**
@@ -122,7 +129,7 @@ public fun yearReview(
     episodes: List<ViewingRow>,
     finishedBooks: List<FinishedBookRow>,
     goal: ReadingGoal?,
-    favourites: Favourites? = null,
+    favorites: Favorites? = null,
 ): YearReview {
     val viewings = films + episodes
     val readSeconds = sessions.sumOf { it.durationSeconds }
@@ -148,26 +155,31 @@ public fun yearReview(
                 .filter { (it.totalPages ?: 0) > 0 }
                 .sortedWith(compareBy({ -it.totalPages!! }, { it.finishedAt }))
                 .firstOrNull()
-                ?.let { LongestBook(it.title, it.totalPages!!) },
-        topAuthor = reading.topAuthors.firstOrNull(),
+                ?.let { LongestBook(it.title, it.totalPages!!, it.coverImageHash) },
+        topAuthor =
+            reading.topAuthors.firstOrNull()?.let {
+                it.copy(
+                    coverImageHash = coverOfLongestRead(it, sessions),
+                )
+            },
         longestSession =
             sessions
                 .sortedWith(compareBy({ -it.durationSeconds }, { it.timestampStart }))
                 .firstOrNull()
-                ?.let { LongestSession(it.title, it.durationSeconds) },
+                ?.let { LongestSession(it.title, it.durationSeconds, it.coverImageHash) },
         goal = goal?.let { GoalResult(it.books, periodStats.firstFinishes, periodStats.firstFinishes >= it.books) },
         rewatchedFilm =
             films
                 .groupBy { it.mediaId }
                 .values
-                .map { RewatchedFilm(it.first().title, it.size) }
+                .map { RewatchedFilm(it.first().title, it.size, it.first().coverImageHash) }
                 .filter { it.viewings >= 2 }
                 .sortedWith(compareBy({ -it.viewings }, { it.title }))
                 .firstOrNull(),
         bingeDay = bingeDay(episodes, timeZone),
         rhythm = rhythm(sessions, viewings, reading, readSeconds, timeZone),
         quiet = quiet,
-        favourites = favourites.takeUnless { quiet },
+        favorites = favorites.takeUnless { quiet },
     )
 }
 
@@ -188,8 +200,35 @@ private fun bingeDay(
             .entries
             .sortedWith(compareBy({ -it.value.size }, { it.key }))
             .first()
-            .key
-    return BingeDay(date.year, date.month.ordinal + 1, date.day, date.dayOfWeek.isoDayNumber, onDay.size, topShow)
+    val cover = topShow.value.firstNotNullOfOrNull { it.coverImageHash }
+    return BingeDay(
+        date.year,
+        date.month.ordinal + 1,
+        date.day,
+        date.dayOfWeek.isoDayNumber,
+        onDay.size,
+        topShow.key,
+        cover,
+    )
+}
+
+/**
+ * The cover of [author]'s book read longest in [sessions] (#229, owner's choice): the book, not the time,
+ * decides, so a co-written book counts for each of its authors as it does in [readingBreakdown]. Ties go
+ * to the title first A to Z. `null` when that book has no stored cover.
+ */
+private fun coverOfLongestRead(
+    author: AuthorTime,
+    sessions: List<TimedSessionRow>,
+): String? {
+    val key = authorKey(author.name)
+    return sessions
+        .filter { row -> splitAuthors(row.authors).any { authorKey(it) == key } }
+        .groupBy { it.mediaId }
+        .values
+        .sortedWith(compareBy({ rows -> -rows.sumOf { it.durationSeconds } }, { it.first().title }))
+        .firstOrNull()
+        ?.firstNotNullOfOrNull { it.coverImageHash }
 }
 
 private fun rhythm(

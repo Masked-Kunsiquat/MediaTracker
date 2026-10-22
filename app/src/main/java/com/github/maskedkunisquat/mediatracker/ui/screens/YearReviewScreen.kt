@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -51,6 +53,7 @@ import kotlinx.coroutines.launch
 fun YearReviewScreenRoute(
     appContainer: AppContainer,
     initialYear: Int?,
+    coverStorageDir: String,
     onClose: () -> Unit,
 ) {
     val viewModel: YearReviewViewModel = viewModel(factory = YearReviewViewModelFactory(appContainer, initialYear))
@@ -61,6 +64,7 @@ fun YearReviewScreenRoute(
             java.time.Year
                 .now()
                 .value,
+        coverStorageDir = coverStorageDir,
         onSelectYear = viewModel::selectYear,
         onClose = onClose,
     )
@@ -78,14 +82,29 @@ fun YearReviewScreenRoute(
  * `safeDrawingPadding`.
  *
  * @param thisYear The current year, so its title reads "so far".
+ * @param coverStorageDir Where stored covers live, for the highlights that show one (#229).
  */
 @Composable
 fun YearReviewScreen(
     uiState: YearReviewUiState,
     thisYear: Int,
+    coverStorageDir: String,
     onSelectYear: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
+    if (uiState.loadFailed) {
+        // A failed read (#234): say so on a plain frame that keeps the close button, rather than spin forever.
+        YearPageFrame(
+            index = 0,
+            count = 0,
+            background = MaterialTheme.colorScheme.surface,
+            onBackground = MaterialTheme.colorScheme.onSurface,
+            onClose = onClose,
+        ) {
+            Text(text = stringResource(R.string.stats_load_failed), style = MaterialTheme.typography.titleLarge)
+        }
+        return
+    }
     val review = uiState.review
     if (review == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -150,7 +169,7 @@ fun YearReviewScreen(
                                 )
                         },
             ) {
-                YearPageContent(pages[index], review, uiState.years, thisYear, onSelectYear)
+                YearPageContent(pages[index], review, uiState.years, thisYear, coverStorageDir, onSelectYear)
             }
         }
     }
@@ -165,7 +184,7 @@ private fun YearPageFrame(
     onBackground: Color,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     CompositionLocalProvider(LocalContentColor provides onBackground) {
         Column(

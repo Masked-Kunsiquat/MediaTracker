@@ -15,6 +15,8 @@ import com.hub.media.core.database.sampleBookDetails
 import com.hub.media.core.database.sampleMediaItem
 import com.hub.media.core.database.sampleReadingSession
 import com.hub.media.core.database.testAppDatabase
+import com.hub.media.core.util.LogLevel
+import com.hub.media.core.util.RecordingLogger
 import com.hub.media.core.util.newId
 import com.hub.media.features.settings.data.ReadingGoal
 import com.hub.media.features.settings.data.SettingsRepository
@@ -124,8 +126,11 @@ class StatsViewModelTest {
                 settingsRepository = settingsRepository,
                 timeZone = timeZone,
                 clock = clock,
+                logger = logger,
             ),
         )
+
+    private val logger = RecordingLogger()
 
     private fun TestScope.holdUiStateSubscribed(viewModel: StatsViewModel) {
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
@@ -737,5 +742,23 @@ class StatsViewModelTest {
                     .stars,
             )
             assertEquals(MediaType.BOOK, state.domain)
+        }
+
+    /** #234: Stats fails the way the year in review does -- a failure state and an ERROR log, not a spinner. */
+    @Test
+    fun aFailedRead_isLoadFailed_andLogged_notAnEndlessSpinner() =
+        runTest {
+            val vm = newViewModel()
+            db.close()
+
+            val state = vm.uiState.first { it.loadFailed }
+            assertTrue(!state.isLoading)
+            assertTrue(
+                logger.entries.any {
+                    it.level == LogLevel.ERROR &&
+                        it.throwable != null &&
+                        it.tag == "StatsViewModel"
+                },
+            )
         }
 }

@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -868,5 +869,21 @@ class StatsScreenTest {
         val card = composeRule.onNodeWithTag(TestTags.Stats.RATINGS_CARD).getUnclippedBoundsInRoot()
         val score = composeRule.onNodeWithText("4.3").assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue("the score $score runs past the card $card", score.right <= card.right && score.width > 0.dp)
+    }
+
+    /** #234: a failed read says so, instead of spinning forever. */
+    @Test
+    fun aFailedLoad_saysSo_insteadOfSpinning() {
+        setContent(StatsUiState(isLoading = false, loadFailed = true))
+
+        composeRule.onNodeWithText(string(R.string.stats_load_failed)).assertIsDisplayed()
+        composeRule
+            .onNode(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
+                ),
+            ).assertDoesNotExist()
+        composeRule.onNodeWithTag(TestTags.Stats.LIST).assertDoesNotExist()
     }
 }
