@@ -49,7 +49,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
@@ -63,7 +62,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlin.time.TimeSource
 
 /**
  * [TVShowDetailViewModel] tests against a real in-memory [AppDatabase], mirroring
@@ -1185,15 +1186,17 @@ class TVShowDetailViewModelTest {
      * Waits until the VM has finished what the last action launched -- its write and its "ask?" decision run
      * partly on Room's own threads, which [runCurrent] does not drive. Polls the VM's own jobs back down to
      * their idle count, rather than a fixed delay that a loaded machine could outrun (#231 review).
+     * The deadline is on the real clock: `withTimeout` inside `runTest` counts virtual time, which jumps
+     * straight to its limit while this waits on another thread -- that failed on CI's slower runner.
      */
     private suspend fun TestScope.settle(viewModel: TVShowDetailViewModel) {
         val idle = idleJobs.getValue(viewModel)
-        withTimeout(5_000) {
-            while (true) {
-                runCurrent()
-                if (viewModel.activeJobs() <= idle) break
-                withContext(Dispatchers.Default) { delay(10) }
-            }
+        val deadline = TimeSource.Monotonic.markNow() + 5.seconds
+        while (true) {
+            check(deadline.hasNotPassedNow()) { "the view model never went idle" }
+            runCurrent()
+            if (viewModel.activeJobs() <= idle) break
+            withContext(Dispatchers.Default) { delay(10) }
         }
         runCurrent()
     }
