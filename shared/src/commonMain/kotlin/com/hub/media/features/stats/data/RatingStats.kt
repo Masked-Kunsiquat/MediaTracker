@@ -74,3 +74,25 @@ public fun ratingStats(
         spread = spread.toList(),
     )
 }
+
+/** A year's top-rated book, film and show (#232); a medium with nothing rated that year is `null`. */
+public data class Favourites(
+    val book: RatedTitle?,
+    val film: RatedTitle?,
+    val show: RatedTitle?,
+)
+
+/** Each medium's best of [books], [films] and [shows] by [ratingStats]'s order; `null` when none is rated. */
+public fun favourites(
+    books: List<RatedItemRow>,
+    films: List<RatedItemRow>,
+    shows: List<RatedItemRow>,
+): Favourites? {
+    val f =
+        Favourites(
+            book = ratingStats(books, top = 1)?.top?.firstOrNull(),
+            film = ratingStats(films, top = 1)?.top?.firstOrNull(),
+            show = ratingStats(shows, top = 1)?.top?.firstOrNull(),
+        )
+    return f.takeIf { it.book != null || it.film != null || it.show != null }
+}
