@@ -24,6 +24,8 @@ import com.hub.media.features.stats.data.AuthorTime
 import com.hub.media.features.stats.data.FormatTime
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
+import com.hub.media.features.stats.data.RatedTitle
+import com.hub.media.features.stats.data.RatingStats
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.features.stats.data.TitleTime
@@ -252,6 +254,55 @@ class StatsScreenGoldenTest {
                         domain = MediaType.MOVIE,
                         goalYear = 2026,
                         viewing = ViewingStats(watched(viewings = 19, titles = 15)),
+                    ),
+                onSelectPeriod = {},
+                onSelectDomain = {},
+                onOpenYearReview = {},
+                onSetGoal = {},
+                onClearGoal = {},
+                onNavigateBack = {},
+            )
+        }
+    }
+
+    /**
+     * The Films tab's Your ratings card (#232): five titles, one between two half stars ("4.3" beside its
+     * stars), and the spread tile. The spread sums to the 12 rated titles and its fullest bar is 4 stars.
+     */
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    @Test
+    fun statsFilmsRatings() {
+        composeRule.captureGolden(
+            name = "stats-films-ratings",
+            alsoAssert = {
+                onNodeWithTag(TestTags.Stats.LIST).performScrollToNode(hasTestTag(TestTags.Stats.RATINGS_CARD))
+                assertTextIsShown("Your ratings", "Average 4.1 · 12 films rated", "Past Lives", "4.3", "Mostly 4★")
+            },
+        ) {
+            StatsScreen(
+                uiState =
+                    StatsUiState(
+                        isLoading = false,
+                        period = StatsPeriod.MONTH,
+                        domain = MediaType.MOVIE,
+                        goalYear = 2026,
+                        viewing = ViewingStats(watched(viewings = 19, titles = 15)),
+                        ratings =
+                            RatingStats(
+                                averageStars = 4.1,
+                                titles = 12,
+                                top =
+                                    listOf(
+                                        "Arrival" to 5.0,
+                                        "Heat" to 5.0,
+                                        "Dune: Part Two" to 4.5,
+                                        "Past Lives" to 4.25,
+                                        "The Batman" to 4.0,
+                                    ).map { (title, stars) ->
+                                        RatedTitle(title, title, stars, latestAt = null, rated = 1)
+                                    },
+                                spread = listOf(0, 0, 0, 1, 1, 2, 1, 3, 2, 2),
+                            ),
                     ),
                 onSelectPeriod = {},
                 onSelectDomain = {},
