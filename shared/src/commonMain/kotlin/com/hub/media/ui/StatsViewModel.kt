@@ -21,6 +21,7 @@ import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.stats.data.bounds
 import com.hub.media.features.stats.data.goalProgress
 import com.hub.media.features.stats.data.localDateChanges
+import com.hub.media.features.stats.data.ratingStats
 import com.hub.media.features.stats.data.readingBreakdown
 import com.hub.media.features.stats.data.viewingBreakdown
 import kotlinx.coroutines.Dispatchers
@@ -143,10 +144,12 @@ public class StatsViewModel(
                 periodState,
                 statsRepository.observeTimedSessions(period, timeZone, at, weekStart),
                 if (period == StatsPeriod.ALL_TIME) statsRepository.observeFinishOutcomes() else flowOf(null),
-            ) { state, sessions, outcomes ->
+                statsRepository.observeRatedItems(period, timeZone, at, weekStart, MediaType.BOOK),
+            ) { state, sessions, outcomes, rated ->
                 state.copy(
                     breakdown = readingBreakdown(sessions, timeZone, weekStart),
                     finishOutcomes = outcomes,
+                    ratings = ratingStats(rated),
                 )
             }
         }
@@ -222,13 +225,19 @@ public class StatsViewModel(
             } else {
                 flowOf(null)
             }
-        return combine(breakdown, finished) { numbers, showsFinished ->
+        // The tab's ratings in the period (#232), from the same bounds as its viewings.
+        val ratings =
+            statsRepository
+                .observeRatedItems(period, timeZone, at, weekStart, domain)
+                .map { ratingStats(it) }
+        return combine(breakdown, finished, ratings) { numbers, showsFinished, rated ->
             StatsUiState(
                 isLoading = false,
                 period = period,
                 domain = domain,
                 goalYear = year,
                 viewing = ViewingStats(numbers, showsFinished),
+                ratings = rated,
             )
         }
     }

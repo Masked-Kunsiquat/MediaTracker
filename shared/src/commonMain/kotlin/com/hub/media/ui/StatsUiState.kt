@@ -3,6 +3,7 @@ package com.hub.media.ui
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.features.stats.data.GoalProgress
+import com.hub.media.features.stats.data.RatingStats
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.features.stats.data.ViewingBreakdown
@@ -25,6 +26,7 @@ import com.hub.media.features.stats.data.ViewingBreakdown
  * @property goalYear The year a goal set now would apply to, for the card's "Set a goal for 2026".
  * @property finishesByMonth Books finished in each month of this year, January first, on the Year
  *   view only; `null` on every other period, which draws no chart (#219).
+ * @property ratings The tab's ratings in [period] (#232), or `null` when nothing in it is rated.
  */
 public data class StatsUiState(
     val isLoading: Boolean = true,
@@ -38,6 +40,7 @@ public data class StatsUiState(
     val finishOutcomes: FinishOutcomes? = null,
     val domain: MediaType = MediaType.BOOK,
     val viewing: ViewingStats? = null,
+    val ratings: RatingStats? = null,
 ) {
     /**
      * One period's aggregate numbers.
