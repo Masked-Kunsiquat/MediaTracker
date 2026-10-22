@@ -4,6 +4,7 @@ import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.FinishOutcomes
 import com.hub.media.core.database.dao.FinishedBookRow
 import com.hub.media.core.database.dao.PeriodStatsRow
+import com.hub.media.core.database.dao.RatedItemRow
 import com.hub.media.core.database.dao.ShowStateRow
 import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.dao.TimedSessionRow
@@ -115,6 +116,18 @@ public class StatsRepository(
         return db.statsDao().observeViewings(bounds?.first, bounds?.second, type)
     }
 
+    /** The rated items of [period] for one domain (#232), bounded as [observePeriodStats] is. */
+    public fun observeRatedItems(
+        period: StatsPeriod,
+        timeZone: TimeZone,
+        clock: Clock,
+        weekStartDay: WeekStartDay,
+        type: MediaType,
+    ): Flow<List<RatedItemRow>> {
+        val bounds = period.bounds(timeZone, clock, weekStartDay)
+        return db.statsDao().observeRatedItems(bounds?.first, bounds?.second, type)
+    }
+
     // --- Any year's reads, for the year in review (#221) -------------------------------------------
     // The same queries as the period functions above, bounded by [yearBounds] instead of a period.
 
@@ -131,6 +144,12 @@ public class StatsRepository(
         bounds: Pair<Instant, Instant>,
         type: MediaType,
     ): Flow<List<ViewingRow>> = db.statsDao().observeViewings(bounds.first, bounds.second, type)
+
+    /** [observeRatedItems] over [bounds]. */
+    public fun observeRatedItemsIn(
+        bounds: Pair<Instant, Instant>,
+        type: MediaType,
+    ): Flow<List<RatedItemRow>> = db.statsDao().observeRatedItems(bounds.first, bounds.second, type)
 
     /** Books finished within [bounds], with their pages. */
     public fun observeFinishedBooks(bounds: Pair<Instant, Instant>): Flow<List<FinishedBookRow>> =

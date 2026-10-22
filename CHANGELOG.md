@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Re-watch a show: Watch again starts a new watch-through with an empty checklist, while earlier ones fold away below the seasons with their dates and ratings. Abandoning a rewatch leaves the first one finished. (#231)
 - Rate each watch-through of a show when you finish or abandon it, and each viewing of a film from the Watched dialog or its History. Films and shows show your average and latest rating, like books. (#231)
 - Skipped a rating? A Rate button sits beside the status of a finished book or show until you rate it, and an earlier watch-through can be rated when you open it. (#231)
+- Your ratings in Stats: each tab shows your average rating, your top five and how your ratings spread, for the period you pick. Only ratings on what you read or watched in that period count. (#232)
+- The year in review shows your favourites just before its summary: your top-rated book, film and show of the year. (#232)
 
 ### Changed
 - A show that is fully watched but still airing now reads "Up to date" on its page instead of "Watching". (#231)

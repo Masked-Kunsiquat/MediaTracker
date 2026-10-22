@@ -1,12 +1,15 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
@@ -20,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.width
 import androidx.test.platform.app.InstrumentationRegistry
@@ -33,6 +37,8 @@ import com.hub.media.features.stats.data.AuthorTime
 import com.hub.media.features.stats.data.FormatTime
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
+import com.hub.media.features.stats.data.RatedTitle
+import com.hub.media.features.stats.data.RatingStats
 import com.hub.media.features.stats.data.ReadingBreakdown
 import com.hub.media.features.stats.data.StatsPeriod
 import com.hub.media.features.stats.data.TitleTime
@@ -47,6 +53,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import kotlin.math.roundToInt
 
 /** The stats screen's period picker and single card (#91), driven statelessly. */
 @RunWith(RobolectricTestRunner::class)
@@ -794,5 +801,72 @@ class StatsScreenTest {
         // Positive control: the screen is drawn.
         composeRule.onNodeWithTag(TestTags.Stats.PERIODS).assertExists()
         composeRule.onNodeWithTag(TestTags.Stats.YEAR_REVIEW_CARD).assertDoesNotExist()
+    }
+
+    // --- #232: Your ratings ---
+
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    private fun ratings(vararg titles: Pair<String, Double>) =
+        RatingStats(
+            averageStars = titles.map { it.second }.average(),
+            titles = titles.size,
+            top = titles.map { (t, stars) -> RatedTitle(t, t, stars, latestAt = null, rated = 1) },
+            spread = List(10) { i -> titles.count { (it.second * 2).roundToInt() == i + 1 } },
+        )
+
+    private fun films(ratings: RatingStats?) = viewing(MediaType.MOVIE, watched()).copy(ratings = ratings)
+
+    @Test
+    fun theRatingsCard_isAbsent_whenNothingIsRated() {
+        setContent(films(ratings = null))
+        scrollToTile(TestTags.Stats.CHARTS_CARD)
+        composeRule.onNodeWithText(string(R.string.stats_ratings_title)).assertDoesNotExist()
+    }
+
+    @Test
+    fun aTopRow_printsTheExactScore_onlyWhenTheStarsCannotShowIt() {
+        setContent(films(ratings("Arrival" to 4.25, "Heat" to 4.5)))
+        scrollToTile(TestTags.Stats.RATINGS_CARD)
+        composeRule.onNodeWithText("Arrival").assertIsDisplayed()
+        composeRule.onNodeWithText("4.3").assertIsDisplayed()
+        composeRule.onNodeWithText("4.5").assertDoesNotExist()
+    }
+
+    @Test
+    fun theSpreadTile_opensLarger() {
+        setContent(films(ratings("Arrival" to 4.5)))
+        scrollToTile(TestTags.Stats.RATING_SPREAD_CHART)
+        composeRule.onNodeWithTag(TestTags.Stats.RATING_SPREAD_CHART).performClick()
+        composeRule.onNodeWithText(string(R.string.stats_chart_rating_spread)).assertIsDisplayed()
+    }
+
+    /** Review focus 5: a long title gives way, so its stars and exact score stay on the card at a large font. */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aLongTitle_keepsItsStarsAndScoreOnScreen_atTheLargestFont() {
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                MediaTrackerTheme(dynamicColor = false) {
+                    StatsScreen(
+                        uiState =
+                            films(
+                                ratings(
+                                    "The Lord of the Rings: The Return of the King, Extended Edition" to 4.25,
+                                ),
+                            ),
+                        onSelectPeriod = {},
+                        onSelectDomain = {},
+                        onOpenYearReview = {},
+                        onSetGoal = {},
+                        onClearGoal = {},
+                        onNavigateBack = {},
+                    )
+                }
+            }
+        }
+        scrollToTile(TestTags.Stats.RATINGS_CARD)
+        val card = composeRule.onNodeWithTag(TestTags.Stats.RATINGS_CARD).getUnclippedBoundsInRoot()
+        val score = composeRule.onNodeWithText("4.3").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue("the score $score runs past the card $card", score.right <= card.right && score.width > 0.dp)
     }
 }

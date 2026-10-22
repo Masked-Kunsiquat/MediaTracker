@@ -25,6 +25,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -160,6 +161,37 @@ class YearReviewViewModelTest {
                     .first { it.review != null }
                     .review!!
                     .year,
+            )
+        }
+
+    // --- #232: the year's favourites --------------------------------------------------------------
+
+    @Test
+    fun favourites_useOnlyThatYearsRatings() =
+        runTest {
+            db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "a", title = "Arrival", type = MediaType.MOVIE))
+            db.movieWriteDao().insertMediaItem(sampleMediaItem(id = "h", title = "Heat", type = MediaType.MOVIE))
+            db.movieWriteDao().insertViewing(WatchLogEntity("a1", "a", watchedAt = on(2024), rating = 10))
+            db.movieWriteDao().insertViewing(WatchLogEntity("a2", "a", watchedAt = on(2025), rating = 7))
+            db.movieWriteDao().insertViewing(WatchLogEntity("h1", "h", watchedAt = on(2025), rating = 8))
+
+            // Over all time Arrival averages 8.5 halves and would beat Heat's 8; in 2025 alone it has 7.
+            val review = newViewModel(initialYear = 2025).uiState.first { it.review?.year == 2025 }.review!!
+
+            assertEquals("Heat", review.favourites?.film?.title, "Arrival's 2024 five stars do not count in 2025")
+            assertNull(review.favourites?.book)
+        }
+
+    @Test
+    fun aYearWithNothingRated_hasNoFavourites() =
+        runTest {
+            filmWatchedOn(on(2025))
+            assertNull(
+                newViewModel(initialYear = 2025)
+                    .uiState
+                    .first { it.review?.year == 2025 }
+                    .review!!
+                    .favourites,
             )
         }
 }

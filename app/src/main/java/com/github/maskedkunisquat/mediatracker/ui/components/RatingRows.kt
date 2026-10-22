@@ -71,7 +71,7 @@ fun YourRatingRow(
 
 /** An average in stars, one decimal, in the viewer's locale: "4.5", "4.2". */
 @Composable
-private fun formatAverage(stars: Double): String {
+internal fun formatAverage(stars: Double): String {
     val locale = LocalConfiguration.current.locales[0]
     return String.format(locale, "%.1f", stars)
 }

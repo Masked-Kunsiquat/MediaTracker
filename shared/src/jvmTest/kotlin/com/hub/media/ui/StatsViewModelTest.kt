@@ -24,6 +24,7 @@ import com.hub.media.features.settings.data.observeStatsDomain
 import com.hub.media.features.settings.data.observeStatsPeriod
 import com.hub.media.features.settings.data.setReadingGoal
 import com.hub.media.features.settings.data.setStatsDomain
+import com.hub.media.features.settings.data.setStatsPeriod
 import com.hub.media.features.settings.data.setWeekStartDay
 import com.hub.media.features.stats.data.GoalProgress
 import com.hub.media.features.stats.data.GoalStatus
@@ -44,8 +45,10 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -660,6 +663,79 @@ class StatsViewModelTest {
             viewModel.selectPeriod(StatsPeriod.YEAR)
 
             val state = viewModel.uiState.first { it.period == StatsPeriod.YEAR }
+            assertEquals(MediaType.BOOK, state.domain)
+        }
+
+    // --- #232: rating stats -----------------------------------------------------------------------
+
+    @Test
+    fun theFilmsTab_carriesThePeriodsRatings_andFollowsThePicker() =
+        runTest {
+            filmWatchedAt(june(19))
+            db.movieWriteDao().insertViewing(
+                WatchLogEntity(id = "fl-old", mediaId = "film-1", watchedAt = june(19).minus(400.days), rating = 2),
+            )
+            db.movieWriteDao().setFilmViewingRating("fl-1", 10)
+            settingsRepository.setStatsDomain(MediaType.MOVIE)
+            settingsRepository.setStatsPeriod(StatsPeriod.MONTH)
+            val viewModel = newViewModel()
+            holdUiStateSubscribed(viewModel)
+
+            val month = viewModel.uiState.first { it.ratings != null && it.period == StatsPeriod.MONTH }
+            assertEquals(
+                5.0,
+                month.ratings!!
+                    .top
+                    .single()
+                    .stars,
+                "only June's viewing counts",
+            )
+
+            viewModel.selectPeriod(StatsPeriod.ALL_TIME)
+            val all = viewModel.uiState.first { it.period == StatsPeriod.ALL_TIME && it.ratings != null }
+            assertEquals(
+                3.0,
+                all.ratings!!
+                    .top
+                    .single()
+                    .stars,
+            )
+        }
+
+    @Test
+    fun theBooksTab_withNothingRated_hasNoRatings() =
+        runTest {
+            insertBook()
+            val state = newViewModel().uiState.first { !it.isLoading }
+            assertNull(state.ratings)
+        }
+
+    /**
+     * The Books tab's ratings come through the view model too (#232 review): a read given up in June, with no
+     * finish date, is dated by its session and counts in June -- the DNF dating rule end to end.
+     */
+    @Test
+    fun theBooksTab_carriesARatedDnfRead_datedByItsSession() =
+        runTest {
+            insertBook()
+            // Its own end time: the shared session() keeps the fixture's default end, in 2023.
+            db.readingSessionDao().insertIntoLatestRead(
+                sampleReadingSession(mediaId = mediaId, timestampStart = june(10), timestampEnd = june(10, hour = 13)),
+            )
+            val read = db.readThroughDao().getLatest(mediaId)!!
+            db.readThroughDao().updateStatus(read.id, ReadingStatus.DNF, null)
+            db.readThroughDao().updateRating(read.id, 3)
+            settingsRepository.setStatsPeriod(StatsPeriod.MONTH)
+
+            val state = newViewModel().uiState.first { it.ratings != null }
+
+            assertEquals(
+                1.5,
+                state.ratings!!
+                    .top
+                    .single()
+                    .stars,
+            )
             assertEquals(MediaType.BOOK, state.domain)
         }
 }
