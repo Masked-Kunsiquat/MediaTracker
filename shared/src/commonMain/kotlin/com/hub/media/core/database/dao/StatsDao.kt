@@ -192,6 +192,41 @@ interface StatsDao {
     ): Flow<List<ViewingRow>>
 
     /**
+     * Every rated read, film viewing and watch-through of [type] (#232), each with the date it takes from
+     * what it is on: a read's finish, else its latest session's end, else its start (a Did-not-finish read
+     * has no finish); a film viewing's day; a watch-through's latest episode viewing. Both bounds null is
+     * All time and returns dateless items too; with bounds, only items dated in `[from, to)`.
+     */
+    @Query(
+        """
+        SELECT mediaId, title, rating, at FROM (
+            SELECT r.mediaId AS mediaId, m.title AS title, r.rating AS rating, m.type AS type,
+                   COALESCE(r.finishedAt,
+                            (SELECT MAX(s.timestampEnd) FROM reading_sessions s WHERE s.readThroughId = r.id),
+                            r.startedAt) AS at
+              FROM read_throughs r JOIN media_items m ON m.id = r.mediaId
+             WHERE r.rating IS NOT NULL
+            UNION ALL
+            SELECT w.mediaId, m.title, w.rating, m.type, w.watchedAt
+              FROM watch_logs w JOIN media_items m ON m.id = w.mediaId
+             WHERE w.episodeId IS NULL AND w.rating IS NOT NULL
+            UNION ALL
+            SELECT t.mediaId, m.title, t.rating, m.type,
+                   (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.watchThroughId = t.id)
+              FROM watch_throughs t JOIN media_items m ON m.id = t.mediaId
+             WHERE t.rating IS NOT NULL
+        )
+         WHERE type = :type
+           AND ((:from IS NULL AND :to IS NULL) OR (at >= :from AND at < :to))
+        """,
+    )
+    fun observeRatedItems(
+        from: Instant?,
+        to: Instant?,
+        type: MediaType,
+    ): Flow<List<RatedItemRow>>
+
+    /**
      * Each show's airing state, its latest watch-through's abandoned flag, and whether an earlier run was
      * finished (#217, #231), for "shows finished" (see `countFinishedShows`). Watch again is offered only
      * once a run is complete or abandoned, so an earlier run that is not abandoned was finished.
