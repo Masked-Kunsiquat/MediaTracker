@@ -74,27 +74,7 @@ fun CoverImage(
         return
     }
 
-    // Load the image off-thread via produceState.
-    val imageBitmap =
-        produceState<ImageBitmap?>(
-            initialValue = null,
-            coverDir,
-            coverImageHash,
-        ) {
-            value =
-                withContext(Dispatchers.IO) {
-                    try {
-                        // coverImageHash is already the full "<sha256>.jpg" filename from the database
-                        BitmapFactory
-                            .decodeFile(File(coverDir, coverImageHash).absolutePath)
-                            ?.asImageBitmap()
-                    } catch (e: Exception) {
-                        // Decode failed or file missing; fall through to placeholder.
-                        Log.w(TAG, "Failed to load cover image: $coverImageHash", e)
-                        null
-                    }
-                }
-        }.value
+    val imageBitmap = rememberCoverBitmap(coverDir, coverImageHash)
 
     if (imageBitmap != null) {
         Image(
@@ -107,6 +87,37 @@ fun CoverImage(
         CoverPlaceholder(modifier = modifier, mediaType = mediaType)
     }
 }
+
+/**
+ * The stored cover [coverImageHash] in [coverDir], decoded off the main thread: `null` while it loads,
+ * when [coverImageHash] is `null`, and when the file is missing or will not decode. Shared by [CoverImage]
+ * and the year in review's covers (#229), which show nothing rather than a placeholder.
+ */
+@Composable
+internal fun rememberCoverBitmap(
+    coverDir: String,
+    coverImageHash: String?,
+): ImageBitmap? =
+    produceState<ImageBitmap?>(
+        initialValue = null,
+        coverDir,
+        coverImageHash,
+    ) {
+        if (coverImageHash == null) return@produceState
+        value =
+            withContext(Dispatchers.IO) {
+                try {
+                    // coverImageHash is already the full "<sha256>.jpg" filename from the database
+                    BitmapFactory
+                        .decodeFile(File(coverDir, coverImageHash).absolutePath)
+                        ?.asImageBitmap()
+                } catch (e: Exception) {
+                    // Decode failed or file missing; the caller falls back.
+                    Log.w(TAG, "Failed to load cover image: $coverImageHash", e)
+                    null
+                }
+            }
+    }.value
 
 /**
  * Placeholder displayed when no cover image is available.

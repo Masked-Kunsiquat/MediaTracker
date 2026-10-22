@@ -1,29 +1,45 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.text.format.DateFormat
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.BOOK_COVER_ASPECT_RATIO
 import com.github.maskedkunisquat.mediatracker.ui.components.ClockDial
 import com.github.maskedkunisquat.mediatracker.ui.components.RatingStars
+import com.github.maskedkunisquat.mediatracker.ui.components.rememberCoverBitmap
 import com.github.maskedkunisquat.mediatracker.ui.text.formatDuration
 import com.hub.media.features.stats.data.DayPart
 import com.hub.media.features.stats.data.Favorites
@@ -71,11 +87,12 @@ internal fun pagesOf(review: YearReview): List<YearPage> =
     )
 
 @Composable
-internal fun YearPageContent(
+internal fun ColumnScope.YearPageContent(
     page: YearPage,
     review: YearReview,
     years: List<Int>,
     thisYear: Int,
+    coverDir: String,
     onSelectYear: (Int) -> Unit,
 ) {
     when (page) {
@@ -87,6 +104,8 @@ internal fun YearPageContent(
                     stringResource(R.string.year_review_longest_book),
                     it.title,
                     pluralStringResource(R.plurals.year_review_pages, it.pages, it.pages),
+                    coverDir,
+                    it.coverImageHash,
                 )
             }
         YearPage.TOP_AUTHOR ->
@@ -95,6 +114,8 @@ internal fun YearPageContent(
                     stringResource(R.string.year_review_top_author),
                     it.name,
                     stringResource(R.string.year_review_of_reading, formatDuration(it.seconds)),
+                    coverDir,
+                    it.coverImageHash,
                 )
             }
         YearPage.LONGEST_SESSION ->
@@ -103,6 +124,8 @@ internal fun YearPageContent(
                     stringResource(R.string.year_review_longest_session),
                     formatDuration(it.seconds),
                     stringResource(R.string.year_review_with_book, it.title),
+                    coverDir,
+                    it.coverImageHash,
                 )
             }
         YearPage.GOAL ->
@@ -127,11 +150,13 @@ internal fun YearPageContent(
                     stringResource(R.string.year_review_rewatched),
                     it.title,
                     pluralStringResource(R.plurals.year_review_times, it.viewings, it.viewings),
+                    coverDir,
+                    it.coverImageHash,
                 )
             }
-        YearPage.BINGE -> review.bingeDay?.let { BingePage(it) }
+        YearPage.BINGE -> review.bingeDay?.let { BingePage(it, coverDir) }
         YearPage.RHYTHM -> review.rhythm?.let { RhythmPage(it) }
-        YearPage.FAVORITES -> review.favorites?.let { FavoritesPage(review.year, it) }
+        YearPage.FAVORITES -> review.favorites?.let { FavoritesPage(review.year, it, coverDir) }
         YearPage.SUMMARY -> SummaryPage(review, thisYear)
     }
 }
@@ -205,13 +230,17 @@ private fun Total(
     Spacer(Modifier.height(16.dp))
 }
 
-/** One highlight: a label, the big value, and a supporting line. */
+/** One highlight: its subject's cover when it has one (#229), a label, the big value, and a supporting line. */
 @Composable
-private fun Highlight(
+private fun ColumnScope.Highlight(
     label: String,
     value: String,
     line: String,
+    // The goal page has no single subject, so no cover.
+    coverDir: String = "",
+    cover: String? = null,
 ) {
+    LargeCover(coverDir, cover)
     Text(text = label, style = MaterialTheme.typography.titleLarge)
     Spacer(Modifier.height(24.dp))
     Text(text = value, style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
@@ -224,32 +253,96 @@ private fun Highlight(
 private fun FavoritesPage(
     year: Int,
     favorites: Favorites,
+    coverDir: String,
 ) {
     Text(text = stringResource(R.string.year_review_favorites, year), style = MaterialTheme.typography.titleLarge)
-    listOfNotNull(
-        favorites.book?.let { R.string.year_review_favorite_book to it },
-        favorites.film?.let { R.string.year_review_favorite_film to it },
-        favorites.show?.let { R.string.year_review_favorite_show to it },
-    ).forEach { (label, title) ->
-        Spacer(Modifier.height(24.dp))
-        Text(text = stringResource(label), style = MaterialTheme.typography.labelLarge)
-        // Two lines at most: three long titles at a large font would otherwise outgrow a page that does not
-        // scroll, crushing the last row (#232 review).
-        Text(
-            text = title.title,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+    val rows =
+        listOfNotNull(
+            favorites.book?.let { R.string.year_review_favorite_book to it },
+            favorites.film?.let { R.string.year_review_favorite_film to it },
+            favorites.show?.let { R.string.year_review_favorite_show to it },
         )
-        RatingStars(halves = title.roundedHalves, starSize = 28.dp)
+    // Once any row has a cover, every row keeps its slot, so the titles line up (#229).
+    val coverSlot = rows.any { (_, title) -> title.coverImageHash != null }
+    rows.forEach { (label, title) ->
+        Spacer(Modifier.height(24.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (coverSlot) {
+                Box(Modifier.width(SMALL_COVER_WIDTH).aspectRatio(BOOK_COVER_ASPECT_RATIO)) {
+                    YearCover(coverDir, title.coverImageHash, Modifier.fillMaxSize())
+                }
+                Spacer(Modifier.width(16.dp))
+            }
+            Column {
+                Text(text = stringResource(label), style = MaterialTheme.typography.labelLarge)
+                // Two lines at most: three long titles at a large font would otherwise outgrow a page that
+                // does not scroll, crushing the last row (#232 review).
+                Text(
+                    text = title.title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                RatingStars(halves = title.roundedHalves, starSize = 28.dp)
+            }
+        }
     }
 }
 
+/**
+ * A highlight's cover, large and centered above its words (#229, owner's choice). It takes only the height
+ * the words leave, up to [LARGE_COVER_MAX_HEIGHT]: the page does not scroll, so on a small phone at a
+ * large font the cover shrinks, down to nothing, rather than push the words off the page.
+ */
 @Composable
-private fun BingePage(binge: com.hub.media.features.stats.data.BingeDay) {
+private fun ColumnScope.LargeCover(
+    coverDir: String,
+    cover: String?,
+) {
+    if (cover == null) return
+    YearCover(
+        coverDir,
+        cover,
+        Modifier
+            .align(Alignment.CenterHorizontally)
+            .weight(1f, fill = false)
+            .padding(bottom = 24.dp)
+            .heightIn(max = LARGE_COVER_MAX_HEIGHT)
+            .aspectRatio(BOOK_COVER_ASPECT_RATIO, matchHeightConstraintsFirst = true),
+    )
+}
+
+/**
+ * A stored cover as decoration (#229): no content description, since the page's words already name the
+ * title, and nothing at all -- not a placeholder -- when it is missing or will not load.
+ */
+@Composable
+private fun YearCover(
+    coverDir: String,
+    cover: String?,
+    modifier: Modifier,
+) {
+    val bitmap = rememberCoverBitmap(coverDir, cover) ?: return
+    Image(
+        bitmap = bitmap,
+        contentDescription = null,
+        modifier = modifier.testTag(TestTags.YearReview.COVER).clip(RoundedCornerShape(8.dp)),
+        contentScale = ContentScale.Crop,
+    )
+}
+
+private val LARGE_COVER_MAX_HEIGHT = 240.dp
+private val SMALL_COVER_WIDTH = 48.dp
+
+@Composable
+private fun ColumnScope.BingePage(
+    binge: com.hub.media.features.stats.data.BingeDay,
+    coverDir: String,
+) {
     val locale = LocalConfiguration.current.locales[0]
     val date = LocalDate.of(binge.year, binge.month, binge.day)
+    LargeCover(coverDir, binge.coverImageHash)
     Text(text = stringResource(R.string.year_review_binge), style = MaterialTheme.typography.titleLarge)
     Spacer(Modifier.height(24.dp))
     Text(text = binge.episodes.toString(), style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Bold)

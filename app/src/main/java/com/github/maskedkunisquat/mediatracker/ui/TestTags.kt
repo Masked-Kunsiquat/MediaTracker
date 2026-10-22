@@ -103,6 +103,9 @@ object TestTags {
         const val PAGER = "yearReview:pager"
         const val CLOSE = "yearReview:close"
 
+        /** A highlight's cover (#229): an image with no text of its own, being decoration. */
+        const val COVER = "yearReview:cover"
+
         /** One page's root, by its kind (YEAR, TOTALS, LONGEST_BOOK, … SUMMARY). */
         fun page(kind: String): String = "yearReview:page:$kind"
     }

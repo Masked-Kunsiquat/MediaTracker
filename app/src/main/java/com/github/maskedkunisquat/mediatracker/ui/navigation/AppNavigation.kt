@@ -330,6 +330,7 @@ fun AppNavigation(
         ) { backStackEntry ->
             YearReviewScreenRoute(
                 appContainer = appContainer,
+                coverStorageDir = coverStorageDir,
                 initialYear =
                     Route.YearReview.parseYear(
                         backStackEntry.arguments?.getString(Route.YearReview.ARG_YEAR),

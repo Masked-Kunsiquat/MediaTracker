@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -8,13 +9,18 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -31,6 +37,7 @@ import com.hub.media.features.stats.data.DayPart
 import com.hub.media.features.stats.data.Favorites
 import com.hub.media.features.stats.data.LongestBook
 import com.hub.media.features.stats.data.RatedTitle
+import com.hub.media.features.stats.data.RewatchedFilm
 import com.hub.media.features.stats.data.Rhythm
 import com.hub.media.features.stats.data.YearReview
 import com.hub.media.features.stats.data.YearTotals
@@ -39,16 +46,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 /** The year in review's story (#221), driven statelessly. */
 @RunWith(RobolectricTestRunner::class)
 class YearReviewScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @get:Rule
+    val folder = TemporaryFolder()
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val picked = mutableListOf<Int>()
@@ -67,12 +79,14 @@ class YearReviewScreenTest {
         review: YearReview = review(),
         years: List<Int> = listOf(2026, 2025),
         thisYear: Int = 2026,
+        coverDir: String = "",
     ) {
         composeRule.setContent {
             MediaTrackerTheme(dynamicColor = false) {
                 YearReviewScreen(
                     uiState = YearReviewUiState(isLoading = false, years = years, year = review.year, review = review),
                     thisYear = thisYear,
+                    coverStorageDir = coverDir,
                     onSelectYear = { picked += it },
                     onClose = { closed++ },
                 )
@@ -290,6 +304,7 @@ class YearReviewScreenTest {
                                 review = review,
                             ),
                         thisYear = 2026,
+                        coverStorageDir = "",
                         onSelectYear = {},
                         onClose = {},
                     )
@@ -325,6 +340,7 @@ class YearReviewScreenTest {
                 YearReviewScreen(
                     uiState = YearReviewUiState(isLoading = false, loadFailed = true),
                     thisYear = 2026,
+                    coverStorageDir = "",
                     onSelectYear = {},
                     onClose = { closed++ },
                 )
@@ -341,5 +357,158 @@ class YearReviewScreenTest {
             ).assertDoesNotExist()
         composeRule.onNodeWithTag(TestTags.YearReview.CLOSE).performClick()
         assertEquals(1, closed)
+    }
+
+    /** Real, decodable JPEGs named [names] in a fresh folder (NATIVE graphics only); returns the folder. */
+    private fun coverFolder(vararg names: String): String {
+        val dir = folder.newFolder()
+        for (name in names) {
+            val bitmap = Bitmap.createBitmap(40, 60, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(android.graphics.Color.RED)
+            File(dir, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        }
+        return dir.path
+    }
+
+    private fun covers() = composeRule.onAllNodesWithTag(TestTags.YearReview.COVER, useUnmergedTree = true)
+
+    private fun awaitCovers(count: Int) = composeRule.waitUntil(5_000) { covers().fetchSemanticsNodes().size == count }
+
+    /** #229: a highlight whose title has a stored cover shows it, above its words (owner's choice). */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aHighlightWithAStoredCover_showsItAboveItsWords() {
+        setContent(
+            review(longestBook = LongestBook("The Way of Kings", 1_007, "kings.jpg")),
+            coverDir = coverFolder("kings.jpg"),
+        )
+
+        next()
+        next()
+        page("LONGEST_BOOK").assertIsDisplayed()
+        awaitCovers(1)
+        val cover = covers().onFirst().getUnclippedBoundsInRoot()
+        val label =
+            composeRule
+                .onNodeWithText(
+                    string(R.string.year_review_longest_book),
+                    useUnmergedTree = true,
+                ).getUnclippedBoundsInRoot()
+        assertTrue("the cover $cover has no height", cover.height > 0.dp)
+        assertTrue("the cover $cover is not above the label $label", cover.bottom <= label.top)
+    }
+
+    /** #229: no stored cover, or a file that has gone missing, leaves the page as it was -- no placeholder. */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aHighlightWithoutACover_staysTextOnly_withNoPlaceholder() {
+        setContent(
+            review().copy(
+                longestBook = LongestBook("The Way of Kings", 1_007, "gone.jpg"),
+                rewatchedFilm = RewatchedFilm("Arrival", 3, coverImageHash = null),
+            ),
+            coverDir = coverFolder(),
+        )
+
+        next()
+        next()
+        page("LONGEST_BOOK").assertIsDisplayed()
+        composeRule.onNodeWithText("The Way of Kings").assertIsDisplayed()
+        next()
+        page("REWATCHED_FILM").assertIsDisplayed()
+        composeRule.waitForIdle()
+        covers().assertCountEquals(0)
+        // CoverImage's placeholders: a book and a clapperboard.
+        composeRule.onAllNodesWithText("\uD83D\uDCD6", useUnmergedTree = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("\uD83C\uDFAC", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    /** #229: the cover is decoration; TalkBack reads the page from its words, never "Cover image". */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aCover_isNotReadAloud() {
+        setContent(
+            review(longestBook = LongestBook("The Way of Kings", 1_007, "kings.jpg")),
+            coverDir = coverFolder("kings.jpg"),
+        )
+
+        next()
+        next()
+        awaitCovers(1)
+        composeRule
+            .onAllNodes(hasContentDescription(string(R.string.cover_image_content_description)), useUnmergedTree = true)
+            .assertCountEquals(0)
+    }
+
+    /** #229: each favorite with a stored cover gets a small one beside it; one without has none. */
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun theFavoritesPage_showsACoverBesideEachFavoriteThatHasOne() {
+        val favorites =
+            Favorites(
+                book = RatedTitle("b", "Project Hail Mary", 5.0, latestAt = null, rated = 1, coverImageHash = "b.jpg"),
+                film = RatedTitle("f", "Arrival", 4.5, latestAt = null, rated = 1),
+                show = RatedTitle("s", "Chernobyl", 4.5, latestAt = null, rated = 1, coverImageHash = "s.jpg"),
+            )
+        setContent(review().copy(favorites = favorites), coverDir = coverFolder("b.jpg", "s.jpg"))
+
+        next()
+        next()
+        page("FAVORITES").assertIsDisplayed()
+        awaitCovers(2)
+        val cover = covers().onFirst().getUnclippedBoundsInRoot()
+        val title = composeRule.onNodeWithText("Project Hail Mary", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("the cover $cover has no height", cover.height > 0.dp)
+        assertTrue("the cover $cover is not beside the title $title", cover.right <= title.left)
+    }
+
+    /**
+     * #229: a large cover never squeezes the words. On a small phone at the largest font the cover gives way,
+     * and the label, the long title and its line all stay on screen.
+     */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "w360dp-h640dp")
+    fun aHighlightsCover_givesWayToItsWords_atTheLargestFont() {
+        val review = review(longestBook = LongestBook("The Hitchhiker's Guide to the Galaxy", 1_007, "h.jpg"))
+        val dir = coverFolder("h.jpg")
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                MediaTrackerTheme(dynamicColor = false) {
+                    YearReviewScreen(
+                        uiState =
+                            YearReviewUiState(
+                                isLoading = false,
+                                years = listOf(2026),
+                                year = 2026,
+                                review = review,
+                            ),
+                        thisYear = 2026,
+                        coverStorageDir = dir,
+                        onSelectYear = {},
+                        onClose = {},
+                    )
+                }
+            }
+        }
+
+        next()
+        next()
+        page("LONGEST_BOOK").assertIsDisplayed()
+        awaitCovers(1)
+        val screen = composeRule.onRoot().getUnclippedBoundsInRoot()
+        val label =
+            composeRule
+                .onNodeWithText(
+                    string(R.string.year_review_longest_book),
+                    useUnmergedTree = true,
+                ).getUnclippedBoundsInRoot()
+        val line = composeRule.onNodeWithText("1007 pages", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("the label $label starts above the screen", label.top >= screen.top)
+        assertTrue(
+            "the line $line is crushed or below the screen $screen",
+            line.height > 0.dp && line.bottom <= screen.bottom,
+        )
     }
 }
