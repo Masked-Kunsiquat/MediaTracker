@@ -95,6 +95,8 @@ object TestTags {
         const val WEEKDAY_CHART = "stats:weekdayChart"
         const val AUTHORS_CARD = "stats:authors"
         const val FORMATS_CARD = "stats:formats"
+        const val RATINGS_CARD = "stats:ratings"
+        const val RATING_SPREAD_CHART = "stats:ratingSpread"
     }
 
     object YearReview {

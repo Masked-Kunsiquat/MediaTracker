@@ -376,6 +376,25 @@
     <string name="stats_busiest">busiest</string>
     <string name="stats_show_larger">Show larger</string>
     <string name="stats_close">Close</string>
+    <string name="stats_ratings_title">Your ratings</string>
+    <plurals name="stats_ratings_summary_books">
+        <item quantity="one">Average %1$s · %2$d book rated</item>
+        <item quantity="other">Average %1$s · %2$d books rated</item>
+    </plurals>
+    <plurals name="stats_ratings_summary_films">
+        <item quantity="one">Average %1$s · %2$d film rated</item>
+        <item quantity="other">Average %1$s · %2$d films rated</item>
+    </plurals>
+    <plurals name="stats_ratings_summary_shows">
+        <item quantity="one">Average %1$s · %2$d show rated</item>
+        <item quantity="other">Average %1$s · %2$d shows rated</item>
+    </plurals>
+    <string name="stats_ratings_mostly">Mostly %s★</string>
+    <string name="stats_chart_rating_spread">Rating spread</string>
+    <plurals name="stats_rating_spread_titles">
+        <item quantity="one">%d title</item>
+        <item quantity="other">%d titles</item>
+    </plurals>
     <string name="stats_chart_time_of_day">Time of day</string>
     <string name="stats_chart_weekdays">Weekdays</string>
     <string name="stats_chart_by_month">By month</string>

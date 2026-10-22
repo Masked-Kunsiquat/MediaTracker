@@ -217,6 +217,20 @@ fun StatsScreen(
                                 TopShowsCard(viewing.breakdown.topTitles, watchedAny = viewing.breakdown.viewings > 0)
                             }
                         }
+                        // Your ratings (#232), last on every tab; absent when nothing in the period is rated.
+                        uiState.ratings?.let { ratings ->
+                            item {
+                                RatingsCard(
+                                    stats = ratings,
+                                    summary =
+                                        if (uiState.domain == MediaType.MOVIE) {
+                                            R.plurals.stats_ratings_summary_films
+                                        } else {
+                                            R.plurals.stats_ratings_summary_shows
+                                        },
+                                )
+                            }
+                        }
                         return@LazyColumn
                     }
                     item {
@@ -256,6 +270,9 @@ fun StatsScreen(
                     }
                     item {
                         FormatsCard(formats = uiState.breakdown.formats, totalSeconds = uiState.breakdown.totalSeconds)
+                    }
+                    uiState.ratings?.let { ratings ->
+                        item { RatingsCard(stats = ratings, summary = R.plurals.stats_ratings_summary_books) }
                     }
                 }
             }
