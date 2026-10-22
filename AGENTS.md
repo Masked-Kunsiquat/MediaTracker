@@ -347,7 +347,7 @@ so every helper whose callers end up in a sibling file must widen to `internal`.
   | v5 | `v0.8.0` | `MIGRATION_4_5` — nullable author column on `BookDetailsEntity` |
   | v6 | `v0.15.0` | `MIGRATION_5_6` — `movie_details`, `tv_details`, `episodes`, `watch_logs` |
   | v7 | `v0.20.0` | `MIGRATION_6_7` — moves `tv_details.overview` to `media_items.synopsis` (#133) |
-  | v8 | not yet frozen | `MIGRATION_7_8` — `read_throughs`; sessions grouped by read; a book's status and finish date move onto its read (#230); `watch_throughs`, episode viewings grouped by watch-through, film viewings rated; a show's abandoned flag moves onto its watch-through (#231) |
+  | v8 | `v0.29.0` | `MIGRATION_7_8` — `read_throughs`; sessions grouped by read; a book's status and finish date move onto its read (#230); `watch_throughs`, episode viewings grouped by watch-through, film viewings rated; a show's abandoned flag moves onto its watch-through (#231) |
 
   Current: `APP_DATABASE_VERSION = 8` (`shared/.../core/database/AppDatabase.kt`). Migrations live in `Migrations.kt`; each is registered through the `loggedMigration` wrapper and covered by `MigrationTest` (`jvmTest`). `v0.2.0`, `v0.3.0` and `v0.7.0` shipped no schema change.
 
