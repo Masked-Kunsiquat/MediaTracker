@@ -30,14 +30,18 @@ import com.hub.media.features.portability.goodreads.GoodreadsColumns
 import com.hub.media.features.portability.goodreads.GoodreadsCsvImporter
 import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.data.WatchThroughRepository
+import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
@@ -2162,5 +2166,243 @@ class ImportDataUseCaseTest {
                 db.readThroughDao().getLatest(mediaId)!!.status,
                 "the device's status stands",
             )
+        }
+
+    // ---- #231: watch-throughs and film ratings ---------------------------------------------------
+
+    private val runT1 = Instant.parse("2024-01-10T12:00:00Z")
+    private val runT2 = Instant.parse("2025-02-20T12:00:00Z")
+
+    /**
+     * The source library: a 2-episode show finished in run #1 (rated 4 stars), then a rewatch that
+     * ticked one episode and was abandoned; and a film watched twice, rated 3 and 5 stars.
+     */
+    private suspend fun seedWatchThroughs(): CsvExportBundle {
+        val shows = TVShowRepository(sourceDb)
+        val runs = WatchThroughRepository(sourceDb, includeSpecials = { true })
+        val showId =
+            (
+                shows.addShow(
+                    title = "Severance",
+                    seasons = listOf(SeasonQuickFill(1, 2)),
+                ) as Resource.Success
+            ).data
+        val (e1, e2) = sourceDb.episodeDao().getByMediaIdAndSeason(showId, 1)
+        sourceDb.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to runT1, e2.id to runT1))
+        runs.setRating(sourceDb.watchThroughDao().getLatest(showId)!!.id, 8)
+        assertIs<Resource.Success<*>>(runs.watchAgain(showId))
+        sourceDb.tvWriteDao().markEpisodesWatchedAt(mapOf(e1.id to runT2))
+        runs.setAbandoned(showId, true)
+
+        val films = MovieRepository(sourceDb)
+        val filmId = (films.addMovie(title = "Heat", status = WatchStatus.WATCHED) as Resource.Success).data
+        // A different day from the first viewing: two at the same moment are one viewing to the importer.
+        films.addViewing(filmId, WatchedWhen.On(LocalDate(2024, 3, 3)), rating = 10)
+        val first =
+            sourceDb
+                .watchLogDao()
+                .observeForFilm(filmId)
+                .first()
+                .single { it.rating == null }
+        films.setViewingRating(first.id, 6)
+
+        return (
+            ExportDataUseCase(MediaRepository(sourceDb), sourceBookRepository, sourceSessionRepository).execute()
+                as Resource.Success
+        ).data
+    }
+
+    private suspend fun importBundle(
+        bundle: CsvExportBundle,
+        policy: DuplicatePolicy = DuplicatePolicy.SKIP,
+        watchLogsCsv: String? = bundle.watchLogsCsv,
+        watchThroughsCsv: String? = bundle.watchThroughsCsv,
+    ) = useCase.execute(
+        bundle.libraryCsv,
+        bundle.readingLogsCsv,
+        bundle.episodesCsv,
+        policy,
+        watchLogsCsv = watchLogsCsv,
+        readThroughsCsv = bundle.readThroughsCsv,
+        watchThroughsCsv = watchThroughsCsv,
+    )
+
+    private suspend fun importedShowId() =
+        MediaRepository(db)
+            .observeAllMediaWithDetails()
+            .first()
+            .single { it is MediaWithDetails.TVShow }
+            .item.id
+
+    @Test
+    fun v8RoundTrip_keepsAbandonedRun_andFilmRatings() =
+        runTest {
+            val result = importBundle(seedWatchThroughs())
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(emptyList(), result.data.rejections)
+
+            val showId = importedShowId()
+            assertEquals(
+                listOf(Triple(1, false, 8), Triple(2, true, null)),
+                db.watchThroughDao().getForMedia(showId).map { Triple(it.number, it.abandoned, it.rating) },
+            )
+            val runNumbers = db.watchThroughDao().getForMedia(showId).associate { it.id to it.number }
+            val episodes = db.episodeDao().getByMediaIdAndSeason(showId, 1)
+            val viewings = episodes.flatMap { e -> db.watchLogDao().observeForEpisode(e.id).first() }
+            assertEquals(
+                listOf(1, 1, 2),
+                viewings.map { runNumbers.getValue(it.watchThroughId!!) }.sorted(),
+                "each viewing lands in its own run",
+            )
+            assertEquals(listOf(runT2, null), episodes.map { it.watchedAt }, "the ticks are run #2's")
+
+            val filmId =
+                MediaRepository(
+                    db,
+                ).observeAllMediaWithDetails().first().single { it is MediaWithDetails.Movie }.item.id
+            assertEquals(
+                listOf(6, 10),
+                db
+                    .watchLogDao()
+                    .observeForFilm(filmId)
+                    .first()
+                    .map { it.rating }
+                    .sortedBy { it },
+            )
+        }
+
+    @Test
+    fun oldArchive_eachShowGetsRunOne() =
+        runTest {
+            val bundle = seedWatchThroughs()
+            // A v7 watch log: the two new columns gone, the version column saying 7, and no runs file.
+            val v7Logs =
+                bundle.watchLogsCsv
+                    .trim()
+                    .lines()
+                    .mapIndexed { i, line ->
+                        val cols = line.split(",").dropLast(2)
+                        (if (i == 0) cols else listOf("7") + cols.drop(1)).joinToString(",")
+                    }.joinToString("\n") + "\n"
+
+            val result = importBundle(bundle, watchLogsCsv = v7Logs, watchThroughsCsv = null)
+            assertIs<Resource.Success<ImportSummary>>(result)
+            assertEquals(emptyList(), result.data.rejections)
+
+            val showId = importedShowId()
+            val runs = db.watchThroughDao().getForMedia(showId)
+            assertEquals(listOf(1 to false), runs.map { it.number to it.abandoned })
+            val episodes = db.episodeDao().getByMediaIdAndSeason(showId, 1)
+            val viewings = episodes.flatMap { e -> db.watchLogDao().observeForEpisode(e.id).first() }
+            assertEquals(3, viewings.size, "every viewing survives")
+            assertEquals(setOf(runs.single().id), viewings.map { it.watchThroughId }.toSet())
+            assertEquals(listOf(runT2, runT1), episodes.map { it.watchedAt }, "all history is run #1")
+        }
+
+    @Test
+    fun unknownRunNumber_isRejected() =
+        runTest {
+            val bundle = seedWatchThroughs()
+            val result = importBundle(bundle, watchThroughsCsv = null)
+            assertIs<Resource.Success<ImportSummary>>(result)
+            val rejected = result.data.rejections.filter { it.source == ImportRowSource.WATCH_LOG }
+            assertEquals(1, rejected.size, "only the run #2 viewing is refused: ${result.data.rejections}")
+            assertTrue(rejected.single().reason.contains("watch-through 2"), rejected.single().reason)
+        }
+
+    @Test
+    fun runRatings_followTheDuplicatePolicy() =
+        runTest {
+            val bundle = seedWatchThroughs()
+            importBundle(bundle)
+            val showId = importedShowId()
+            val one = db.watchThroughDao().getForMedia(showId).single { it.number == 1 }
+
+            db.watchThroughDao().updateRating(one.id, null)
+            importBundle(bundle, DuplicatePolicy.MERGE)
+            assertEquals(8, db.watchThroughDao().getById(one.id)!!.rating, "Merge fills an empty rating")
+
+            db.watchThroughDao().updateRating(one.id, 2)
+            importBundle(bundle, DuplicatePolicy.MERGE)
+            assertEquals(2, db.watchThroughDao().getById(one.id)!!.rating, "Merge never overwrites")
+            importBundle(bundle, DuplicatePolicy.SKIP)
+            assertEquals(2, db.watchThroughDao().getById(one.id)!!.rating, "Skip leaves it alone")
+            importBundle(bundle, DuplicatePolicy.REPLACE)
+            assertEquals(8, db.watchThroughDao().getById(one.id)!!.rating, "Replace takes the file's")
+        }
+
+    /** An old file over a show that already has two runs: its history is run #1's, never the rewatch's (#231). */
+    @Test
+    fun oldArchive_overAShowWithTwoRuns_addsNothingToTheRewatch() =
+        runTest {
+            val bundle = seedWatchThroughs()
+            importBundle(bundle)
+            val showId = importedShowId()
+            val two = db.watchThroughDao().getForMedia(showId).single { it.number == 2 }
+            val v7Logs =
+                bundle.watchLogsCsv
+                    .trim()
+                    .lines()
+                    .mapIndexed { i, line ->
+                        val cols = line.split(",").dropLast(2)
+                        (if (i == 0) cols else listOf("7") + cols.drop(1)).joinToString(",")
+                    }.joinToString("\n") + "\n"
+
+            importBundle(bundle, watchLogsCsv = v7Logs, watchThroughsCsv = null)
+
+            assertEquals(1, db.watchThroughDao().viewingCount(two.id), "run #2 keeps exactly its own viewing")
+        }
+
+    /**
+     * Review fix (#231): a v8 file merged over a show the device holds as one run. The file's run #2 becomes
+     * the latest before the episodes are normalised, so a stale tick from run #1 must not be turned into an
+     * invented viewing in run #2 -- that would tick an episode run #2 never watched.
+     */
+    @Test
+    fun v8OverAShowHeldAsOneRun_inventsNoViewingsInTheNewRun() =
+        runTest {
+            for (policy in listOf(DuplicatePolicy.MERGE, DuplicatePolicy.SKIP)) {
+                db.close()
+                db = testAppDatabase()
+                mediaRepository = MediaRepository(db)
+                bookRepository = BookRepository(db)
+                sessionRepository = ReadingSessionRepository(db)
+                useCase =
+                    ImportDataUseCase(mediaRepository, bookRepository, sessionRepository, ImportWriteRepository(db))
+                sourceDb.close()
+                sourceDb = testAppDatabase()
+                sourceBookRepository = BookRepository(sourceDb)
+                sourceSessionRepository = ReadingSessionRepository(sourceDb)
+
+                val bundle = seedWatchThroughs()
+                // The device first: the same show from an old export, so all its history is one run.
+                val v7Logs =
+                    bundle.watchLogsCsv
+                        .trim()
+                        .lines()
+                        .mapIndexed { i, line ->
+                            val cols = line.split(",").dropLast(2)
+                            (if (i == 0) cols else listOf("7") + cols.drop(1)).joinToString(",")
+                        }.joinToString("\n") + "\n"
+                importBundle(bundle, watchLogsCsv = v7Logs, watchThroughsCsv = null)
+                val showId = importedShowId()
+                assertEquals(
+                    1,
+                    db.watchThroughDao().getForMedia(showId).size,
+                    "positive control: one run on the device",
+                )
+
+                importBundle(bundle, policy)
+
+                val two = db.watchThroughDao().getForMedia(showId).single { it.number == 2 }
+                assertEquals(
+                    1,
+                    db.watchThroughDao().viewingCount(two.id),
+                    "$policy: run #2 holds only the file's viewing",
+                )
+                val (e1, e2) = db.episodeDao().getByMediaIdAndSeason(showId, 1)
+                assertEquals(runT2, e1.watchedAt, "$policy: run #2's one tick")
+                assertNull(e2.watchedAt, "$policy: run #2 never watched episode 2")
+            }
         }
 }

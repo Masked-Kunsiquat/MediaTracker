@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -45,6 +46,8 @@ sealed interface DetailStatus {
         val onClickLabel: String,
         /** An action listed below the statuses, e.g. a book's Read again (#230); `null` for none. */
         val menuAction: StatusAction? = null,
+        /** A button beside the chip -- a book's Rate, once its latest read ends unrated (#231 review). */
+        val sideAction: StatusAction? = null,
     ) : DetailStatus
 
     /**
@@ -55,6 +58,8 @@ sealed interface DetailStatus {
     data class ReadOnly(
         val label: String,
         val action: StatusAction? = null,
+        /** More actions beside [action] -- a show's Watch again and Rate (#231). */
+        val moreActions: List<StatusAction> = emptyList(),
     ) : DetailStatus
 
     /** One [ReadOnly] side action: its label and what tapping it does. */
@@ -85,15 +90,26 @@ private fun <T> EditableStatusChip(
     status: DetailStatus.Editable<T>,
     modifier: Modifier,
 ) {
-    StatusDropdownChip(
-        value = status.value,
-        options = status.options,
-        label = status.label,
-        onSelect = status.onSelect,
-        onClickLabel = status.onClickLabel,
+    Row(
         modifier = modifier,
-        menuAction = status.menuAction,
-    )
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        StatusDropdownChip(
+            value = status.value,
+            options = status.options,
+            label = status.label,
+            onSelect = status.onSelect,
+            onClickLabel = status.onClickLabel,
+            modifier = Modifier.weight(1f, fill = false),
+            menuAction = status.menuAction,
+        )
+        status.sideAction?.let { side ->
+            TextButton(onClick = side.onClick) {
+                Text(side.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 }
 
 /**
@@ -109,15 +125,19 @@ private fun <T> EditableStatusChip(
  * When [DetailStatus.ReadOnly.action] exists, it renders as a [TextButton] beside the chip -- the
  * chip first, per #141's step-2 decision (Abandon/Resume sits next to the read-only chip rather than
  * as a full-width button further down the screen).
+ *
+ * A [FlowRow], not a Row (#231 review): with [DetailStatus.ReadOnly.moreActions] a show can carry
+ * Abandon, Watch again and Rate at once, and in one Row at a large font the buttons -- measured first --
+ * crushed the chip to nothing. Here whatever does not fit starts a new line.
  */
 @Composable
 private fun ReadOnlyStatusChip(
     status: DetailStatus.ReadOnly,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    FlowRow(
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
+        itemVerticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         AssistChip(
@@ -134,19 +154,21 @@ private fun ReadOnlyStatusChip(
                     disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ),
             border = null,
-            // weight(fill = false), same #163 fix as the season header's title: without it, an
-            // unbounded label can grow to claim the whole row and squeeze the action button beside
-            // it to zero width instead of sharing space.
+            // No weight: in a FlowRow a long label takes a line of its own and ellipsizes there,
+            // rather than squeezing the actions beside it (#163).
             modifier =
-                Modifier
-                    .weight(1f, fill = false)
-                    .clearAndSetSemantics {
-                        text = AnnotatedString(status.label)
-                    },
+                Modifier.clearAndSetSemantics {
+                    text = AnnotatedString(status.label)
+                },
         )
         if (status.action != null) {
             TextButton(onClick = status.action.onClick) {
                 Text(status.action.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        status.moreActions.forEach { extra ->
+            TextButton(onClick = extra.onClick) {
+                Text(extra.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

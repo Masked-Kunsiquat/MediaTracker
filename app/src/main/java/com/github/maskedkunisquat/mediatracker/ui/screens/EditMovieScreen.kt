@@ -84,7 +84,7 @@ fun EditMovieScreenRoute(
     (uiState as? EditMovieUiState.Editing)?.takeIf { it.pendingWatched }?.let { form ->
         FilmWatchedDialog(
             title = stringResource(R.string.film_watched_title, form.title),
-            onConfirm = viewModel::confirmWatched,
+            onConfirm = { watchedWhen, _ -> viewModel.confirmWatched(watchedWhen) },
             onDismiss = viewModel::dismissWatched,
         )
     }

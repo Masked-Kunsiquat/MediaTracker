@@ -1560,4 +1560,128 @@ class MigrationTest {
             }
         }
     }
+
+    private fun androidx.sqlite.SQLiteConnection.seedV7Show(
+        id: String,
+        status: String,
+    ) {
+        execSQL(
+            "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash, " +
+                "communityRating, synopsis) VALUES ('$id', 'TV_SHOW', 'Show $id', NULL, NULL, 1700000000000, NULL, NULL, NULL)",
+        )
+        execSQL("INSERT INTO tv_details (mediaId, totalSeasons, status) VALUES ('$id', 1, '$status')")
+    }
+
+    private fun androidx.sqlite.SQLiteConnection.seedV7Episode(
+        id: String,
+        mediaId: String,
+        number: Int,
+        watchedAt: Long?,
+    ) {
+        execSQL(
+            "INSERT INTO episodes (id, mediaId, seasonNumber, episodeNumber, watchedAt) " +
+                "VALUES ('$id', '$mediaId', 1, $number, ${watchedAt ?: "NULL"})",
+        )
+    }
+
+    private fun androidx.sqlite.SQLiteConnection.seedV7Viewing(
+        id: String,
+        mediaId: String,
+        episodeId: String?,
+        at: Long,
+    ) {
+        execSQL(
+            "INSERT INTO watch_logs (id, mediaId, episodeId, watchedAt, durationSeconds) " +
+                "VALUES ('$id', '$mediaId', ${episodeId?.let { "'$it'" } ?: "NULL"}, $at, NULL)",
+        )
+    }
+
+    /** Every show gets watch-through #1, abandoned only when the show was (#231). */
+    @Test
+    fun migrate7To8_everyShowGetsRunOne_carryingAbandoned() {
+        helper.createDatabase(7).use { db ->
+            db.seedV7Show("dropped", "ABANDONED")
+            db.seedV7Show("watching", "WATCHLIST")
+            db.seedV7Show("empty", "WATCHLIST")
+        }
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            val rows = mutableListOf<String>()
+            val select = "SELECT mediaId, number, abandoned, rating IS NULL FROM watch_throughs ORDER BY mediaId"
+            db.prepare(select).use { s ->
+                while (s.step()) rows += "${s.getText(0)}:${s.getLong(1)}:${s.getLong(2)}:${s.getLong(3)}"
+            }
+            assertEquals(listOf("dropped:1:1:1", "empty:1:0:1", "watching:1:0:1"), rows)
+            db.prepare("PRAGMA table_info(watch_logs)").use { s ->
+                val cols = mutableListOf<String>()
+                while (s.step()) cols += s.getText(1)
+                assertTrue("watchThroughId" in cols && "rating" in cols && "durationSeconds" in cols, "$cols")
+            }
+            db.prepare("PRAGMA table_info(tv_details)").use { s ->
+                val cols = mutableListOf<String>()
+                while (s.step()) cols += s.getText(1)
+                assertFalse("status" in cols, "tv_details keeps $cols")
+                assertTrue("airingStatus" in cols && "lastAirDate" in cols, "every other column survives: $cols")
+            }
+        }
+    }
+
+    /** Episode viewings join run #1; film viewings join none; ticks are untouched (#231). */
+    @Test
+    fun migrate7To8_episodeViewingsJoinRunOne_filmViewingsJoinNone() {
+        helper.createDatabase(7).use { db ->
+            db.seedV7Show("tv", "WATCHLIST")
+            db.seedV7Episode("e1", "tv", 1, 1_700_000_000_000)
+            db.seedV7Episode("e2", "tv", 2, null)
+            db.seedV7Viewing("l1", "tv", "e1", 1_700_000_000_000)
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash, " +
+                    "communityRating, synopsis) VALUES ('film', 'MOVIE', 'Heat', NULL, NULL, 1700000000000, NULL, NULL, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO movie_details (mediaId, runtimeMinutes, status, watchedAt) " +
+                    "VALUES ('film', 170, 'WATCHED', 1700000000000)",
+            )
+            db.seedV7Viewing("l2", "film", null, 1_700_000_000_000)
+        }
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            val rows = mutableListOf<String>()
+            db
+                .prepare(
+                    "SELECT l.id, w.number, l.rating IS NULL FROM watch_logs l " +
+                        "LEFT JOIN watch_throughs w ON w.id = l.watchThroughId ORDER BY l.id",
+                ).use { s ->
+                    while (s.step()) rows += "${s.getText(0)}:${if (s.isNull(1)) "-" else s.getLong(1)}:${s.getLong(2)}"
+                }
+            assertEquals(listOf("l1:1:1", "l2:-:1"), rows)
+            db.prepare("SELECT id, watchedAt FROM episodes ORDER BY id").use { s ->
+                val ticks = mutableListOf<String>()
+                while (s.step()) ticks += "${s.getText(0)}:${if (s.isNull(1)) "-" else s.getLong(1)}"
+                assertEquals(listOf("e1:1700000000000", "e2:-"), ticks)
+            }
+        }
+    }
+
+    /** A show whose tv_details row is missing still gets run #1, so its viewings have a run (#231 review). */
+    @Test
+    fun migrate7To8_showWithoutDetails_stillGetsRunOne() {
+        helper.createDatabase(7).use { db ->
+            db.execSQL(
+                "INSERT INTO media_items (id, type, title, releaseYear, purchasePrice, createdAt, coverImageHash, " +
+                    "communityRating, synopsis) VALUES ('bare', 'TV_SHOW', 'Bare', NULL, NULL, 1700000000000, NULL, NULL, NULL)",
+            )
+            db.seedV7Episode("e1", "bare", 1, 1_700_000_000_000)
+            db.seedV7Viewing("l1", "bare", "e1", 1_700_000_000_000)
+        }
+        helper.runMigrationsAndValidate(8, listOf(MIGRATION_7_8)).use { db ->
+            db
+                .prepare(
+                    "SELECT w.number, w.abandoned FROM watch_logs l JOIN watch_throughs w ON w.id = l.watchThroughId " +
+                        "WHERE l.id = 'l1'",
+                ).use { s ->
+                    assertTrue(s.step(), "the viewing joins a run")
+                    assertEquals(1L, s.getLong(0))
+                    assertEquals(0L, s.getLong(1), "no details row means not abandoned")
+                }
+        }
+    }
 }

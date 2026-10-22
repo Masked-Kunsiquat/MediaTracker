@@ -59,7 +59,6 @@ public sealed class ParsedRowDetails {
      */
     public data class TVShow(
         public val totalSeasons: Int?,
-        public val status: WatchStatus,
     ) : ParsedRowDetails()
 }
 
@@ -301,10 +300,9 @@ public object LibraryCsvImporter {
         // watch state is its own column rather than sharing `status` with books. The exporter writes
         // it only for movies today, so a show row's cell is blank and defaults below; reading it
         // here anyway costs nothing and means a hand-written file that fills it in is honoured.
-        return ParsedRowDetails.TVShow(
-            totalSeasons = totalSeasons,
-            status = parseWatchStatus(row[COL_WATCH_STATUS]),
-        )
+        // A show's `watch_status` is ignored (#231): abandonment lives on its watch-throughs, carried by
+        // watch_throughs_export.csv, and this app never wrote the column for a show.
+        return ParsedRowDetails.TVShow(totalSeasons = totalSeasons)
     }
 
     /**

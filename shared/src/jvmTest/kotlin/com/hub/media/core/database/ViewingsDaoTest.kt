@@ -8,7 +8,7 @@ import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
-import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -146,18 +146,19 @@ class ViewingsDaoTest {
         }
 
     @Test
-    fun showStates_carryEachShowsStatusAndAiring() =
+    fun showStates_carryEachShowsLatestRunAndAiring() =
         runTest {
             show("s1")
             db.tvWriteDao().insertMediaItem(sampleMediaItem(id = "s2", title = "Andor", type = MediaType.TV_SHOW))
-            db.tvWriteDao().insertTVDetails(
-                TVDetailsEntity(mediaId = "s2", status = WatchStatus.ABANDONED, airingStatus = AiringStatus.ENDED),
-            )
+            db.tvWriteDao().insertTVDetails(TVDetailsEntity(mediaId = "s2", airingStatus = AiringStatus.ENDED))
+            // Finished once, then a rewatch given up on (#231).
+            db.watchThroughDao().insert(WatchThroughEntity("r1", "s2", 1))
+            db.watchThroughDao().insert(WatchThroughEntity("r2", "s2", 2, abandoned = true))
 
             assertEquals(
                 listOf(
-                    ShowStateRow("s1", WatchStatus.WATCHLIST, null),
-                    ShowStateRow("s2", WatchStatus.ABANDONED, AiringStatus.ENDED),
+                    ShowStateRow("s1", null, abandoned = false, finishedEarlierRun = false),
+                    ShowStateRow("s2", AiringStatus.ENDED, abandoned = true, finishedEarlierRun = true),
                 ),
                 db
                     .statsDao()

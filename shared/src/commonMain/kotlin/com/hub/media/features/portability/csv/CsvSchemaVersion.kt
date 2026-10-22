@@ -106,8 +106,13 @@ package com.hub.media.features.portability.csv
  * appended last; a v6 reading log imports through [ReadingLogCsvImporter.padLegacyV6Row], every session
  * landing in read #1. A file with no reads file is read the way the database migration reads an old
  * library: each book's status and finish date are its read #1's.
+ *
+ * **v8 (#231)** adds a sixth file, `watch_throughs_export.csv` ([WatchThroughCsvExporter]): one row per
+ * watch-through of a show, with its abandoned flag and rating. `watch_logs_export.csv` gains
+ * `watch_through_number` and `rating`, appended last; a v7 watch log imports through
+ * [WatchLogCsvImporter.padLegacyV7Row], every episode viewing landing in watch-through #1.
  */
-public const val CSV_SCHEMA_VERSION: Int = 7
+public const val CSV_SCHEMA_VERSION: Int = 8
 
 /** Column name the [CSV_SCHEMA_VERSION] marker is written under in both export files. */
 public const val CSV_SCHEMA_VERSION_COLUMN: String = "csv_schema_version"

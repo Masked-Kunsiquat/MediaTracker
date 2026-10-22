@@ -42,9 +42,11 @@ import com.hub.media.features.portability.domain.RestoreDatabaseUseCase
 import com.hub.media.features.portability.domain.SweepStaleTempFilesUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getGoogleBooksApiKey
+import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.getTmdbCredential
 import com.hub.media.features.stats.data.StatsRepository
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.data.WatchThroughRepository
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EnsureViewingsUseCase
 import com.hub.media.features.tv.domain.FetchPosterUseCase
@@ -131,6 +133,11 @@ public class AppContainer(
 
     /** A book's reads: re-reads, removing one, rating one (#230). */
     public val readThroughRepository: ReadThroughRepository = ReadThroughRepository(database)
+
+    /** A show's watch-throughs (#231); "every episode ticked" follows the include-specials setting. */
+    public val watchThroughRepository: WatchThroughRepository by lazy {
+        WatchThroughRepository(database, includeSpecials = { settingsRepository.getIncludeSpecials() })
+    }
 
     /** Movie data operations (ROADMAP Task 13 Phase B). */
     public val movieRepository: MovieRepository = MovieRepository(database)

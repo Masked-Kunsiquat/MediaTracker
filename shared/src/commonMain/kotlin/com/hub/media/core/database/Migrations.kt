@@ -456,6 +456,10 @@ private const val SQL_UUID: String =
  * 2. Rebuilds `reading_sessions` with a `NOT NULL` `readThroughId` (a foreign key SQLite cannot
  *    `ALTER` in), pointing every existing session at its book's read #1.
  * 3. Rebuilds `book_details` without `status` and `finishedAt`: a book's state is its latest read's now.
+ * 4. Creates `watch_throughs` (#231) and gives every show watch-through #1, abandoned when the show was.
+ * 5. Rebuilds `watch_logs` with `watchThroughId` (episode viewings join their show's #1; film viewings none)
+ *    and `rating` (null for all).
+ * 6. Rebuilds `tv_details` without `status`: a show's abandoned flag is its latest watch-through's now.
  *
  * Nothing is lost: every session keeps its values and now belongs to read #1, and every book's status
  * and finish date are unchanged, read through its only read.
@@ -527,5 +531,62 @@ public val MIGRATION_7_8: Migration =
                 )
                 connection.execSQL("DROP TABLE `book_details`")
                 connection.execSQL("ALTER TABLE `book_details_new` RENAME TO `book_details`")
+                // 4. Watch-throughs (#231): every show gets #1, abandoned if the show was.
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `watch_throughs` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                        "`number` INTEGER NOT NULL, `abandoned` INTEGER NOT NULL, `rating` INTEGER, " +
+                        "PRIMARY KEY(`id`), FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_watch_throughs_mediaId_number` " +
+                        "ON `watch_throughs` (`mediaId`, `number`)",
+                )
+                connection.execSQL(
+                    "INSERT INTO `watch_throughs` (`id`, `mediaId`, `number`, `abandoned`, `rating`) " +
+                        "SELECT $SQL_UUID, m.`id`, 1, CASE WHEN t.`status` = 'ABANDONED' THEN 1 ELSE 0 END, NULL " +
+                        "FROM `media_items` m LEFT JOIN `tv_details` t ON t.`mediaId` = m.`id` " +
+                        "WHERE m.`type` = 'TV_SHOW'",
+                )
+                // 5. Viewings gain their run (episodes) and a rating (films).
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `watch_logs_new` (`id` TEXT NOT NULL, `mediaId` TEXT NOT NULL, " +
+                        "`episodeId` TEXT, `watchedAt` INTEGER NOT NULL, `durationSeconds` INTEGER, " +
+                        "`watchThroughId` TEXT, `rating` INTEGER, PRIMARY KEY(`id`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`episodeId`, `mediaId`) REFERENCES `episodes`(`id`, `mediaId`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`watchThroughId`) REFERENCES `watch_throughs`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `watch_logs_new` (`id`, `mediaId`, `episodeId`, `watchedAt`, `durationSeconds`, " +
+                        "`watchThroughId`, `rating`) SELECT l.`id`, l.`mediaId`, l.`episodeId`, l.`watchedAt`, " +
+                        "l.`durationSeconds`, CASE WHEN l.`episodeId` IS NULL THEN NULL ELSE w.`id` END, NULL " +
+                        "FROM `watch_logs` l LEFT JOIN `watch_throughs` w ON w.`mediaId` = l.`mediaId` AND w.`number` = 1",
+                )
+                connection.execSQL("DROP TABLE `watch_logs`")
+                connection.execSQL("ALTER TABLE `watch_logs_new` RENAME TO `watch_logs`")
+                connection.execSQL("CREATE INDEX IF NOT EXISTS `index_watch_logs_mediaId` ON `watch_logs` (`mediaId`)")
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_watch_logs_episodeId_mediaId` ON `watch_logs` (`episodeId`, `mediaId`)",
+                )
+                connection.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_watch_logs_watchThroughId` ON `watch_logs` (`watchThroughId`)",
+                )
+                // 6. A show's abandoned flag now lives on its watch-through, copied there in step 4.
+                connection.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tv_details_new` (`mediaId` TEXT NOT NULL, `totalSeasons` INTEGER, " +
+                        "`airingStatus` TEXT, `firstAirDate` INTEGER, `lastAirDate` INTEGER, PRIMARY KEY(`mediaId`), " +
+                        "FOREIGN KEY(`mediaId`) REFERENCES `media_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                connection.execSQL(
+                    "INSERT INTO `tv_details_new` (`mediaId`, `totalSeasons`, `airingStatus`, `firstAirDate`, " +
+                        "`lastAirDate`) SELECT `mediaId`, `totalSeasons`, `airingStatus`, `firstAirDate`, " +
+                        "`lastAirDate` FROM `tv_details`",
+                )
+                connection.execSQL("DROP TABLE `tv_details`")
+                connection.execSQL("ALTER TABLE `tv_details_new` RENAME TO `tv_details`")
             }
     }

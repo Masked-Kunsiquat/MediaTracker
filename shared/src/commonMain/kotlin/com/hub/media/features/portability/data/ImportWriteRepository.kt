@@ -7,6 +7,7 @@ import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.Resource
@@ -49,6 +50,9 @@ public class ImportWriteRepository(
         filmViewingDeletes: Collection<String> = emptyList(),
         touchedFilmIds: Collection<String> = emptyList(),
         readUpserts: List<ReadThroughEntity> = emptyList(),
+        runUpserts: List<WatchThroughEntity> = emptyList(),
+        filmRatingUpdates: Map<String, Int> = emptyMap(),
+        touchedShowIds: Collection<String> = emptyList(),
     ): Resource<Unit> =
         logger.guardResource(
             tag = TAG,
@@ -68,6 +72,9 @@ public class ImportWriteRepository(
                 filmViewingDeletes,
                 touchedFilmIds,
                 readUpserts,
+                runUpserts,
+                filmRatingUpdates,
+                touchedShowIds,
             )
             Resource.Success(Unit)
         }

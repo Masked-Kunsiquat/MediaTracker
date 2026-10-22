@@ -51,6 +51,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +63,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TVShowDetailViewModelFactory
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFact
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
@@ -73,15 +75,20 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
 import com.github.maskedkunisquat.mediatracker.ui.components.MarkWatchedDialog
+import com.github.maskedkunisquat.mediatracker.ui.components.RateDialog
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedCircle
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedDatePickerDialog
+import com.github.maskedkunisquat.mediatracker.ui.components.YourRatingRow
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.dao.TVProgressRow
 import com.hub.media.core.database.entities.AiringStatus
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchLogEntity
-import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
+import com.hub.media.features.tv.data.RunState
+import com.hub.media.features.tv.data.offersWatchAgain
+import com.hub.media.features.tv.data.runState
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.features.tv.domain.isPickableDay
 import com.hub.media.ui.AppContainer
@@ -142,6 +149,7 @@ fun TVShowDetailScreenRoute(
                 onEditViewing = { editingViewing = it },
                 onDeleteViewing = { viewModel.deleteViewing(it.id) },
                 snackbarHostState = sheetSnackbar,
+                runNumbers = open.runNumbers,
             )
         }
     }
@@ -195,6 +203,14 @@ fun TVShowDetailScreenRoute(
         onEpisodeOpen = viewModel::openEpisode,
         onNavigateBack = onNavigateBack,
         onNavigateToEdit = onNavigateToEdit,
+        runActions =
+            ShowRunActions(
+                onWatchAgain = viewModel::watchAgain,
+                onRemoveRun = viewModel::removeRun,
+                onRateRun = viewModel::rateRun,
+                onDismissRatePrompt = viewModel::dismissRatePrompt,
+                onRequestRate = viewModel::requestRatePrompt,
+            ),
     )
 }
 
@@ -222,9 +238,12 @@ fun TVShowDetailScreen(
     onUntickShown: (Long) -> Unit,
     onEpisodeOpen: (String) -> Unit,
     onNavigateBack: () -> Unit,
+    runActions: ShowRunActions,
     onNavigateToEdit: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    // Earlier watch-throughs opened to their season summary (#231), by run id so a removed run drops out.
+    var expandedRunIds by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
     // Which seasons are folded shut, by season number rather than by index -- a number survives a
     // season being added or removed above it, where an index silently comes to mean a different
@@ -286,6 +305,21 @@ fun TVShowDetailScreen(
         if (uiState is TVShowDetailUiState.NotFound) onNavigateBack()
     }
 
+    // "Rate this watch-through?" (#231), when a run finishes or is given up on.
+    (uiState as? TVShowDetailUiState.Ready)?.let { ready ->
+        ready.ratePromptRunId?.let { id -> ready.runs.firstOrNull { it.id == id } }?.let { run ->
+            RateDialog(
+                title = stringResource(R.string.rate_run_title),
+                body = stringResource(R.string.rate_run_body, ready.show.item.title, run.number),
+                key = run.id,
+                initial = run.rating,
+                starsTag = TestTags.TVShowDetail.RATE_STARS,
+                onSave = { runActions.onRateRun(run.id, it) },
+                onSkip = runActions.onDismissRatePrompt,
+            )
+        }
+    }
+
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
@@ -309,6 +343,7 @@ fun TVShowDetailScreen(
     // than captured when the dialog opened, so pre-filled length and the cost shown below always
     // match the show's current state, not a stale snapshot from when the menu was tapped.
     val readySeasons = (uiState as? TVShowDetailUiState.Ready)?.seasons.orEmpty()
+    val readyViewingCounts = (uiState as? TVShowDetailUiState.Ready)?.viewingCounts.orEmpty()
 
     // Fold multi-season shows once, when the seasons first arrive -- not on every recomposition, or
     // ticking an episode would slam shut the season being ticked. Guarded by a flag rather than
@@ -367,7 +402,7 @@ fun TVShowDetailScreen(
             // repository call. Matches TVShowRepository.setSeasonLength's own definition of what a
             // shrink removes: every episode numbered above the new count.
             val removedEpisodes = shrinkingSeason.episodes.filter { it.episodeNumber > shrinkNewCount }
-            val removedWatchedCount = removedEpisodes.count { it.watchedAt != null }
+            val removedWatchedCount = removedEpisodes.count { it.watchedInAnyRun(readyViewingCounts) }
             AlertDialog(
                 onDismissRequest = {
                     pendingShrinkSeasonNumber = null
@@ -430,14 +465,15 @@ fun TVShowDetailScreen(
                                 seasonToRemove.episodes.size,
                             ),
                         )
+                        val lostCount = seasonToRemove.episodes.count { it.watchedInAnyRun(readyViewingCounts) }
                         Text(
-                            if (seasonToRemove.watchedCount == 0) {
+                            if (lostCount == 0) {
                                 stringResource(R.string.tv_show_detail_removal_undone_warning)
                             } else {
                                 pluralStringResource(
                                     R.plurals.tv_show_detail_episodes_watched_warning,
-                                    seasonToRemove.watchedCount,
-                                    seasonToRemove.watchedCount,
+                                    lostCount,
+                                    lostCount,
                                 )
                             },
                         )
@@ -513,7 +549,8 @@ fun TVShowDetailScreen(
         // TVMetadataValidation.MAX_EPISODE_COUNT of them per season), and a Column would compose
         // every one of them on entry whether or not it is on screen.
         LazyColumn(
-            modifier = Modifier.fillMaxSize().consumeWindowInsets(innerPadding),
+            // Tagged (#231) so a test can scroll to a watch-through's card below the fold.
+            modifier = Modifier.fillMaxSize().consumeWindowInsets(innerPadding).testTag(TestTags.TVShowDetail.LIST),
             // As contentPadding rather than padding(): the season list passes under the top app
             // bar and the navigation bar, and its first and last rows still clear them.
             contentPadding = scrollingContentPadding(innerPadding, PaddingValues(16.dp)),
@@ -555,8 +592,11 @@ fun TVShowDetailScreen(
                                     )
                                 },
                             statusNote = null,
+                            yourRating = {
+                                YourRatingRow(uiState.titleRating, R.plurals.rating_average_of_watch_throughs)
+                            },
                         ) {
-                            DetailStatusChip(showStatusControl(uiState, onAbandonedChange))
+                            DetailStatusChip(showStatusControl(uiState, onAbandonedChange, runActions))
                         }
                     }
                     item { DetailSynopsis(text = show.item.synopsis) }
@@ -607,6 +647,21 @@ fun TVShowDetailScreen(
                                     ),
                                 ),
                         )
+                    }
+
+                    // The current watch-through (#231), right above the checklist it is ticked in.
+                    uiState.latestRun?.let { run ->
+                        item(key = "latest-run") {
+                            LatestRunCard(
+                                run = run,
+                                state = currentRunState(uiState),
+                                summary = uiState.runSummaries[run.id],
+                                canRemove = uiState.canRemoveLatestRun,
+                                onRate = { runActions.onRateRun(run.id, it) },
+                                onRemove = { runActions.onRemoveRun(run.id) },
+                                modifier = Modifier.testTag(TestTags.TVShowDetail.LATEST_RUN),
+                            )
+                        }
                     }
 
                     // Placed after the facts card and before the seasons list, so on an empty show
@@ -671,6 +726,25 @@ fun TVShowDetailScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    // Earlier watch-throughs, newest first, folded below the checklist (#231).
+                    uiState.runs.filter { it.id != uiState.latestRun?.id }.reversed().forEach { run ->
+                        item(key = "run-${run.id}") {
+                            val expanded = run.id in expandedRunIds
+                            FoldedRunCard(
+                                run = run,
+                                summary = uiState.runSummaries[run.id],
+                                expanded = expanded,
+                                onToggle = {
+                                    expandedRunIds =
+                                        if (expanded) expandedRunIds - run.id else expandedRunIds + run.id
+                                },
+                                onRate = { runActions.onRateRun(run.id, it) },
+                                modifier = Modifier.testTag(TestTags.TVShowDetail.runCard(run.id)),
+                                stillAiring = uiState.show.details?.airingStatus == AiringStatus.CONTINUING,
+                            )
                         }
                     }
 
@@ -1143,20 +1217,9 @@ private fun SeasonLengthDialog(
 private fun showStatusControl(
     uiState: TVShowDetailUiState.Ready,
     onAbandonedChange: (Boolean) -> Unit,
+    runActions: ShowRunActions,
 ): DetailStatus.ReadOnly {
-    val details = uiState.show.details
-    val storedStatus = details?.status ?: WatchStatus.WATCHLIST
-    val progress =
-        if (uiState.totalEpisodes > 0) {
-            TVProgressRow(
-                mediaId = uiState.show.item.id,
-                totalEpisodes = uiState.totalEpisodes,
-                watchedEpisodes = uiState.watchedEpisodes,
-            )
-        } else {
-            null
-        }
-    val filterStatus = LibraryStatusFilter.ofShow(storedStatus, progress, details?.airingStatus)
+    val state = currentRunState(uiState)
     val actionLabel =
         stringResource(
             if (uiState.isAbandoned) {
@@ -1165,27 +1228,49 @@ private fun showStatusControl(
                 R.string.detail_show_status_abandon_action
             },
         )
+    val ended = state.offersWatchAgain()
     return DetailStatus.ReadOnly(
-        label = filterStatus.showStatusLabel(),
+        label = state.label(),
         action = DetailStatus.StatusAction(actionLabel) { onAbandonedChange(!uiState.isAbandoned) },
+        moreActions =
+            listOfNotNull(
+                // Offered once the current watch-through is done with (#231): finished, caught up or given up on.
+                DetailStatus
+                    .StatusAction(
+                        stringResource(R.string.run_watch_again),
+                        runActions.onWatchAgain,
+                    ).takeIf { ended },
+                // Back to a skipped "Rate this watch-through?" (#231 review); gone once it has a rating.
+                DetailStatus
+                    .StatusAction(stringResource(R.string.rate_action), runActions.onRequestRate)
+                    .takeIf { ended && uiState.latestRun != null && uiState.latestRun?.rating == null },
+            ),
     )
 }
 
 /**
- * Show-specific labels for [LibraryStatusFilter] (#141 step 2's decisions), distinct from
- * `filterLabel()` (`LibraryStatusFilterDisplay.kt`, the library's own chip wording): "Watching"/
- * "Watched" read naturally on a show's own detail screen where that media-neutral "In progress"/
- * "Finished" would not, and reuse [WatchStatus]'s own strings rather than adding duplicates with
- * the same wording.
+ * The current watch-through's state (#231), from the screen's own counted progress -- built the way the
+ * library builds it, so the chip and the card cannot disagree with the shelf. A show with no run row yet
+ * (never written by this app, but representable) reads as an unstarted #1.
  */
-@Composable
-private fun LibraryStatusFilter.showStatusLabel(): String =
-    when (this) {
-        LibraryStatusFilter.NOT_STARTED -> stringResource(R.string.library_filter_not_started)
-        LibraryStatusFilter.IN_PROGRESS -> stringResource(R.string.watch_status_watching)
-        LibraryStatusFilter.FINISHED -> stringResource(R.string.watch_status_watched)
-        LibraryStatusFilter.ABANDONED -> stringResource(R.string.library_filter_abandoned)
-    }
+private fun currentRunState(uiState: TVShowDetailUiState.Ready): RunState =
+    runState(
+        run =
+            uiState.latestRun
+                ?: WatchThroughEntity(
+                    id = "",
+                    mediaId = uiState.show.item.id,
+                    number = 1,
+                    abandoned = uiState.isAbandoned,
+                ),
+        counted =
+            TVProgressRow(
+                mediaId = uiState.show.item.id,
+                totalEpisodes = uiState.totalEpisodes,
+                watchedEpisodes = uiState.watchedEpisodes,
+            ),
+        airingStatus = uiState.show.details?.airingStatus,
+    )
 
 /**
  * "N seasons · <airing status>", using only the parts that exist and omitting the subline entirely
@@ -1218,3 +1303,11 @@ private fun showSubline(
 @OptIn(ExperimentalTime::class)
 private fun formatFirstAirDate(epochMillis: Long): String =
     DATE_ONLY_FORMATTER.format(instantToLocalDateTime(Instant.fromEpochMilliseconds(epochMillis)))
+
+/**
+ * Whether deleting [this] episode loses watch history (#231 review): ticked in the current watch-through,
+ * or viewed in any earlier one -- deleting an episode takes every run's viewings with it, not just the ticks.
+ */
+@OptIn(kotlin.time.ExperimentalTime::class)
+private fun EpisodeEntity.watchedInAnyRun(viewingCounts: Map<String, Int>): Boolean =
+    watchedAt != null || (viewingCounts[id] ?: 0) > 0

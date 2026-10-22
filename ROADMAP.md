@@ -107,7 +107,7 @@ the same edit. Note the `(done)` suffixes are part of the anchor for exactly tha
 | [Task 7 — UI revamp & settings](#task-7--ui-revamp--settings-done) | done |
 | [Task 8 — Data portability](#task-8--data-portability-done) | done |
 | [Task 9 — Search & discovery](#task-9--search--discovery) | **in progress** |
-| [Task 10 — Re-read modeling](#task-10--re-read-modeling) | books done (#230); films and shows in #231 |
+| [Task 10 — Re-read modeling](#task-10--re-read-modeling) | done for books (#230), films and shows (#231); rating stats in #232 |
 | [Task 11 — Analytics & stats revamp](#task-11--analytics--stats-revamp) | planned |
 | [Task 12 — Genre tracking](#task-12--genre-tracking) | planned |
 | [Task 13 — Movies & TV](#task-13--movies--tv) | **in progress** — A/B/C shipped in `v0.15.0`; Phase D's client, search, backfill and posters are done |
@@ -664,8 +664,14 @@ numbered read-throughs (`read_throughs`, schema v8), each with its own status, d
 rating; Read again starts the next one, an empty re-read can be removed, and the book's status is its
 latest read's. Every finished read counts as a book finished, while the reading goal counts only a
 book's first finish. Goodreads `My Rating` now fills read #1, so the Merge re-import this entry promised
-works. The rest of the ratings work is split out: film viewings and show watch-throughs in #231, the
-rating stats (top rated, average and spread, best of the year) in #232. The original plan follows.
+works.
+
+**Status (2026-10-21): films and shows delivered in #231, part 2.** Each film viewing carries its own
+rating. A show's episode viewings are grouped into numbered watch-throughs (`watch_throughs`, schema v8
+extended in place), each with its own ticks, an abandoned flag and a rating: Watch again starts the next
+with an empty checklist, an empty one can be removed, and finishing (or abandoning) one asks for its
+rating once. "Shows finished" still counts a show being rewatched. What remains is the rating stats (top
+rated, average and spread, best of the year) in #232. The original plan follows.
 
 Today a re-read is invisible: sessions just keep appending to the same flat list, status flips
 back to `READING`, and `finishedAt` is overwritten — so "I read this in 6 weeks the first time

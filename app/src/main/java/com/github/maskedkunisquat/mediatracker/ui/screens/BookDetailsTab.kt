@@ -39,6 +39,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailProgressCard
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatus
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailStatusChip
+import com.github.maskedkunisquat.mediatracker.ui.components.YourRatingRow
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
@@ -69,6 +70,7 @@ internal fun BookDetailHeaderSection(
     titleRating: TitleRating? = null,
     isReread: Boolean = false,
     onReadAgain: () -> Unit = {},
+    onRate: (() -> Unit)? = null,
 ) {
     var showEnlargedCover by remember { mutableStateOf(false) }
 
@@ -85,9 +87,11 @@ internal fun BookDetailHeaderSection(
         statusNote = finishedNote(status, finishedAt),
         onArtworkClick = { showEnlargedCover = true },
         artworkClickLabel = stringResource(R.string.cover_view_action_label),
-        yourRating = { YourRatingRow(titleRating) },
+        yourRating = { YourRatingRow(titleRating, R.plurals.rating_average_of_reads) },
     ) {
-        DetailStatusChip(bookStatusControl(status, onStatusChange, isReread = isReread, onReadAgain = onReadAgain))
+        DetailStatusChip(
+            bookStatusControl(status, onStatusChange, isReread = isReread, onReadAgain = onReadAgain, onRate = onRate),
+        )
     }
 
     if (showEnlargedCover) {
@@ -232,6 +236,7 @@ internal fun bookStatusControl(
     onStatusChange: (ReadingStatus) -> Unit,
     isReread: Boolean = false,
     onReadAgain: (() -> Unit)? = null,
+    onRate: (() -> Unit)? = null,
 ): DetailStatus.Editable<ReadingStatus> =
     DetailStatus.Editable(
         value = status ?: ReadingStatus.TO_READ,
@@ -245,6 +250,8 @@ internal fun bookStatusControl(
             onReadAgain
                 ?.takeIf { status == ReadingStatus.FINISHED || status == ReadingStatus.DNF }
                 ?.let { DetailStatus.StatusAction(stringResource(R.string.read_again), it) },
+        // Back to a skipped "Rate this read?" (#231 review); the caller passes it only for an ended, unrated read.
+        sideAction = onRate?.let { DetailStatus.StatusAction(stringResource(R.string.rate_action), it) },
     )
 
 /**

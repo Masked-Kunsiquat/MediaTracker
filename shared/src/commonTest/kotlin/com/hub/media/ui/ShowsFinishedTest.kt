@@ -3,7 +3,6 @@ package com.hub.media.ui
 import com.hub.media.core.database.dao.ShowStateRow
 import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.AiringStatus
-import com.hub.media.core.database.entities.WatchStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -15,8 +14,14 @@ class ShowsFinishedTest {
     private fun state(
         id: String,
         airing: AiringStatus? = AiringStatus.ENDED,
-        status: WatchStatus = WatchStatus.WATCHING,
-    ) = ShowStateRow(mediaId = id, status = status, airingStatus = airing)
+        abandoned: Boolean = false,
+        finishedEarlierRun: Boolean = false,
+    ) = ShowStateRow(
+        mediaId = id,
+        airingStatus = airing,
+        abandoned = abandoned,
+        finishedEarlierRun = finishedEarlierRun,
+    )
 
     /** [total] episodes, [watched] of them watched; [specials] of the total are season 0, unwatched. */
     private fun progress(
@@ -45,7 +50,7 @@ class ShowsFinishedTest {
 
     @Test
     fun abandoned_partlyWatched_andEmptyShows_areNotFinished() {
-        val states = listOf(state("x", status = WatchStatus.ABANDONED), state("p"), state("empty"))
+        val states = listOf(state("x", abandoned = true), state("p"), state("empty"))
         val progress = mapOf(progress("x", 10, 10), progress("p", 10, 4))
 
         assertEquals(0, countFinishedShows(states, progress, includeSpecials = true))
@@ -59,5 +64,29 @@ class ShowsFinishedTest {
 
         assertEquals(1, countFinishedShows(states, progress, includeSpecials = false))
         assertEquals(0, countFinishedShows(states, progress, includeSpecials = true))
+    }
+
+    /** Watch again resets the ticks (#231), but a show being rewatched was still finished once. */
+    @Test
+    fun rewatchInProgress_stillCountsAsFinished() {
+        val states =
+            listOf(
+                state("re", finishedEarlierRun = true),
+                state("airing", AiringStatus.CONTINUING, finishedEarlierRun = true),
+            )
+        val progress = mapOf(progress("re", 10, 3), progress("airing", 10, 3))
+
+        assertEquals(
+            1,
+            countFinishedShows(states, progress, includeSpecials = true),
+            "a show still airing is never finished",
+        )
+    }
+
+    /** Abandoning a rewatch does not undo the finished first watch-through (#231). */
+    @Test
+    fun anAbandonedRewatch_ofAFinishedShow_stillCounts() {
+        val states = listOf(state("a", abandoned = true, finishedEarlierRun = true))
+        assertEquals(1, countFinishedShows(states, mapOf(progress("a", 10, 2)), includeSpecials = true))
     }
 }

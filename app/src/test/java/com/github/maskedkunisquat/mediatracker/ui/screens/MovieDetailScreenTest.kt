@@ -1,21 +1,27 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.MovieDetailsEntity
+import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.ui.MovieDetailUiState
@@ -88,6 +94,7 @@ class MovieDetailScreenTest {
         onErrorShown: () -> Unit = {},
         onNavigateBack: () -> Unit = {},
         onNavigateToEditMovie: () -> Unit = {},
+        onRateViewing: (String, Int?) -> Unit = { _, _ -> },
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
@@ -104,6 +111,7 @@ class MovieDetailScreenTest {
                     onWatchedAgain = {},
                     onEditViewing = {},
                     onDeleteViewing = {},
+                    onRateViewing = onRateViewing,
                     onNavigateToEditMovie = onNavigateToEditMovie,
                 )
             }
@@ -415,6 +423,40 @@ class MovieDetailScreenTest {
                 "NASA pilot leads a crew through interstellar space to search for a new home " +
                 "among the stars, racing against time and the limits of relativity itself, as " +
                 "the mission's true cost becomes clear to everyone left behind on a dying world."
+    }
+
+    // ---- #231: a rating on each viewing ----------------------------------------------------------
+
+    private fun viewing(
+        id: String,
+        at: String,
+        rating: Int? = null,
+    ) = WatchLogEntity(id = id, mediaId = "movie-1", watchedAt = Instant.parse(at), rating = rating)
+
+    @Test
+    fun header_showsYourAverage_ofViewings() {
+        val viewings = listOf(viewing("v2", "2025-02-01T12:00:00Z", 10), viewing("v1", "2024-02-01T12:00:00Z", 8))
+        setContent(MovieDetailUiState.Ready(movie(status = WatchStatus.WATCHED), viewings = viewings))
+
+        composeRule
+            .onNodeWithText(context.resources.getQuantityString(R.plurals.rating_average_of_viewings, 2, "4.5", 2, "5"))
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun history_rowStars_rateThatViewing() {
+        val rated = mutableListOf<Pair<String, Int?>>()
+        val viewings = listOf(viewing("v2", "2025-02-01T12:00:00Z"), viewing("v1", "2024-02-01T12:00:00Z", 8))
+        setContent(
+            MovieDetailUiState.Ready(movie(status = WatchStatus.WATCHED), viewings = viewings),
+            onRateViewing = { id, halves -> rated += id to halves },
+        )
+
+        composeRule
+            .onNode(hasTestTag(TestTags.MovieDetail.viewingStars("v2")))
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(3.5f) }
+        assertEquals(listOf("v2" to 7), rated)
     }
 }
 

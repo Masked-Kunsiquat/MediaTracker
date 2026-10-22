@@ -1,6 +1,7 @@
 package com.hub.media.features.portability.csv
 
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.features.books.data.toStars
 
 /**
  * `watch_logs_export.csv` (#90, CSV schema v6): one row per viewing. Without this file a re-watch
@@ -20,9 +21,21 @@ public object WatchLogCsvExporter {
             "episode_id",
             "watched_at",
             "duration_seconds",
+            "watch_through_number",
+            "rating",
         )
 
-    public fun export(viewings: List<WatchLogEntity>): String =
+    /** The header before CSV v8 (#231): no run number and no rating. Such a file imports as watch-through #1. */
+    public val HEADER_V7: List<String> = HEADER.dropLast(2)
+
+    /**
+     * @param runNumberById Each watch-through's number by id (#231), for an episode viewing's
+     *   `watch_through_number`; blank for a film.
+     */
+    public fun export(
+        viewings: List<WatchLogEntity>,
+        runNumberById: Map<String, Int> = emptyMap(),
+    ): String =
         buildString {
             append(CsvUtil.buildLine(HEADER))
             for (log in viewings) {
@@ -35,6 +48,14 @@ public object WatchLogCsvExporter {
                             log.episodeId.orEmpty(),
                             log.watchedAt.toString(),
                             log.durationSeconds?.toString().orEmpty(),
+                            log.watchThroughId
+                                ?.let { runNumberById[it] }
+                                ?.toString()
+                                .orEmpty(),
+                            log.rating
+                                ?.toStars()
+                                ?.toString()
+                                .orEmpty(),
                         ),
                     ),
                 )

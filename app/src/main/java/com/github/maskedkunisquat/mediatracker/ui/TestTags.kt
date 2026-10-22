@@ -41,6 +41,31 @@ object TestTags {
     }
 
     /** The shared detail-screen top bar (#172). */
+
+    /** The show detail screen (#231). */
+    object TVShowDetail {
+        /** The scrolling list, so a test can reach a card below the fold. */
+        const val LIST = "tv_show_detail_list"
+
+        /** The current watch-through's card. */
+        const val LATEST_RUN = "tv_show_detail_latest_run"
+
+        /** The stars in "Rate this watch-through?". */
+        const val RATE_STARS = "tv_show_detail_rate_stars"
+
+        /** An earlier watch-through's folded card, by run id. */
+        fun runCard(runId: String): String = "tv_show_detail_run:$runId"
+    }
+
+    /** The film detail screen (#231). */
+    object MovieDetail {
+        /** The stars in the "Watched" dialog. */
+        const val WATCHED_STARS = "movie_detail_watched_stars"
+
+        /** One History row's stars, by viewing id. */
+        fun viewingStars(viewingId: String): String = "movie_detail_viewing_stars:$viewingId"
+    }
+
     object DetailTopBar {
         const val OVERFLOW = "detail-top-bar:overflow"
         const val DELETE = "detail-top-bar:delete"

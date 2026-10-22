@@ -58,6 +58,12 @@ import kotlin.time.Instant
             childColumns = ["episodeId", "mediaId"],
             onDelete = ForeignKey.CASCADE,
         ),
+        ForeignKey(
+            entity = WatchThroughEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["watchThroughId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index(value = ["mediaId"]),
@@ -67,6 +73,7 @@ import kotlin.time.Instant
         // rather than `episodeId` alone loses nothing: a leftmost-prefix lookup on `episodeId`
         // still uses this index.
         Index(value = ["episodeId", "mediaId"]),
+        Index(value = ["watchThroughId"]),
     ],
 )
 public data class WatchLogEntity(
@@ -75,4 +82,11 @@ public data class WatchLogEntity(
     val episodeId: String? = null,
     val watchedAt: Instant,
     val durationSeconds: Long? = null,
+    /**
+     * The watch-through an episode viewing belongs to (#231): always set for an episode, `null` for a film.
+     * `episodes.watchedAt` is the latest viewing in the show's latest run.
+     */
+    val watchThroughId: String? = null,
+    /** A film viewing's rating in half-steps 1..10 (#231); always `null` for an episode, rated per watch-through. */
+    val rating: Int? = null,
 )

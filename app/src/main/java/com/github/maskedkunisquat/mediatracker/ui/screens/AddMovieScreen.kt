@@ -126,9 +126,9 @@ fun AddMovieScreen(
     if (askingWhen) {
         FilmWatchedDialog(
             title = stringResource(R.string.film_watched_title, title),
-            onConfirm = {
+            onConfirm = { picked, _ ->
                 status = WatchStatus.WATCHED
-                watchedDayMillis = it.pickedDayMillis()
+                watchedDayMillis = picked.pickedDayMillis()
                 askingWhen = false
             },
             onDismiss = { askingWhen = false },

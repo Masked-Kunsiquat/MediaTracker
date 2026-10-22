@@ -51,7 +51,10 @@ class EpisodeSheetContentTest {
     private val edited = mutableListOf<String>()
     private val deleted = mutableListOf<String>()
 
-    private fun show(viewings: List<WatchLogEntity>) {
+    private fun show(
+        viewings: List<WatchLogEntity>,
+        runNumbers: Map<String, Int> = emptyMap(),
+    ) {
         composeRule.setContent {
             MediaTrackerTheme(dynamicColor = false) {
                 EpisodeSheetContent(
@@ -61,6 +64,7 @@ class EpisodeSheetContentTest {
                     onWatchedAgain = { again++ },
                     onEditViewing = { edited += it.id },
                     onDeleteViewing = { deleted += it.id },
+                    runNumbers = runNumbers,
                 )
             }
         }
@@ -131,5 +135,25 @@ class EpisodeSheetContentTest {
         val many = (1..20).map { viewing("v$it", "20${10 + it}-01-01T12:00:00Z") }
         show(many)
         composeRule.onNode(hasText("Watched again") and hasClickAction()).performScrollTo().assertIsDisplayed()
+    }
+
+    /** With more than one watch-through, each viewing says which it belongs to (#231); with one, nothing is added. */
+    @Test
+    fun viewings_nameTheirWatchThrough_onlyWhenThereAreSeveral() {
+        val inRuns =
+            listOf(
+                viewings[0].copy(watchThroughId = "r2"),
+                viewings[1].copy(watchThroughId = "r1"),
+            )
+        show(inRuns, runNumbers = mapOf("r1" to 1, "r2" to 2))
+        composeRule.onNodeWithText("Watch-through #2", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Watch-through #1", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun viewings_sayNothingOfTheirRun_whenThereIsOnlyOne() {
+        show(listOf(viewings[0].copy(watchThroughId = "r1")), runNumbers = mapOf("r1" to 1))
+        composeRule.onNodeWithText("Watched again").assertIsDisplayed()
+        assertEquals(0, composeRule.onAllNodesWithText("Watch-through", substring = true).fetchSemanticsNodes().size)
     }
 }

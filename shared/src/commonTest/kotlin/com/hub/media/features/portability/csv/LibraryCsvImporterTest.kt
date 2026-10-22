@@ -244,9 +244,6 @@ class LibraryCsvImporterTest {
         val row = result.row
         assertEquals(MediaType.TV_SHOW, row.type)
         assertEquals(1, row.show.totalSeasons)
-        // A blank watch_status must default rather than reject, exactly as a book's blank `status`
-        // defaults to TO_READ -- the exporter writes this column for films only.
-        assertEquals(WatchStatus.WATCHLIST, row.show.status)
     }
 
     /**
@@ -277,14 +274,14 @@ class LibraryCsvImporterTest {
         assertTrue(result.reason.contains("Runtime"))
     }
 
+    /** A show's watch_status is ignored (#231): abandonment travels in watch_throughs_export.csv. */
     @Test
-    fun parseRow_showWithUnknownWatchStatus_isRejected() {
+    fun parseRow_showWatchStatus_isIgnored() {
         val result =
             LibraryCsvImporter.parseRow(
                 validRow(type = "TV_SHOW", authors = "", isbn = "", format = "", status = "", watchStatus = "BINGED"),
             )
-        assertIs<LibraryRowParseResult.Rejected>(result)
-        assertTrue(result.reason.contains("BINGED"))
+        assertIs<LibraryRowParseResult.Parsed>(result)
     }
 
     @Test

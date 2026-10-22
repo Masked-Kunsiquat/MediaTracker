@@ -9,9 +9,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.RatingStars
 import com.github.maskedkunisquat.mediatracker.ui.components.ViewingRow
 import com.hub.media.core.database.entities.WatchLogEntity
 
@@ -29,6 +32,7 @@ internal fun MovieHistorySection(
     onWatchedAgain: () -> Unit,
     onEditViewing: (WatchLogEntity) -> Unit,
     onDeleteViewing: (WatchLogEntity) -> Unit,
+    onRateViewing: (viewingId: String, halves: Int?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -44,7 +48,20 @@ internal fun MovieHistorySection(
             )
         }
         viewings.forEach { viewing ->
-            ViewingRow(viewing = viewing, onEdit = { onEditViewing(viewing) }, onDelete = { onDeleteViewing(viewing) })
+            ViewingRow(
+                viewing = viewing,
+                onEdit = { onEditViewing(viewing) },
+                onDelete = { onDeleteViewing(viewing) },
+                // Each viewing's rating (#231), set or changed here; tapping the current value clears it.
+                stars = {
+                    RatingStars(
+                        halves = viewing.rating,
+                        starSize = 20.dp,
+                        onRate = { onRateViewing(viewing.id, it) },
+                        modifier = Modifier.testTag(TestTags.MovieDetail.viewingStars(viewing.id)),
+                    )
+                },
+            )
         }
         if (isWatched) {
             OutlinedButton(onClick = onWatchedAgain, modifier = Modifier.fillMaxWidth()) {

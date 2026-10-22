@@ -44,6 +44,7 @@ fun EpisodeSheetContent(
     onEditViewing: (WatchLogEntity) -> Unit,
     onDeleteViewing: (WatchLogEntity) -> Unit,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    runNumbers: Map<String, Int> = emptyMap(),
 ) {
     // The viewing Undo shows here, inside the sheet: a snackbar on the screen behind a
     // ModalBottomSheet is drawn under the sheet's window, invisible exactly when it is needed.
@@ -90,6 +91,12 @@ fun EpisodeSheetContent(
                         viewing = viewing,
                         onEdit = { onEditViewing(viewing) },
                         onDelete = { onDeleteViewing(viewing) },
+                        // Named only once there is more than one watch-through to tell apart (#231).
+                        note =
+                            viewing.watchThroughId
+                                ?.let { runNumbers[it] }
+                                ?.takeIf { runNumbers.size > 1 }
+                                ?.let { stringResource(R.string.viewing_in_run, it) },
                     )
                 }
                 OutlinedButton(onClick = onWatchedAgain, modifier = Modifier.fillMaxWidth()) {

@@ -369,4 +369,19 @@ class ZipImportExportTest {
             assertEquals(ExportArchive.NOT_LIBRARY_CSV, assertIs<Resource.Error>(r).message)
             assertEquals(emptyList(), titles(target))
         }
+
+    /** A lone watch_throughs_export.csv has media_id second as well; it is not a library file either (#231). */
+    @Test
+    fun aLoneWatchThroughsCsv_isRefusedWithAHint() =
+        runTest {
+            seed()
+            val runs =
+                (
+                    ExportDataUseCase(MediaRepository(source), BookRepository(source), ReadingSessionRepository(source))
+                        .execute() as Resource.Success
+                ).data.watchThroughsCsv
+            val r = importer(target).import(runs.encodeToByteArray(), DuplicatePolicy.SKIP, false)
+            assertEquals(ExportArchive.NOT_LIBRARY_CSV, assertIs<Resource.Error>(r).message)
+            assertEquals(emptyList(), titles(target))
+        }
 }

@@ -6,13 +6,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import com.github.maskedkunisquat.mediatracker.ui.screens.ShowRunActions
 import com.github.maskedkunisquat.mediatracker.ui.screens.TVShowDetailScreen
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.MediaItemEntity
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.TVDetailsEntity
-import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.features.media.data.MediaWithDetails
+import com.hub.media.features.tv.data.RunState
+import com.hub.media.features.tv.data.RunSummary
 import com.hub.media.features.tv.domain.SeasonCountMismatch
 import com.hub.media.ui.SeasonGroup
 import com.hub.media.ui.TVShowDetailUiState
@@ -171,6 +174,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -210,6 +214,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -262,6 +267,7 @@ class TVShowDetailScreenGoldenTest {
             onUntickShown = {},
             onEpisodeOpen = {},
             onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
         )
     }
 
@@ -286,7 +292,7 @@ class TVShowDetailScreenGoldenTest {
                 communityRating = communityRating,
                 synopsis = synopsis,
             ),
-        details = TVDetailsEntity(mediaId = id, totalSeasons = totalSeasons, status = WatchStatus.WATCHING),
+        details = TVDetailsEntity(mediaId = id, totalSeasons = totalSeasons),
     )
 
     private fun episode(
@@ -313,6 +319,82 @@ class TVShowDetailScreenGoldenTest {
                 null
             },
     )
+
+    /**
+     * A rewatch (#231): watch-through #1 finished and rated, #2 under way with two ticks. Two seasons, so
+     * the screen opens them folded and both run cards are in the picture. Self-consistent: #2's two ticks
+     * are the checklist's two, and #1's summary covers all six episodes.
+     */
+    @Test
+    fun tvShowDetail_twoWatchThroughs() {
+        composeRule.captureGolden(
+            name = "tv-show-detail-runs",
+            alsoAssert = {
+                assertTextIsShown(
+                    "Watch-through #2 · Watching",
+                    "Watch-through #1 · Watched",
+                    "6 episodes",
+                )
+            },
+        ) { RunsFixture() }
+    }
+
+    @Composable
+    private fun RunsFixture() {
+        val one = WatchThroughEntity("run-1", "show-1", 1, rating = 9)
+        val two = WatchThroughEntity("run-2", "show-1", 2)
+        val firstAt = Instant.parse("2024-04-01T12:00:00Z")
+        val lastAt = Instant.parse("2024-04-20T12:00:00Z")
+        val rewatchAt = Instant.parse("2025-09-06T12:00:00Z")
+        val seasons =
+            (1..2).map { s ->
+                val eps =
+                    (1..3).map { n ->
+                        EpisodeEntity(
+                            id = "ep-show-1-$s-$n",
+                            mediaId = "show-1",
+                            seasonNumber = s,
+                            episodeNumber = n,
+                            watchedAt = if (s == 1 && n <= 2) rewatchAt else null,
+                        )
+                    }
+                SeasonGroup(seasonNumber = s, episodes = eps, watchedCount = eps.count { it.watchedAt != null })
+            }
+        TVShowDetailScreen(
+            coverStorageDir = NO_COVERS,
+            uiState =
+                TVShowDetailUiState.Ready(
+                    show = show().copy(runs = listOf(one, two)),
+                    seasons = seasons,
+                    watchedEpisodes = 2,
+                    totalEpisodes = 6,
+                    isAbandoned = false,
+                    latestRunState = RunState.WATCHING,
+                    runSummaries =
+                        mapOf(
+                            "run-1" to
+                                RunSummary("run-1", firstAt, lastAt, episodes = 6, perSeason = mapOf(1 to 3, 2 to 3)),
+                            "run-2" to
+                                RunSummary("run-2", rewatchAt, rewatchAt, episodes = 2, perSeason = mapOf(1 to 2)),
+                        ),
+                ),
+            onEpisodeWatchedChange = { _, _ -> },
+            onSeasonWatchedChange = { _, _ -> },
+            onSetSeasonLength = { _, _ -> },
+            onRemoveSeason = {},
+            onAbandonedChange = {},
+            onRefreshMetadata = {},
+            onAddMissingEpisodes = {},
+            onAddAllMissingEpisodes = {},
+            onDelete = {},
+            onErrorShown = {},
+            onUndoUntick = {},
+            onUntickShown = {},
+            onEpisodeOpen = {},
+            onNavigateBack = {},
+            runActions = ShowRunActions({}, {}, { _, _ -> }, {}, {}),
+        )
+    }
 
     private companion object {
         /**

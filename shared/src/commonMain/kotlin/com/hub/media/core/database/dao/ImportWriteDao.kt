@@ -17,6 +17,7 @@ import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
 import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.newId
 import kotlin.time.Instant
 
@@ -46,8 +47,10 @@ public sealed class ImportDetails {
         public val details: MovieDetailsEntity,
     ) : ImportDetails()
 
+    /** @property runOne A new show's watch-through #1 (#231), planned so viewings can point at it before it exists. */
     public data class TVShow(
         public val details: TVDetailsEntity,
+        public val runOne: WatchThroughEntity? = null,
     ) : ImportDetails()
 }
 
@@ -272,6 +275,9 @@ public interface ImportWriteDao {
         filmViewingDeletes: Collection<String> = emptyList(),
         touchedFilmIds: Collection<String> = emptyList(),
         readUpserts: List<ReadThroughEntity> = emptyList(),
+        runUpserts: List<WatchThroughEntity> = emptyList(),
+        filmRatingUpdates: Map<String, Int> = emptyMap(),
+        touchedShowIds: Collection<String> = emptyList(),
     ) {
         for (insert in mediaInserts) {
             insertMediaItem(insert.mediaItem)
@@ -281,7 +287,12 @@ public interface ImportWriteDao {
                     writeReadOne(details)
                 }
                 is ImportDetails.Movie -> insertMovieDetails(details.details)
-                is ImportDetails.TVShow -> insertTvDetails(details.details)
+                is ImportDetails.TVShow -> {
+                    insertTvDetails(details.details)
+                    insertFirstRunIfMissing(
+                        details.runOne ?: WatchThroughEntity(id = newId(), mediaId = insert.mediaItem.id, number = 1),
+                    )
+                }
             }
             insert.identifiers.forEach { upsertExternalIdentifier(it) }
         }
@@ -317,6 +328,9 @@ public interface ImportWriteDao {
         // Reads from read_throughs_export.csv (#230): after the books they belong to, before the sessions
         // that point at them.
         readUpserts.forEach { upsertRead(it) }
+        // Watch-throughs from watch_throughs_export.csv (#231): after their shows, before the viewings
+        // that point at them.
+        runUpserts.forEach { upsertRun(it) }
         for (session in sessionInserts) {
             insertSession(withRead(session))
         }
@@ -342,13 +356,28 @@ public interface ImportWriteDao {
         // gets that viewing, so the recompute can never move its date backwards.
         viewingDeletesForEpisodes.forEach { deleteViewingsForEpisode(it) }
         filmViewingDeletes.forEach { deleteFilmViewings(it) }
-        viewingInserts.forEach { insertViewing(it) }
+        // An episode viewing joins its show's latest run when the plan left it unassigned (#231).
+        viewingInserts.forEach {
+            insertViewing(
+                if (it.episodeId != null && it.watchThroughId == null) {
+                    it.copy(watchThroughId = latestRunId(it.mediaId))
+                } else {
+                    it
+                },
+            )
+        }
         for (episodeId in touchedEpisodeIds) {
             val episode = episodeById(episodeId) ?: continue
             val at = episode.watchedAt
             if (at != null && viewingCountAt(episodeId, at) == 0) {
                 insertViewing(
-                    WatchLogEntity(id = newId(), mediaId = episode.mediaId, episodeId = episodeId, watchedAt = at),
+                    WatchLogEntity(
+                        id = newId(),
+                        mediaId = episode.mediaId,
+                        episodeId = episodeId,
+                        watchedAt = at,
+                        watchThroughId = latestRunId(episode.mediaId),
+                    ),
                 )
             }
             recomputeEpisodeWatchedAt(episodeId)
@@ -363,10 +392,59 @@ public interface ImportWriteDao {
             }
             recomputeFilmWatchedAt(filmId)
         }
+        // Merge filling a film viewing's empty rating (#231).
+        filmRatingUpdates.forEach { (logId, rating) -> setFilmViewingRating(logId, rating) }
+        // A show whose runs this import changed: its ticks follow its latest run (#231).
+        touchedShowIds.forEach { recomputeWatchedAtForShow(it) }
     }
+
+    @Query(
+        "UPDATE watch_throughs SET abandoned = :abandoned, rating = :rating WHERE mediaId = :mediaId AND number = :number",
+    )
+    public suspend fun updateRunByNumber(
+        mediaId: String,
+        number: Int,
+        abandoned: Boolean,
+        rating: Int?,
+    ): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    public suspend fun insertRun(run: WatchThroughEntity)
+
+    private suspend fun upsertRun(run: WatchThroughEntity) {
+        if (updateRunByNumber(run.mediaId, run.number, run.abandoned, run.rating) == 0) insertRun(run)
+    }
+
+    @Query("UPDATE watch_logs SET rating = :rating WHERE id = :logId AND episodeId IS NULL")
+    public suspend fun setFilmViewingRating(
+        logId: String,
+        rating: Int?,
+    ): Int
+
+    /** The same rule as [TVWriteDao.recomputeWatchedAtForShow]. */
+    @Query(
+        "UPDATE episodes SET watchedAt = (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.episodeId = episodes.id " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)) WHERE mediaId = :mediaId",
+    )
+    public suspend fun recomputeWatchedAtForShow(mediaId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     public suspend fun insertViewing(log: WatchLogEntity)
+
+    /** See [TVWriteDao.insertFirstRunIfMissing]. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    public suspend fun insertFirstRunIfMissing(run: WatchThroughEntity): Long
+
+    @Query("SELECT id FROM watch_throughs WHERE mediaId = :mediaId ORDER BY number DESC LIMIT 1")
+    public suspend fun latestRunIdOrNull(mediaId: String): String?
+
+    /** See [TVWriteDao.latestRunId]. */
+    public suspend fun latestRunId(mediaId: String): String =
+        latestRunIdOrNull(mediaId) ?: run {
+            insertFirstRunIfMissing(WatchThroughEntity(id = newId(), mediaId = mediaId, number = 1))
+            checkNotNull(latestRunIdOrNull(mediaId))
+        }
 
     @Query("DELETE FROM watch_logs WHERE episodeId = :episodeId")
     public suspend fun deleteViewingsForEpisode(episodeId: String): Int
@@ -393,6 +471,12 @@ public interface ImportWriteDao {
     )
     public suspend fun recomputeFilmWatchedAt(mediaId: String): Int
 
+    /**
+     * Viewings of the episode at [watchedAt] in **any** watch-through. Deliberately not scoped to the latest
+     * run (#231 review): runs from the file are written before this check, so an episode's `watchedAt` can
+     * still be an earlier run's date here, and a latest-run check would invent a viewing for it in the new
+     * run. The run-scoped recompute after it puts the tick right.
+     */
     @Query("SELECT COUNT(*) FROM watch_logs WHERE episodeId = :episodeId AND watchedAt = :watchedAt")
     public suspend fun viewingCountAt(
         episodeId: String,
@@ -402,10 +486,11 @@ public interface ImportWriteDao {
     @Query("SELECT * FROM episodes WHERE id = :episodeId")
     public suspend fun episodeById(episodeId: String): EpisodeEntity?
 
-    /** The same rule as [TVWriteDao.recomputeWatchedAt]: `watchedAt` is the latest viewing. */
+    /** The same rule as [TVWriteDao.recomputeWatchedAt]: `watchedAt` is the latest viewing in the latest run (#231). */
     @Query(
-        "UPDATE episodes SET watchedAt = (SELECT MAX(watchedAt) FROM watch_logs WHERE episodeId = :episodeId) " +
-            "WHERE id = :episodeId",
+        "UPDATE episodes SET watchedAt = (SELECT MAX(l.watchedAt) FROM watch_logs l WHERE l.episodeId = :episodeId " +
+            "AND l.watchThroughId = (SELECT w.id FROM watch_throughs w WHERE w.mediaId = episodes.mediaId " +
+            "ORDER BY w.number DESC LIMIT 1)) WHERE id = :episodeId",
     )
     public suspend fun recomputeEpisodeWatchedAt(episodeId: String): Int
 }

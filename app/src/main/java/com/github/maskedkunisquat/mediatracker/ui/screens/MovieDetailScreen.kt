@@ -47,6 +47,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
 import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.components.WatchedDatePickerDialog
+import com.github.maskedkunisquat.mediatracker.ui.components.YourRatingRow
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.database.entities.WatchLogEntity
@@ -126,6 +127,7 @@ fun MovieDetailScreenRoute(
             title = stringResource(R.string.film_watched_title, title),
             onConfirm = viewModel::confirmWatched,
             onDismiss = viewModel::dismissWatched,
+            rateable = true,
         )
     }
     if (ready?.pendingWatchedAgain == true) {
@@ -133,6 +135,7 @@ fun MovieDetailScreenRoute(
             title = stringResource(R.string.film_watched_again_title, title),
             onConfirm = viewModel::confirmWatchedAgain,
             onDismiss = viewModel::dismissWatchedAgain,
+            rateable = true,
         )
     }
     // By id, and saveable: the picker survives rotation, and a viewing deleted meanwhile closes it.
@@ -160,6 +163,7 @@ fun MovieDetailScreenRoute(
         onWatchedAgain = viewModel::requestWatchedAgain,
         onEditViewing = { editingViewingId = it.id },
         onDeleteViewing = viewModel::deleteViewing,
+        onRateViewing = viewModel::rateViewing,
         snackbarHostState = snackbarHostState,
     )
 }
@@ -181,6 +185,7 @@ fun MovieDetailScreen(
     onWatchedAgain: () -> Unit,
     onEditViewing: (WatchLogEntity) -> Unit,
     onDeleteViewing: (WatchLogEntity) -> Unit,
+    onRateViewing: (viewingId: String, halves: Int?) -> Unit,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -310,6 +315,7 @@ fun MovieDetailScreen(
                                 )
                             },
                         statusNote = watchedNote(details?.status, details?.watchedAt),
+                        yourRating = { YourRatingRow(uiState.titleRating, R.plurals.rating_average_of_viewings) },
                     ) {
                         DetailStatusChip(movieStatusControl(details?.status, onStatusChange))
                     }
@@ -320,6 +326,7 @@ fun MovieDetailScreen(
                         onWatchedAgain = onWatchedAgain,
                         onEditViewing = onEditViewing,
                         onDeleteViewing = onDeleteViewing,
+                        onRateViewing = onRateViewing,
                     )
                 }
             }

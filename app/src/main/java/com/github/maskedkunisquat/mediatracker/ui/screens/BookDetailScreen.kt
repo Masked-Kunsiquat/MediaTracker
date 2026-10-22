@@ -50,6 +50,7 @@ import com.github.maskedkunisquat.mediatracker.ui.components.DetailFacts
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailMenuAction
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailSynopsis
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailTopBarActions
+import com.github.maskedkunisquat.mediatracker.ui.components.RateDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.ReadingStatus
@@ -171,6 +172,7 @@ fun BookDetailScreenRoute(
                 onRemoveRead = viewModel::removeRead,
                 onRateRead = viewModel::rateRead,
                 onDismissRatePrompt = viewModel::dismissRatePrompt,
+                onRequestRate = viewModel::requestRatePrompt,
             ),
     )
 }
@@ -401,6 +403,13 @@ fun BookDetailScreen(
                             titleRating = uiState.titleRating,
                             isReread = (uiState.latestRead?.number ?: 1) > 1,
                             onReadAgain = readActions.onReadAgain,
+                            onRate =
+                                readActions.onRequestRate.takeIf {
+                                    uiState.latestRead?.let { read ->
+                                        (read.status == ReadingStatus.FINISHED || read.status == ReadingStatus.DNF) &&
+                                            read.rating == null
+                                    } == true
+                                },
                         )
                     }
                     item { DetailSynopsis(text = book.synopsis) }
@@ -484,9 +493,12 @@ fun BookDetailScreen(
 
         if (uiState is BookDetailUiState.Ready) {
             uiState.ratePrompt?.let { read ->
-                RateReadDialog(
-                    bookTitle = uiState.book.title,
-                    read = read,
+                RateDialog(
+                    title = stringResource(R.string.rate_read_title),
+                    body = stringResource(R.string.rate_read_body, uiState.book.title, read.number),
+                    key = read.id,
+                    initial = read.rating,
+                    starsTag = TestTags.BookDetail.RATE_STARS,
                     onSave = { readActions.onRateRead(read.id, it) },
                     onSkip = readActions.onDismissRatePrompt,
                 )

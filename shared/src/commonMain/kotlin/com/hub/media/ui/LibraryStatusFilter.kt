@@ -53,7 +53,9 @@ public enum class LibraryStatusFilter {
         when (media) {
             is MediaWithDetails.Book -> of(media.status) == this
             is MediaWithDetails.Movie -> media.details?.status?.let(::of) == this
-            is MediaWithDetails.TVShow -> media.details?.let { ofShow(it.status, tvProgress, it.airingStatus) } == this
+            is MediaWithDetails.TVShow ->
+                media.details?.let { ofShow(media.isAbandoned, tvProgress, it.airingStatus) } ==
+                    this
         }
 
     public companion object {
@@ -103,6 +105,7 @@ public enum class LibraryStatusFilter {
          * completed show to [IN_PROGRESS] on the strength of an unknown would be a worse lie than
          * the one being fixed.
          *
+         * @param abandoned The latest watch-through's flag (#231): giving up is the one state no tick count expresses.
          * @param tvProgress `null` for a show with no episode rows at all, which
          *   [com.hub.media.core.database.dao.EpisodeDao.observeProgress] omits entirely because it
          *   groups by `mediaId`. That absence means [NOT_STARTED] — a show nobody has quick-filled
@@ -114,12 +117,12 @@ public enum class LibraryStatusFilter {
          *   assert an answer they do not have.
          */
         public fun ofShow(
-            storedStatus: WatchStatus,
+            abandoned: Boolean,
             tvProgress: TVProgressRow?,
             airingStatus: AiringStatus? = null,
         ): LibraryStatusFilter =
             when {
-                storedStatus == WatchStatus.ABANDONED -> ABANDONED
+                abandoned -> ABANDONED
                 tvProgress == null || tvProgress.totalEpisodes == 0 -> NOT_STARTED
                 tvProgress.watchedEpisodes == 0 -> NOT_STARTED
                 tvProgress.watchedEpisodes >= tvProgress.totalEpisodes ->

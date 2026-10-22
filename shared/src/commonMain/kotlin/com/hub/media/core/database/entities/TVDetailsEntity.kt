@@ -24,17 +24,11 @@ import androidx.room.PrimaryKey
  *   typed (or what a provider reported), not a constraint — [EpisodeEntity] rows are the truth
  *   about what actually exists, and a show can legitimately hold episodes for a season beyond this
  *   number if the count was wrong.
- * @property status **Settled in Phase C: this is not a lifecycle, it is an abandonment flag.**
- *   Where a show sits — not started / in progress / finished — is derived from its episodes by
- *   [com.hub.media.ui.LibraryStatusFilter.ofShow], for the reason this KDoc gives above about
- *   progress: a stored value cannot see the rows that change beneath it, so a show would sit on
- *   "finished" while a newly quick-filled season went unwatched. Only [WatchStatus.ABANDONED] is
- *   read from this column, because giving up is a decision no episode count can express. The other
- *   [WatchStatus] values remain storable and are deliberately ignored by the filter; nothing in
- *   the app writes them, and a future reader should not infer meaning from one that appears here.
+ * Abandonment is not here: since #231 it is a flag on the show's latest
+ *   [WatchThroughEntity], because each watch-through can be given up on separately.
  * @property airingStatus Whether the show itself is still running — **not** the user's progress
- *   through it, which is what [status] and the derived filter above are about. The name collision
- *   between the two is the reason this one is not called `status`.
+ *   through it, which is what the watch-throughs and the derived filter above are about. It is not
+ *   called `status` to keep the two apart.
  *
  *   Nothing writes it yet; TMDB supplies it in Phase D as `status`/`in_production`. It exists now
  *   because "finished" currently conflates two states a viewer keeps apart: *up to date* (every
@@ -61,7 +55,6 @@ import androidx.room.PrimaryKey
 public data class TVDetailsEntity(
     @PrimaryKey val mediaId: String,
     val totalSeasons: Int? = null,
-    val status: WatchStatus = WatchStatus.WATCHLIST,
     val airingStatus: AiringStatus? = null,
     val firstAirDate: Long? = null,
     val lastAirDate: Long? = null,

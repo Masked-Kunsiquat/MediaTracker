@@ -634,6 +634,7 @@ class BookDetailScreenTest {
             onRemoveRead = { readCalls += "remove:$it" },
             onRateRead = { id, halves -> readCalls += "rate:$id:$halves" },
             onDismissRatePrompt = { readCalls += "dismiss" },
+            onRequestRate = { readCalls += "rateRequest" },
         )
 
     private val march2024 = Instant.fromEpochMilliseconds(1_709_500_000_000)
@@ -655,7 +656,7 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.rating_yours)).assertIsDisplayed()
         composeRule
             .onNodeWithText(
-                context.getString(R.string.rating_average_of_reads, "4.5", 2, "5"),
+                context.resources.getQuantityString(R.plurals.rating_average_of_reads, 2, "4.5", 2, "5"),
             ).assertIsDisplayed()
     }
 
@@ -747,6 +748,23 @@ class BookDetailScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.read_remove)).performClick()
 
         assertEquals(listOf("remove:r2"), readCalls)
+    }
+
+    /** "Rate" beside the status (#231 review): back to a skipped "Rate this read?" in one tap. */
+    @Test
+    fun rateAction_isOffered_forAnEndedUnratedRead() {
+        val reads = listOf(ReadThroughEntity("r1", "book-1", 1, ReadingStatus.FINISHED, finishedAt = march2024))
+        setContent(ready(book = book(), details = details(), reads = reads))
+
+        composeRule.onNode(hasText(context.getString(R.string.rate_action)) and hasClickAction()).performClick()
+        assertEquals(listOf("rateRequest"), readCalls)
+    }
+
+    @Test
+    fun rateAction_isAbsent_onceRated_orWhileReading() {
+        setContent(ready(book = book(), details = details(), reads = twoReads(readOneRating = 8)))
+        composeRule.onNodeWithText(context.getString(R.string.reading_status_reading)).assertExists()
+        composeRule.onAllNodesWithText(context.getString(R.string.rate_action)).assertCountEquals(0)
     }
 
     @Test

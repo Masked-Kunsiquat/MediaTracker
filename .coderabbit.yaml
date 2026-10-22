@@ -12,3 +12,14 @@ reviews:
     enabled: true
     ignore_title_keywords:
       - "Release v"
+
+  # TEMPORARY (#231, PR #235): that PR changes 120 files, over CodeRabbit's 100-file
+  # limit, so it was skipped outright. Leaving out tests, the plan/spec and the schema
+  # JSON brings it to ~63 files of production code. Remove this block once #235 merges.
+  path_filters:
+    - "!**/src/test/**"
+    - "!**/src/jvmTest/**"
+    - "!**/src/commonTest/**"
+    - "!**/src/androidTest/**"
+    - "!docs/superpowers/**"
+    - "!shared/schemas/**"

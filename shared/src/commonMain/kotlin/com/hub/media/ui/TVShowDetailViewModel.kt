@@ -6,14 +6,22 @@ import com.hub.media.core.database.dao.TVProgressCounts
 import com.hub.media.core.database.entities.EpisodeEntity
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.WatchLogEntity
-import com.hub.media.core.database.entities.WatchStatus
+import com.hub.media.core.database.entities.WatchThroughEntity
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.data.TitleRating
 import com.hub.media.features.media.data.MediaWithDetails
 import com.hub.media.features.media.domain.BulkDeleteUseCase
 import com.hub.media.features.settings.data.SettingsRepository
 import com.hub.media.features.settings.data.getIncludeSpecials
 import com.hub.media.features.settings.data.observeIncludeSpecials
+import com.hub.media.features.tv.data.RunState
+import com.hub.media.features.tv.data.RunSummary
 import com.hub.media.features.tv.data.TVShowRepository
+import com.hub.media.features.tv.data.WatchThroughRepository
+import com.hub.media.features.tv.data.asksToRateRun
+import com.hub.media.features.tv.data.isComplete
+import com.hub.media.features.tv.data.offersWatchAgain
+import com.hub.media.features.tv.data.runState
 import com.hub.media.features.tv.domain.BackfillShowEpisodesUseCase
 import com.hub.media.features.tv.domain.EpisodeBackfillReport
 import com.hub.media.features.tv.domain.MarkEpisodesWatchedUseCase
@@ -75,9 +83,7 @@ public sealed class TVShowDetailUiState {
      *   would be a second source of truth for something [EpisodeEntity.watchedAt] already records —
      *   see [com.hub.media.core.database.entities.TVDetailsEntity]'s KDoc for why that shape of bug
      *   is refused here specifically.
-     * @property isAbandoned Whether the show's stored status is [WatchStatus.ABANDONED] — see
-     *   [setAbandoned] for why this is the only piece of [com.hub.media.core.database.entities.TVDetailsEntity.status]
-     *   this screen reads.
+     * @property isAbandoned Whether the current watch-through is abandoned (#231) — see [setAbandoned].
      */
     public data class Ready(
         val show: MediaWithDetails.TVShow,
@@ -123,7 +129,27 @@ public sealed class TVShowDetailUiState {
         val viewingUndo: ViewingUndo? = null,
         /** Viewings per episode (#90), for the "Watched N×" row label; absent means none. */
         val viewingCounts: Map<String, Int> = emptyMap(),
-    ) : TVShowDetailUiState()
+        /** What the current watch-through reads as (#231), from the counted ticks. */
+        val latestRunState: RunState = RunState.NOT_STARTED,
+        /** Each watch-through's viewings summarised, by run id (#231); a run with none is absent. */
+        val runSummaries: Map<String, RunSummary> = emptyMap(),
+        /** The watch-through "Rate this watch-through?" is open for (#231), if any. */
+        val ratePromptRunId: String? = null,
+    ) : TVShowDetailUiState() {
+        /** The show's watch-throughs, oldest first (#231). */
+        val runs: List<WatchThroughEntity> get() = show.runs.sortedBy { it.number }
+
+        val latestRun: WatchThroughEntity? get() = show.latestRun
+
+        val titleRating: TitleRating? get() = show.rating
+
+        /** Watch again is offered once the current run is finished, caught up, or given up on (#231). */
+        val canWatchAgain: Boolean get() = latestRunState.offersWatchAgain()
+
+        /** Remove this watch-through: only an empty latest run after #1, the undo for a mistaken Watch again. */
+        val canRemoveLatestRun: Boolean
+            get() = latestRun?.let { it.number > 1 && runSummaries[it.id] == null } == true
+    }
 }
 
 /**
@@ -147,6 +173,7 @@ public class TVShowDetailViewModel(
     private val settingsRepository: SettingsRepository,
     private val markEpisodesWatched: MarkEpisodesWatchedUseCase,
     private val recordRewatch: RecordRewatchUseCase,
+    private val watchThroughRepository: WatchThroughRepository,
 ) : ViewModel() {
     private val errorMessage = MutableStateFlow<String?>(null)
 
@@ -165,6 +192,15 @@ public class TVShowDetailViewModel(
 
     /** Backs [TVShowDetailUiState.Ready.viewingUndo]. */
     private val viewingUndo = MutableStateFlow<ViewingUndo?>(null)
+
+    /** Backs [TVShowDetailUiState.Ready.ratePromptRunId] (#231). */
+    private val ratePromptRunId = MutableStateFlow<String?>(null)
+
+    /** Runs whose prompt was skipped on this screen (#231 review): not asked again; "Rate" still opens it. */
+    private val skippedRunIds = mutableSetOf<String>()
+
+    /** Holds a second Watch again tap off while the first is in flight (#231). */
+    private var watchAgainInFlight = false
     private var viewingUndoSeq = 0L
 
     /** The open episode's viewings, re-read as they change; `null` while no sheet is open. */
@@ -181,6 +217,8 @@ public class TVShowDetailViewModel(
         val viewingUndo: ViewingUndo?,
         val open: Pair<String, List<WatchLogEntity>>?,
         val counts: Map<String, Int>,
+        val summaries: Map<String, RunSummary>,
+        val ratePrompt: String?,
     )
 
     private val overlay: Flow<Overlay> =
@@ -189,8 +227,16 @@ public class TVShowDetailViewModel(
             untickEvent,
             pendingRewatch,
             viewingUndo,
-            combine(openViewings, tvShowRepository.observeViewingCounts(showId), ::Pair),
-        ) { tick, untick, rewatch, undo, (open, counts) -> Overlay(tick, untick, rewatch, undo, open, counts) }
+            combine(
+                openViewings,
+                tvShowRepository.observeViewingCounts(showId),
+                tvShowRepository.observeRunSummaries(showId),
+                ratePromptRunId,
+                ::Quadruple,
+            ),
+        ) { tick, untick, rewatch, undo, (open, counts, summaries, prompt) ->
+            Overlay(tick, untick, rewatch, undo, open, counts, summaries, prompt)
+        }
     private val isRefreshing = MutableStateFlow(false)
 
     /** Backs [TVShowDetailUiState.Ready.seasonFindings] -- see that property's KDoc. */
@@ -246,7 +292,7 @@ public class TVShowDetailViewModel(
                         seasons = seasons,
                         watchedEpisodes = episodes.count { it.watchedAt != null },
                         totalEpisodes = episodes.size,
-                        isAbandoned = show.details?.status == WatchStatus.ABANDONED,
+                        isAbandoned = show.isAbandoned,
                         errorMessage = error,
                         canRefreshMetadata = tmdb?.toIntOrNull() != null,
                         isRefreshingMetadata = refreshing,
@@ -278,10 +324,15 @@ public class TVShowDetailViewModel(
                         extra.open?.let { (id, viewings) ->
                             base.seasons
                                 .firstNotNullOfOrNull { season -> season.episodes.firstOrNull { it.id == id } }
-                                ?.let { OpenEpisode(it, viewings) }
+                                ?.let { OpenEpisode(it, viewings, base.show.runs.associate { r -> r.id to r.number }) }
                         },
                     watchedEpisodes = counted.watchedEpisodes,
                     totalEpisodes = counted.totalEpisodes,
+                    latestRunState =
+                        base.show.latestRun?.let { runState(it, counted, base.show.details?.airingStatus) }
+                            ?: RunState.NOT_STARTED,
+                    runSummaries = extra.summaries,
+                    ratePromptRunId = extra.ratePrompt,
                 )
             } else {
                 base
@@ -380,8 +431,7 @@ public class TVShowDetailViewModel(
         pendingTick.value = null
         viewModelScope.launch {
             val ids = tick.targetIds + if (includeEarlier) tick.earlierIds else emptyList()
-            val result = markEpisodesWatched.execute(ids, watchedWhen, targetIsExplicit = !tick.isSeason)
-            if (result is Resource.Error) errorMessage.value = result.message
+            writeThenAskIfFinished { markEpisodesWatched.execute(ids, watchedWhen, targetIsExplicit = !tick.isSeason) }
         }
     }
 
@@ -394,8 +444,8 @@ public class TVShowDetailViewModel(
     public fun undo(event: UntickEvent) {
         consumeUntick(event.id)
         viewModelScope.launch {
-            val result = tvShowRepository.restoreWatched(event.previous)
-            if (result is Resource.Error) errorMessage.value = result.message
+            // Putting ticks back can finish the run (#231 review).
+            writeThenAskIfFinished { tvShowRepository.restoreWatched(event.previous) }
         }
     }
 
@@ -504,8 +554,8 @@ public class TVShowDetailViewModel(
         episodeCount: Int,
     ) {
         viewModelScope.launch {
-            val result = tvShowRepository.setSeasonLength(showId, seasonNumber, episodeCount)
-            if (result is Resource.Error) errorMessage.value = result.message
+            // Shrinking away the unwatched episodes can finish the run (#231 review).
+            writeThenAskIfFinished { tvShowRepository.setSeasonLength(showId, seasonNumber, episodeCount) }
         }
     }
 
@@ -516,34 +566,95 @@ public class TVShowDetailViewModel(
      */
     public fun removeSeason(seasonNumber: Int) {
         viewModelScope.launch {
-            val result = tvShowRepository.removeSeason(showId, seasonNumber)
-            if (result is Resource.Error) errorMessage.value = result.message
+            writeThenAskIfFinished { tvShowRepository.removeSeason(showId, seasonNumber) }
         }
     }
 
     /**
-     * Toggles between "abandoned" and "watchlist" — deliberately an Abandon/Resume toggle rather
-     * than the four-way [com.hub.media.core.database.entities.WatchStatus] picker
-     * [MovieDetailScreen] offers, because a show's place on the library shelf is **derived** from
-     * its episodes, not read from this column — see
-     * [LibraryStatusFilter.ofShow]'s KDoc. Offering WATCHING/WATCHED alongside WATCHLIST/ABANDONED
-     * here would let the user set a value the library chip then silently ignores (every value but
-     * ABANDONED is), which reads as a bug: "I set it to Watched but it still shows as in progress."
-     * Abandon/Resume is the one axis this column actually controls, so it is the only one exposed.
-     *
-     * Writes [WatchStatus.ABANDONED] for `true`, [WatchStatus.WATCHLIST] for `false` — WATCHLIST
-     * rather than the show's prior derived placement, because there is no prior derived value to
-     * restore: [WatchStatus.WATCHING]/[WatchStatus.WATCHED] are never written by this app (see
-     * [com.hub.media.core.database.entities.TVDetailsEntity]'s KDoc) and the filter recomputes the
-     * real placement from episodes regardless of which of those the column holds once it is not
-     * ABANDONED.
+     * Abandon or Resume the current watch-through (#231). An Abandon/Resume toggle rather than a status
+     * picker, because a show's place on the library shelf is **derived** from its episodes -- see
+     * [LibraryStatusFilter.ofShow]'s KDoc -- and giving up is the one state no tick count expresses.
+     * Earlier watch-throughs keep their own flag, so abandoning a rewatch leaves #1 finished.
      */
     public fun setAbandoned(abandoned: Boolean) {
         viewModelScope.launch {
-            val status = if (abandoned) WatchStatus.ABANDONED else WatchStatus.WATCHLIST
-            val result = tvShowRepository.updateWatchStatus(showId, status)
+            val result = watchThroughRepository.setAbandoned(showId, abandoned)
+            if (result is Resource.Error) {
+                errorMessage.value = result.message
+            } else if (abandoned) {
+                // Giving up on a watch-through asks for its rating too, as a book's Did not finish does.
+                val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number }
+                if (run != null && run.rating == null && run.id !in skippedRunIds) ratePromptRunId.value = run.id
+            }
+        }
+    }
+
+    /** Watch again (#231): watch-through n+1 with an empty checklist. A second tap meanwhile is ignored. */
+    public fun watchAgain() {
+        if (watchAgainInFlight) return
+        watchAgainInFlight = true
+        viewModelScope.launch {
+            try {
+                val result = watchThroughRepository.watchAgain(showId)
+                if (result is Resource.Error) errorMessage.value = result.message
+            } finally {
+                watchAgainInFlight = false
+            }
+        }
+    }
+
+    /** Remove this watch-through (#231): the undo for a mistaken Watch again. */
+    public fun removeRun(runId: String) {
+        viewModelScope.launch {
+            val result = watchThroughRepository.removeRun(runId)
             if (result is Resource.Error) errorMessage.value = result.message
         }
+    }
+
+    /** Rates [runId], or clears its rating with `null`, and closes "Rate this watch-through?" (#231). */
+    public fun rateRun(
+        runId: String,
+        halves: Int?,
+    ) {
+        ratePromptRunId.value = null
+        viewModelScope.launch {
+            val result = watchThroughRepository.setRating(runId, halves)
+            if (result is Resource.Error) errorMessage.value = result.message
+        }
+    }
+
+    /** Skip: leaves the run unrated, and is remembered -- this screen does not ask about that run again. */
+    public fun dismissRatePrompt() {
+        ratePromptRunId.value?.let { skippedRunIds += it }
+        ratePromptRunId.value = null
+    }
+
+    /** "Rate" in the status row (#231 review): reopens the prompt for the current watch-through, after a Skip. */
+    public fun requestRatePrompt() {
+        (uiState.value as? TVShowDetailUiState.Ready)?.latestRun?.let { ratePromptRunId.value = it.id }
+    }
+
+    /**
+     * Runs [write]; when it is what finishes the current watch-through, asks for its rating -- once, and
+     * never for a run this screen was already told to skip (#231).
+     */
+    private suspend fun writeThenAskIfFinished(write: suspend () -> Resource<*>) {
+        val wasComplete = latestRunComplete()
+        val result = write()
+        if (result is Resource.Error) {
+            errorMessage.value = result.message
+            return
+        }
+        val run = watchThroughRepository.observeRuns(showId).first().maxByOrNull { it.number } ?: return
+        if (run.id !in skippedRunIds && asksToRateRun(wasComplete, latestRunComplete(), run.rating)) {
+            ratePromptRunId.value = run.id
+        }
+    }
+
+    /** Whether every counted episode is ticked in the current watch-through, read fresh from the store. */
+    private suspend fun latestRunComplete(): Boolean {
+        val episodes = tvShowRepository.observeEpisodes(showId).first()
+        return isComplete(TVProgressCounts.of(showId, episodes).counted(settingsRepository.getIncludeSpecials()))
     }
 
     /** Deletes this show via [BulkDeleteUseCase], so an unreferenced poster file is cleaned up. */
@@ -724,3 +835,11 @@ internal fun EpisodeBackfillReport.describe(): String {
     }
     return parts.joinToString(" ")
 }
+
+/** Four values from one `combine`, so the overlay stays within the outer combine's five sources. */
+private data class Quadruple<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+)

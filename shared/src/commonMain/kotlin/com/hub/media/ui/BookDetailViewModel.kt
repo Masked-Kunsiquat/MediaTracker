@@ -444,6 +444,13 @@ public class BookDetailViewModel(
     }
 
     /** Closes "Rate this read?" without rating (#230). */
+
+    /** "Rate" in the status row (#231 review): reopens "Rate this read?" for the latest read, after a Skip. */
+    public fun requestRatePrompt() {
+        val latest = (uiState.value as? BookDetailUiState.Ready)?.latestRead ?: return
+        localState.update { it.copy(ratePromptReadId = latest.id) }
+    }
+
     public fun dismissRatePrompt() {
         localState.update { it.copy(ratePromptReadId = null) }
     }

@@ -3,7 +3,6 @@ package com.hub.media.features.tv.data
 import com.hub.media.core.database.AppDatabase
 import com.hub.media.core.database.dao.UpNextRow
 import com.hub.media.core.database.entities.EpisodeEntity
-import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.util.Resource
 import com.hub.media.core.util.newId
@@ -101,7 +100,9 @@ class UpNextQueryTest {
             show("Never started", 1 to 3)
             val abandoned = show("Abandoned", 1 to 3)
             watch(abandoned, 1, through = 1)
-            assertIs<Resource.Success<Unit>>(repo.updateWatchStatus(abandoned, WatchStatus.ABANDONED))
+            assertIs<Resource.Success<Unit>>(
+                WatchThroughRepository(db, includeSpecials = { false }).setAbandoned(abandoned, true),
+            )
 
             val rows = repo.observeUpNext(includeSpecials = true).now()
             assertEquals(listOf("Started"), rows.map { it.showTitle })

@@ -135,6 +135,8 @@ internal fun markableIn(
 public data class OpenEpisode(
     val episode: EpisodeEntity,
     val viewings: List<WatchLogEntity>,
+    /** Each watch-through's number by id (#231), so a viewing can say which run it belongs to. */
+    val runNumbers: Map<String, Int> = emptyMap(),
 )
 
 /**

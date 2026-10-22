@@ -21,6 +21,7 @@ import com.hub.media.core.database.dao.StatsDao
 import com.hub.media.core.database.dao.TVDetailsDao
 import com.hub.media.core.database.dao.TVWriteDao
 import com.hub.media.core.database.dao.WatchLogDao
+import com.hub.media.core.database.dao.WatchThroughDao
 import com.hub.media.core.database.entities.AppSettingEntity
 import com.hub.media.core.database.entities.BookDetailsEntity
 import com.hub.media.core.database.entities.EpisodeEntity
@@ -31,6 +32,7 @@ import com.hub.media.core.database.entities.ReadThroughEntity
 import com.hub.media.core.database.entities.ReadingSessionEntity
 import com.hub.media.core.database.entities.TVDetailsEntity
 import com.hub.media.core.database.entities.WatchLogEntity
+import com.hub.media.core.database.entities.WatchThroughEntity
 
 /**
  * The current Room schema version, as a named constant rather than a bare literal in the
@@ -105,6 +107,7 @@ public const val APP_DATABASE_VERSION: Int = 8
         EpisodeEntity::class,
         WatchLogEntity::class,
         ReadThroughEntity::class,
+        WatchThroughEntity::class,
     ],
     version = APP_DATABASE_VERSION,
     exportSchema = true,
@@ -141,6 +144,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun watchLogDao(): WatchLogDao
 
     abstract fun readThroughDao(): ReadThroughDao
+
+    abstract fun watchThroughDao(): WatchThroughDao
 }
 
 /**

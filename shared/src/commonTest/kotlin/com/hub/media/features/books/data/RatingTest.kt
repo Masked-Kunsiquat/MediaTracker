@@ -20,18 +20,18 @@ class RatingTest {
 
     @Test
     fun noRatedReads_isNull() {
-        assertNull(titleRating(listOf(read(1, null), read(2, null))))
+        assertNull(readsRating(listOf(read(1, null), read(2, null))))
     }
 
     @Test
     fun averageAndLatest_ignoreUnratedReads() {
         // 4.0 then unrated then 5.0: average 4.5, latest 5.0, from 2 rated reads.
-        assertEquals(TitleRating(4.5, 5.0, 2), titleRating(listOf(read(1, 8), read(2, null), read(3, 10))))
+        assertEquals(TitleRating(4.5, 5.0, 2), readsRating(listOf(read(1, 8), read(2, null), read(3, 10))))
     }
 
     @Test
     fun latest_isTheHighestNumberedRatedRead_notListOrder() {
-        assertEquals(3.0, titleRating(listOf(read(2, 6), read(1, 10)))!!.latestStars)
+        assertEquals(3.0, readsRating(listOf(read(2, 6), read(1, 10)))!!.latestStars)
     }
 
     @Test
@@ -44,5 +44,15 @@ class RatingTest {
         assertNull(starsToHalves(5.5))
         assertNull(starsToHalves(Double.NaN), "NaN cannot be rounded; it must be refused, not thrown")
         assertNull(starsToHalves(Double.POSITIVE_INFINITY))
+    }
+
+    /** Any ratings, oldest first (#231): films' viewings and shows' watch-throughs use this too. */
+    @Test
+    fun titleRating_overAnyList_ignoresUnrated_latestIsTheLastRated() {
+        val r = titleRating(listOf(8, null, 10, null))!!
+        assertEquals(4.5, r.averageStars)
+        assertEquals(5.0, r.latestStars)
+        assertEquals(2, r.rated)
+        assertNull(titleRating(listOf(null, null)))
     }
 }

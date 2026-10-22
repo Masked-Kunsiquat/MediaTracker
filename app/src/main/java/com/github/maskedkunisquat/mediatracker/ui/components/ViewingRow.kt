@@ -29,10 +29,19 @@ fun ViewingRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
+    note: String? = null,
+    stars: (@Composable () -> Unit)? = null,
 ) {
     val day = DATE_ONLY_FORMATTER.format(instantToLocalDateTime(viewing.watchedAt))
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text = day, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        // [note] follows the day: which watch-through an episode's viewing belongs to (#231).
+        Text(
+            text = if (note != null) "$day · $note" else day,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        // A film viewing's own rating (#231), between its day and its actions.
+        stars?.invoke()
         IconButton(onClick = onEdit) {
             Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.episode_sheet_edit_date_cd, day))
         }
