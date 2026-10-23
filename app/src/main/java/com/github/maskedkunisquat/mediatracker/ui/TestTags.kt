@@ -149,6 +149,7 @@ object TestTags {
     object AddTVShow {
         const val FORM = "addTVShow:form"
         const val SAVE_BUTTON = "addTVShow:save"
+        const val CANCEL_BUTTON = "addTVShow:cancel"
     }
 
     object MovieSearch {

@@ -77,10 +77,10 @@ class EditTVShowViewModelTest {
 
             val form = editing(id).awaitForm { true }
 
-            assertEquals("Chernobyl", form.title)
-            assertEquals("2019", form.releaseYear)
-            assertEquals("1", form.totalSeasons)
-            assertEquals("19.99", form.purchasePrice)
+            assertEquals("Chernobyl", form.form.title)
+            assertEquals("2019", form.form.releaseYear)
+            assertEquals("1", form.form.totalSeasons)
+            assertEquals("19.99", form.form.purchasePrice)
         }
 
     @Test
@@ -90,9 +90,9 @@ class EditTVShowViewModelTest {
 
             val form = editing(id).awaitForm { true }
 
-            assertEquals("", form.releaseYear)
-            assertEquals("", form.totalSeasons)
-            assertEquals("", form.purchasePrice)
+            assertEquals("", form.form.releaseYear)
+            assertEquals("", form.form.totalSeasons)
+            assertEquals("", form.form.purchasePrice)
         }
 
     @Test
@@ -194,7 +194,7 @@ class EditTVShowViewModelTest {
             val form = vm.awaitForm { it.saveError != null && !it.isSaving }
 
             assertEquals(false, form.saved)
-            assertEquals("0", form.totalSeasons, "the form keeps what was typed")
+            assertEquals("0", form.form.totalSeasons, "the form keeps what was typed")
             assertEquals(2, db.tvDetailsDao().getByMediaId(id)?.totalSeasons)
         }
 
@@ -245,7 +245,7 @@ class EditTVShowViewModelTest {
 
             assertEquals("First", db.mediaItemDao().getById(id)?.title)
             // The edit made mid-save is refused, so the form never shows a value as saved that was not.
-            assertEquals("First", form.title)
+            assertEquals("First", form.form.title)
         }
 
     @Test
@@ -261,7 +261,7 @@ class EditTVShowViewModelTest {
             db.restoreMediaItems()
             vm.retry()
 
-            assertEquals("Chernobyl", vm.awaitForm { true }.title, "Retry loads the form once the read works")
+            assertEquals("Chernobyl", vm.awaitForm { true }.form.title, "Retry loads the form once the read works")
         }
 
     @Test
@@ -273,7 +273,7 @@ class EditTVShowViewModelTest {
 
             vm.onTitleChange("Chernobil")
 
-            val form = vm.awaitForm { it.title == "Chernobil" }
+            val form = vm.awaitForm { it.form.title == "Chernobil" }
             assertEquals("Chernobyl", form.savedTitle)
             assertEquals(2019, form.savedYear)
             assertEquals("poster1", form.coverImageHash)

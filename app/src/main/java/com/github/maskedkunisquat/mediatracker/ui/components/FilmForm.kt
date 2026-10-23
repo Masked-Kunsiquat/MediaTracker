@@ -52,12 +52,17 @@ internal class FilmFieldValidity(
  * Stateless: the values are [form], and every edit leaves through a callback. Choosing Watched goes
  * through [onStatusChange] like any other status, so the host's [FilmFormState.choosingStatus] asks
  * when (FilmWatchedDialog) before the form changes.
+ *
+ * [flagBlankTitle] is false on a form that opened empty: a blank title there is not yet a mistake,
+ * and the disabled Save already says it is required. Where a title was loaded, a blank one means it
+ * was cleared, and the field says so.
  */
 @Composable
 fun ColumnScope.FilmFormContent(
     form: FilmFormState,
     header: @Composable () -> Unit,
     enabled: Boolean,
+    flagBlankTitle: Boolean,
     onTitleChange: (String) -> Unit,
     onReleaseYearChange: (String) -> Unit,
     onRuntimeChange: (String) -> Unit,
@@ -72,7 +77,7 @@ fun ColumnScope.FilmFormContent(
             onValueChange = onTitleChange,
             label = { Text(stringResource(R.string.add_movie_field_title)) },
             singleLine = true,
-            isError = !valid.title,
+            isError = flagBlankTitle && !valid.title,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )

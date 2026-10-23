@@ -142,6 +142,7 @@ fun EditMovieScreen(
                     )
                 },
                 enabled = !form.isSaving,
+                flagBlankTitle = true,
                 onTitleChange = onTitleChange,
                 onReleaseYearChange = onReleaseYearChange,
                 onRuntimeChange = onRuntimeChange,

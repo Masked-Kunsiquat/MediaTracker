@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditTVShowScreen
 import com.hub.media.ui.EditTVShowUiState
+import com.hub.media.ui.ShowFormState
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,10 +43,13 @@ class EditTVShowScreenGoldenTest {
         EditTVShowScreen(
             uiState =
                 EditTVShowUiState.Editing(
-                    title = "Chernobyl",
-                    releaseYear = "2019",
-                    totalSeasons = "1",
-                    purchasePrice = "19.99",
+                    form =
+                        ShowFormState(
+                            title = "Chernobyl",
+                            releaseYear = "2019",
+                            totalSeasons = "1",
+                            purchasePrice = "19.99",
+                        ),
                     savedYear = 2019,
                 ),
             coverStorageDir = "",

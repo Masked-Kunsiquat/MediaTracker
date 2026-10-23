@@ -3,6 +3,9 @@ package com.github.maskedkunisquat.mediatracker.ui.screens
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -185,5 +188,16 @@ class AddMovieScreenTest {
         // (i.e. once its duration elapses), so this needs to wait rather than assert immediately.
         composeRule.waitUntil(timeoutMillis = 10_000) { errorShownCount == 1 }
         assertEquals(1, errorShownCount)
+    }
+
+    /** See AddTVShowScreenTest.anEmptyForm_doesNotFlagTheTitle: an empty add form is not a mistake. */
+    @Test
+    fun anEmptyForm_doesNotFlagTheTitle() {
+        setContent()
+
+        val titleLabel = context.getString(R.string.add_movie_field_title)
+        composeRule
+            .onNode(hasText(titleLabel) and hasSetTextAction())
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
     }
 }

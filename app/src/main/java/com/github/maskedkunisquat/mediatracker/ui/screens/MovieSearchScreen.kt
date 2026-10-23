@@ -393,6 +393,7 @@ fun MovieReviewScreen(
                 )
             },
             enabled = !review.isSaving,
+            flagBlankTitle = true,
             onTitleChange = onTitleChange,
             onReleaseYearChange = onReleaseYearChange,
             onRuntimeChange = onRuntimeChange,

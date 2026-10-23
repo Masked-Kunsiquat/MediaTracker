@@ -34,15 +34,13 @@ public sealed class EditTVShowUiState {
      * status (see [TVShowRepository.updateShowMetadata]).
      */
     public data class Editing(
-        val title: String,
-        val releaseYear: String,
-        val totalSeasons: String,
-        val purchasePrice: String,
+        /** The field values: the shared [ShowFormState] (#214), with no quick-fill rows. */
+        val form: ShowFormState,
         /**
          * The header's title (#174): the title as loaded, so the header keeps saying which item is
          * being edited while [title] changes underneath it. No field edit writes it.
          */
-        val savedTitle: String = title,
+        val savedTitle: String = form.title,
         /** The release year as loaded, for the header's kind line. */
         val savedYear: Int? = null,
         /** The cover shown in the header; `null` when the item has none. */
@@ -100,22 +98,25 @@ public class EditTVShowViewModel(
                     EditTVShowUiState.NotFound
                 } else {
                     EditTVShowUiState.Editing(
-                        title = show.item.title,
-                        // Blank rather than "null" or "0" for an unknown value, so saving it back
-                        // unchanged keeps it unknown.
-                        releaseYear =
-                            show.item.releaseYear
-                                ?.toString()
-                                .orEmpty(),
-                        totalSeasons =
-                            show.details
-                                ?.totalSeasons
-                                ?.toString()
-                                .orEmpty(),
-                        purchasePrice =
-                            show.item.purchasePrice
-                                ?.toString()
-                                .orEmpty(),
+                        form =
+                            ShowFormState(
+                                title = show.item.title,
+                                // Blank rather than "null" or "0" for an unknown value, so saving it
+                                // back unchanged keeps it unknown.
+                                releaseYear =
+                                    show.item.releaseYear
+                                        ?.toString()
+                                        .orEmpty(),
+                                totalSeasons =
+                                    show.details
+                                        ?.totalSeasons
+                                        ?.toString()
+                                        .orEmpty(),
+                                purchasePrice =
+                                    show.item.purchasePrice
+                                        ?.toString()
+                                        .orEmpty(),
+                            ),
                         savedTitle = show.item.title,
                         savedYear = show.item.releaseYear,
                         coverImageHash = show.item.coverImageHash,
@@ -124,13 +125,18 @@ public class EditTVShowViewModel(
         }
     }
 
-    public fun onTitleChange(value: String): Unit = updateForm { it.copy(title = value) }
+    public fun onTitleChange(value: String): Unit = updateForm { it.copy(form = it.form.copy(title = value)) }
 
-    public fun onReleaseYearChange(value: String): Unit = updateForm { it.copy(releaseYear = value) }
+    public fun onReleaseYearChange(value: String): Unit =
+        updateForm { it.copy(form = it.form.copy(releaseYear = value)) }
 
-    public fun onTotalSeasonsChange(value: String): Unit = updateForm { it.copy(totalSeasons = value) }
+    public fun onTotalSeasonsChange(value: String): Unit =
+        updateForm { it.copy(form = it.form.copy(totalSeasons = value)) }
 
-    public fun onPurchasePriceChange(value: String): Unit = updateForm { it.copy(purchasePrice = value) }
+    public fun onPurchasePriceChange(value: String): Unit =
+        updateForm {
+            it.copy(form = it.form.copy(purchasePrice = value))
+        }
 
     /**
      * Writes the edited values. Blank numbers go as `null` ("unknown"); text that does not parse is
@@ -142,29 +148,24 @@ public class EditTVShowViewModel(
         val form = _uiState.value as? EditTVShowUiState.Editing ?: return
         if (form.isSaving) return
 
-        val releaseYear = parseOptionalNumber(form.releaseYear, String::toIntOrNull)
-        val totalSeasons = parseOptionalNumber(form.totalSeasons, String::toIntOrNull)
-        val purchasePrice = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull)
-        if (releaseYear == null || totalSeasons == null || purchasePrice == null) {
-            val unreadableField =
-                when {
-                    releaseYear == null -> "release year"
-                    totalSeasons == null -> "total seasons"
-                    else -> "purchase price"
+        val values =
+            when (val parsed = form.form.parsed()) {
+                is ShowFormParse.Unreadable -> {
+                    _uiState.value = form.copy(saveError = parsed.message)
+                    return
                 }
-            _uiState.value = form.copy(saveError = "Enter a valid $unreadableField, or clear the field")
-            return
-        }
+                is ShowFormParse.Valid -> parsed
+            }
 
         _uiState.value = form.copy(isSaving = true, saveError = null)
         viewModelScope.launch {
             val result =
                 tvShowRepository.updateShowMetadata(
                     mediaId = showId,
-                    title = form.title.trim(),
-                    releaseYear = releaseYear.value,
-                    purchasePrice = purchasePrice.value,
-                    totalSeasons = totalSeasons.value,
+                    title = values.title,
+                    releaseYear = values.releaseYear,
+                    purchasePrice = values.purchasePrice,
+                    totalSeasons = values.totalSeasons,
                 )
             val current = _uiState.value as? EditTVShowUiState.Editing ?: return@launch
             _uiState.value =

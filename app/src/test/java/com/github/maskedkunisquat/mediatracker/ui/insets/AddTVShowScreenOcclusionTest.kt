@@ -6,6 +6,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddTVShowScreen
 import com.hub.media.ui.AddTVShowUiState
 import com.hub.media.ui.SeasonRow
+import com.hub.media.ui.ShowFormState
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,19 +45,31 @@ class AddTVShowScreenOcclusionTest {
         composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
     }
 
+    /**
+     * #214 pinned Cancel/Save to the bottom edge, which makes the navigation bar an inset this
+     * screen can lose a control behind. Falsified by zeroing the pinned bar's padding.
+     */
+    @Test
+    fun withTheNavigationBarShowing_theSaveCancelBarStaysAboveIt() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
+    }
+
     @Composable
     private fun Fixture() {
         AddTVShowScreen(
             uiState =
                 AddTVShowUiState(
-                    title = "Breaking Bad",
-                    releaseYear = "2008",
-                    totalSeasons = "5",
-                    purchasePrice = "39.99",
-                    seasons =
-                        listOf(
-                            SeasonRow(seasonNumber = "1", episodeCount = "7"),
-                            SeasonRow(seasonNumber = "2", episodeCount = "13"),
+                    form =
+                        ShowFormState(
+                            title = "Breaking Bad",
+                            releaseYear = "2008",
+                            totalSeasons = "5",
+                            purchasePrice = "39.99",
+                            seasonRows =
+                                listOf(
+                                    SeasonRow(seasonNumber = "1", episodeCount = "7"),
+                                    SeasonRow(seasonNumber = "2", episodeCount = "13"),
+                                ),
                         ),
                 ),
             onTitleChange = {},
@@ -79,6 +92,7 @@ class AddTVShowScreenOcclusionTest {
             listOf(
                 TestTags.AddTVShow.FORM,
                 TestTags.AddTVShow.SAVE_BUTTON,
+                TestTags.AddTVShow.CANCEL_BUTTON,
             )
     }
 }

@@ -3,7 +3,6 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
-import com.hub.media.features.tv.data.SeasonQuickFill
 import com.hub.media.features.tv.data.TVShowRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,11 +33,8 @@ public data class SeasonRow(
  *   its detail screen. `null` until then.
  */
 public data class AddTVShowUiState(
-    val title: String = "",
-    val releaseYear: String = "",
-    val totalSeasons: String = "",
-    val purchasePrice: String = "",
-    val seasons: List<SeasonRow> = emptyList(),
+    /** The field values and quick-fill rows: the shared [ShowFormState] (#214). */
+    val form: ShowFormState = ShowFormState(),
     val isSaving: Boolean = false,
     val saveError: String? = null,
     val savedMediaId: String? = null,
@@ -81,55 +77,29 @@ public class AddTVShowViewModel(
     private val _uiState = MutableStateFlow(AddTVShowUiState())
     public val uiState: StateFlow<AddTVShowUiState> = _uiState.asStateFlow()
 
-    public fun onTitleChange(value: String): Unit = updateForm { it.copy(title = value) }
+    public fun onTitleChange(value: String): Unit = updateFields { it.copy(title = value) }
 
-    public fun onReleaseYearChange(value: String): Unit = updateForm { it.copy(releaseYear = value) }
+    public fun onReleaseYearChange(value: String): Unit = updateFields { it.copy(releaseYear = value) }
 
-    public fun onTotalSeasonsChange(value: String): Unit = updateForm { it.copy(totalSeasons = value) }
+    public fun onTotalSeasonsChange(value: String): Unit = updateFields { it.copy(totalSeasons = value) }
 
-    public fun onPurchasePriceChange(value: String): Unit = updateForm { it.copy(purchasePrice = value) }
+    public fun onPurchasePriceChange(value: String): Unit = updateFields { it.copy(purchasePrice = value) }
 
-    /**
-     * Appends a new, empty season row, pre-filled with the next unused season number: one past the
-     * highest season number currently typed on the form (ignoring rows whose season number is blank
-     * or unreadable), or `1` when there are no rows yet. That is "next unused" only in the common
-     * case of filling seasons in order — a user who deliberately leaves a gap and wants it filled
-     * still has to type the number themselves, which [onSeasonNumberChange] supports.
-     */
-    public fun addSeasonRow() {
-        val current = _uiState.value
-        val nextSeasonNumber =
-            current.seasons
-                .mapNotNull { it.seasonNumber.trim().toIntOrNull() }
-                .maxOrNull()
-                ?.plus(1)
-                ?: 1
-        _uiState.value =
-            current.copy(
-                seasons = current.seasons + SeasonRow(seasonNumber = nextSeasonNumber.toString()),
-            )
-    }
+    /** See [ShowFormState.addingSeasonRow]. */
+    public fun addSeasonRow(): Unit = updateFields { it.addingSeasonRow() }
 
     /** Removes the season row at [index]. Silently ignored if [index] is no longer valid. */
-    public fun removeSeasonRow(index: Int) {
-        val current = _uiState.value
-        if (index !in current.seasons.indices) return
-        _uiState.value = current.copy(seasons = current.seasons.filterIndexed { i, _ -> i != index })
-    }
+    public fun removeSeasonRow(index: Int): Unit = updateFields { it.removingSeasonRow(index) }
 
     public fun onSeasonNumberChange(
         index: Int,
         value: String,
-    ) {
-        updateSeasonRow(index) { it.copy(seasonNumber = value) }
-    }
+    ): Unit = updateFields { form -> form.changingSeasonRow(index) { it.copy(seasonNumber = value) } }
 
     public fun onEpisodeCountChange(
         index: Int,
         value: String,
-    ) {
-        updateSeasonRow(index) { it.copy(episodeCount = value) }
-    }
+    ): Unit = updateFields { form -> form.changingSeasonRow(index) { it.copy(episodeCount = value) } }
 
     /**
      * Validates and saves the show and its quick-filled seasons.
@@ -151,46 +121,24 @@ public class AddTVShowViewModel(
         val current = _uiState.value
         if (current.isSaving || current.savedMediaId != null) return
 
-        val releaseYear = parseOptionalNumber(current.releaseYear, String::toIntOrNull)
-        val totalSeasons = parseOptionalNumber(current.totalSeasons, String::toIntOrNull)
-        val purchasePrice = parseOptionalNumber(current.purchasePrice, String::toDoubleOrNull)
-        if (releaseYear == null || totalSeasons == null || purchasePrice == null) {
-            val unreadableField =
-                when {
-                    releaseYear == null -> "release year"
-                    totalSeasons == null -> "total seasons"
-                    else -> "purchase price"
+        val values =
+            when (val parsed = current.form.parsed()) {
+                is ShowFormParse.Unreadable -> {
+                    _uiState.value = current.copy(saveError = parsed.message)
+                    return
                 }
-            _uiState.value = current.copy(saveError = "Enter a valid $unreadableField, or clear the field")
-            return
-        }
-
-        val seasons = mutableListOf<SeasonQuickFill>()
-        current.seasons.forEachIndexed { index, row ->
-            val seasonNumber =
-                parseRequiredInt(row.seasonNumber)
-                    ?: run {
-                        _uiState.value = current.copy(saveError = "Season row ${index + 1}: enter a season number")
-                        return
-                    }
-            val episodeCount =
-                parseRequiredInt(row.episodeCount)
-                    ?: run {
-                        _uiState.value = current.copy(saveError = "Season row ${index + 1}: enter an episode count")
-                        return
-                    }
-            seasons += SeasonQuickFill(seasonNumber = seasonNumber, episodeCount = episodeCount)
-        }
+                is ShowFormParse.Valid -> parsed
+            }
 
         _uiState.value = current.copy(isSaving = true, saveError = null)
         viewModelScope.launch {
             val result =
                 tvShowRepository.addShow(
-                    title = current.title.trim(),
-                    releaseYear = releaseYear.value,
-                    purchasePrice = purchasePrice.value,
-                    totalSeasons = totalSeasons.value,
-                    seasons = seasons,
+                    title = values.title,
+                    releaseYear = values.releaseYear,
+                    purchasePrice = values.purchasePrice,
+                    totalSeasons = values.totalSeasons,
+                    seasons = values.seasons,
                 )
             val latest = _uiState.value
             _uiState.value =
@@ -219,15 +167,6 @@ public class AddTVShowViewModel(
         _uiState.value = transform(_uiState.value)
     }
 
-    private inline fun updateSeasonRow(
-        index: Int,
-        transform: (SeasonRow) -> SeasonRow,
-    ) {
-        val current = _uiState.value
-        if (index !in current.seasons.indices) return
-        _uiState.value =
-            current.copy(
-                seasons = current.seasons.mapIndexed { i, row -> if (i == index) transform(row) else row },
-            )
-    }
+    private inline fun updateFields(transform: (ShowFormState) -> ShowFormState): Unit =
+        updateForm { it.copy(form = transform(it.form)) }
 }

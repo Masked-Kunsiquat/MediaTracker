@@ -720,6 +720,7 @@
 
     <!-- Manual TV show entry with season quick-fill (Task 13 Phase C) -->
     <string name="add_tv_show_title">Add TV show</string>
+    <string name="add_tv_show_untitled">New show</string>
     <string name="tv_show_search_title">Add TV show</string>
     <string name="movie_search_title">Add film</string>
     <string name="movie_search_field_label">Search TMDB</string>
@@ -745,7 +746,6 @@
     <string name="add_tv_show_episode_count_required_error">Enter an episode count</string>
     <string name="add_tv_show_add_season">Add season</string>
     <string name="add_tv_show_remove_season_content_description">Remove season row %1$d</string>
-    <string name="add_tv_show_save">Save show</string>
 
     <!-- TV show detail (Task 13 Phase C) -->
     <string name="tv_show_detail_not_found">TV show not found</string>

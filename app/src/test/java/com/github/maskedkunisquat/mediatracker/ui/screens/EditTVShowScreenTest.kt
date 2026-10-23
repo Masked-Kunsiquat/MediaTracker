@@ -16,6 +16,7 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.ui.EditTVShowUiState
+import com.hub.media.ui.ShowFormState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -48,10 +49,13 @@ class EditTVShowScreenTest {
         purchasePrice: String = "19.99",
         saveError: String? = null,
     ) = EditTVShowUiState.Editing(
-        title = title,
-        releaseYear = releaseYear,
-        totalSeasons = totalSeasons,
-        purchasePrice = purchasePrice,
+        form =
+            ShowFormState(
+                title = title,
+                releaseYear = releaseYear,
+                totalSeasons = totalSeasons,
+                purchasePrice = purchasePrice,
+            ),
         saveError = saveError,
     )
 

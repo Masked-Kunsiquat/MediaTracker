@@ -1,18 +1,27 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.ui.AddTVShowUiState
 import com.hub.media.ui.SeasonRow
+import com.hub.media.ui.ShowFormState
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,7 +56,7 @@ class AddTVShowScreenTest {
      * [androidx.compose.ui.semantics.Role.Button] with no content description too, so that trick
      * would be ambiguous here.
      */
-    private fun saveButtonMatcher() = hasText(context.getString(R.string.add_tv_show_save)) and hasClickAction()
+    private fun saveButtonMatcher() = hasTestTag(TestTags.AddTVShow.SAVE_BUTTON)
 
     /**
      * Wires [AddTVShowScreen] to a plain [mutableStateOf] reducer that mirrors
@@ -56,46 +65,49 @@ class AddTVShowScreenTest {
      * `AddBookScreenTest.searchClearButton_onlyShownWhenQueryIsNotEmpty` uses for a screen whose
      * state is not `rememberSaveable`-local either.
      */
-    private fun setContent(initialState: AddTVShowUiState = AddTVShowUiState()) {
+    private fun setContent(
+        initialState: AddTVShowUiState = AddTVShowUiState(),
+        onNavigateBack: () -> Unit = {},
+    ) {
         val state = mutableStateOf(initialState)
         composeRule.setContent {
             MediaTrackerTheme {
                 AddTVShowScreen(
                     uiState = state.value,
-                    onTitleChange = { state.value = state.value.copy(title = it) },
-                    onReleaseYearChange = { state.value = state.value.copy(releaseYear = it) },
-                    onTotalSeasonsChange = { state.value = state.value.copy(totalSeasons = it) },
-                    onPurchasePriceChange = { state.value = state.value.copy(purchasePrice = it) },
+                    onTitleChange = { state.value = state.value.copy(form = state.value.form.copy(title = it)) },
+                    onReleaseYearChange = {
+                        state.value =
+                            state.value.copy(form = state.value.form.copy(releaseYear = it))
+                    },
+                    onTotalSeasonsChange = {
+                        state.value =
+                            state.value.copy(form = state.value.form.copy(totalSeasons = it))
+                    },
+                    onPurchasePriceChange = {
+                        state.value =
+                            state.value.copy(form = state.value.form.copy(purchasePrice = it))
+                    },
                     onAddSeasonRow = {
-                        state.value = state.value.copy(seasons = state.value.seasons + SeasonRow())
+                        state.value = state.value.copy(form = state.value.form.addingSeasonRow())
                     },
                     onRemoveSeasonRow = { index ->
-                        state.value =
-                            state.value.copy(
-                                seasons = state.value.seasons.filterIndexed { i, _ -> i != index },
-                            )
+                        state.value = state.value.copy(form = state.value.form.removingSeasonRow(index))
                     },
                     onSeasonNumberChange = { index, value ->
                         state.value =
                             state.value.copy(
-                                seasons =
-                                    state.value.seasons.mapIndexed { i, row ->
-                                        if (i == index) row.copy(seasonNumber = value) else row
-                                    },
+                                form = state.value.form.changingSeasonRow(index) { it.copy(seasonNumber = value) },
                             )
                     },
                     onEpisodeCountChange = { index, value ->
                         state.value =
                             state.value.copy(
-                                seasons =
-                                    state.value.seasons.mapIndexed { i, row ->
-                                        if (i == index) row.copy(episodeCount = value) else row
-                                    },
+                                form = state.value.form.changingSeasonRow(index) { it.copy(episodeCount = value) },
                             )
                     },
                     onSave = {},
                     onErrorShown = {},
-                    onNavigateBack = {},
+                    onNavigateBack = onNavigateBack,
                 )
             }
         }
@@ -166,10 +178,50 @@ class AddTVShowScreenTest {
         // fields above): a blank one is a row the user has not finished filling in, not "unknown
         // episode count." Constructed directly rather than via the "Add season" button + typing,
         // since a freshly-added row already starts with a blank episode count.
-        setContent(initialState = AddTVShowUiState(seasons = listOf(SeasonRow(seasonNumber = "1"))))
+        setContent(
+            initialState = AddTVShowUiState(form = ShowFormState(seasonRows = listOf(SeasonRow(seasonNumber = "1")))),
+        )
 
         typeIntoField(R.string.add_tv_show_field_title, "Chernobyl")
 
+        composeRule.onNode(saveButtonMatcher()).assertIsNotEnabled()
+    }
+
+    /** #214: the edit form's cards and its pinned Cancel/Save, not a flat column and an inline button. */
+    @Test
+    fun form_isInCards_withSaveAndCancelPinned() {
+        setContent()
+
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_details)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_purchase)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.add_tv_show_seasons_section_label)).assertExists()
+        composeRule.onNode(saveButtonMatcher()).assertExists()
+        composeRule.onNodeWithTag(TestTags.AddTVShow.CANCEL_BUTTON).assertExists()
+    }
+
+    @Test
+    fun cancel_navigatesBack() {
+        var backs = 0
+        setContent(onNavigateBack = { backs++ })
+
+        composeRule.onNodeWithTag(TestTags.AddTVShow.CANCEL_BUTTON).performClick()
+
+        assertEquals(1, backs)
+    }
+
+    /**
+     * The form opens empty, so a blank title is not yet a mistake: flagging it would put the first
+     * field in an error state before anything was typed. The disabled Save already says the title is
+     * required. Edit show flags it, rightly -- there a blank title means a value was cleared.
+     */
+    @Test
+    fun anEmptyForm_doesNotFlagTheTitle() {
+        setContent()
+
+        val titleLabel = context.getString(R.string.add_tv_show_field_title)
+        composeRule
+            .onNode(hasText(titleLabel) and hasSetTextAction())
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
         composeRule.onNode(saveButtonMatcher()).assertIsNotEnabled()
     }
 }

@@ -125,6 +125,7 @@ fun AddMovieScreen(
                 )
             },
             enabled = !isSaving,
+            flagBlankTitle = false,
             onTitleChange = onTitleChange,
             onReleaseYearChange = onReleaseYearChange,
             onRuntimeChange = onRuntimeChange,

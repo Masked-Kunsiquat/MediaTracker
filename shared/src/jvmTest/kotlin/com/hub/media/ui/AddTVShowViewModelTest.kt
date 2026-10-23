@@ -84,7 +84,7 @@ class AddTVShowViewModelTest {
             viewModel.addSeasonRow()
             assertEquals(
                 "1",
-                viewModel.uiState.value.seasons[0]
+                viewModel.uiState.value.form.seasonRows[0]
                     .seasonNumber,
             )
 
@@ -93,7 +93,7 @@ class AddTVShowViewModelTest {
 
             assertEquals(
                 "4",
-                viewModel.uiState.value.seasons[1]
+                viewModel.uiState.value.form.seasonRows[1]
                     .seasonNumber,
             )
         }
@@ -109,7 +109,7 @@ class AddTVShowViewModelTest {
 
             viewModel.removeSeasonRow(0)
 
-            val remaining = viewModel.uiState.value.seasons
+            val remaining = viewModel.uiState.value.form.seasonRows
             assertEquals(1, remaining.size)
             assertEquals("2", remaining[0].seasonNumber)
         }
@@ -271,6 +271,6 @@ class AddTVShowViewModelTest {
 
             val state = viewModel.uiState.value
             assertNull(state.saveError)
-            assertEquals("Show", state.title, "this ViewModel owns the field values, unlike AddMovieViewModel")
+            assertEquals("Show", state.form.title, "this ViewModel owns the field values, unlike AddMovieViewModel")
         }
 }
