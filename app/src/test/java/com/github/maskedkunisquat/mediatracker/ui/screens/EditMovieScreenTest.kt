@@ -118,6 +118,35 @@ class EditMovieScreenTest {
         composeRule.onNode(saveButtonMatcher).assertIsEnabled()
     }
 
+    @Test
+    fun anUnreadableRuntime_showsItsErrorAndBlocksSave() {
+        setContent(editing(runtimeMinutes = "1.2"))
+
+        composeRule.onNodeWithText(context.getString(R.string.add_movie_runtime_invalid_error)).assertIsDisplayed()
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+    }
+
+    /**
+     * #214: a year TMDB or the user supplies outside MovieMetadataValidation's range is flagged on the
+     * field, as Edit book flags one, rather than reaching the repository and coming back as a
+     * snackbar. The review form opens prefilled, so the field is where the user will look.
+     */
+    @Test
+    fun aYearOutOfRange_showsItsErrorAndBlocksSave() {
+        setContent(editing(releaseYear = "1700"))
+
+        composeRule.onNode(hasText("1700") and hasSetTextAction()).assertIsDisplayed()
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+    }
+
+    @Test
+    fun aZeroRuntime_showsItsErrorAndBlocksSave() {
+        setContent(editing(runtimeMinutes = "0"))
+
+        composeRule.onNodeWithText(context.getString(R.string.add_movie_runtime_invalid_error)).assertIsDisplayed()
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+    }
+
     /**
      * The price field's input filter reaches its callback (#83): these ten tests stubbed
      * `onPurchasePriceChange` out entirely, so the screen was covered while the one field on it
