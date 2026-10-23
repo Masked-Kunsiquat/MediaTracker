@@ -560,6 +560,9 @@
     <string name="import_summary_rejection_line">%1$s row %2$d: %3$s</string>
     <string name="import_summary_no_rejections">Every row imported cleanly.</string>
     <string name="import_summary_notes_title">Notes</string>
+    <!-- Named, not "Start backfill": a mixed import shows both side by side (#149). -->
+    <string name="import_summary_backfill_books_button">Backfill books</string>
+    <string name="import_summary_backfill_films_shows_button">Backfill films &amp; shows</string>
 
     <!-- SettingsScreen: Goodreads import (ROADMAP Task 8 Phase D) -->
     <string name="settings_import_goodreads_label">Import from Goodreads</string>

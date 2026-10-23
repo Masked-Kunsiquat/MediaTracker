@@ -31,63 +31,43 @@ single list below and reordering is a one-line edit there.
 
 ## Execution order
 
-1. **Task 9 — Search & discovery** ← next. *Partially done*: Phase A (authors + local library
-   search) and Phase B (title/author type-ahead, plus work-to-editions selection) have both
-   shipped, in `v0.13.0` and `v0.14.0`; still outstanding: manual entry and paste-to-add
-   (Phase C), barcode scanning (Phase D, blocked on a decision that is the user's), and advanced
-   search filters (Phase E, [#66](https://github.com/Masked-Kunsiquat/MediaTracker/issues/66)). It was paused in favour of Task 14, and that dependency has
-   since been paid off — Task 14's backfill re-queries providers for `BookMetadata`, which carries
-   **both** the cover URL and the authors, so the one rate-limited crawl that repaired the covers
-   also filled the authors Phase A could not add retroactively for books predating it. Nothing
-   blocks the remaining phases now.
-2. Task 10 — Re-read modeling (ratings land here)
-3. Task 11 — Analytics & stats revamp
-4. Task 12 — Genre tracking
-5. **Task 13 — Movies & TV.** *Mostly done*: Phase A (schema v6), Phase B (movies, manual entry)
-   and Phase C (shows, episode-level via quick-fill) all shipped in `v0.15.0`, which is also the
-   release that froze schema v6. **Phase D's scope is now built** — the TMDB client and credential,
-   add-by-search for films and shows, the enrichment backfill of episode metadata onto rows that
-   already exist, and posters **for titles added through search**
-   ([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). The per-show refresh fills a
-   show's episode metadata and does *not* fetch a missing poster; the library-wide pass that does
-   fill artwork, runtimes, years, ratings and show synopses for titles added earlier shipped as
-   [#140](https://github.com/Masked-Kunsiquat/MediaTracker/issues/140), as a **second** Settings
-   action beside the book one rather than a merged pass — decided against
-   [#126](https://github.com/Masked-Kunsiquat/MediaTracker/issues/126)'s domain-sectioned Settings
-   screen, which has a home for each and none for a control spanning both. Its schema questions
-   were settled before the freeze and cost nothing afterwards: episodes needed no provider id of
-   their own, and every column the backfill fills was added in #86 while v6 was still editable.
-   What Phase D deliberately did *not* decide is tracked separately rather than left implicit —
-   whether the backfill should create specials ([#122](https://github.com/Masked-Kunsiquat/MediaTracker/issues/122)),
-   what a user may do about a count mismatch ([#123](https://github.com/Masked-Kunsiquat/MediaTracker/issues/123)),
-   and where a synopsis belongs now that only shows can hold one
-   ([#133](https://github.com/Masked-Kunsiquat/MediaTracker/issues/133)). Episode stills are not
-   downloaded, by decision — see `EpisodeEntity.stillImageHash`.
-   **Follow-ups from [#80](https://github.com/Masked-Kunsiquat/MediaTracker/issues/80)'s TV Time
-   comparison shipped in `v0.23.0`:** an *Include specials* setting
-   ([#88](https://github.com/Masked-Kunsiquat/MediaTracker/issues/88)), the Up next queue
-   ([#89](https://github.com/Masked-Kunsiquat/MediaTracker/issues/89)), and ticks that ask *when*
-   with an exact-date Undo on untick
-   ([#131](https://github.com/Masked-Kunsiquat/MediaTracker/issues/131), part A of
-   [#153](https://github.com/Masked-Kunsiquat/MediaTracker/issues/153)), restyled as TV Time-style
-   check-circles. Watch history followed in `v0.24.0`: "Watched again", a viewing history with edit
-   and delete, and viewings in the CSV, for episodes
-   ([#90](https://github.com/Masked-Kunsiquat/MediaTracker/issues/90)) and films
-   ([#192](https://github.com/Masked-Kunsiquat/MediaTracker/issues/192)). `v0.25.0` shipped
-   [#162](https://github.com/Masked-Kunsiquat/MediaTracker/issues/162) (the backup picker's
-   lost state and a startup sweep of leaked temp files),
-   [#196](https://github.com/Masked-Kunsiquat/MediaTracker/issues/196) (one `.zip` instead of four
-   CSV files and four pickers) and
-   [#173](https://github.com/Masked-Kunsiquat/MediaTracker/issues/173) (an edit screen for TV
-   shows). [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81) is complete: its last
-   item put the catches around suspending code in `shared/` behind one cancellation-safe helper,
-   leaving five hand-written where the cancellation branch has work to do.
-   **Next:** its two follow-ups — making the restore swap non-cancellable on its own rather than
-   relying on its caller ([#203](https://github.com/Masked-Kunsiquat/MediaTracker/issues/203)), and splitting
-   `TVShowDetailScreen.kt` and `BookSessionDialogs.kt`, which outgrew #81's size bar after it was
-   written ([#204](https://github.com/Masked-Kunsiquat/MediaTracker/issues/204)). #122 is unblocked by #88 and small now.
-6. Task 16 — Signing & distribution. Sequenced late because nothing about it blocks a feature, but
-   the signing half is separable and slightly cheaper to do sooner — see that task's own note.
+Re-ordered 2026-10-22 to match the board, which had every open issue at *Later*. The board is still
+the authority (see above); this list is its coarse, task-level reading, with the reason for each place.
+
+**Now**
+- **A small-bug batch**: [#149](https://github.com/Masked-Kunsiquat/MediaTracker/issues/149) (the
+  import summary offers the films-and-shows backfill too),
+  [#117](https://github.com/Masked-Kunsiquat/MediaTracker/issues/117) (a reading session can't import
+  onto a film or show) and [#210](https://github.com/Masked-Kunsiquat/MediaTracker/issues/210) (staging
+  a restore leaves no `-wal`/`-shm` behind). One PR, because each is small.
+
+**Next**, in this order
+1. [#214](https://github.com/Masked-Kunsiquat/MediaTracker/issues/214): the Add screens get #141's
+   revamp, which the Edit screens already have. The most visible gap left.
+2. [#157](https://github.com/Masked-Kunsiquat/MediaTracker/issues/157): somewhere for a book's
+   synopsis to come from, now that books have somewhere to put one.
+3. [#241](https://github.com/Masked-Kunsiquat/MediaTracker/issues/241): **Task 16 — Signing &
+   distribution**, the signing key first. Its sequencing note argues for doing that part early: the
+   first release-signed install wipes the app's data, which is easier to plan for than to discover.
+4. [#122](https://github.com/Masked-Kunsiquat/MediaTracker/issues/122): decide whether the TMDB
+   backfill creates specials (season 0). Small since #88.
+
+**Later**
+- [#66](https://github.com/Masked-Kunsiquat/MediaTracker/issues/66): **Task 9** Phase E, advanced
+  search filters. Task 9's Phases C (manual entry and paste-to-add) and D (barcode scanning, blocked
+  on a decision that is the owner's) are still described below but have no issue yet.
+- [#240](https://github.com/Masked-Kunsiquat/MediaTracker/issues/240): **Task 12 — Genre
+  tracking**. Needs schema v9, and pairs with #66, since filtering by genre is part of it.
+- Debt: [#204](https://github.com/Masked-Kunsiquat/MediaTracker/issues/204) (split two oversized
+  screen files) and [#195](https://github.com/Masked-Kunsiquat/MediaTracker/issues/195) (film
+  history follow-ups).
+- [#197](https://github.com/Masked-Kunsiquat/MediaTracker/issues/197): an idea only (AppFunctions,
+  A2UI); not ready to build.
+- **Task 17 — Data-layer error contract**: planned but unsequenced, with no issue.
+
+**Done** since the previous order: **Task 10** (re-reads and ratings, `v0.29.0`) and **Task 11**
+(the stats theme: #91, #219, #217, #221 and #220's three parts). **Task 13** is done but for #122;
+what shipped after its phase plan is recorded at the top of its section.
 
 ## Index
 
@@ -108,12 +88,12 @@ the same edit. Note the `(done)` suffixes are part of the anchor for exactly tha
 | [Task 8 — Data portability](#task-8--data-portability-done) | done |
 | [Task 9 — Search & discovery](#task-9--search--discovery) | **in progress** |
 | [Task 10 — Re-read modeling](#task-10--re-read-modeling) | done: books (#230), films and shows (#231), rating stats (#232) |
-| [Task 11 — Analytics & stats revamp](#task-11--analytics--stats-revamp) | planned |
-| [Task 12 — Genre tracking](#task-12--genre-tracking) | planned |
-| [Task 13 — Movies & TV](#task-13--movies--tv) | **in progress** — A/B/C shipped in `v0.15.0`; Phase D's client, search, backfill and posters are done |
+| [Task 11 — Analytics & stats revamp](#task-11--analytics--stats-revamp) | done: #91, #219, #217, #221, #220 |
+| [Task 12 — Genre tracking](#task-12--genre-tracking) | planned: #240, Later |
+| [Task 13 — Movies & TV](#task-13--movies--tv) | done but for #122 (specials) |
 | [Task 14 — Bulk operations & cover backfill](#task-14--bulk-operations--cover-backfill) | done |
 | [Task 15 — Logging](#task-15--logging) | done |
-| [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned |
+| [Task 16 — Signing & distribution](#task-16--signing--distribution) | planned: #241, Next |
 | [Task 17 — Data-layer error contract](#task-17--data-layer-error-contract) | planned, unsequenced |
 | [Blocked on external changes](#blocked-on-external-changes) | — |
 | [Backlog / tech debt](#backlog--tech-debt) | — |
@@ -744,6 +724,54 @@ and never implemented: there is no genre column, table, or UI anywhere today.
   keep the taxonomy purely user-authored.
 
 ## Task 13 — Movies & TV
+
+### Status (moved here from Execution order, 2026-10-22)
+
+*Mostly done*: Phase A (schema v6), Phase B (movies, manual entry)
+and Phase C (shows, episode-level via quick-fill) all shipped in `v0.15.0`, which is also the
+release that froze schema v6. **Phase D's scope is now built** — the TMDB client and credential,
+add-by-search for films and shows, the enrichment backfill of episode metadata onto rows that
+already exist, and posters **for titles added through search**
+([#75](https://github.com/Masked-Kunsiquat/MediaTracker/issues/75)). The per-show refresh fills a
+show's episode metadata and does *not* fetch a missing poster; the library-wide pass that does
+fill artwork, runtimes, years, ratings and show synopses for titles added earlier shipped as
+[#140](https://github.com/Masked-Kunsiquat/MediaTracker/issues/140), as a **second** Settings
+action beside the book one rather than a merged pass — decided against
+[#126](https://github.com/Masked-Kunsiquat/MediaTracker/issues/126)'s domain-sectioned Settings
+screen, which has a home for each and none for a control spanning both. Its schema questions
+were settled before the freeze and cost nothing afterwards: episodes needed no provider id of
+their own, and every column the backfill fills was added in #86 while v6 was still editable.
+What Phase D deliberately did *not* decide is tracked separately rather than left implicit —
+whether the backfill should create specials ([#122](https://github.com/Masked-Kunsiquat/MediaTracker/issues/122)),
+what a user may do about a count mismatch ([#123](https://github.com/Masked-Kunsiquat/MediaTracker/issues/123), since built:
+the backfill's *Review differences* screen),
+and where a synopsis belongs now that only shows can hold one
+([#133](https://github.com/Masked-Kunsiquat/MediaTracker/issues/133), since settled: `MIGRATION_6_7`
+moved it to `media_items.synopsis`, shipped in `v0.20.0`). Episode stills are not
+downloaded, by decision — see `EpisodeEntity.stillImageHash`.
+**Follow-ups from [#80](https://github.com/Masked-Kunsiquat/MediaTracker/issues/80)'s TV Time
+comparison shipped in `v0.23.0`:** an *Include specials* setting
+([#88](https://github.com/Masked-Kunsiquat/MediaTracker/issues/88)), the Up next queue
+([#89](https://github.com/Masked-Kunsiquat/MediaTracker/issues/89)), and ticks that ask *when*
+with an exact-date Undo on untick
+([#131](https://github.com/Masked-Kunsiquat/MediaTracker/issues/131), part A of
+[#153](https://github.com/Masked-Kunsiquat/MediaTracker/issues/153)), restyled as TV Time-style
+check-circles. Watch history followed in `v0.24.0`: "Watched again", a viewing history with edit
+and delete, and viewings in the CSV, for episodes
+([#90](https://github.com/Masked-Kunsiquat/MediaTracker/issues/90)) and films
+([#192](https://github.com/Masked-Kunsiquat/MediaTracker/issues/192)). `v0.25.0` shipped
+[#162](https://github.com/Masked-Kunsiquat/MediaTracker/issues/162) (the backup picker's
+lost state and a startup sweep of leaked temp files),
+[#196](https://github.com/Masked-Kunsiquat/MediaTracker/issues/196) (one `.zip` instead of four
+CSV files and four pickers) and
+[#173](https://github.com/Masked-Kunsiquat/MediaTracker/issues/173) (an edit screen for TV
+shows). [#81](https://github.com/Masked-Kunsiquat/MediaTracker/issues/81) is complete: its last
+item put the catches around suspending code in `shared/` behind one cancellation-safe helper,
+leaving five hand-written where the cancellation branch has work to do.
+**Next:** its two follow-ups — making the restore swap non-cancellable on its own rather than
+relying on its caller ([#203](https://github.com/Masked-Kunsiquat/MediaTracker/issues/203)), and splitting
+`TVShowDetailScreen.kt` and `BookSessionDialogs.kt`, which outgrew #81's size bar after it was
+written ([#204](https://github.com/Masked-Kunsiquat/MediaTracker/issues/204)). #122 is unblocked by #88 and small now.
 
 ### Phase plan (added 2026-08-20)
 

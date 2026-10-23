@@ -14,7 +14,9 @@ import com.hub.media.core.util.warn
  *   a destination picker that never reported back -- the process died while the picker was open.
  *   A whole-database-sized file, and nothing else ever looked for it.
  * - **`restore-incoming-*.tmp`** in the cache directory: a picked restore file copied in, then
- *   abandoned -- by process death, or by a restore rejected before it was staged.
+ *   abandoned -- by process death, or by a restore rejected before it was staged. Its
+ *   `-wal`/`-shm` go with it: staging left those beside every candidate until #210, and nothing
+ *   else removed them.
  *
  * Only files last modified **before this process started** are removed: neither flow survives a
  * process (both keep their pending file in a ViewModel), so those are certainly abandoned. The sweep
@@ -40,7 +42,9 @@ public class SweepStaleTempFilesUseCase(
                         modified < startedAtMillis && name.startsWith(backupPrefix) && name.endsWith(".tmp")
                     } +
                         deleteFilesMatching(cacheDirPath) { name, modified ->
-                            modified < startedAtMillis && name.startsWith("restore-incoming-") && name.endsWith(".tmp")
+                            modified < startedAtMillis &&
+                                name.startsWith("restore-incoming-") &&
+                                RESTORE_SUFFIXES.any { name.endsWith(it) }
                         }
                 if (removed > 0) logger.info(TAG) { "Removed $removed stale temp file(s)" }
                 removed
@@ -53,5 +57,6 @@ public class SweepStaleTempFilesUseCase(
 
     private companion object {
         const val TAG = "SweepStaleTempFiles"
+        val RESTORE_SUFFIXES = listOf(".tmp", ".tmp-wal", ".tmp-shm")
     }
 }

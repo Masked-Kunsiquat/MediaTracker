@@ -94,10 +94,12 @@ public data class StagedRestoreInfo(
  * corrupted in transit, or -- despite starting with the same standard SQLite magic string --
  * belonging to a completely different program; for an operation this destructive (AGENTS.md §1: no
  * cloud copy to fall back on), that bar was too low. Either failure mode is refused with a clear
- * message and the candidate is deleted, exactly like pass 1's rejections. Opening the connection
- * read-only matters too: this pass only ever *validates* the candidate, so it must never itself be
+ * message and the candidate is deleted, exactly like pass 1's rejections. How the connection is
+ * opened matters too: this pass only ever *validates* the candidate, so it must never itself be
  * able to modify the file or spawn `-wal`/`-shm` sidecars next to it -- that would be a side effect
  * of merely picking a file to look at, before the user has even confirmed anything destructive.
+ * Read-only alone did spawn them (#210), so the candidate is also opened `immutable`; see
+ * [com.hub.media.core.database.openStagedCandidate].
  *
  * `user_version` older than or equal to the current version, having passed both passes -> accepted.
  * An **older** version is legitimate and deliberately allowed through: [com.hub.media.core.database.buildAppDatabase]

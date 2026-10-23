@@ -451,7 +451,6 @@ public class ImportDataUseCase(
             val mediaResolution =
                 resolveMediaRows(existingMedia, existingIdentifiersByMediaId, libraryParseResults, duplicatePolicy)
             val rejections = mediaResolution.rejections.toMutableList()
-            val knownMediaIds = mediaResolution.knownMediaIds.toMutableSet()
 
             // Reads (#230). Every read this import ends with, by (book, number), so a session can point at its
             // read before anything is written: existing reads keep their ids, new ones get theirs now.
@@ -621,7 +620,8 @@ public class ImportDataUseCase(
 
                     is SessionRowParseResult.Parsed -> {
                         val row = parsed.row
-                        if (row.mediaId !in knownMediaIds) {
+                        val sessionMediaType = mediaResolution.typeOfKnownMediaId[row.mediaId]
+                        if (sessionMediaType == null) {
                             rejections +=
                                 ImportRejection(
                                     ImportRowSource.SESSION,
@@ -629,6 +629,16 @@ public class ImportDataUseCase(
                                     "media_id '${row.mediaId}' is not a known book (not already in your " +
                                         "library, and not present in the library file being imported) -- " +
                                         "session skipped",
+                                )
+                        } else if (sessionMediaType != MediaType.BOOK) {
+                            // A category error, not an orphan (#117) -- the episode loop's rule, for the
+                            // same reason: `readingSessions.mediaId` only requires *some* media item, so the
+                            // session would insert cleanly against a film and never be shown by anything.
+                            rejections +=
+                                ImportRejection(
+                                    ImportRowSource.SESSION,
+                                    rowNumber,
+                                    "media_id '${row.mediaId}' is a $sessionMediaType, not a book -- session skipped",
                                 )
                         } else {
                             // The book this session's own media_id resolved to -- may differ from
@@ -1115,13 +1125,6 @@ public class ImportDataUseCase(
         val merged: Int,
         val replaced: Int,
         /**
-         * Every media id known after this resolution: pre-existing books, every fresh insert, and
-         * -- for a row that matched an existing/in-file book on the isbn or title+year tier -- both
-         * the matched book's real id and the row's own `media_id` (see class KDoc, "Ordering and
-         * orphan sessions").
-         */
-        val knownMediaIds: Set<String>,
-        /**
          * Every library row's own `media_id` (as it appeared in the file) mapped to the id it
          * actually resolved to in the database: itself for a fresh insert, or the matched book's
          * real id for a duplicate. Used to rewrite a session's `mediaId` onto the book it actually
@@ -1135,10 +1138,16 @@ public class ImportDataUseCase(
          */
         val reviewNotes: List<String>,
         /**
-         * What each id in [knownMediaIds] actually is. An episode row must land on a `TV_SHOW` and
-         * nothing else -- `episodes.mediaId` alone would happily accept a book, producing a row no
-         * screen ever reads rather than an error (Issue #106). Keyed by the same ids
-         * [knownMediaIds] holds, so a show matched under the file's id resolves through either.
+         * Every media id known after this resolution, and what it actually is. The keys are the
+         * pre-existing items, every fresh insert, and -- for a row that matched an existing/in-file
+         * item on the isbn or title+year tier -- both the matched item's real id and the row's own
+         * `media_id` (see class KDoc, "Ordering and orphan sessions"), so an item matched under the
+         * file's id resolves through either. An id missing here is an orphan.
+         *
+         * The type matters as much as the key: an episode row must land on a `TV_SHOW` (Issue #106)
+         * and a reading session on a `BOOK` (#117). `episodes.mediaId` and `readingSessions.mediaId`
+         * alone would happily accept the wrong kind, producing a row no screen ever reads rather
+         * than an error.
          */
         val typeOfKnownMediaId: Map<String, MediaType>,
     )
@@ -1190,7 +1199,6 @@ public class ImportDataUseCase(
         // match resolved *through this map* is reported via reviewNotes below, never applied silently.
         val byTitleOnly = existingMedia.associateByTo(mutableMapOf()) { titleOnlyKey(it.item.type, it.item.title) }
         val currentIdentifiersByMediaId = existingIdentifiersByMediaId.toMutableMap()
-        val knownMediaIds = existingMedia.mapTo(mutableSetOf()) { it.item.id }
         val typeOfKnownMediaId = existingMedia.associateTo(mutableMapOf()) { it.item.id to it.item.type }
         val resolvedMediaId = mutableMapOf<String, String>()
         val reviewNotes = mutableListOf<String>()
@@ -1261,7 +1269,6 @@ public class ImportDataUseCase(
                         inserts += insert
                         imported++
                         if (row.type == MediaType.BOOK) importedBooks++
-                        knownMediaIds += row.mediaId
                         typeOfKnownMediaId[row.mediaId] = row.type
                         resolvedMediaId[row.mediaId] = row.mediaId
                         registerCurrentState(row.mediaId, stateOf(insert.mediaItem, insert.details), insert.identifiers)
@@ -1270,8 +1277,6 @@ public class ImportDataUseCase(
                         // Both ids are "known": the item's real id, and this row's own media_id,
                         // which may differ from it (isbn/title+year/title-only tier) -- a session or
                         // episode referencing either must not be treated as an orphan (Finding 2).
-                        knownMediaIds += matchedId
-                        knownMediaIds += row.mediaId
                         // The *matched* item's type under both ids, not the row's. They can only
                         // differ if the row was rejected already (every matching key is scoped by
                         // type), but an episode must be checked against what is actually in the
@@ -1317,7 +1322,6 @@ public class ImportDataUseCase(
             skipped,
             merged,
             replaced,
-            knownMediaIds,
             resolvedMediaId,
             reviewNotes,
             typeOfKnownMediaId,

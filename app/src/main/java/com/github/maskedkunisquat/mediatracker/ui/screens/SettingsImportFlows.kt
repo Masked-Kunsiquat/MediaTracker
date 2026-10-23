@@ -133,8 +133,8 @@ internal fun rememberGoodreadsImportLauncher(
 
 /**
  * Renders the outcome of either import chain: an error [SnackbarHostState.showSnackbar], or --
- * on success -- the [ImportSummaryDialog]. [onStartBackfill] is what that dialog's optional
- * "start backfill" action calls.
+ * on success -- the [ImportSummaryDialog]. [onStartBackfill] and [onStartTmdbBackfill] are what that
+ * dialog's optional backfill actions call: the books pass and the films-and-shows pass.
  */
 @Composable
 internal fun ImportOutcome(
@@ -142,6 +142,7 @@ internal fun ImportOutcome(
     importViewModel: ImportViewModel,
     snackbarHostState: SnackbarHostState,
     onStartBackfill: () -> Unit,
+    onStartTmdbBackfill: () -> Unit,
 ) {
     // Import's Success state is rendered as a summary AlertDialog (below) rather than a Snackbar --
     // a Snackbar's single line can't show per-row rejection reasons, and this phase's brief is
@@ -160,9 +161,13 @@ internal fun ImportOutcome(
         ImportSummaryDialog(
             summary = state.summary,
             onDismiss = importViewModel::reset,
-            onBackfillClick = {
+            onBackfillBooksClick = {
                 importViewModel.reset()
                 onStartBackfill()
+            },
+            onBackfillFilmsAndShowsClick = {
+                importViewModel.reset()
+                onStartTmdbBackfill()
             },
         )
     }
@@ -173,24 +178,25 @@ internal fun ImportOutcome(
  * outcome, plus every rejected row's reason (scrollable, since a large messy import could reject
  * many rows) -- see [ImportSummary]'s KDoc for why a bare "done" isn't acceptable here.
  *
- * @param onBackfillClick Starts the bulk cover/author backfill (ROADMAP Task 14 Phase A) and
- *   dismisses this dialog, offered as a dismiss-button-adjacent action whenever [summary] actually
- *   added **books** ([ImportSummary.booksImported] > 0) -- the moment a coverless/authorless import
- *   just landed (a Goodreads import above all) is exactly when the need for a backfill is obvious,
- *   per that phase's brief. Never shown for an import that added nothing (a pure duplicate-skip
- *   pass has no new gaps to fill).
+ * Each backfill is offered beside the dismiss button only when this import gave it something to do.
+ * The moment a coverless import just landed (a Goodreads import above all) is exactly when the need
+ * is obvious (ROADMAP Task 14 Phase A). Neither is shown for an import that added nothing: a pure
+ * duplicate-skip pass has no new gaps to fill.
  *
- *   Books specifically, not [ImportSummary.itemsImported]. That backfill seeds itself from
- *   `BookRepository.getAllBooksWithDetails()`, so an import of only films and shows gives it
- *   nothing to do -- offering it there would produce a button whose entire effect is to log
- *   "nothing pending". The distinction did not exist while only books could be imported.
+ * @param onBackfillBooksClick Starts the cover/author backfill and dismisses this dialog. Offered when
+ *   the import added **books** ([ImportSummary.booksImported] > 0), not any item: that pass seeds
+ *   itself from `BookRepository.getAllBooksWithDetails()`, so after a films-and-shows-only import it
+ *   could only log "nothing pending".
+ * @param onBackfillFilmsAndShowsClick Starts the films-and-shows pass (#140) and dismisses this dialog.
+ *   Offered when the import added a film or show (#149): every library item that is not a book.
+ *   A mixed import offers both, which is why each button names its pass.
  */
-
 @Composable
-private fun ImportSummaryDialog(
+internal fun ImportSummaryDialog(
     summary: ImportSummary,
     onDismiss: () -> Unit,
-    onBackfillClick: () -> Unit,
+    onBackfillBooksClick: () -> Unit,
+    onBackfillFilmsAndShowsClick: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -198,9 +204,17 @@ private fun ImportSummaryDialog(
             Button(onClick = onDismiss) { Text(stringResource(R.string.ok_button)) }
         },
         dismissButton = {
+            // Every library item that is not a book is a film or a show. The buttons are emitted
+            // directly, not in a Row, so the dialog's own flow row can wrap them at a large font.
+            val filmsAndShowsImported = summary.itemsImported - summary.booksImported
             if (summary.booksImported > 0) {
-                TextButton(onClick = onBackfillClick) {
-                    Text(stringResource(R.string.settings_backfill_start_button))
+                TextButton(onClick = onBackfillBooksClick) {
+                    Text(stringResource(R.string.import_summary_backfill_books_button))
+                }
+            }
+            if (filmsAndShowsImported > 0) {
+                TextButton(onClick = onBackfillFilmsAndShowsClick) {
+                    Text(stringResource(R.string.import_summary_backfill_films_shows_button))
                 }
             }
         },
