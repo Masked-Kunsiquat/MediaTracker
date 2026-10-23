@@ -49,14 +49,12 @@ class AddMovieViewModelTest {
 
     private fun newViewModel(): AddMovieViewModel = viewModels.track(AddMovieViewModel(movieRepository))
 
-    private fun AddMovieViewModel.saveArrival() =
-        save(
-            title = "Arrival",
-            releaseYear = 2016,
-            runtimeMinutes = 116,
-            purchasePrice = null,
-            status = WatchStatus.WATCHLIST,
-        )
+    private fun AddMovieViewModel.saveArrival() {
+        onTitleChange("Arrival")
+        onReleaseYearChange("2016")
+        onRuntimeChange("116")
+        save()
+    }
 
     private suspend fun movieCount(): Int =
         db
@@ -115,7 +113,11 @@ class AddMovieViewModelTest {
     fun save_watchedOnPickedDay_storesThatViewing() =
         runTest {
             val vm = viewModels.track(AddMovieViewModel(MovieRepository(db, zone = TimeZone.UTC)))
-            vm.save("Heat", null, null, null, WatchStatus.WATCHED, WatchedWhen.On(LocalDate(2024, 3, 3)))
+            vm.onTitleChange("Heat")
+            vm.onStatusChange(WatchStatus.WATCHED)
+            vm.form.first { it.pendingWatched }
+            vm.confirmWatched(WatchedWhen.On(LocalDate(2024, 3, 3)))
+            vm.save()
             val id = (vm.uiState.first { it is AddMovieUiState.Saved } as AddMovieUiState.Saved).mediaId
             assertEquals(
                 listOf(Instant.parse("2024-03-03T12:00:00Z")),
@@ -125,5 +127,47 @@ class AddMovieViewModelTest {
                     .first()
                     .map { it.watchedAt },
             )
+        }
+
+    /** #214: the form's values live here now, so the save reads them rather than taking arguments. */
+    @Test
+    fun save_usesTheFormsValues() =
+        runTest {
+            val vm = newViewModel()
+            vm.onTitleChange("  Arrival ")
+            vm.onReleaseYearChange("2016")
+            vm.onRuntimeChange("116")
+            vm.onPurchasePriceChange("9.99")
+            vm.save()
+
+            val id = (vm.uiState.first { it is AddMovieUiState.Saved } as AddMovieUiState.Saved).mediaId
+            val item = db.mediaItemDao().getById(id)
+            assertEquals("Arrival", item?.title)
+            assertEquals(2016, item?.releaseYear)
+            assertEquals(9.99, item?.purchasePrice)
+            assertEquals(116, db.movieDetailsDao().getByMediaId(id)?.runtimeMinutes)
+        }
+
+    @Test
+    fun save_anUnreadableField_isReportedAndNothingIsWritten() =
+        runTest {
+            val vm = newViewModel()
+            vm.onTitleChange("Arrival")
+            vm.onRuntimeChange("1.2")
+            vm.save()
+
+            val error = vm.uiState.first { it is AddMovieUiState.Error } as AddMovieUiState.Error
+            assertEquals("Enter a valid runtime, or clear the field", error.message)
+            assertEquals(0, movieCount())
+        }
+
+    @Test
+    fun choosingWatched_asksWhenBeforeTheStatusChanges() =
+        runTest {
+            val vm = newViewModel()
+            vm.onStatusChange(WatchStatus.WATCHED)
+
+            val form = vm.form.first { it.pendingWatched }
+            assertEquals(WatchStatus.WATCHLIST, form.status)
         }
 }

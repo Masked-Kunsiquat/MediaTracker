@@ -5,37 +5,20 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.AddMovieScreen
 import com.hub.media.ui.AddMovieUiState
+import com.hub.media.ui.FilmFormState
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Occlusion guards for the Add Movie screen's form.
+ * Occlusion guards for adding a film by hand.
  *
- * [AddMovieUiState.Idle] is the only state that renders the actual entry form ([AddMovieUiState]'s
- * other cases are Saving/Saved/Error, none of which add fields), so it is used here rather than a
- * fabricated field population: this screen's title/year/runtime/price fields are held locally via
- * `rememberSaveable` inside the composable itself (see [AddMovieScreen]'s KDoc), so there is no way
- * to seed typed text into them from outside without performing text input, which this harness does
- * not do. The form's full set of fields, status chips, and save button are all present and laid out
- * in the Idle state regardless of their text content, which is what determines whether anything ends
- * up behind the keyboard.
- *
- * Every field, chip, and the save button live in the one `verticalScroll` `Column` that makes up
- * this screen's whole body -- which is exactly the shape that made the first version of this test
- * assert nothing at all. The harness then exempted everything inside a scroller, so deleting
- * `contentWindowInsets` from this screen changed no assertion and the test stayed green. It now
- * scrolls that container to its end before measuring, which is the highest position the save button
- * at the foot of the form can reach -- if it is still under the keyboard there, no scroll offset
- * retrieves it. Confirmed by deleting that argument and watching this fail.
- *
- * There is deliberately **no navigation bar test** on this screen. Its form does not reach the
- * bottom of the display without a keyboard, so nothing measurable is ever near the bar: the rule
- * was tried here and passed with `barPadding` returning zero, which makes it a green no-op of the
- * kind AGENTS.md section 7 rejects. The keyboard is the inset that actually squeezes this screen,
- * and the test above is falsified against it. If the form grows past the display, add it back --
- * and prove it fails first.
+ * Since #214 this screen is Edit film's shape: a scrolling form and a Cancel/Save bar pinned to the
+ * bottom edge. That bar is what makes the navigation bar an inset this screen can lose a control
+ * behind. Before it, Save sat at the foot of the form, which ended well short of the bar, and a
+ * navigation-bar test here passed with `barPadding` returning zero -- a green no-op -- so there was
+ * none. The one below was falsified by zeroing the pinned bar's padding.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddMovieScreenOcclusionTest {
@@ -47,11 +30,22 @@ class AddMovieScreenOcclusionTest {
         composeRule.assertNoInteractiveNodeIsBehindTheKeyboard(expectedTags = TAGS) { Fixture() }
     }
 
+    @Test
+    fun withTheNavigationBarShowing_theSaveCancelBarStaysAboveIt() {
+        composeRule.assertNoInteractiveNodeIsBehindTheNavigationBar(expectedTags = TAGS) { Fixture() }
+    }
+
     @Composable
     private fun Fixture() {
         AddMovieScreen(
             uiState = AddMovieUiState.Idle,
-            onSave = { _, _, _, _, _, _ -> },
+            form = FilmFormState(title = "Dune", releaseYear = "2021", runtimeMinutes = "155"),
+            onTitleChange = {},
+            onReleaseYearChange = {},
+            onRuntimeChange = {},
+            onPurchasePriceChange = {},
+            onStatusChange = {},
+            onSave = {},
             onErrorShown = {},
             onNavigateBack = {},
         )
@@ -63,6 +57,7 @@ class AddMovieScreenOcclusionTest {
             listOf(
                 TestTags.AddMovie.FORM,
                 TestTags.AddMovie.SAVE_BUTTON,
+                TestTags.AddMovie.CANCEL_BUTTON,
             )
     }
 }

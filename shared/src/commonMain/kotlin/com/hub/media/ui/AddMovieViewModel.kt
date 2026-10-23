@@ -9,6 +9,7 @@ import com.hub.media.features.tv.domain.WatchedWhen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -54,41 +55,67 @@ public class AddMovieViewModel(
     public val uiState: StateFlow<AddMovieUiState> = _uiState.asStateFlow()
 
     /**
-     * Validates and saves a movie.
+     * The form's values (#214). Held here rather than in the composable so the add form and the
+     * TMDB review render the one shared form from the same [FilmFormState] Edit film holds. The cost
+     * is the one [AddTVShowViewModel] already pays: typed text survives rotation with this class, but
+     * not process death, which `rememberSaveable` used to cover.
+     */
+    private val _form = MutableStateFlow(FilmFormState())
+    public val form: StateFlow<FilmFormState> = _form.asStateFlow()
+
+    public fun onTitleChange(value: String): Unit = _form.update { it.copy(title = value) }
+
+    public fun onReleaseYearChange(value: String): Unit = _form.update { it.copy(releaseYear = value) }
+
+    public fun onRuntimeChange(value: String): Unit = _form.update { it.copy(runtimeMinutes = value) }
+
+    public fun onPurchasePriceChange(value: String): Unit = _form.update { it.copy(purchasePrice = value) }
+
+    /** See [FilmFormState.choosingStatus]: choosing Watched asks when first ([confirmWatched]). */
+    public fun onStatusChange(value: WatchStatus): Unit = _form.update { it.choosingStatus(value) }
+
+    public fun confirmWatched(watchedWhen: WatchedWhen): Unit = _form.update { it.confirmingWatched(watchedWhen) }
+
+    public fun dismissWatched(): Unit = _form.update { it.dismissingWatched() }
+
+    /**
+     * Validates and saves the form's movie.
      *
-     * Blank numeric fields are "unknown", not zero — an empty runtime box means the runtime is not
+     * Blank numeric fields are "unknown", not zero -- an empty runtime box means the runtime is not
      * known, which is a different claim from a zero-minute film and is stored as `null`
-     * accordingly. Callers pass already-parsed values so this class never parses user text.
+     * accordingly. A field that cannot be read is reported rather than saved as unknown (see
+     * [FilmFormState.parsed]).
      *
      * A second call while [AddMovieUiState.Saving] is current is ignored rather than queued, so a
      * double-tapped save cannot create the same movie twice.
      */
-    public fun save(
-        title: String,
-        releaseYear: Int?,
-        runtimeMinutes: Int?,
-        purchasePrice: Double?,
-        status: WatchStatus,
-        watchedWhen: WatchedWhen? = null,
-    ) {
+    public fun save() {
         // Two states are refused, not one: a save in flight, and a save that has already produced a
         // movie and not yet been reset. See AddTVShowViewModel.save's KDoc -- the in-flight half
         // alone holds only for as long as the write takes, so a fast save leaves the form armed to
         // create a second, identical movie on the next tap. The screen navigates away when Saved
         // appears, which hides that window rather than closing it.
         if (_uiState.value is AddMovieUiState.Saving || _uiState.value is AddMovieUiState.Saved) return
+        val values =
+            when (val parsed = _form.value.parsed()) {
+                is FilmFormParse.Unreadable -> {
+                    _uiState.value = AddMovieUiState.Error(parsed.message())
+                    return
+                }
+                is FilmFormParse.Valid -> parsed
+            }
         _uiState.value = AddMovieUiState.Saving
         viewModelScope.launch {
             _uiState.value =
                 when (
                     val result =
                         movieRepository.addMovie(
-                            title = title.trim(),
-                            releaseYear = releaseYear,
-                            purchasePrice = purchasePrice,
-                            runtimeMinutes = runtimeMinutes,
-                            status = status,
-                            watchedWhen = watchedWhen,
+                            title = values.title,
+                            releaseYear = values.releaseYear,
+                            purchasePrice = values.purchasePrice,
+                            runtimeMinutes = values.runtimeMinutes,
+                            status = values.status,
+                            watchedWhen = values.watchedWhen,
                         )
                 ) {
                     is Resource.Success -> AddMovieUiState.Saved(result.data)

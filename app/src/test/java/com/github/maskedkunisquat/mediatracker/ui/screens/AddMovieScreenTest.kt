@@ -1,45 +1,41 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.WatchStatus
-import com.hub.media.features.tv.domain.WatchedWhen
 import com.hub.media.ui.AddMovieUiState
+import com.hub.media.ui.FilmFormState
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Behavioural tests for the Add Movie screen (ROADMAP Task 13 Phase B).
+ * Behavioural tests for adding a film by hand (ROADMAP Task 13 Phase B; the edit form's layout
+ * since #214).
  *
- * Drives the stateless [AddMovieScreen] with fabricated state and fake callbacks. Two things get
- * the most attention here because they are the ones a naive implementation gets wrong silently:
- * the save control's enabled/disabled halves (a button that never enables would pass an
- * enabled-only check), and blank-numeric-field handling, where this codebase treats `null`
- * ("unknown") and `0` (a real, claimed value) as meaningfully different -- see
- * [com.hub.media.core.database.entities.MovieDetailsEntity.runtimeMinutes]'s KDoc.
- *
- * Title trimming is deliberately **not** asserted here: reading [AddMovieScreen]'s save handler
- * shows it forwards the typed title as-is (`onSave(title, ...)`, no `.trim()`); the trim happens
- * one layer up, in `AddMovieViewModel.save()`. Asserting a trim at this layer would be testing a
- * contract the stateless screen does not actually have.
+ * Drives the stateless [AddMovieScreen] with a [FilmFormState] the test holds itself, so typing
+ * round-trips through the same callbacks the view model receives. Parsing and the blank-vs-
+ * unreadable rule are [FilmFormState]'s and are tested there (`FilmFormStateTest`); what is
+ * asserted here is that this screen renders the shared form, wires it, and gates Save on it. Both
+ * halves of the gate are asserted, because a button that never enables would pass a disabled-only
+ * check.
  */
 @RunWith(RobolectricTestRunner::class)
 class AddMovieScreenTest {
@@ -48,31 +44,30 @@ class AddMovieScreenTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private fun hasRole(role: Role) = SemanticsMatcher.expectValue(SemanticsProperties.Role, role)
+    private val saveButton get() = composeRule.onNodeWithTag(TestTags.AddMovie.SAVE_BUTTON)
 
-    /**
-     * Matches the "Save movie" button specifically. [Role.Button] alone is ambiguous -- the
-     * top bar's back [androidx.compose.material3.IconButton] is a [Role.Button] too -- so this
-     * also requires the absence of a content description, which the back button has
-     * ("Navigate back") and the save button does not. Needed for the Saving-state test, where the
-     * button's label is swapped for a [androidx.compose.material3.CircularProgressIndicator] and
-     * so cannot be located by text.
-     */
-    private val saveButtonMatcher =
-        hasRole(Role.Button) and SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription)
+    private var form by mutableStateOf(FilmFormState())
 
     private fun setContent(
         uiState: AddMovieUiState = AddMovieUiState.Idle,
-        onSave: (String, Int?, Int?, Double?, WatchStatus, WatchedWhen?) -> Unit = { _, _, _, _, _, _ -> },
+        onSave: () -> Unit = {},
+        onStatusChange: (WatchStatus) -> Unit = { form = form.choosingStatus(it) },
         onErrorShown: () -> Unit = {},
+        onNavigateBack: () -> Unit = {},
     ) {
         composeRule.setContent {
             MediaTrackerTheme {
                 AddMovieScreen(
                     uiState = uiState,
+                    form = form,
+                    onTitleChange = { form = form.copy(title = it) },
+                    onReleaseYearChange = { form = form.copy(releaseYear = it) },
+                    onRuntimeChange = { form = form.copy(runtimeMinutes = it) },
+                    onPurchasePriceChange = { form = form.copy(purchasePrice = it) },
+                    onStatusChange = onStatusChange,
                     onSave = onSave,
                     onErrorShown = onErrorShown,
-                    onNavigateBack = {},
+                    onNavigateBack = onNavigateBack,
                 )
             }
         }
@@ -90,114 +85,89 @@ class AddMovieScreenTest {
     fun saveButton_isDisabledWhenTitleIsBlank_andEnabledOnceATitleIsEntered() {
         setContent()
 
-        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
-
+        saveButton.assertIsNotEnabled()
         typeIntoField(R.string.add_movie_field_title, "Dune")
+        saveButton.assertIsEnabled()
+    }
 
-        composeRule.onNode(saveButtonMatcher).assertIsEnabled()
+    /** #214: the edit form's cards and its pinned Cancel/Save, not a flat column and an inline button. */
+    @Test
+    fun form_isInCards_withSaveAndCancelPinned() {
+        setContent()
+
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_details)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_status)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.edit_section_purchase)).assertExists()
+        saveButton.assertExists()
+        composeRule.onNodeWithTag(TestTags.AddMovie.CANCEL_BUTTON).assertExists()
     }
 
     @Test
-    fun savingWithBlankNumericFields_passesNullRatherThanZero() {
-        var capturedYear: Int? = -1
-        var capturedRuntime: Int? = -1
-        var capturedPrice: Double? = -1.0
-        setContent(
-            onSave = { _, year, runtime, price, _, _ ->
-                capturedYear = year
-                capturedRuntime = runtime
-                capturedPrice = price
-            },
-        )
+    fun cancel_navigatesBack() {
+        var backs = 0
+        setContent(onNavigateBack = { backs++ })
 
-        // Title is the only required field; year, runtime and price are left blank.
-        typeIntoField(R.string.add_movie_field_title, "Arrival")
+        composeRule.onNodeWithTag(TestTags.AddMovie.CANCEL_BUTTON).performClick()
 
-        val saveText = context.getString(R.string.add_movie_save)
-        composeRule.onNode(hasText(saveText) and hasClickAction()).performClick()
-
-        assertNull("blank release year must arrive as null, not 0", capturedYear)
-        assertNull("blank runtime must arrive as null, not 0", capturedRuntime)
-        assertNull("blank price must arrive as null, not 0", capturedPrice)
+        assertEquals(1, backs)
     }
 
     @Test
-    fun savingWithFilledFields_passesThemParsedAsIntAndDouble() {
-        var capturedTitle = ""
-        var capturedYear: Int? = null
-        var capturedRuntime: Int? = null
-        var capturedPrice: Double? = null
-        setContent(
-            onSave = { title, year, runtime, price, _, _ ->
-                capturedTitle = title
-                capturedYear = year
-                capturedRuntime = runtime
-                capturedPrice = price
-            },
-        )
-
-        typeIntoField(R.string.add_movie_field_title, "Dune Part Two")
-        typeIntoField(R.string.add_movie_field_year, "2024")
-        typeIntoField(R.string.add_movie_field_runtime, "166")
-        typeIntoField(R.string.add_movie_field_price, "19.99")
-
-        val saveText = context.getString(R.string.add_movie_save)
-        composeRule.onNode(hasText(saveText) and hasClickAction()).performClick()
-
-        assertEquals("Dune Part Two", capturedTitle)
-        assertEquals(2024, capturedYear)
-        assertEquals(166, capturedRuntime)
-        assertEquals(19.99, capturedPrice!!, 0.0001)
-    }
-
-    @Test
-    fun selectingAStatusChip_changesTheStatusPassedToOnSave() {
-        var capturedStatus: WatchStatus? = null
-        setContent(onSave = { _, _, _, _, status, _ -> capturedStatus = status })
+    fun typedFields_reachTheForm_andSaveIsSent() {
+        var saves = 0
+        setContent(onSave = { saves++ })
 
         typeIntoField(R.string.add_movie_field_title, "Oppenheimer")
+        typeIntoField(R.string.add_movie_field_year, "2023")
+        typeIntoField(R.string.add_movie_field_runtime, "180")
+        saveButton.performClick()
 
-        // WATCHLIST is the default selection; picking a different chip must change what is saved.
-        val watchingLabel = context.getString(R.string.watch_status_watching)
-        composeRule.onNodeWithText(watchingLabel).performClick()
+        assertEquals(1, saves)
+        assertEquals("Oppenheimer", form.title)
+        assertEquals("2023", form.releaseYear)
+        assertEquals("180", form.runtimeMinutes)
+    }
 
-        val saveText = context.getString(R.string.add_movie_save)
-        composeRule.onNode(hasText(saveText) and hasClickAction()).performClick()
+    @Test
+    fun status_isChosenFromTheDropdown() {
+        var chosen: WatchStatus? = null
+        setContent(onStatusChange = { chosen = it })
+        val watching = context.getString(R.string.watch_status_watching)
+        // Positive control for the dropdown: the option is not on screen until the chip is opened.
+        composeRule.onNodeWithText(watching).assertDoesNotExist()
 
-        assertEquals(WatchStatus.WATCHING, capturedStatus)
+        composeRule.onNodeWithText(context.getString(R.string.watch_status_watchlist)).performClick()
+        composeRule.onNodeWithText(watching).performClick()
+
+        assertEquals(WatchStatus.WATCHING, chosen)
     }
 
     @Test
     fun whenStateIsSaving_theWholeFormIsDisabled_notJustTheSaveButton() {
+        form = FilmFormState(title = "Dune")
         setContent(uiState = AddMovieUiState.Saving)
 
-        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
-
-        // The fields and chips matter as much as the button: the values were read at click time,
-        // so a form that stayed editable mid-save would accept edits the in-flight write cannot
-        // include -- and then navigate away on success, showing a saved movie that does not match
-        // what is on screen. Asserted as "there is no field here that accepts text" rather than
-        // via the enabled flag, because that is the behaviour, not the implementation of it.
+        saveButton.assertIsNotEnabled()
+        // The fields matter as much as the button: the values were read at click time, so a form
+        // that stayed editable mid-save would accept edits the in-flight write cannot include. A
+        // disabled field drops its set-text action, so "no title field accepts text" is the
+        // behaviour; the typed title still showing is the positive control.
         val titleLabel = context.getString(R.string.add_movie_field_title)
         composeRule.onNode(hasText(titleLabel) and hasSetTextAction()).assertDoesNotExist()
-
-        val watchingLabel = context.getString(R.string.watch_status_watching)
-        composeRule.onNodeWithText(watchingLabel).assertIsNotEnabled()
+        composeRule.onNode(hasText("Dune") and hasText(titleLabel)).assertExists()
     }
 
     @Test
     fun aNumberTooLargeToParse_blocksSavingRatherThanBeingSentAsUnknown() {
         var saves = 0
-        setContent(onSave = { _, _, _, _, _, _ -> saves++ })
+        setContent(onSave = { saves++ })
 
         typeIntoField(R.string.add_movie_field_title, "Dune")
-        // Digits only, so the input filter lets it through, but it does not fit in an Int. The
-        // dangerous handling is toIntOrNull()'s null, which is this codebase's spelling of
-        // "unknown" -- the typed year would vanish with nothing said. Blocking the save is what
-        // makes the field's error state the user's only route forward.
+        // Digits only, so the input filter lets it through, but it does not fit in an Int. Sent as
+        // toIntOrNull()'s null it would be "unknown", and the typed year would vanish unsaid.
         typeIntoField(R.string.add_movie_field_year, "19999999999")
 
-        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+        saveButton.assertIsNotEnabled()
         assertEquals(0, saves)
     }
 

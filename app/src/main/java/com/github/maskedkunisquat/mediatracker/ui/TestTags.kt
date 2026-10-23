@@ -131,6 +131,7 @@ object TestTags {
     object AddMovie {
         const val FORM = "addMovie:form"
         const val SAVE_BUTTON = "addMovie:save"
+        const val CANCEL_BUTTON = "addMovie:cancel"
     }
 
     object EditMovie {
