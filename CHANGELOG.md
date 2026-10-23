@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- After importing films or shows, the import summary now offers to fetch their posters and details too, not just books' covers. Each button says which it starts. (#149)
+- An import no longer attaches a reading session to a film or show; it skips the row and says why. (#117)
+- Choosing a backup to restore no longer leaves stray files behind in the app's cache, and the app clears any that earlier versions left. (#210)
+
+### Internal
+- ROADMAP's execution order rewritten to match the board's new Now / Next / Later, with issues #240 (genre tracking) and #241 (signing and distribution) created for the two tasks that had none.
+
 ## [0.29.0] - 2026-10-22
 
 ### Added
