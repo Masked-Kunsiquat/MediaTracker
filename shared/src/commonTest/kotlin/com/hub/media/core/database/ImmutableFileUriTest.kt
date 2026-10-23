@@ -24,6 +24,15 @@ class ImmutableFileUriTest {
         )
     }
 
+    /** A relative path stays relative, naming the same file the header read opened (#242 review). */
+    @Test
+    fun aRelativePath_staysRelative() {
+        assertEquals(
+            "file:cache/restore-incoming-1.tmp?immutable=1",
+            immutableFileUri("cache/restore-incoming-1.tmp"),
+        )
+    }
+
     @Test
     fun theCharactersSqliteReadsAsUriSyntax_areEscaped() {
         assertEquals(

@@ -743,9 +743,11 @@ were settled before the freeze and cost nothing afterwards: episodes needed no p
 their own, and every column the backfill fills was added in #86 while v6 was still editable.
 What Phase D deliberately did *not* decide is tracked separately rather than left implicit —
 whether the backfill should create specials ([#122](https://github.com/Masked-Kunsiquat/MediaTracker/issues/122)),
-what a user may do about a count mismatch ([#123](https://github.com/Masked-Kunsiquat/MediaTracker/issues/123)),
+what a user may do about a count mismatch ([#123](https://github.com/Masked-Kunsiquat/MediaTracker/issues/123), since built:
+the backfill's *Review differences* screen),
 and where a synopsis belongs now that only shows can hold one
-([#133](https://github.com/Masked-Kunsiquat/MediaTracker/issues/133)). Episode stills are not
+([#133](https://github.com/Masked-Kunsiquat/MediaTracker/issues/133), since settled: `MIGRATION_6_7`
+moved it to `media_items.synopsis`, shipped in `v0.20.0`). Episode stills are not
 downloaded, by decision — see `EpisodeEntity.stillImageHash`.
 **Follow-ups from [#80](https://github.com/Masked-Kunsiquat/MediaTracker/issues/80)'s TV Time
 comparison shipped in `v0.23.0`:** an *Include specials* setting

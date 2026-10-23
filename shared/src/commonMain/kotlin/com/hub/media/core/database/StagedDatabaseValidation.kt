@@ -239,7 +239,8 @@ internal fun openStagedCandidate(path: String): SQLiteConnection =
 /**
  * [path] as an SQLite `file:` URI with `immutable=1`. Backslashes become slashes and a drive letter
  * gains a leading slash, so a Windows path works too (`file:///C:/...`); `%`, `?` and `#` are
- * escaped, being the only characters SQLite's URI parser would read as syntax.
+ * escaped, being the only characters SQLite's URI parser would read as syntax. A relative path stays
+ * relative (`file:cache/x.tmp`), so it names the same file the header read opened.
  */
 internal fun immutableFileUri(path: String): String {
     val escaped =
@@ -253,6 +254,14 @@ internal fun immutableFileUri(path: String): String {
                 }
             }
         }
-    val rooted = if (escaped.startsWith("/")) escaped else "/$escaped"
-    return "file://$rooted?immutable=1"
+    val location =
+        when {
+            escaped.startsWith("/") -> "//$escaped"
+            WINDOWS_DRIVE.matches(escaped.take(3)) -> "///$escaped"
+            else -> escaped
+        }
+    return "file:$location?immutable=1"
 }
+
+/** A drive letter, colon and slash: the start of an absolute Windows path once slashes are forward. */
+private val WINDOWS_DRIVE = Regex("[A-Za-z]:/")
