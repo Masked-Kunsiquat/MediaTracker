@@ -7,11 +7,13 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
@@ -201,5 +203,36 @@ class EditBookScreenTest {
         composeRule.onNodeWithTag(TestTags.EditBook.SAVE_BUTTON).performClick()
 
         assertEquals(ReadingStatus.DNF, saved)
+    }
+
+    /**
+     * #214: what has been typed survives the activity being recreated (a rotation; the manifest
+     * declares no configChanges, so a turn of the phone is a recreation). The book form's fields live
+     * in the composable, and before #214 they were `remember`ed, so a rotation threw the edit away.
+     * The add-book review renders this same form, where losing a half-finished review costs more.
+     */
+    @Test
+    fun editedFields_surviveRecreation() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            MediaTrackerTheme {
+                EditBookScreen(
+                    coverStorageDir = "",
+                    uiState = readyState(),
+                    onRetry = {},
+                    onNavigateBack = {},
+                    onSave = { _, _, _, _, _, _, _ -> },
+                )
+            }
+        }
+        composeRule
+            .onNode(hasText(context.getString(R.string.edit_title_label)) and hasSetTextAction())
+            .performTextReplacement("Dune Messiah")
+        // Positive control: the edit landed before the recreation, so losing it is what fails below.
+        composeRule.onNode(hasText("Dune Messiah") and hasSetTextAction()).assertExists()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNode(hasText("Dune Messiah") and hasSetTextAction()).assertExists()
     }
 }
