@@ -30,36 +30,23 @@ public sealed class EditMovieUiState {
     /**
      * The form, pre-filled with the movie's current values.
      *
-     * Numeric fields are carried as the strings the user is editing rather than as parsed numbers,
-     * because "" and "0" are different claims that both have to survive a round trip through the
-     * form: empty means "unknown", and re-parsing on every keystroke would make an in-progress "1"
-     * of "116" indistinguishable from a finished one.
+     * The field values and their rules are the shared [FilmFormState] (#214), the same one Add film
+     * and the TMDB review hold, so the three forms cannot drift apart.
      *
-     * @property initialStatus The status the film had when the form opened: choosing Watched asks
-     *   when (#192) only if it was not already Watched.
-     * @property pendingWatched Choosing Watched is waiting on the "when?" prompt.
-     * @property watchedWhen The prompt's answer, sent with the save.
      * @property saveError Message from a rejected save, or null.
      * @property saved True once the write succeeded, so the caller can leave the screen.
      */
     public data class Editing(
-        val title: String,
-        val releaseYear: String,
-        val runtimeMinutes: String,
-        val purchasePrice: String,
-        val status: WatchStatus,
+        val form: FilmFormState,
         /**
          * The header's title (#174): the title as loaded, so the header keeps saying which item is
-         * being edited while [title] changes underneath it. No field edit writes it.
+         * being edited while the title field changes underneath it. No field edit writes it.
          */
-        val savedTitle: String = title,
+        val savedTitle: String = form.title,
         /** The release year as loaded, for the header's kind line. */
         val savedYear: Int? = null,
         /** The cover shown in the header; `null` when the item has none. */
         val coverImageHash: String? = null,
-        val initialStatus: WatchStatus = status,
-        val pendingWatched: Boolean = false,
-        val watchedWhen: WatchedWhen? = null,
         val isSaving: Boolean = false,
         val saveError: String? = null,
         val saved: Boolean = false,
@@ -119,23 +106,26 @@ public class EditMovieViewModel(
                     EditMovieUiState.NotFound
                 } else {
                     EditMovieUiState.Editing(
-                        title = movie.item.title,
-                        // Blank rather than "null" or "0" for an unknown value, so the field shows
-                        // empty and saving it back unchanged keeps it unknown.
-                        releaseYear =
-                            movie.item.releaseYear
-                                ?.toString()
-                                .orEmpty(),
-                        runtimeMinutes =
-                            movie.details
-                                ?.runtimeMinutes
-                                ?.toString()
-                                .orEmpty(),
-                        purchasePrice =
-                            movie.item.purchasePrice
-                                ?.toString()
-                                .orEmpty(),
-                        status = movie.details?.status ?: WatchStatus.WATCHLIST,
+                        form =
+                            FilmFormState(
+                                title = movie.item.title,
+                                // Blank rather than "null" or "0" for an unknown value, so the field
+                                // shows empty and saving it back unchanged keeps it unknown.
+                                releaseYear =
+                                    movie.item.releaseYear
+                                        ?.toString()
+                                        .orEmpty(),
+                                runtimeMinutes =
+                                    movie.details
+                                        ?.runtimeMinutes
+                                        ?.toString()
+                                        .orEmpty(),
+                                purchasePrice =
+                                    movie.item.purchasePrice
+                                        ?.toString()
+                                        .orEmpty(),
+                                status = movie.details?.status ?: WatchStatus.WATCHLIST,
+                            ),
                         savedTitle = movie.item.title,
                         savedYear = movie.item.releaseYear,
                         coverImageHash = movie.item.coverImageHash,
@@ -144,75 +134,49 @@ public class EditMovieViewModel(
         }
     }
 
-    public fun onTitleChange(value: String): Unit = updateForm { it.copy(title = value) }
+    public fun onTitleChange(value: String): Unit = updateFields { it.copy(title = value) }
 
-    public fun onReleaseYearChange(value: String): Unit = updateForm { it.copy(releaseYear = value) }
+    public fun onReleaseYearChange(value: String): Unit = updateFields { it.copy(releaseYear = value) }
 
-    public fun onRuntimeChange(value: String): Unit = updateForm { it.copy(runtimeMinutes = value) }
+    public fun onRuntimeChange(value: String): Unit = updateFields { it.copy(runtimeMinutes = value) }
 
-    public fun onPurchasePriceChange(value: String): Unit = updateForm { it.copy(purchasePrice = value) }
+    public fun onPurchasePriceChange(value: String): Unit = updateFields { it.copy(purchasePrice = value) }
 
-    /**
-     * Choosing Watched for a film that was not Watched when the form opened asks when first
-     * ([confirmWatched]); the selection only changes once answered. Any other choice applies at once.
-     */
-    public fun onStatusChange(value: WatchStatus): Unit =
-        updateForm {
-            if (value == WatchStatus.WATCHED && it.initialStatus != WatchStatus.WATCHED) {
-                it.copy(pendingWatched = true)
-            } else {
-                it.copy(status = value, watchedWhen = null)
-            }
-        }
+    /** See [FilmFormState.choosingStatus]: choosing Watched asks when first ([confirmWatched]). */
+    public fun onStatusChange(value: WatchStatus): Unit = updateFields { it.choosingStatus(value) }
 
-    public fun confirmWatched(watchedWhen: WatchedWhen): Unit =
-        updateForm { it.copy(status = WatchStatus.WATCHED, watchedWhen = watchedWhen, pendingWatched = false) }
+    public fun confirmWatched(watchedWhen: WatchedWhen): Unit = updateFields { it.confirmingWatched(watchedWhen) }
 
-    public fun dismissWatched(): Unit = updateForm { it.copy(pendingWatched = false) }
+    public fun dismissWatched(): Unit = updateFields { it.dismissingWatched() }
 
     /**
-     * Writes the edited values.
-     *
-     * Blank numeric fields are sent as `null` ("unknown"), never `0`. Text that fails to parse is
-     * **not** the same claim as blank and is refused rather than sent as `null`: a plain
-     * `toIntOrNull()` collapses "the user cleared this field" and "the user typed something this
-     * can't read" into the same value, so an unreadable entry would silently erase the very number
-     * the user opened this screen to correct.
-     *
-     * Range and sign rules are still not duplicated here —
-     * [com.hub.media.features.movies.data.MovieMetadataValidation] inside the repository remains the
-     * only place that decides whether a *parsed* value is acceptable, so this class never becomes a
-     * second copy of those rules.
+     * Writes the edited values, or reports the field that cannot be read (see
+     * [FilmFormState.parsed] on why unreadable is refused rather than saved as "unknown").
      */
     public fun save() {
-        val form = _uiState.value as? EditMovieUiState.Editing ?: return
-        if (form.isSaving) return
+        val editing = _uiState.value as? EditMovieUiState.Editing ?: return
+        if (editing.isSaving) return
 
-        val releaseYear = parseOptionalNumber(form.releaseYear, String::toIntOrNull)
-        val runtimeMinutes = parseOptionalNumber(form.runtimeMinutes, String::toIntOrNull)
-        val purchasePrice = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull)
-        if (releaseYear == null || runtimeMinutes == null || purchasePrice == null) {
-            val unreadableField =
-                when {
-                    releaseYear == null -> "release year"
-                    runtimeMinutes == null -> "runtime"
-                    else -> "purchase price"
+        val values =
+            when (val parsed = editing.form.parsed()) {
+                is FilmFormParse.Unreadable -> {
+                    _uiState.value = editing.copy(saveError = parsed.message())
+                    return
                 }
-            _uiState.value = form.copy(saveError = "Enter a valid $unreadableField, or clear the field")
-            return
-        }
+                is FilmFormParse.Valid -> parsed
+            }
 
-        _uiState.value = form.copy(isSaving = true, saveError = null)
+        _uiState.value = editing.copy(isSaving = true, saveError = null)
         viewModelScope.launch {
             val result =
                 movieRepository.updateMovieMetadata(
                     mediaId = movieId,
-                    title = form.title.trim(),
-                    releaseYear = releaseYear.value,
-                    purchasePrice = purchasePrice.value,
-                    runtimeMinutes = runtimeMinutes.value,
-                    status = form.status,
-                    watchedWhen = form.watchedWhen,
+                    title = values.title,
+                    releaseYear = values.releaseYear,
+                    purchasePrice = values.purchasePrice,
+                    runtimeMinutes = values.runtimeMinutes,
+                    status = values.status,
+                    watchedWhen = values.watchedWhen,
                 )
             val current = _uiState.value as? EditMovieUiState.Editing ?: return@launch
             _uiState.value =
@@ -230,4 +194,7 @@ public class EditMovieViewModel(
         val current = _uiState.value as? EditMovieUiState.Editing ?: return
         _uiState.value = transform(current)
     }
+
+    private inline fun updateFields(transform: (FilmFormState) -> FilmFormState): Unit =
+        updateForm { it.copy(form = transform(it.form)) }
 }

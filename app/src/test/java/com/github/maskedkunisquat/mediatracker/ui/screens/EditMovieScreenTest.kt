@@ -21,6 +21,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.EditMovieUiState
+import com.hub.media.ui.FilmFormState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -71,11 +72,14 @@ class EditMovieScreenTest {
         isSaving: Boolean = false,
         saveError: String? = null,
     ) = EditMovieUiState.Editing(
-        title = title,
-        releaseYear = releaseYear,
-        runtimeMinutes = runtimeMinutes,
-        purchasePrice = purchasePrice,
-        status = status,
+        form =
+            FilmFormState(
+                title = title,
+                releaseYear = releaseYear,
+                runtimeMinutes = runtimeMinutes,
+                purchasePrice = purchasePrice,
+                status = status,
+            ),
         isSaving = isSaving,
         saveError = saveError,
     )

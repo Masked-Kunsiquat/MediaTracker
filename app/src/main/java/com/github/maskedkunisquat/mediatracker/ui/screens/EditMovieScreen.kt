@@ -60,9 +60,9 @@ fun EditMovieScreenRoute(
     }
 
     // Choosing Watched asks when (#192); the form's status only changes once this is answered.
-    (uiState as? EditMovieUiState.Editing)?.takeIf { it.pendingWatched }?.let { form ->
+    (uiState as? EditMovieUiState.Editing)?.takeIf { it.form.pendingWatched }?.let { form ->
         FilmWatchedDialog(
-            title = stringResource(R.string.film_watched_title, form.title),
+            title = stringResource(R.string.film_watched_title, form.form.title),
             onConfirm = { watchedWhen, _ -> viewModel.confirmWatched(watchedWhen) },
             onDismiss = viewModel::dismissWatched,
         )
@@ -134,9 +134,9 @@ fun EditMovieScreen(
         // parsed means neither, and saving it would erase the number the user came here to
         // correct (EditMovieViewModel refuses it outright -- this is what says which field).
         // Only parseability is checked; range and sign stay in MovieMetadataValidation.
-        val releaseYearIsValid = parseOptionalNumber(form.releaseYear, String::toIntOrNull) != null
-        val runtimeIsValid = parseOptionalNumber(form.runtimeMinutes, String::toIntOrNull) != null
-        val purchasePriceIsValid = parseOptionalNumber(form.purchasePrice, String::toDoubleOrNull) != null
+        val releaseYearIsValid = parseOptionalNumber(form.form.releaseYear, String::toIntOrNull) != null
+        val runtimeIsValid = parseOptionalNumber(form.form.runtimeMinutes, String::toIntOrNull) != null
+        val purchasePriceIsValid = parseOptionalNumber(form.form.purchasePrice, String::toDoubleOrNull) != null
 
         EditFormBody(
             innerPadding = innerPadding,
@@ -145,7 +145,7 @@ fun EditMovieScreen(
             // Clearing a numeric field is legitimate ("unknown") and does not block saving; a
             // field that cannot be read at all does -- the same rule the add form uses.
             canSave =
-                form.title.isNotBlank() &&
+                form.form.title.isNotBlank() &&
                     releaseYearIsValid &&
                     runtimeIsValid &&
                     purchasePriceIsValid,
@@ -155,7 +155,7 @@ fun EditMovieScreen(
             saveTag = TestTags.EditMovie.SAVE_BUTTON,
             snackbarHostState = snackbarHostState,
         ) {
-            // The title as loaded, not form.title: the header names the item while it is retyped.
+            // The title as loaded, not form.form.title: the header names the item while it is retyped.
             EditHeader(
                 kind = stringResource(R.string.movie_detail_kind),
                 year = form.savedYear,
@@ -164,16 +164,16 @@ fun EditMovieScreen(
             )
             FormSection(title = stringResource(R.string.edit_section_details)) {
                 OutlinedTextField(
-                    value = form.title,
+                    value = form.form.title,
                     onValueChange = onTitleChange,
                     label = { Text(stringResource(R.string.add_movie_field_title)) },
                     singleLine = true,
-                    isError = form.title.isBlank(),
+                    isError = form.form.title.isBlank(),
                     enabled = !form.isSaving,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
-                    value = form.releaseYear,
+                    value = form.form.releaseYear,
                     onValueChange = { onReleaseYearChange(it.filterIntegerInput()) },
                     label = { Text(stringResource(R.string.add_movie_field_year)) },
                     singleLine = true,
@@ -197,7 +197,7 @@ fun EditMovieScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
-                    value = form.runtimeMinutes,
+                    value = form.form.runtimeMinutes,
                     onValueChange = { onRuntimeChange(it.filterIntegerInput()) },
                     label = { Text(stringResource(R.string.add_movie_field_runtime)) },
                     singleLine = true,
@@ -217,7 +217,7 @@ fun EditMovieScreen(
                 // The detail screens' chip (#174). Choosing Watched still goes through
                 // onStatusChange, so it still asks when (FilmWatchedDialog) before the form changes.
                 StatusDropdownChip(
-                    value = form.status,
+                    value = form.form.status,
                     options = WatchStatus.entries.toList(),
                     label = { it.displayLabel() },
                     onSelect = onStatusChange,
@@ -227,7 +227,7 @@ fun EditMovieScreen(
             }
             FormSection(title = stringResource(R.string.edit_section_purchase)) {
                 OutlinedTextField(
-                    value = form.purchasePrice.toDisplayDecimal(),
+                    value = form.form.purchasePrice.toDisplayDecimal(),
                     // Filtered the same way EditBookScreen filters its price field: an unfiltered box
                     // accepts "12,50" or "1.2.3", neither of which toDoubleOrNull can read.
                     onValueChange = { onPurchasePriceChange(it.filterDecimalInput()) },
