@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Picking a film from search no longer adds it straight away. It opens a form, filled in from TMDB, where you can check and change anything before you tap Save, and Cancel takes you back to your results. (#214)
+- Adding a film by hand uses the same form as editing one: grouped cards, the status dropdown, and Cancel and Save pinned to the bottom of the screen. (#214)
+- A film's year and runtime are checked as you type, so one that can't be saved is flagged on its field instead of after you tap Save. (#214)
+- "Add movie" is now "Add film", to match the rest of the app. (#214)
+
 ### Fixed
 - After importing films or shows, the import summary now offers to fetch their posters and details too, not just books' covers. Each button says which it starts. (#149)
 - An import no longer attaches a reading session to a film or show; it skips the row and says why. (#117)

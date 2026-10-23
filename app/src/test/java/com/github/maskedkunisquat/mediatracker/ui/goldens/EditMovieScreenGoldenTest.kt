@@ -6,6 +6,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.screens.EditMovieScreen
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.EditMovieUiState
+import com.hub.media.ui.FilmFormState
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,11 +45,14 @@ class EditMovieScreenGoldenTest {
         EditMovieScreen(
             uiState =
                 EditMovieUiState.Editing(
-                    title = "Interstellar",
-                    releaseYear = "2014",
-                    runtimeMinutes = "169",
-                    purchasePrice = "14.99",
-                    status = WatchStatus.WATCHLIST,
+                    form =
+                        FilmFormState(
+                            title = "Interstellar",
+                            releaseYear = "2014",
+                            runtimeMinutes = "169",
+                            purchasePrice = "14.99",
+                            status = WatchStatus.WATCHLIST,
+                        ),
                     savedYear = 2014,
                 ),
             coverStorageDir = "",

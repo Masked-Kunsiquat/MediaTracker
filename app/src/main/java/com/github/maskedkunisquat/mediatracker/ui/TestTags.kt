@@ -131,6 +131,7 @@ object TestTags {
     object AddMovie {
         const val FORM = "addMovie:form"
         const val SAVE_BUTTON = "addMovie:save"
+        const val CANCEL_BUTTON = "addMovie:cancel"
     }
 
     object EditMovie {
@@ -155,6 +156,9 @@ object TestTags {
         const val QUERY_FIELD = "movieSearch:query"
         const val SEARCH_BUTTON = "movieSearch:search"
         const val MANUAL_ENTRY = "movieSearch:manualEntry"
+        const val REVIEW_FORM = "movieSearch:reviewForm"
+        const val REVIEW_SAVE = "movieSearch:reviewSave"
+        const val REVIEW_CANCEL = "movieSearch:reviewCancel"
     }
 
     object TVShowSearch {

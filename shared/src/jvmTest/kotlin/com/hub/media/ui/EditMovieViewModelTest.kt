@@ -88,10 +88,10 @@ class EditMovieViewModelTest {
             val viewModel = editingViewModel(movieId)
 
             val editing = form(viewModel)
-            assertEquals("Interstellar", editing.title)
-            assertEquals("2014", editing.releaseYear)
-            assertEquals("169", editing.runtimeMinutes)
-            assertEquals(WatchStatus.WATCHLIST, editing.status)
+            assertEquals("Interstellar", editing.form.title)
+            assertEquals("2014", editing.form.releaseYear)
+            assertEquals("169", editing.form.runtimeMinutes)
+            assertEquals(WatchStatus.WATCHLIST, editing.form.status)
         }
 
     @Test
@@ -186,14 +186,14 @@ class EditMovieViewModelTest {
         runTest {
             val (id, vm) = utcEditing(WatchStatus.WATCHLIST)
             vm.onStatusChange(WatchStatus.WATCHED)
-            val prompted = vm.uiState.first { (it as? EditMovieUiState.Editing)?.pendingWatched == true }
+            val prompted = vm.uiState.first { (it as? EditMovieUiState.Editing)?.form?.pendingWatched == true }
             assertEquals(
                 WatchStatus.WATCHLIST,
-                (prompted as EditMovieUiState.Editing).status,
+                (prompted as EditMovieUiState.Editing).form.status,
                 "not chosen until confirmed",
             )
             vm.confirmWatched(WatchedWhen.On(LocalDate(2024, 3, 3)))
-            vm.uiState.first { (it as? EditMovieUiState.Editing)?.status == WatchStatus.WATCHED }
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.form?.status == WatchStatus.WATCHED }
             vm.save()
             vm.uiState.first { (it as? EditMovieUiState.Editing)?.saved == true }
             assertEquals(Instant.parse("2024-03-03T12:00:00Z"), db.movieDetailsDao().getByMediaId(id)!!.watchedAt)
@@ -204,10 +204,10 @@ class EditMovieViewModelTest {
         runTest {
             val (_, vm) = utcEditing(WatchStatus.WATCHLIST)
             vm.onStatusChange(WatchStatus.WATCHED)
-            vm.uiState.first { (it as? EditMovieUiState.Editing)?.pendingWatched == true }
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.form?.pendingWatched == true }
             vm.dismissWatched()
-            val s = vm.uiState.first { (it as? EditMovieUiState.Editing)?.pendingWatched == false }
-            assertEquals(WatchStatus.WATCHLIST, (s as EditMovieUiState.Editing).status)
+            val s = vm.uiState.first { (it as? EditMovieUiState.Editing)?.form?.pendingWatched == false }
+            assertEquals(WatchStatus.WATCHLIST, (s as EditMovieUiState.Editing).form.status)
         }
 
     @Test
@@ -215,10 +215,10 @@ class EditMovieViewModelTest {
         runTest {
             val (id, vm) = utcEditing(WatchStatus.WATCHED)
             vm.onStatusChange(WatchStatus.WATCHING)
-            vm.uiState.first { (it as? EditMovieUiState.Editing)?.status == WatchStatus.WATCHING }
+            vm.uiState.first { (it as? EditMovieUiState.Editing)?.form?.status == WatchStatus.WATCHING }
             vm.onStatusChange(WatchStatus.WATCHED)
-            val s = vm.uiState.first { (it as? EditMovieUiState.Editing)?.status == WatchStatus.WATCHED }
-            assertEquals(false, (s as EditMovieUiState.Editing).pendingWatched)
+            val s = vm.uiState.first { (it as? EditMovieUiState.Editing)?.form?.status == WatchStatus.WATCHED }
+            assertEquals(false, (s as EditMovieUiState.Editing).form.pendingWatched)
             vm.save()
             vm.uiState.first { (it as? EditMovieUiState.Editing)?.saved == true }
             assertEquals(
@@ -246,7 +246,7 @@ class EditMovieViewModelTest {
             viewModel.retry()
 
             val form = viewModel.uiState.first { it is EditMovieUiState.Editing } as EditMovieUiState.Editing
-            assertEquals("Interstellar", form.title, "Retry loads the form once the read works")
+            assertEquals("Interstellar", form.form.title, "Retry loads the form once the read works")
         }
 
     @Test
@@ -259,7 +259,7 @@ class EditMovieViewModelTest {
             viewModel.onTitleChange("Interstellarr")
 
             val editing =
-                viewModel.uiState.first { (it as? EditMovieUiState.Editing)?.title == "Interstellarr" }
+                viewModel.uiState.first { (it as? EditMovieUiState.Editing)?.form?.title == "Interstellarr" }
                     as EditMovieUiState.Editing
             assertEquals("Interstellar", editing.savedTitle)
             assertEquals(2014, editing.savedYear)

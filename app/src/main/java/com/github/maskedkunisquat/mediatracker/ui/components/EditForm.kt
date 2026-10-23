@@ -2,23 +2,41 @@ package com.github.maskedkunisquat.mediatracker.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.plus
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,5 +195,162 @@ fun EditBottomBar(
                 }
             }
         }
+    }
+}
+
+/**
+ * The frame every form screen shares (#214): a [Scaffold] with a back-arrow top bar, and a body the
+ * keyboard shrinks. [content] receives the Scaffold's inner padding, because the two halves of a
+ * form body take different pieces of it -- see [EditFormBody].
+ *
+ * `safeDrawing` because Scaffold's default content insets leave out the IME, so without it the
+ * keyboard would sit over the field being edited instead of the layout resizing (#95). The bars are
+ * *not* padded here: the scrolling form passes under the top bar, and the pinned action bar takes the
+ * navigation bar itself. The keyboard is the exception, as always: it shrinks the viewport for both.
+ *
+ * [centeredTitle] keeps Edit book's centered bar until #214 moves every form screen to the left.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FormScreenScaffold(
+    title: String,
+    onNavigateBack: () -> Unit,
+    centeredTitle: Boolean = false,
+    content: @Composable BoxScope.(innerPadding: PaddingValues) -> Unit,
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            val navigationIcon: @Composable () -> Unit = {
+                IconButton(onClick = onNavigateBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.navigate_back),
+                    )
+                }
+            }
+            if (centeredTitle) {
+                CenterAlignedTopAppBar(title = { Text(title) }, navigationIcon = navigationIcon)
+            } else {
+                TopAppBar(title = { Text(title) }, navigationIcon = navigationIcon)
+            }
+        },
+    ) { innerPadding ->
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .imePadding()
+                    .consumeWindowInsets(innerPadding),
+        ) {
+            content(innerPadding)
+        }
+    }
+}
+
+/**
+ * A centered stand-in for a form that is not ready yet -- a spinner while loading, or
+ * [EditLoadFailed] -- inside [FormScreenScaffold]'s body.
+ */
+@Composable
+fun FormScreenMessage(
+    innerPadding: PaddingValues,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(innerPadding),
+        contentAlignment = Alignment.Center,
+        content = content,
+    )
+}
+
+/**
+ * Edit Book's shape since #174, written once (#214): a scrolling form that takes the remaining
+ * height, then [aboveBar] (an inline error, where a screen has one), then the Cancel/Save bar pinned
+ * under it -- above the keyboard when it is up, above the navigation bar when it is not
+ * ([EditBottomBar] takes those insets itself).
+ *
+ * The snackbar lies over the form rather than in Scaffold's slot: Scaffold lifts a snackbar only
+ * above its own bottomBar, and this bar is content, so a Scaffold-placed snackbar would sit on Save
+ * and swallow taps on it until it timed out (#174 review).
+ */
+@Composable
+fun EditFormBody(
+    innerPadding: PaddingValues,
+    formTag: String,
+    isSaving: Boolean,
+    canSave: Boolean,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    cancelTag: String,
+    saveTag: String,
+    snackbarHostState: SnackbarHostState? = null,
+    aboveBar: @Composable () -> Unit = {},
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        // Inside the scroll, so the form passes under the top app bar. Horizontal bars
+                        // only: the bottom inset is the pinned action bar's to handle, and adding it
+                        // here would open a navigation-bar-sized gap above a bar that is already there.
+                        .padding(top = innerPadding.calculateTopPadding())
+                        .padding(barPadding(WindowInsetsSides.Horizontal))
+                        .padding(16.dp)
+                        .testTag(formTag),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                content = content,
+            )
+            if (snackbarHostState != null) {
+                SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+            }
+        }
+        aboveBar()
+        EditBottomBar(
+            isSaving = isSaving,
+            canSave = canSave,
+            onCancel = onCancel,
+            onSave = onSave,
+            cancelTag = cancelTag,
+            saveTag = saveTag,
+        )
+    }
+}
+
+/** [FormScreenScaffold] around an [EditFormBody], for a screen whose form is always ready. */
+@Composable
+fun EditFormScaffold(
+    title: String,
+    onNavigateBack: () -> Unit,
+    formTag: String,
+    isSaving: Boolean,
+    canSave: Boolean,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    cancelTag: String,
+    saveTag: String,
+    snackbarHostState: SnackbarHostState? = null,
+    aboveBar: @Composable () -> Unit = {},
+    centeredTitle: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    FormScreenScaffold(title = title, onNavigateBack = onNavigateBack, centeredTitle = centeredTitle) { innerPadding ->
+        EditFormBody(
+            innerPadding = innerPadding,
+            formTag = formTag,
+            isSaving = isSaving,
+            canSave = canSave,
+            onCancel = onCancel,
+            onSave = onSave,
+            cancelTag = cancelTag,
+            saveTag = saveTag,
+            snackbarHostState = snackbarHostState,
+            aboveBar = aboveBar,
+            content = content,
+        )
     }
 }

@@ -1,25 +1,12 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,11 +14,8 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -42,9 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -55,12 +37,13 @@ import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.EditBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.components.DetailArtwork
-import com.github.maskedkunisquat.mediatracker.ui.components.EditBottomBar
+import com.github.maskedkunisquat.mediatracker.ui.components.EditFormBody
 import com.github.maskedkunisquat.mediatracker.ui.components.EditHeader
 import com.github.maskedkunisquat.mediatracker.ui.components.EditLoadFailed
+import com.github.maskedkunisquat.mediatracker.ui.components.FormScreenMessage
+import com.github.maskedkunisquat.mediatracker.ui.components.FormScreenScaffold
 import com.github.maskedkunisquat.mediatracker.ui.components.FormSection
 import com.github.maskedkunisquat.mediatracker.ui.components.StatusDropdownChip
-import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 import com.github.maskedkunisquat.mediatracker.ui.text.filterDecimalInput
 import com.github.maskedkunisquat.mediatracker.ui.text.formatUnit
 import com.github.maskedkunisquat.mediatracker.ui.text.toDisplayDecimal
@@ -163,63 +146,31 @@ fun EditBookScreen(
         trackingMode: TrackingMode,
     ) -> Unit,
 ) {
-    Scaffold(
-        // EditBookForm is a stack of OutlinedTextFields; Scaffold's default insets omit the IME,
-        // so safeDrawing is needed here or the keyboard would cover the field being edited.
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(stringResource(R.string.edit_book_title_bar)) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.navigate_back),
-                        )
-                    }
-                },
-            )
-        },
+    FormScreenScaffold(
+        title = stringResource(R.string.edit_book_title_bar),
+        onNavigateBack = onNavigateBack,
+        centeredTitle = true,
     ) { innerPadding ->
-        Box(
-            // No bar padding here. This screen is part scrolling form, part pinned action bar, and
-            // the two halves take different pieces of innerPadding -- see EditBookForm. The
-            // keyboard is the exception, as always: it shrinks the viewport for both.
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .imePadding()
-                    .consumeWindowInsets(innerPadding),
-        ) {
-            when (uiState) {
-                is EditBookUiState.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(innerPadding),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
-                    }
+        when (uiState) {
+            is EditBookUiState.Loading -> {
+                FormScreenMessage(innerPadding) { CircularProgressIndicator() }
+            }
+            is EditBookUiState.LoadFailed -> {
+                FormScreenMessage(innerPadding) {
+                    EditLoadFailed(onRetry = onRetry, onNavigateBack = onNavigateBack)
                 }
-                is EditBookUiState.LoadFailed -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(innerPadding),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        EditLoadFailed(onRetry = onRetry, onNavigateBack = onNavigateBack)
-                    }
-                }
-                is EditBookUiState.NotFound, is EditBookUiState.Saved -> {
-                    // Nothing to render; the route wrapper navigates back on these states.
-                }
-                is EditBookUiState.Ready -> {
-                    EditBookForm(
-                        state = uiState,
-                        coverStorageDir = coverStorageDir,
-                        scaffoldPadding = innerPadding,
-                        onSave = onSave,
-                        onCancel = onNavigateBack,
-                    )
-                }
+            }
+            is EditBookUiState.NotFound, is EditBookUiState.Saved -> {
+                // Nothing to render; the route wrapper navigates back on these states.
+            }
+            is EditBookUiState.Ready -> {
+                EditBookForm(
+                    state = uiState,
+                    coverStorageDir = coverStorageDir,
+                    scaffoldPadding = innerPadding,
+                    onSave = onSave,
+                    onCancel = onNavigateBack,
+                )
             }
         }
     }
@@ -343,159 +294,145 @@ private fun EditBookForm(
 
     val formIsValid = titleIsValid && releaseYearIsValid && purchasePriceIsValid && totalPagesIsValid
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    // Inside the scroll, so the form passes under the top app bar. Horizontal bars
-                    // only: the bottom inset is the pinned action bar's to handle, and adding it
-                    // here would open a navigation-bar-sized gap above a bar that is already there.
-                    .padding(top = scaffoldPadding.calculateTopPadding())
-                    .padding(barPadding(WindowInsetsSides.Horizontal))
-                    .padding(16.dp)
-                    .testTag(TestTags.EditBook.FORM),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            // The saved title, not titleText: the header names the book being edited while its
-            // title field is retyped (#174).
-            EditHeader(
-                kind = stringResource(R.string.book_detail_kind),
-                year = state.releaseYear,
-                title = state.title,
-                artwork = state.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.BOOK) },
+    EditFormBody(
+        innerPadding = scaffoldPadding,
+        formTag = TestTags.EditBook.FORM,
+        isSaving = state.isSaving,
+        canSave = formIsValid,
+        onCancel = onCancel,
+        cancelTag = TestTags.EditBook.CANCEL_BUTTON,
+        saveTag = TestTags.EditBook.SAVE_BUTTON,
+        onSave = {
+            onSave(
+                titleText.trim(),
+                validatedReleaseYear,
+                validatedPurchasePrice,
+                validatedTotalPages,
+                format,
+                status,
+                trackingMode,
             )
-            FormSection(title = stringResource(R.string.edit_section_book_details)) {
-                OutlinedTextField(
-                    value = titleText,
-                    onValueChange = { titleText = it },
-                    label = { Text(stringResource(R.string.edit_title_label)) },
-                    isError = !titleIsValid,
-                    supportingText =
-                        if (!titleIsValid) {
-                            { Text(stringResource(R.string.edit_title_required_error)) }
-                        } else {
-                            null
-                        },
-                    singleLine = true,
-                    enabled = !state.isSaving,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = releaseYearText,
-                    onValueChange = { releaseYearText = it.filterIntegerInput() },
-                    label = { Text(stringResource(R.string.edit_release_year_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = !releaseYearIsValid,
-                    supportingText =
-                        if (!releaseYearIsValid) {
-                            {
-                                Text(
-                                    stringResource(
-                                        R.string.edit_release_year_invalid_error,
-                                        BookMetadataValidation.MIN_RELEASE_YEAR,
-                                        BookMetadataValidation.MAX_RELEASE_YEAR,
-                                    ),
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                    singleLine = true,
-                    enabled = !state.isSaving,
-                    modifier = Modifier.fillMaxWidth(),
+        },
+        aboveBar = {
+            val errorMessage = state.errorMessage
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),
                 )
             }
-
-            FormSection(title = stringResource(R.string.edit_section_physical)) {
-                FormatDropdownField(
-                    format = format,
-                    onFormatChange = { format = it },
-                    enabled = !state.isSaving,
-                )
-                OutlinedTextField(
-                    value = totalPagesText,
-                    onValueChange = { totalPagesText = it.filterIntegerInput() },
-                    label = { Text(stringResource(R.string.edit_total_pages_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    suffix = { Text(stringResource(R.string.edit_total_pages_suffix)) },
-                    isError = !totalPagesIsValid,
-                    supportingText =
-                        if (!totalPagesIsValid) {
-                            { Text(stringResource(R.string.edit_total_pages_invalid_error)) }
-                        } else {
-                            null
-                        },
-                    singleLine = true,
-                    enabled = !state.isSaving,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                TrackingModeRow(
-                    trackingMode = trackingMode,
-                    onTrackingModeChange = { trackingMode = it },
-                    enabled = !state.isSaving,
-                )
-            }
-
-            FormSection(title = stringResource(R.string.edit_section_status)) {
-                StatusChipRow(
-                    status = status,
-                    onStatusChange = { status = it },
-                    enabled = !state.isSaving,
-                    isReread = state.isReread,
-                )
-            }
-
-            FormSection(title = stringResource(R.string.edit_section_purchase)) {
-                OutlinedTextField(
-                    value = purchasePriceText.toDisplayDecimal(),
-                    onValueChange = { purchasePriceText = it.filterDecimalInput() },
-                    label = { Text(stringResource(R.string.edit_purchase_price_label)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    prefix = { Text(stringResource(R.string.edit_purchase_price_prefix)) },
-                    isError = !purchasePriceIsValid,
-                    supportingText =
-                        if (!purchasePriceIsValid) {
-                            { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
-                        } else {
-                            null
-                        },
-                    singleLine = true,
-                    enabled = !state.isSaving,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        val errorMessage = state.errorMessage
-        if (errorMessage != null) {
-            Text(
-                text = errorMessage,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),
-            )
-        }
-
-        EditBottomBar(
-            isSaving = state.isSaving,
-            canSave = formIsValid,
-            onCancel = onCancel,
-            cancelTag = TestTags.EditBook.CANCEL_BUTTON,
-            saveTag = TestTags.EditBook.SAVE_BUTTON,
-            onSave = {
-                onSave(
-                    titleText.trim(),
-                    validatedReleaseYear,
-                    validatedPurchasePrice,
-                    validatedTotalPages,
-                    format,
-                    status,
-                    trackingMode,
-                )
-            },
+        },
+    ) {
+        // The saved title, not titleText: the header names the book being edited while its
+        // title field is retyped (#174).
+        EditHeader(
+            kind = stringResource(R.string.book_detail_kind),
+            year = state.releaseYear,
+            title = state.title,
+            artwork = state.coverImageHash?.let { DetailArtwork(coverStorageDir, it, MediaType.BOOK) },
         )
+        FormSection(title = stringResource(R.string.edit_section_book_details)) {
+            OutlinedTextField(
+                value = titleText,
+                onValueChange = { titleText = it },
+                label = { Text(stringResource(R.string.edit_title_label)) },
+                isError = !titleIsValid,
+                supportingText =
+                    if (!titleIsValid) {
+                        { Text(stringResource(R.string.edit_title_required_error)) }
+                    } else {
+                        null
+                    },
+                singleLine = true,
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = releaseYearText,
+                onValueChange = { releaseYearText = it.filterIntegerInput() },
+                label = { Text(stringResource(R.string.edit_release_year_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = !releaseYearIsValid,
+                supportingText =
+                    if (!releaseYearIsValid) {
+                        {
+                            Text(
+                                stringResource(
+                                    R.string.edit_release_year_invalid_error,
+                                    BookMetadataValidation.MIN_RELEASE_YEAR,
+                                    BookMetadataValidation.MAX_RELEASE_YEAR,
+                                ),
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                singleLine = true,
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        FormSection(title = stringResource(R.string.edit_section_physical)) {
+            FormatDropdownField(
+                format = format,
+                onFormatChange = { format = it },
+                enabled = !state.isSaving,
+            )
+            OutlinedTextField(
+                value = totalPagesText,
+                onValueChange = { totalPagesText = it.filterIntegerInput() },
+                label = { Text(stringResource(R.string.edit_total_pages_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                suffix = { Text(stringResource(R.string.edit_total_pages_suffix)) },
+                isError = !totalPagesIsValid,
+                supportingText =
+                    if (!totalPagesIsValid) {
+                        { Text(stringResource(R.string.edit_total_pages_invalid_error)) }
+                    } else {
+                        null
+                    },
+                singleLine = true,
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TrackingModeRow(
+                trackingMode = trackingMode,
+                onTrackingModeChange = { trackingMode = it },
+                enabled = !state.isSaving,
+            )
+        }
+
+        FormSection(title = stringResource(R.string.edit_section_status)) {
+            StatusChipRow(
+                status = status,
+                onStatusChange = { status = it },
+                enabled = !state.isSaving,
+                isReread = state.isReread,
+            )
+        }
+
+        FormSection(title = stringResource(R.string.edit_section_purchase)) {
+            OutlinedTextField(
+                value = purchasePriceText.toDisplayDecimal(),
+                onValueChange = { purchasePriceText = it.filterDecimalInput() },
+                label = { Text(stringResource(R.string.edit_purchase_price_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                prefix = { Text(stringResource(R.string.edit_purchase_price_prefix)) },
+                isError = !purchasePriceIsValid,
+                supportingText =
+                    if (!purchasePriceIsValid) {
+                        { Text(stringResource(R.string.edit_purchase_price_invalid_error)) }
+                    } else {
+                        null
+                    },
+                singleLine = true,
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

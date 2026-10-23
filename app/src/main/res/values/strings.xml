@@ -128,7 +128,8 @@
     <string name="watch_status_abandoned">Abandoned</string>
 
     <!-- Manual movie entry (Task 13 Phase B) -->
-    <string name="add_movie_title">Add movie</string>
+    <string name="add_movie_title">Add film</string>
+    <string name="add_movie_untitled">New film</string>
     <string name="edit_movie_title">Edit movie</string>
     <string name="edit_movie_content_description">Edit movie</string>
     <string name="edit_tv_show_title">Edit show</string>
@@ -143,8 +144,6 @@
     <string name="add_movie_field_runtime">Runtime (minutes)</string>
     <string name="add_movie_field_price">Purchase price</string>
     <string name="add_movie_runtime_invalid_error">Enter a positive runtime in minutes</string>
-    <string name="add_movie_status_label">Status</string>
-    <string name="add_movie_save">Save movie</string>
 
     <!-- Movie detail (Task 13 Phase B) -->
     <string name="movie_detail_not_found">Movie not found</string>
@@ -722,7 +721,7 @@
     <!-- Manual TV show entry with season quick-fill (Task 13 Phase C) -->
     <string name="add_tv_show_title">Add TV show</string>
     <string name="tv_show_search_title">Add TV show</string>
-    <string name="movie_search_title">Add movie</string>
+    <string name="movie_search_title">Add film</string>
     <string name="movie_search_field_label">Search TMDB</string>
     <string name="movie_search_action">Search</string>
     <string name="movie_search_manual_entry">Enter manually instead</string>

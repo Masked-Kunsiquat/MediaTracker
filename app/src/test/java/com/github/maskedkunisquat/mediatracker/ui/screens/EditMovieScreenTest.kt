@@ -21,6 +21,7 @@ import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.EditMovieUiState
+import com.hub.media.ui.FilmFormState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -71,11 +72,14 @@ class EditMovieScreenTest {
         isSaving: Boolean = false,
         saveError: String? = null,
     ) = EditMovieUiState.Editing(
-        title = title,
-        releaseYear = releaseYear,
-        runtimeMinutes = runtimeMinutes,
-        purchasePrice = purchasePrice,
-        status = status,
+        form =
+            FilmFormState(
+                title = title,
+                releaseYear = releaseYear,
+                runtimeMinutes = runtimeMinutes,
+                purchasePrice = purchasePrice,
+                status = status,
+            ),
         isSaving = isSaving,
         saveError = saveError,
     )
@@ -112,6 +116,35 @@ class EditMovieScreenTest {
         setContent(editing())
 
         composeRule.onNode(saveButtonMatcher).assertIsEnabled()
+    }
+
+    @Test
+    fun anUnreadableRuntime_showsItsErrorAndBlocksSave() {
+        setContent(editing(runtimeMinutes = "1.2"))
+
+        composeRule.onNodeWithText(context.getString(R.string.add_movie_runtime_invalid_error)).assertIsDisplayed()
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+    }
+
+    /**
+     * #214: a year TMDB or the user supplies outside MovieMetadataValidation's range is flagged on the
+     * field, as Edit book flags one, rather than reaching the repository and coming back as a
+     * snackbar. The review form opens prefilled, so the field is where the user will look.
+     */
+    @Test
+    fun aYearOutOfRange_showsItsErrorAndBlocksSave() {
+        setContent(editing(releaseYear = "1700"))
+
+        composeRule.onNode(hasText("1700") and hasSetTextAction()).assertIsDisplayed()
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
+    }
+
+    @Test
+    fun aZeroRuntime_showsItsErrorAndBlocksSave() {
+        setContent(editing(runtimeMinutes = "0"))
+
+        composeRule.onNodeWithText(context.getString(R.string.add_movie_runtime_invalid_error)).assertIsDisplayed()
+        composeRule.onNode(saveButtonMatcher).assertIsNotEnabled()
     }
 
     /**

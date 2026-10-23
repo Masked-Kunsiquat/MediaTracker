@@ -15,6 +15,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.github.maskedkunisquat.mediatracker.R
 import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.EditMovieUiState
+import com.hub.media.ui.FilmFormState
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -55,22 +56,25 @@ class DecimalFieldLocaleTest {
             var state by remember {
                 mutableStateOf(
                     EditMovieUiState.Editing(
-                        title = "Interstellar",
-                        releaseYear = "2014",
-                        runtimeMinutes = "169",
-                        purchasePrice = prefill,
-                        status = WatchStatus.WATCHLIST,
+                        form =
+                            FilmFormState(
+                                title = "Interstellar",
+                                releaseYear = "2014",
+                                runtimeMinutes = "169",
+                                purchasePrice = prefill,
+                                status = WatchStatus.WATCHLIST,
+                            ),
                     ),
                 )
             }
-            storedPrice = state.purchasePrice
+            storedPrice = state.form.purchasePrice
             EditMovieScreen(
                 coverStorageDir = "",
                 uiState = state,
                 onTitleChange = {},
                 onReleaseYearChange = {},
                 onRuntimeChange = {},
-                onPurchasePriceChange = { state = state.copy(purchasePrice = it) },
+                onPurchasePriceChange = { state = state.copy(form = state.form.copy(purchasePrice = it)) },
                 onStatusChange = {},
                 onSave = {},
                 onErrorShown = {},
