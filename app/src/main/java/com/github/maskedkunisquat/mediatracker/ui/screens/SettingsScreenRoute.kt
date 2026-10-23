@@ -172,6 +172,7 @@ fun SettingsScreenRoute(
         importViewModel = importViewModel,
         snackbarHostState = snackbarHostState,
         onStartBackfill = backfillViewModel::start,
+        onStartTmdbBackfill = tmdbBackfillViewModel::start,
     )
 
     DatabaseBackupFlow(backupUiState, backupViewModel, snackbarHostState)
