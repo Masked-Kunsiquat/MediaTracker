@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -50,8 +51,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.MovieSearchViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.EditFormScaffold
+import com.github.maskedkunisquat.mediatracker.ui.components.EditHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.FilmFieldValidity
+import com.github.maskedkunisquat.mediatracker.ui.components.FilmFormContent
+import com.github.maskedkunisquat.mediatracker.ui.components.FilmWatchedDialog
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
+import com.hub.media.core.database.entities.WatchStatus
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.FilmReview
 import com.hub.media.ui.MovieSearchUiState
 import com.hub.media.ui.MovieSearchViewModel
 import com.hub.media.ui.TmdbSearchResult
@@ -81,11 +89,36 @@ fun MovieSearchScreenRoute(
         }
     }
 
+    // A looked-up film opens for review in place of the search (#214); nothing is saved until Save.
+    val review = uiState.review
+    if (review != null) {
+        // Choosing Watched asks when (#192); the form's status only changes once this is answered.
+        if (review.form.pendingWatched) {
+            FilmWatchedDialog(
+                title = stringResource(R.string.film_watched_title, review.form.title),
+                onConfirm = { watchedWhen, _ -> viewModel.confirmReviewWatched(watchedWhen) },
+                onDismiss = viewModel::dismissReviewWatched,
+            )
+        }
+        MovieReviewScreen(
+            review = review,
+            onTitleChange = viewModel::onReviewTitleChange,
+            onReleaseYearChange = viewModel::onReviewReleaseYearChange,
+            onRuntimeChange = viewModel::onReviewRuntimeChange,
+            onPurchasePriceChange = viewModel::onReviewPurchasePriceChange,
+            onStatusChange = viewModel::onReviewStatusChange,
+            onSave = viewModel::saveReview,
+            onCancel = viewModel::cancelReview,
+            onErrorShown = viewModel::dismissReviewError,
+        )
+        return
+    }
+
     MovieSearchScreen(
         uiState = uiState,
         onQueryChange = viewModel::onQueryChange,
         onSearch = viewModel::search,
-        onResultClick = viewModel::addMovie,
+        onResultClick = viewModel::reviewMovie,
         onDismissError = viewModel::dismissError,
         onNavigateBack = onNavigateBack,
         onNavigateToManualEntry = onNavigateToManualEntry,
@@ -301,4 +334,70 @@ private fun SearchResultRow(
         // assert is disabled.
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
     )
+}
+
+/**
+ * A film picked from TMDB, open for checking and editing before it is added (#214).
+ *
+ * The shared film form under a compact header naming what TMDB returned, with Cancel and Save
+ * pinned to the bottom edge -- the same screen Add film by hand and Edit film show. Cancel, the
+ * top bar's back arrow and the system Back all go to [onCancel], which returns to the results the
+ * film was picked from: leaving the add flow from here would discard a search the user may want to
+ * pick from again.
+ *
+ * Stateless: every value is [review] and every action a callback.
+ */
+@Composable
+fun MovieReviewScreen(
+    review: FilmReview,
+    onTitleChange: (String) -> Unit,
+    onReleaseYearChange: (String) -> Unit,
+    onRuntimeChange: (String) -> Unit,
+    onPurchasePriceChange: (String) -> Unit,
+    onStatusChange: (WatchStatus) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+    onErrorShown: () -> Unit,
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(review.saveError) {
+        val message = review.saveError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            onErrorShown()
+        }
+    }
+    BackHandler(onBack = onCancel)
+
+    EditFormScaffold(
+        title = stringResource(R.string.movie_search_title),
+        onNavigateBack = onCancel,
+        formTag = TestTags.MovieSearch.REVIEW_FORM,
+        isSaving = review.isSaving,
+        canSave = FilmFieldValidity(review.form).canSave,
+        onCancel = onCancel,
+        onSave = onSave,
+        cancelTag = TestTags.MovieSearch.REVIEW_CANCEL,
+        saveTag = TestTags.MovieSearch.REVIEW_SAVE,
+        snackbarHostState = snackbarHostState,
+    ) {
+        FilmFormContent(
+            form = review.form,
+            // What TMDB returned, not the live field: the header names the film being added.
+            header = {
+                EditHeader(
+                    kind = stringResource(R.string.movie_detail_kind),
+                    year = review.mapping.releaseYear,
+                    title = review.mapping.title,
+                    artwork = null,
+                )
+            },
+            enabled = !review.isSaving,
+            onTitleChange = onTitleChange,
+            onReleaseYearChange = onReleaseYearChange,
+            onRuntimeChange = onRuntimeChange,
+            onPurchasePriceChange = onPurchasePriceChange,
+            onStatusChange = onStatusChange,
+        )
+    }
 }
