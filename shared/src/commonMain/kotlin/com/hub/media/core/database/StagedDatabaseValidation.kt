@@ -1,7 +1,9 @@
 package com.hub.media.core.database
 
+import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.driver.bundled.SQLITE_OPEN_READONLY
+import androidx.sqlite.driver.bundled.SQLITE_OPEN_URI
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.catchingNonCancellation
@@ -91,11 +93,11 @@ private fun requiredTableNamesFor(schemaVersion: Int): List<String> =
  *    rather than being swapped in as an empty-looking, wrongly-shaped "library" -- and so is a file
  *    claiming a `user_version` whose tables don't actually match that claim.
  *
- * ### Opened read-only -- this is validation, not a write
- * [BundledSQLiteDriver.open] is called with [SQLITE_OPEN_READONLY] rather than its default flags.
- * Without it, merely *validating* a candidate could itself modify the file on disk and spawn
- * `-wal`/`-shm` sidecars next to it -- surprising and unwanted side effects for a function whose
- * entire job, at this point in [stage], is to look without touching (the destructive work is
+ * ### Opened read-only and immutable -- this is validation, not a write
+ * The candidate is opened through [openStagedCandidate], never with the driver's default flags.
+ * Merely *validating* a candidate must not modify the file on disk or spawn `-wal`/`-shm` sidecars
+ * next to it -- surprising and unwanted side effects for a function whose entire job, at this point
+ * in [stage], is to look without touching (the destructive work is
  * [com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.commit]'s job alone, and
  * only after explicit user confirmation).
  *
@@ -119,7 +121,7 @@ internal suspend fun validateStagedDatabaseIntegrity(
     withContext(Dispatchers.IO) {
         try {
             var failureReason: String? = null
-            BundledSQLiteDriver().open(path, SQLITE_OPEN_READONLY).use { connection ->
+            openStagedCandidate(path).use { connection ->
                 connection.prepare("PRAGMA integrity_check").use { statement ->
                     failureReason =
                         if (statement.step()) {
@@ -167,10 +169,9 @@ internal data class StagedRowCounts(
 )
 
 /**
- * Counts the rows a restore would bring in, opening the candidate read-only exactly as
- * [validateStagedDatabaseIntegrity] does, so it writes nothing to the database itself. (Opening a
- * WAL-mode file read-only still lets SQLite create `-wal`/`-shm` beside it; validation already does
- * that before this runs, and this adds none of its own.) Best-effort: any
+ * Counts the rows a restore would bring in, opening the candidate through [openStagedCandidate]
+ * exactly as [validateStagedDatabaseIntegrity] does, so it writes nothing beside or into the
+ * file. Best-effort: any
  * failure is logged and returns `null`, and a restore never depends on it -- logging must not become
  * a new source of failure for its caller.
  */
@@ -181,7 +182,7 @@ internal suspend fun countStagedDatabaseRows(
     withContext(Dispatchers.IO) {
         catchingNonCancellation(
             block = {
-                BundledSQLiteDriver().open(path, SQLITE_OPEN_READONLY).use { connection ->
+                openStagedCandidate(path).use { connection ->
                     val tables = mutableSetOf<String>()
                     connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").use { statement ->
                         while (statement.step()) tables += statement.getText(0)
@@ -219,3 +220,39 @@ internal fun StagedRowCounts?.toLogText(): String =
         "items=${items ?: "n/a"}, sessions=${sessions ?: "n/a"}, episodes=${episodes ?: "n/a"}, " +
             "viewings=${viewings ?: "n/a"}"
     }
+
+/**
+ * Opens a staged restore candidate to look at it, and nothing more: read-only, and `immutable` (#210).
+ *
+ * Read-only alone is not enough. SQLite opening a WAL-mode file read-only still creates `-wal` and
+ * `-shm` beside it whenever the directory is writable, and nothing ever deleted those: [commit]
+ * moves only the main file and a cancel deletes only the main file. `immutable=1` tells SQLite the
+ * file cannot change while it is open, so it takes no locks and creates no sidecars. That is true
+ * here: the candidate is a private copy in the cache directory that nothing else opens. Writes
+ * still fail outright, as [SQLITE_OPEN_READONLY] guarantees.
+ *
+ * [commit]: com.hub.media.features.portability.domain.DefaultRestoreDatabaseUseCase.commit
+ */
+internal fun openStagedCandidate(path: String): SQLiteConnection =
+    BundledSQLiteDriver().open(immutableFileUri(path), SQLITE_OPEN_READONLY or SQLITE_OPEN_URI)
+
+/**
+ * [path] as an SQLite `file:` URI with `immutable=1`. Backslashes become slashes and a drive letter
+ * gains a leading slash, so a Windows path works too (`file:///C:/...`); `%`, `?` and `#` are
+ * escaped, being the only characters SQLite's URI parser would read as syntax.
+ */
+internal fun immutableFileUri(path: String): String {
+    val escaped =
+        buildString {
+            for (c in path.replace('\\', '/')) {
+                when (c) {
+                    '%' -> append("%25")
+                    '?' -> append("%3F")
+                    '#' -> append("%23")
+                    else -> append(c)
+                }
+            }
+        }
+    val rooted = if (escaped.startsWith("/")) escaped else "/$escaped"
+    return "file://$rooted?immutable=1"
+}

@@ -52,6 +52,26 @@ class SweepStaleTempFilesUseCaseTest {
             assertTrue(unrelatedCache.exists())
         }
 
+    /**
+     * Before #210, staging a restore left `-wal`/`-shm` beside the candidate and nothing removed
+     * them. Staging no longer makes them, but a phone that restored on an older version still holds
+     * some, so the sweep takes them with the candidate's own name.
+     */
+    @Test
+    fun aRestoreCandidatesLeftoverWalAndShm_areRemovedToo() =
+        runTest {
+            val staleWal = touch(cache, "restore-incoming-1760390000000.tmp-wal")
+            val staleShm = touch(cache, "restore-incoming-1760390000000.tmp-shm")
+            val unrelatedWal = touch(cache, "other.db-wal")
+
+            val removed = SweepStaleTempFilesUseCase(dbFile.path, cache.path).execute(startedAtMillis = Long.MAX_VALUE)
+
+            assertEquals(2, removed)
+            assertFalse(staleWal.exists())
+            assertFalse(staleShm.exists())
+            assertTrue(unrelatedWal.exists(), "only a restore candidate's sidecars are ours to remove")
+        }
+
     @Test
     fun missingDirectories_removeNothing() =
         runTest {

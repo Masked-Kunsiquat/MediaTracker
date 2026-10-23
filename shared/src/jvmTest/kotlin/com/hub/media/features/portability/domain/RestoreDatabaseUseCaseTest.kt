@@ -164,6 +164,46 @@ class RestoreDatabaseUseCaseTest {
         }
 
     /**
+     * Looking at a candidate must leave nothing beside it (#210). A read-only open of a WAL-mode
+     * file still creates `-wal`/`-shm` when the directory is writable, and nothing ever deleted
+     * them: commit moves only the main file, cancel deletes only the main file, and the startup
+     * sweep matched only `*.tmp`.
+     */
+    @Test
+    fun stage_leavesNoWalOrShmBesideTheCandidate() =
+        runTest {
+            val candidatePath = path("restore-incoming-1.tmp")
+            createFreshDatabaseFile(candidatePath)
+            File("$candidatePath-wal").delete()
+            File("$candidatePath-shm").delete()
+
+            val result = DefaultRestoreDatabaseUseCase(path("live.db")).stage(candidatePath)
+
+            assertIs<Resource.Success<StagedRestoreInfo>>(result)
+            assertTrue(File(candidatePath).exists(), "the candidate itself is still staged")
+            assertFalse(File("$candidatePath-wal").exists(), "staging created a -wal beside the candidate")
+            assertFalse(File("$candidatePath-shm").exists(), "staging created a -shm beside the candidate")
+        }
+
+    /**
+     * The candidate is opened through a `file:` URI (#210), where `?`, `#` and `%` are syntax. A
+     * path holding them must still open the right file, not be cut short at the `#`.
+     */
+    @Test
+    fun stage_aCandidateWhosePathHoldsUriSyntax_isStillReadAndAccepted() =
+        runTest {
+            // '?' cannot appear in a Windows filename, so '#' and '%' carry the test here.
+            val candidatePath = path("restore #1 at 50%.tmp")
+            createFreshDatabaseFile(candidatePath)
+
+            val result = DefaultRestoreDatabaseUseCase(path("live.db")).stage(candidatePath)
+
+            // Cut at the '#', the path names a missing file and staging would fail.
+            assertIs<Resource.Success<StagedRestoreInfo>>(result)
+            assertEquals(APP_DATABASE_VERSION, result.data.schemaVersionFound)
+        }
+
+    /**
      * Finding 2's exact scenario: [com.hub.media.core.database.validateStagedDatabaseIntegrity]
      * used to open the candidate with `BundledSQLiteDriver`'s default flags (`SQLITE_OPEN_READWRITE
      * or SQLITE_OPEN_CREATE`) -- so merely *validating* a picked file, before the user has
