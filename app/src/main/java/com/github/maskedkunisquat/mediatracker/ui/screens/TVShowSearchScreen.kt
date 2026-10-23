@@ -1,5 +1,6 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -50,8 +52,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.TVShowSearchViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.EditFormScaffold
+import com.github.maskedkunisquat.mediatracker.ui.components.EditHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.ShowFieldValidity
+import com.github.maskedkunisquat.mediatracker.ui.components.ShowFormContent
 import com.github.maskedkunisquat.mediatracker.ui.insets.scrollingContentPadding
+import com.hub.media.features.tv.domain.seasonSummary
 import com.hub.media.ui.AppContainer
+import com.hub.media.ui.ShowReview
 import com.hub.media.ui.TVShowSearchUiState
 import com.hub.media.ui.TVShowSearchViewModel
 import com.hub.media.ui.TmdbSearchResult
@@ -81,11 +89,27 @@ fun TVShowSearchScreenRoute(
         }
     }
 
+    // A looked-up show opens for review in place of the search (#214); nothing is saved until Save.
+    val review = uiState.review
+    if (review != null) {
+        TVShowReviewScreen(
+            review = review,
+            onTitleChange = viewModel::onReviewTitleChange,
+            onReleaseYearChange = viewModel::onReviewReleaseYearChange,
+            onTotalSeasonsChange = viewModel::onReviewTotalSeasonsChange,
+            onPurchasePriceChange = viewModel::onReviewPurchasePriceChange,
+            onSave = viewModel::saveReview,
+            onCancel = viewModel::cancelReview,
+            onErrorShown = viewModel::dismissReviewError,
+        )
+        return
+    }
+
     TVShowSearchScreen(
         uiState = uiState,
         onQueryChange = viewModel::onQueryChange,
         onSearch = viewModel::search,
-        onResultClick = viewModel::addShow,
+        onResultClick = viewModel::reviewShow,
         onDismissError = viewModel::dismissError,
         onNavigateBack = onNavigateBack,
         onNavigateToManualEntry = onNavigateToManualEntry,
@@ -296,4 +320,89 @@ private fun SearchResultRow(
         // assert is disabled.
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
     )
+}
+
+/**
+ * A show picked from TMDB, open for checking and editing before it is added (#214) -- the show
+ * counterpart of [MovieReviewScreen], and the same shared show form Add show by hand and Edit show
+ * render.
+ *
+ * Its Seasons card summarises what TMDB returned rather than offering quick-fill rows: TMDB's
+ * seasons arrive whole, with every episode's title, air date and runtime, which a row holding only a
+ * count cannot represent. They are saved exactly as TMDB gave them. Cancel, the back arrow and the
+ * system Back all go to [onCancel], back to the results.
+ */
+@Composable
+fun TVShowReviewScreen(
+    review: ShowReview,
+    onTitleChange: (String) -> Unit,
+    onReleaseYearChange: (String) -> Unit,
+    onTotalSeasonsChange: (String) -> Unit,
+    onPurchasePriceChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+    onErrorShown: () -> Unit,
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(review.saveError) {
+        val message = review.saveError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            onErrorShown()
+        }
+    }
+    BackHandler(onBack = onCancel)
+
+    EditFormScaffold(
+        title = stringResource(R.string.tv_show_search_title),
+        onNavigateBack = onCancel,
+        formTag = TestTags.TVShowSearch.REVIEW_FORM,
+        isSaving = review.isSaving,
+        canSave = ShowFieldValidity(review.form).canSave,
+        onCancel = onCancel,
+        onSave = onSave,
+        cancelTag = TestTags.TVShowSearch.REVIEW_CANCEL,
+        saveTag = TestTags.TVShowSearch.REVIEW_SAVE,
+        snackbarHostState = snackbarHostState,
+    ) {
+        ShowFormContent(
+            form = review.form,
+            // What TMDB returned, not the live field: the header names the show being added.
+            header = {
+                EditHeader(
+                    kind = stringResource(R.string.tv_show_detail_kind),
+                    year = review.mapping.releaseYear,
+                    title = review.mapping.title,
+                    artwork = null,
+                )
+            },
+            enabled = !review.isSaving,
+            flagBlankTitle = true,
+            onTitleChange = onTitleChange,
+            onReleaseYearChange = onReleaseYearChange,
+            onTotalSeasonsChange = onTotalSeasonsChange,
+            onPurchasePriceChange = onPurchasePriceChange,
+            seasons = {
+                val summary = review.mapping.seasonSummary()
+                val resources = LocalContext.current.resources
+                Text(
+                    text =
+                        stringResource(
+                            R.string.tv_show_review_seasons_summary,
+                            resources.getQuantityString(
+                                R.plurals.tv_show_review_seasons,
+                                summary.seasons,
+                                summary.seasons,
+                            ),
+                            resources.getQuantityString(
+                                R.plurals.tv_show_review_episodes,
+                                summary.episodes,
+                                summary.episodes,
+                            ),
+                        ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+        )
+    }
 }

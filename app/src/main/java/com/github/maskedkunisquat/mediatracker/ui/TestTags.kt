@@ -169,6 +169,9 @@ object TestTags {
         const val QUERY_FIELD = "tvShowSearch:query"
         const val SEARCH_BUTTON = "tvShowSearch:search"
         const val MANUAL_ENTRY = "tvShowSearch:manualEntry"
+        const val REVIEW_FORM = "tvShowSearch:reviewForm"
+        const val REVIEW_SAVE = "tvShowSearch:reviewSave"
+        const val REVIEW_CANCEL = "tvShowSearch:reviewCancel"
     }
 
     object Settings {

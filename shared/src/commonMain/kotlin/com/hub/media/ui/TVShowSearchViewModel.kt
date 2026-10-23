@@ -10,6 +10,7 @@ import com.hub.media.core.util.info
 import com.hub.media.core.util.warn
 import com.hub.media.features.tv.data.TVShowRepository
 import com.hub.media.features.tv.domain.FetchPosterUseCase
+import com.hub.media.features.tv.domain.TmdbShowMapping
 import com.hub.media.features.tv.domain.toShowMapping
 import com.hub.media.features.tv.network.TmdbClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,9 @@ private const val TAG = "TVShowSearchViewModel"
  *   different things -- "you have not searched yet" and "nothing matched" -- and a screen that
  *   cannot tell them apart has to either show "no results" before the user has done anything or
  *   stay silent when a search genuinely found nothing.
+ * @property addingTmdbId The result being looked up; every row is unresponsive while it is set.
+ * @property review The looked-up show, open for checking and editing before anything is saved
+ *   (#214). `null` shows the search itself.
  * @property savedMediaId Set once a show has been created; the route reads it and navigates. The
  *   save is asynchronous, so the tapped row cannot know the id at click time.
  */
@@ -35,7 +39,23 @@ public data class TVShowSearchUiState(
     val searchError: String? = null,
     val addingTmdbId: Int? = null,
     val addError: String? = null,
+    val review: ShowReview? = null,
     val savedMediaId: String? = null,
+)
+
+/**
+ * A show picked from TMDB search, waiting on the user's Save (#214).
+ *
+ * [mapping] is everything TMDB said, kept whole because the save writes far more than the form
+ * shows -- every season and episode with its titles and air dates, the airing status and dates, the
+ * TMDB id, rating, overview and poster path. [form] is what the user sees and edits; its values win
+ * over [mapping]'s at the save. It has no quick-fill rows: the seasons come from [mapping].
+ */
+public data class ShowReview(
+    val mapping: TmdbShowMapping,
+    val form: ShowFormState,
+    val isSaving: Boolean = false,
+    val saveError: String? = null,
 )
 
 /**
@@ -114,28 +134,11 @@ public class TVShowSearchViewModel(
     }
 
     /**
-     * Fetches the chosen show in full and adds it to the library, unless it is already there.
-     *
-     * ### Why a duplicate is refused rather than treated as a re-watch
-     * Wanting to watch a show again is [ROADMAP Task 10]'s problem, and it is one library row with
-     * many viewings -- the history accumulates on the row you already have. A second row is not that:
-     * it is two shows of the same name, each with its own episodes and its own watched state, linked
-     * by nothing. It would split the very history re-watch modelling exists to keep together, and
-     * every count that sums episodes would double.
-     *
-     * So the check is not a nicety ahead of #90; #90 is the reason it matters.
-     *
-     * The refusal is deliberately a message rather than a jump to the existing show. Opening it is
-     * probably the nicer answer and is worth building, but a silent navigation looks identical to a
-     * successful add -- the user cannot tell whether they created a duplicate -- and guessing at
-     * which is right is how a confusing flow ships. Saying plainly what happened forecloses nothing.
-     *
-     * [TVShowSearchUiState.addingTmdbId] carries *which* row is being added rather than a bare
-     * boolean, so the screen can show progress on the row that was tapped instead of over the whole
-     * list. Re-entry is refused while one is in flight: two taps would otherwise produce two shows.
+     * Looks up the chosen show and opens it for review (#214), unless it is already in the library.
+     * Nothing is saved here: [saveReview] does that once the user has checked the form.
      */
-    public fun addShow(tmdbId: Int) {
-        if (_uiState.value.addingTmdbId != null) return
+    public fun reviewShow(tmdbId: Int) {
+        if (_uiState.value.addingTmdbId != null || _uiState.value.review != null) return
         _uiState.value = _uiState.value.copy(addingTmdbId = tmdbId, addError = null)
 
         viewModelScope.launch {
@@ -169,40 +172,94 @@ public class TVShowSearchViewModel(
                         failAdd("TMDB returned a show record without a title")
                         return@launch
                     }
-                    when (
-                        val saved =
-                            tvShowRepository.addShow(
-                                title = mapping.title,
-                                releaseYear = mapping.releaseYear,
-                                totalSeasons = mapping.totalSeasons,
-                                seasons = mapping.seasons,
-                                externalIdentifiers = mapping.externalIdentifiers,
-                                airingStatus = mapping.airingStatus,
-                                synopsis = mapping.overview,
-                                firstAirDate = mapping.firstAirDate,
-                                lastAirDate = mapping.lastAirDate,
-                                communityRating = mapping.communityRating,
-                            )
-                    ) {
-                        is Resource.Success -> {
-                            logger.info(TAG) {
-                                "Added show from TMDB $tmdbId: ${mapping.seasons.size} season(s)"
-                            }
-                            // Release the screen *first*, then fetch the artwork -- see
-                            // MovieSearchViewModel for the device-found failure this ordering fixes:
-                            // savedMediaId drives navigation and addingTmdbId keeps every row
-                            // unresponsive, so fetching before this line left the user on a dead list
-                            // looking at a show that had already been added.
-                            _uiState.value =
-                                _uiState.value.copy(addingTmdbId = null, savedMediaId = saved.data)
-                            fetchPosterUseCase.enqueue(saved.data, mapping.posterPath)
-                        }
-                        is Resource.Error -> failAdd(saved.message)
-                    }
+                    logger.info(
+                        TAG,
+                    ) { "Looked up show from TMDB $tmdbId for review: ${mapping.seasons.size} season(s)" }
+                    _uiState.value =
+                        _uiState.value.copy(addingTmdbId = null, review = ShowReview(mapping, mapping.toShowForm()))
                 }
             }
         }
     }
+
+    public fun onReviewTitleChange(value: String): Unit = updateReviewForm { it.copy(title = value) }
+
+    public fun onReviewReleaseYearChange(value: String): Unit = updateReviewForm { it.copy(releaseYear = value) }
+
+    public fun onReviewTotalSeasonsChange(value: String): Unit = updateReviewForm { it.copy(totalSeasons = value) }
+
+    public fun onReviewPurchasePriceChange(value: String): Unit = updateReviewForm { it.copy(purchasePrice = value) }
+
+    /**
+     * Saves the reviewed show: the form's values, plus every season and episode and everything else
+     * TMDB said.
+     *
+     * Ignored while a save is in flight or once one has produced a show, so a double tap cannot
+     * create two. An unreadable field is reported on the review rather than saved as unknown.
+     */
+    public fun saveReview() {
+        val review = _uiState.value.review ?: return
+        if (review.isSaving || _uiState.value.savedMediaId != null) return
+        val values =
+            when (val parsed = review.form.parsed()) {
+                is ShowFormParse.Unreadable -> {
+                    updateReview { it.copy(saveError = parsed.message) }
+                    return
+                }
+                is ShowFormParse.Valid -> parsed
+            }
+        updateReview { it.copy(isSaving = true, saveError = null) }
+        val mapping = review.mapping
+        viewModelScope.launch {
+            when (
+                val saved =
+                    tvShowRepository.addShow(
+                        title = values.title,
+                        releaseYear = values.releaseYear,
+                        purchasePrice = values.purchasePrice,
+                        totalSeasons = values.totalSeasons,
+                        seasons = mapping.seasons,
+                        externalIdentifiers = mapping.externalIdentifiers,
+                        airingStatus = mapping.airingStatus,
+                        synopsis = mapping.overview,
+                        firstAirDate = mapping.firstAirDate,
+                        lastAirDate = mapping.lastAirDate,
+                        communityRating = mapping.communityRating,
+                    )
+            ) {
+                is Resource.Success -> {
+                    logger.info(TAG) { "Added show from TMDB review: ${mapping.seasons.size} season(s)" }
+                    // Release the screen *first*, then fetch the artwork -- see
+                    // MovieSearchViewModel.saveReview for the device-found failure this ordering
+                    // fixes: savedMediaId drives navigation, so fetching first left the user on a
+                    // dead form looking at a show that had already been added.
+                    _uiState.value = _uiState.value.copy(review = null, savedMediaId = saved.data)
+                    fetchPosterUseCase.enqueue(saved.data, mapping.posterPath)
+                }
+                is Resource.Error -> updateReview { it.copy(isSaving = false, saveError = saved.message) }
+            }
+        }
+    }
+
+    /**
+     * Closes the review and returns to the results it was opened from, saving nothing. Ignored
+     * while a save is in flight, for the reason [MovieSearchViewModel.cancelReview] gives.
+     */
+    public fun cancelReview() {
+        if (_uiState.value.review?.isSaving == true) return
+        _uiState.value = _uiState.value.copy(review = null)
+    }
+
+    /** Acknowledges a save error once shown, so it is not repeated on the next recomposition. */
+    public fun dismissReviewError(): Unit = updateReview { it.copy(saveError = null) }
+
+    private inline fun updateReview(transform: (ShowReview) -> ShowReview) {
+        val review = _uiState.value.review ?: return
+        _uiState.value = _uiState.value.copy(review = transform(review))
+    }
+
+    private inline fun updateReviewForm(transform: (ShowFormState) -> ShowFormState): Unit =
+        updateReview { it.copy(form = transform(it.form)) }
 
     private fun failAdd(message: String) {
         _uiState.value = _uiState.value.copy(addingTmdbId = null, addError = message)

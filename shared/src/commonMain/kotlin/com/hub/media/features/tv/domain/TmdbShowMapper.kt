@@ -173,3 +173,18 @@ private fun airingStatusOf(
         "canceled", "cancelled" -> AiringStatus.CANCELLED
         else -> if (inProduction == true) AiringStatus.CONTINUING else null
     }
+
+/** How much of a show TMDB returned, for the review's Seasons card (#214). */
+public data class SeasonSummary(
+    val seasons: Int,
+    val episodes: Int,
+)
+
+/**
+ * Counts the seasons and episodes this mapping would create. An announced season with no episodes
+ * yet still counts as a season: it is one, and the show page will list it.
+ */
+public fun TmdbShowMapping.seasonSummary(): SeasonSummary {
+    val known = seasons.filterIsInstance<SeasonEpisodes>()
+    return SeasonSummary(seasons = known.size, episodes = known.sumOf { it.episodes.size })
+}

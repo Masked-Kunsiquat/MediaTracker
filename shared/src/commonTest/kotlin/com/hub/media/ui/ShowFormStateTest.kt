@@ -1,8 +1,11 @@
 package com.hub.media.ui
 
+import com.hub.media.features.tv.data.NewEpisode
 import com.hub.media.features.tv.data.SeasonEpisodes
 import com.hub.media.features.tv.data.SeasonQuickFill
+import com.hub.media.features.tv.domain.SeasonSummary
 import com.hub.media.features.tv.domain.TmdbShowMapping
+import com.hub.media.features.tv.domain.seasonSummary
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -93,5 +96,24 @@ class ShowFormStateTest {
             ).toShowForm()
 
         assertEquals(ShowFormState(title = "Severance", releaseYear = "2022", totalSeasons = "2"), form)
+    }
+
+    @Test
+    fun seasonSummary_countsSeasonsAndEpisodes_includingAnUnairedSeason() {
+        val episode = NewEpisode(episodeNumber = 1)
+        val mapping =
+            TmdbShowMapping(
+                title = "Severance",
+                seasons =
+                    listOf(
+                        SeasonEpisodes(
+                            1,
+                            listOf(episode, episode.copy(episodeNumber = 2), episode.copy(episodeNumber = 3)),
+                        ),
+                        SeasonEpisodes(2, emptyList()),
+                    ),
+            )
+
+        assertEquals(SeasonSummary(seasons = 2, episodes = 3), mapping.seasonSummary())
     }
 }
