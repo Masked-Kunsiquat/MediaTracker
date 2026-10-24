@@ -745,6 +745,50 @@ class BookRepositoryTest {
             )
         }
 
+    /**
+     * #214: the add review offers every status, so a book can be added already Finished. It gets a
+     * finish moment from the injected clock, the same as Edit book gives it -- without one, the
+     * stats' finished-in-range queries never count it.
+     */
+    @Test
+    fun addBook_asFinished_stampsFinishedAtFromTheInjectedClock() =
+        runTest {
+            val fixedInstant = Instant.fromEpochMilliseconds(1_000_000_000_000)
+            val fixedClock =
+                object : Clock {
+                    override fun now(): Instant = fixedInstant
+                }
+            val repoWithFixedClock = BookRepository(db, fixedClock)
+
+            val addResult =
+                repoWithFixedClock.addBook(
+                    title = "Finished On Add",
+                    format = BookFormat.PHYSICAL,
+                    status = ReadingStatus.FINISHED,
+                )
+            assertIs<Resource.Success<String>>(addResult)
+
+            val read = db.readThroughDao().getLatest(addResult.data)
+            assertEquals(ReadingStatus.FINISHED, read?.status)
+            assertEquals(fixedInstant, read?.finishedAt)
+        }
+
+    @Test
+    fun addBook_notFinished_hasNoFinishedAt() =
+        runTest {
+            val addResult =
+                repo.addBook(
+                    title = "Reading On Add",
+                    format = BookFormat.PHYSICAL,
+                    status = ReadingStatus.READING,
+                )
+            assertIs<Resource.Success<String>>(addResult)
+
+            val read = db.readThroughDao().getLatest(addResult.data)
+            assertEquals(ReadingStatus.READING, read?.status)
+            assertEquals(null, read?.finishedAt)
+        }
+
     @Test
     fun updateReadingStatus_toFinished_stampsFinishedAt() =
         runTest {

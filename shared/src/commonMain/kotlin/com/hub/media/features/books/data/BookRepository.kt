@@ -198,7 +198,15 @@ public class BookRepository(
                     )
                 }
 
-            db.bookWriteDao().insertBookAtomically(mediaItem, bookDetails, identifierEntities, status = status)
+            // A book added already Finished (#214's review offers every status) is stamped exactly as
+            // Edit book would stamp it, so the stats' finished-in-range queries count it.
+            db.bookWriteDao().insertBookAtomically(
+                mediaItem,
+                bookDetails,
+                identifierEntities,
+                status = status,
+                finishedAt = resolveFinishedAt(status, ReadingStatus.TO_READ, null, clock),
+            )
 
             Resource.Success(mediaId)
         }
