@@ -98,8 +98,12 @@ class ShowFormStateTest {
         assertEquals(ShowFormState(title = "Severance", releaseYear = "2022", totalSeasons = "2"), form)
     }
 
+    /**
+     * A long-running show's seasons past TMDB's 20-season response ceiling arrive as quick-fills
+     * (toShowMapping's KDoc). The save creates them, so the review's summary counts them too.
+     */
     @Test
-    fun seasonSummary_countsSeasonsAndEpisodes_includingAnUnairedSeason() {
+    fun seasonSummary_countsQuickFilledSeasonsAndTheirEpisodes() {
         val episode = NewEpisode(episodeNumber = 1)
         val mapping =
             TmdbShowMapping(
@@ -110,10 +114,10 @@ class ShowFormStateTest {
                             1,
                             listOf(episode, episode.copy(episodeNumber = 2), episode.copy(episodeNumber = 3)),
                         ),
-                        SeasonEpisodes(2, emptyList()),
+                        SeasonQuickFill(seasonNumber = 21, episodeCount = 10),
                     ),
             )
 
-        assertEquals(SeasonSummary(seasons = 2, episodes = 3), mapping.seasonSummary())
+        assertEquals(SeasonSummary(seasons = 2, episodes = 13), mapping.seasonSummary())
     }
 }

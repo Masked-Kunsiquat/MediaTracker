@@ -181,10 +181,18 @@ public data class SeasonSummary(
 )
 
 /**
- * Counts the seasons and episodes this mapping would create. An announced season with no episodes
- * yet still counts as a season: it is one, and the show page will list it.
+ * Counts the seasons and episodes this mapping would create, including the seasons past TMDB's
+ * response ceiling that arrive as [SeasonQuickFill]s -- the save creates those too, and a long-running
+ * show is exactly where a summary that left them out would mislead.
  */
-public fun TmdbShowMapping.seasonSummary(): SeasonSummary {
-    val known = seasons.filterIsInstance<SeasonEpisodes>()
-    return SeasonSummary(seasons = known.size, episodes = known.sumOf { it.episodes.size })
-}
+public fun TmdbShowMapping.seasonSummary(): SeasonSummary =
+    SeasonSummary(
+        seasons = seasons.size,
+        episodes =
+            seasons.sumOf { season ->
+                when (season) {
+                    is SeasonEpisodes -> season.episodes.size
+                    is SeasonQuickFill -> season.episodeCount
+                }
+            },
+    )
