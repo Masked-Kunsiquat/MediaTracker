@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adding a film by hand uses the same form as editing one: grouped cards, the status dropdown, and Cancel and Save pinned to the bottom of the screen. (#214)
 - A film's year and runtime are checked as you type, so one that can't be saved is flagged on its field instead of after you tap Save. (#214)
 - "Add movie" is now "Add film", to match the rest of the app. (#214)
+- "Add Book" is now "Add book" and "Edit movie" is now "Edit film", and every add and edit screen has its title on the left like the rest of the app. (#214)
 - Picking a show from search no longer adds it straight away either. Its form shows what TMDB found, including how many seasons and episodes, and nothing is saved until you tap Save. (#214)
 - Adding a show by hand uses the same form as editing one, with your seasons in their own card and Cancel and Save pinned to the bottom. (#214)
 - A new film or show's form no longer marks the empty title in red before you've typed anything. (#214)

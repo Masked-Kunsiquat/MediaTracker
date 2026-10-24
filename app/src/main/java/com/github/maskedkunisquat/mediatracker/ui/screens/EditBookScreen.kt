@@ -119,7 +119,6 @@ fun EditBookScreen(
     FormScreenScaffold(
         title = stringResource(R.string.edit_book_title_bar),
         onNavigateBack = onNavigateBack,
-        centeredTitle = true,
     ) { innerPadding ->
         when (uiState) {
             is EditBookUiState.Loading -> {

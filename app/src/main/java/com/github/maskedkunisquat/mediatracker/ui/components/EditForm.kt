@@ -26,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -232,33 +231,28 @@ fun EditBottomBar(
  * keyboard would sit over the field being edited instead of the layout resizing (#95). The bars are
  * *not* padded here: the scrolling form passes under the top bar, and the pinned action bar takes the
  * navigation bar itself. The keyboard is the exception, as always: it shrinks the viewport for both.
- *
- * [centeredTitle] keeps Edit book's centered bar until #214 moves every form screen to the left.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FormScreenScaffold(
     title: String,
     onNavigateBack: () -> Unit,
-    centeredTitle: Boolean = false,
     content: @Composable BoxScope.(innerPadding: PaddingValues) -> Unit,
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            val navigationIcon: @Composable () -> Unit = {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.navigate_back),
-                    )
-                }
-            }
-            if (centeredTitle) {
-                CenterAlignedTopAppBar(title = { Text(title) }, navigationIcon = navigationIcon)
-            } else {
-                TopAppBar(title = { Text(title) }, navigationIcon = navigationIcon)
-            }
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.navigate_back),
+                        )
+                    }
+                },
+            )
         },
     ) { innerPadding ->
         Box(
@@ -360,10 +354,9 @@ fun EditFormScaffold(
     saveTag: String,
     snackbarHostState: SnackbarHostState? = null,
     aboveBar: @Composable () -> Unit = {},
-    centeredTitle: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    FormScreenScaffold(title = title, onNavigateBack = onNavigateBack, centeredTitle = centeredTitle) { innerPadding ->
+    FormScreenScaffold(title = title, onNavigateBack = onNavigateBack) { innerPadding ->
         EditFormBody(
             innerPadding = innerPadding,
             formTag = formTag,

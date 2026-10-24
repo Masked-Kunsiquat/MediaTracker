@@ -130,8 +130,8 @@
     <!-- Manual movie entry (Task 13 Phase B) -->
     <string name="add_movie_title">Add film</string>
     <string name="add_movie_untitled">New film</string>
-    <string name="edit_movie_title">Edit movie</string>
-    <string name="edit_movie_content_description">Edit movie</string>
+    <string name="edit_movie_title">Edit film</string>
+    <string name="edit_movie_content_description">Edit film</string>
     <string name="edit_tv_show_title">Edit show</string>
     <string name="tv_show_detail_edit">Edit show</string>
     <string name="edit_load_failed">Couldn\'t load this item.</string>
@@ -678,7 +678,7 @@
     <string name="library_bulk_delete_cancel">Cancel</string>
 
     <!-- AddBookScreen (ROADMAP Task 9 Phase B2) -->
-    <string name="add_book_screen_title">Add Book</string>
+    <string name="add_book_screen_title">Add book</string>
     <string name="add_book_tab_search">Search</string>
     <string name="add_book_tab_isbn">ISBN</string>
     <string name="add_book_search_label">Search by title or author</string>

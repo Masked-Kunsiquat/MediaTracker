@@ -110,7 +110,7 @@ class AddBookScreenTest {
         setContent(onSearchQueryChange = { capturedQuery = it })
 
         val label = context.getString(R.string.add_book_search_label)
-        // Ambiguity check: TopAppBar might have "Add Book", Search Tab has "Search" label.
+        // Ambiguity check: TopAppBar might have "Add book", Search Tab has "Search" label.
         // TextField label is "Search by title or author" (add_book_search_label)
         composeRule.onNode(hasText(label) and hasSetTextAction()).performTextInput("hobbit")
 
