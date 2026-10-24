@@ -56,7 +56,6 @@ class AddBookScreenOcclusionTest {
             onSearchQueryChange = {},
             onSelectSearchResult = {},
             onClearSearch = {},
-            onConfirmSelection = {},
             onCancelSelection = {},
             onSelectEdition = {},
         )

@@ -1,7 +1,9 @@
 package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.AppDatabase
+import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.ReadingStatus
 import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.testAppDatabase
 import com.hub.media.core.network.createHttpClient
@@ -57,6 +59,161 @@ class AddBookByIsbnUseCaseTest {
 
     private val coverImageBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 1, 2, 3, 4)
 
+    /**
+     * The whole add as a user who accepts the review unchanged would make it: look up, then save
+     * what the lookup found (#214). The cases below that predate the review step run through this.
+     */
+    private suspend fun AddBookByIsbnUseCase.lookUpAndSave(isbn: String): Resource<String> =
+        when (val draft = lookup(isbn)) {
+            is Resource.Success<BookDraft> -> save(draft.data, draft.data.initialValues())
+            is Resource.Error -> draft
+        }
+
+    private var coverRequests = 0
+
+    /** Answers the Hobbit edition (with authors' work key) and its cover, counting cover requests. */
+    private fun hobbitEngine(coverStatus: HttpStatusCode = HttpStatusCode.OK) =
+        MockEngine { request ->
+            when {
+                request.url.encodedPath.contains("/isbn/") ->
+                    respond(
+                        content =
+                            """
+                            {"title": "The Hobbit", "number_of_pages": 300, "publish_date": "2012",
+                             "covers": [6498519], "key": "/books/OL25946828M",
+                             "works": [{"key": "/works/OL27482W"}]}
+                            """.trimIndent(),
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                request.url.host == "covers.openlibrary.org" -> {
+                    coverRequests++
+                    if (coverStatus == HttpStatusCode.OK) {
+                        respond(
+                            content = coverImageBytes,
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "image/jpeg"),
+                        )
+                    } else {
+                        respondError(coverStatus)
+                    }
+                }
+                else -> respondError(HttpStatusCode.NotFound)
+            }
+        }
+
+    private suspend fun mediaCount(): Int =
+        db
+            .mediaItemDao()
+            .observeAll()
+            .first()
+            .size
+
+    private fun storedFiles(): List<File> = File(tempDir).walkTopDown().filter { it.isFile }.toList()
+
+    // ---- the review step (#214): looking up writes nothing; saving writes what the form says ----
+
+    @Test
+    fun lookup_writesNoRowAndNoCoverFile_butHoldsTheCover() =
+        runTest {
+            val draft = useCase(hobbitEngine()).lookup("978-0-547-92822-7")
+
+            assertIs<Resource.Success<BookDraft>>(draft)
+            assertEquals("9780547928227", draft.data.normalizedIsbn)
+            assertEquals("The Hobbit", draft.data.metadata.title)
+            assertEquals(coverImageBytes.toList(), draft.data.coverBytes?.toList(), "the cover is held for the header")
+            assertEquals(0, mediaCount(), "a lookup must not add the book")
+            assertTrue(storedFiles().isEmpty(), "a lookup must not store the cover: ${storedFiles()}")
+        }
+
+    @Test
+    fun initialValues_areWhatTheLookupFound() {
+        runTest {
+            val draft = (useCase(hobbitEngine()).lookup("9780547928227") as Resource.Success<BookDraft>).data
+
+            assertEquals(
+                BookFormValues(
+                    title = "The Hobbit",
+                    releaseYear = 2012,
+                    purchasePrice = null,
+                    totalPages = 300,
+                    format = BookFormat.PHYSICAL,
+                    status = ReadingStatus.TO_READ,
+                    trackingMode = TrackingMode.PAGES,
+                ),
+                draft.initialValues(),
+            )
+        }
+    }
+
+    @Test
+    fun save_storesTheEditedValuesAndTheLookupsIdentifiers() =
+        runTest {
+            val useCase = useCase(hobbitEngine())
+            val draft = (useCase.lookup("9780547928227") as Resource.Success<BookDraft>).data
+
+            val result =
+                useCase.save(
+                    draft,
+                    draft.initialValues().copy(
+                        title = "The Hobbit, or There and Back Again",
+                        totalPages = 412,
+                        format = BookFormat.HARDCOVER,
+                        purchasePrice = 14.5,
+                    ),
+                )
+
+            assertIs<Resource.Success<String>>(result)
+            val item = db.mediaItemDao().getById(result.data)
+            assertEquals("The Hobbit, or There and Back Again", item?.title)
+            assertEquals(14.5, item?.purchasePrice)
+            val details = db.bookDetailsDao().getByMediaId(result.data)
+            assertEquals(412, details?.totalPages)
+            assertEquals(BookFormat.HARDCOVER, details?.format)
+            assertEquals("9780547928227", details?.isbn)
+            val providers =
+                db
+                    .externalIdentifierDao()
+                    .observeForMedia(result.data)
+                    .first()
+                    .map { it.provider }
+                    .toSet()
+            assertEquals(
+                setOf(IdentifierProvider.OPEN_LIBRARY, IdentifierProvider.OPEN_LIBRARY_WORK, IdentifierProvider.ISBN),
+                providers,
+            )
+        }
+
+    @Test
+    fun save_aClearedPageCount_isStoredAsUnknown() =
+        runTest {
+            val useCase = useCase(hobbitEngine())
+            val draft = (useCase.lookup("9780547928227") as Resource.Success<BookDraft>).data
+
+            val result = useCase.save(draft, draft.initialValues().copy(totalPages = null))
+
+            assertIs<Resource.Success<String>>(result)
+            assertNull(
+                db.bookDetailsDao().getByMediaId(result.data)?.totalPages,
+                "the user's edit wins over the lookup",
+            )
+        }
+
+    @Test
+    fun save_storesTheLookupsCover_withoutDownloadingItAgain() =
+        runTest {
+            val useCase = useCase(hobbitEngine())
+            val draft = (useCase.lookup("9780547928227") as Resource.Success<BookDraft>).data
+            val requestsAfterLookup = coverRequests
+
+            val result = useCase.save(draft, draft.initialValues())
+
+            assertIs<Resource.Success<String>>(result)
+            assertEquals(requestsAfterLookup, coverRequests, "Save must not spend a second cover request")
+            val hash = db.mediaItemDao().getById(result.data)?.coverImageHash
+            assertTrue(hash != null && File(tempDir, hash).exists(), "the cover is stored once the book is saved")
+        }
+
     private fun useCase(engine: MockEngine): AddBookByIsbnUseCase =
         createDefaultAddBookByIsbnUseCase(
             httpClient = createHttpClient(engine),
@@ -97,7 +254,7 @@ class AddBookByIsbnUseCaseTest {
                 }
 
             // Hyphens/spaces in the input must be normalized away before lookup + storage.
-            val result = useCase(engine).execute("978-0-547-92822-7")
+            val result = useCase(engine).lookUpAndSave("978-0-547-92822-7")
 
             assertIs<Resource.Success<String>>(result)
             val mediaId = result.data
@@ -156,7 +313,7 @@ class AddBookByIsbnUseCaseTest {
                     }
                 }
 
-            val result = useCase(engine).execute("9780547928227")
+            val result = useCase(engine).lookUpAndSave("9780547928227")
 
             assertIs<Resource.Success<String>>(result)
             val identifiers = db.externalIdentifierDao().observeForMedia(result.data).first()
@@ -180,7 +337,7 @@ class AddBookByIsbnUseCaseTest {
         runTest {
             val engine = MockEngine { respondError(HttpStatusCode.NotFound) }
 
-            val result = useCase(engine).execute("9780547928227")
+            val result = useCase(engine).lookUpAndSave("9780547928227")
 
             assertIs<Resource.Error>(result)
             assertTrue(
@@ -231,7 +388,7 @@ class AddBookByIsbnUseCaseTest {
                     }
                 }
 
-            val result = useCase(engine).execute("9780547928227")
+            val result = useCase(engine).lookUpAndSave("9780547928227")
 
             assertIs<Resource.Success<String>>(result)
             val mediaItem = db.mediaItemDao().getById(result.data)
@@ -276,7 +433,7 @@ class AddBookByIsbnUseCaseTest {
                     }
                 }
 
-            val result = useCase(engine).execute("9780547928227")
+            val result = useCase(engine).lookUpAndSave("9780547928227")
 
             assertIs<Resource.Success<String>>(result)
             val mediaItem = db.mediaItemDao().getById(result.data)
@@ -296,7 +453,7 @@ class AddBookByIsbnUseCaseTest {
         runTest {
             val engine = MockEngine { respondError(HttpStatusCode.NotFound) }
 
-            val result = useCase(engine).execute("   ")
+            val result = useCase(engine).lookUpAndSave("   ")
 
             assertIs<Resource.Error>(result)
             assertTrue(engine.requestHistory.isEmpty(), "blank ISBN must short-circuit before any network call")
@@ -314,7 +471,7 @@ class AddBookByIsbnUseCaseTest {
         runTest {
             val engine = MockEngine { respondError(HttpStatusCode.NotFound) }
 
-            val result = useCase(engine).execute("12345")
+            val result = useCase(engine).lookUpAndSave("12345")
 
             assertIs<Resource.Error>(result)
             assertTrue(engine.requestHistory.isEmpty())

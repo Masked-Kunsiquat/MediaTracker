@@ -13,15 +13,19 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
+import com.hub.media.features.books.domain.BookDraft
 import com.hub.media.features.books.network.BookEditionSearchResult
+import com.hub.media.features.books.network.BookMetadata
 import com.hub.media.features.media.network.MediaSearchResult
 import com.hub.media.ui.AddBookUiState
 import com.hub.media.ui.AddSearchState
@@ -76,7 +80,6 @@ class AddBookScreenTest {
         onSubmitIsbn: (String) -> Unit = {},
         onSearchQueryChange: (String) -> Unit = {},
         onSelectSearchResult: (MediaSearchResult) -> Unit = {},
-        onConfirmSelection: () -> Unit = {},
         onCancelSelection: () -> Unit = {},
         onSelectEdition: (BookEditionSearchResult) -> Unit = {},
     ) {
@@ -94,7 +97,6 @@ class AddBookScreenTest {
                     onSearchQueryChange = onSearchQueryChange,
                     onSelectSearchResult = onSelectSearchResult,
                     onClearSearch = {},
-                    onConfirmSelection = onConfirmSelection,
                     onCancelSelection = onCancelSelection,
                     onSelectEdition = onSelectEdition,
                 )
@@ -129,39 +131,34 @@ class AddBookScreenTest {
         assertEquals(olSampleResult, selected)
     }
 
+    /**
+     * #214: there is no "Add this book?" dialog any more -- the review that follows a pick is where it
+     * is confirmed. A result held for selection is a work, and opens only the edition picker.
+     */
     @Test
-    fun whenConfirmationResultIsPresent_showsConfirmationDialog() {
+    fun aSelectedResult_opensTheEditionPicker_andNoConfirmationDialog() {
         setContent(confirmationResult = genericSampleResult)
 
-        val title = context.getString(R.string.add_book_search_confirm_title)
-        // Dialog title
-        composeRule.onNodeWithText(title).assertIsDisplayed()
-        // Message contains title
-        composeRule.onNodeWithText("Generic Book", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Add this book?").assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.add_book_search_no_editions_found_hint)).assertExists()
     }
 
+    /** #214: a looked-up book replaces the tabs with its review, so nothing is added on the pick. */
     @Test
-    fun confirmingTheDialog_invokesConfirmSelection() {
-        var confirmed = 0
-        setContent(confirmationResult = genericSampleResult, onConfirmSelection = { confirmed++ })
+    fun whenReviewing_theReviewFormReplacesTheTabs() {
+        setContent(
+            uiState =
+                AddBookUiState.Reviewing(
+                    BookDraft(
+                        normalizedIsbn = "9780547928227",
+                        metadata = BookMetadata(title = "The Hobbit", provider = IdentifierProvider.OPEN_LIBRARY),
+                        coverBytes = null,
+                    ),
+                ),
+        )
 
-        val buttonText = context.getString(R.string.add_book_search_confirm_button)
-        // Ambiguity: AppBar title is "Add Book" (add_book_screen_title), Dialog button is also "Add Book" (add_book_search_confirm_button)
-        // Both use R.string.add_book_screen_title / add_book_search_confirm_button which might be the same string.
-        composeRule.onNode(hasText(buttonText) and hasClickAction()).performClick()
-
-        assertEquals(1, confirmed)
-    }
-
-    @Test
-    fun cancellingTheDialog_invokesCancelSelection() {
-        var cancelled = 0
-        setContent(confirmationResult = genericSampleResult, onCancelSelection = { cancelled++ })
-
-        val buttonText = context.getString(R.string.cancel_button)
-        composeRule.onNodeWithText(buttonText).performClick()
-
-        assertEquals(1, cancelled)
+        composeRule.onNodeWithTag(TestTags.AddBook.REVIEW_SAVE).assertExists()
+        composeRule.onNodeWithTag(TestTags.AddBook.SEARCH_FIELD).assertDoesNotExist()
     }
 
     @Test
@@ -326,7 +323,6 @@ class AddBookScreenTest {
                     onSearchQueryChange = { query = it },
                     onSelectSearchResult = {},
                     onClearSearch = { query = "" },
-                    onConfirmSelection = {},
                     onCancelSelection = {},
                 )
             }

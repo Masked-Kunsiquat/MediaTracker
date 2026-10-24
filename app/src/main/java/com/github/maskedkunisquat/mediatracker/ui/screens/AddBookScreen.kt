@@ -1,6 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.screens
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,11 +64,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.maskedkunisquat.mediatracker.R
 import com.github.maskedkunisquat.mediatracker.ui.AddBookViewModelFactory
 import com.github.maskedkunisquat.mediatracker.ui.TestTags
+import com.github.maskedkunisquat.mediatracker.ui.components.BookFormBody
+import com.github.maskedkunisquat.mediatracker.ui.components.EditHeader
+import com.github.maskedkunisquat.mediatracker.ui.components.FormScreenScaffold
 import com.github.maskedkunisquat.mediatracker.ui.theme.MediaTrackerTheme
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.AppLogger
 import com.hub.media.core.util.Logger
 import com.hub.media.core.util.warn
+import com.hub.media.features.books.domain.BookFormValues
 import com.hub.media.features.books.network.BookEditionSearchResult
 import com.hub.media.features.media.domain.MIN_SEARCH_QUERY_LENGTH
 import com.hub.media.features.media.network.MediaSearchResult
@@ -136,12 +141,13 @@ fun AddBookScreenRoute(
         confirmationResult = confirmationResult,
         editions = editions,
         onNavigateBack = onNavigateBack,
-        onSubmitIsbn = { isbn -> viewModel.addBook(isbn) },
+        onSubmitIsbn = { isbn -> viewModel.lookUp(isbn) },
         onSearchQueryChange = { query -> viewModel.search(query) },
         onSelectSearchResult = { result -> viewModel.selectSearchResult(result) },
         onClearSearch = { viewModel.clearSearch() },
-        onConfirmSelection = { viewModel.confirmSelection() },
         onCancelSelection = { viewModel.cancelSelection() },
+        onSaveReview = viewModel::saveReview,
+        onCancelReview = viewModel::cancelReview,
         onSelectEdition = { edition -> viewModel.selectEdition(edition) },
         httpClient = appContainer.httpClient,
     )
@@ -188,14 +194,23 @@ fun AddBookScreen(
     onSearchQueryChange: (String) -> Unit = {},
     onSelectSearchResult: (MediaSearchResult) -> Unit = {},
     onClearSearch: () -> Unit = {},
-    onConfirmSelection: () -> Unit = {},
     onCancelSelection: () -> Unit = {},
     onSelectEdition: (BookEditionSearchResult) -> Unit = {},
+    onSaveReview: (BookFormValues) -> Unit = {},
+    onCancelReview: () -> Unit = {},
     httpClient: HttpClient? = null,
     logger: Logger = AppLogger,
 ) {
     var isbnInput by rememberSaveable { mutableStateOf("") }
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_SEARCH) }
+
+    // A looked-up book opens for review in place of the tabs (#214). Declared after the tab state on
+    // purpose: that state is remembered above this return, so Cancel lands back on the tab -- and
+    // the ISBN or results -- the review was opened from.
+    if (uiState is AddBookUiState.Reviewing) {
+        AddBookReviewScreen(reviewing = uiState, onSave = onSaveReview, onCancel = onCancelReview)
+        return
+    }
 
     Scaffold(
         // Scaffold's default contentWindowInsets leaves out the IME, so without this the keyboard
@@ -277,46 +292,18 @@ fun AddBookScreen(
             }
         }
 
+        // Only a work opens a dialog now: the edition picker. A result with no work key goes
+        // straight to the review, which is where a pick is confirmed (#214).
         confirmationResult?.let { result ->
-            val isEditionFlow =
-                !result.workKey.isNullOrBlank() ||
-                    searchState is AddSearchState.ResolvingEditions ||
-                    editions.isNotEmpty()
-
-            if (isEditionFlow) {
-                EditionSelectionDialog(
-                    work = result,
-                    editions = editions,
-                    isResolving = searchState is AddSearchState.ResolvingEditions,
-                    onSelectEdition = onSelectEdition,
-                    onCancel = onCancelSelection,
-                    httpClient = httpClient,
-                    logger = logger,
-                )
-            } else {
-                AlertDialog(
-                    onDismissRequest = onCancelSelection,
-                    title = { Text(stringResource(R.string.add_book_search_confirm_title)) },
-                    text = {
-                        Text(
-                            stringResource(
-                                R.string.add_book_search_confirm_message,
-                                result.title,
-                            ),
-                        )
-                    },
-                    confirmButton = {
-                        Button(onClick = onConfirmSelection) {
-                            Text(stringResource(R.string.add_book_search_confirm_button))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = onCancelSelection) {
-                            Text(stringResource(R.string.cancel_button))
-                        }
-                    },
-                )
-            }
+            EditionSelectionDialog(
+                work = result,
+                editions = editions,
+                isResolving = searchState is AddSearchState.ResolvingEditions,
+                onSelectEdition = onSelectEdition,
+                onCancel = onCancelSelection,
+                httpClient = httpClient,
+                logger = logger,
+            )
         }
     }
 }
@@ -998,6 +985,52 @@ private fun SearchTabWithResultsPreview() {
             onClearSearch = {},
             httpClient = null,
             logger = AppLogger,
+        )
+    }
+}
+
+/**
+ * A looked-up book, open for checking and editing before it is added (#214): Edit book's form,
+ * filled in from the lookup, under a header showing the cover the lookup fetched -- held in memory,
+ * not stored until Save. Cancel, the back arrow and the system Back all go to [onCancel], back to
+ * the tab the book was picked from.
+ *
+ * A rejected save is shown above the bar, as Edit book shows one, and keeps everything typed.
+ */
+@Composable
+fun AddBookReviewScreen(
+    reviewing: AddBookUiState.Reviewing,
+    onSave: (BookFormValues) -> Unit,
+    onCancel: () -> Unit,
+) {
+    BackHandler(onBack = onCancel)
+    val draft = reviewing.draft
+    FormScreenScaffold(
+        title = stringResource(R.string.add_book_screen_title),
+        onNavigateBack = onCancel,
+    ) { innerPadding ->
+        BookFormBody(
+            initial = draft.initialValues(),
+            innerPadding = innerPadding,
+            // What the lookup found, not the live field: the header names the book being added.
+            header = {
+                EditHeader(
+                    kind = stringResource(R.string.book_detail_kind),
+                    year = draft.metadata.releaseYear,
+                    title = draft.metadata.title,
+                    artwork = null,
+                    coverBytes = draft.coverBytes,
+                )
+            },
+            // A book being added has never been read, so every status is offered.
+            isReread = false,
+            isSaving = reviewing.isSaving,
+            errorMessage = reviewing.errorMessage,
+            formTag = TestTags.AddBook.REVIEW_FORM,
+            saveTag = TestTags.AddBook.REVIEW_SAVE,
+            cancelTag = TestTags.AddBook.REVIEW_CANCEL,
+            onSave = onSave,
+            onCancel = onCancel,
         )
     }
 }

@@ -1,5 +1,7 @@
 package com.github.maskedkunisquat.mediatracker.ui.components
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -38,9 +40,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -49,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.maskedkunisquat.mediatracker.R
+import com.github.maskedkunisquat.mediatracker.ui.TestTags
 import com.github.maskedkunisquat.mediatracker.ui.insets.barPadding
 
 /**
@@ -66,12 +71,32 @@ fun EditHeader(
     title: String,
     artwork: DetailArtwork?,
     modifier: Modifier = Modifier,
+    coverBytes: ByteArray? = null,
 ) {
+    // A looked-up book's cover before it is saved (#214): held in memory, not yet on disk, so it has
+    // no hash for CoverImage to read. Decoded once per byte array; bytes that do not decode show no
+    // artwork, as a book with no cover does.
+    val unsavedCover =
+        remember(coverBytes) {
+            coverBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+        }
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (artwork == null && unsavedCover != null) {
+            Image(
+                bitmap = unsavedCover,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier =
+                    Modifier
+                        .size(width = THUMBNAIL_WIDTH, height = THUMBNAIL_HEIGHT)
+                        .clip(RoundedCornerShape(8.dp))
+                        .testTag(TestTags.EDIT_HEADER_UNSAVED_COVER),
+            )
+        }
         if (artwork != null) {
             Box(
                 modifier =

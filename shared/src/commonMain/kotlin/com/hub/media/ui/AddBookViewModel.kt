@@ -3,6 +3,7 @@ package com.hub.media.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.domain.BookFormValues
 import com.hub.media.features.books.domain.BookIngestionUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
 import com.hub.media.features.books.network.BookEditionSearchResult
@@ -132,8 +133,8 @@ public class AddBookViewModel(
      * if the result carries a [MediaSearchResult.workKey], this method initiates a resolution to
      * its editions (GitHub Issue #63), which are surfaced in [editions].
      *
-     * Callers should show a confirmation dialog or edition selection modal, then call
-     * [confirmSelection], [selectEdition], or [cancelSelection].
+     * A work opens the edition picker, answered by [selectEdition] or [cancelSelection]. A result
+     * with no work key is resolved to its ISBN and looked up straight away (#214).
      */
     public fun selectSearchResult(result: MediaSearchResult) {
         if (_uiState.value is AddBookUiState.Loading || searchProvider == null) return
@@ -175,31 +176,26 @@ public class AddBookViewModel(
             return
         }
 
-        _confirmationResult.value = result
+        // #214: no "Add this book?" dialog. The review the lookup opens is where the user confirms,
+        // and asking twice is one question too many.
+        resolveEditionAndLookUp(editionKey)
     }
 
-    /**
-     * Selects a specific edition from [editions], initiating ingestion.
-     */
+    /** Selects a specific edition from [editions] and looks it up for review (#214). */
     public fun selectEdition(edition: BookEditionSearchResult) {
         _confirmationResult.value = null
         _editions.value = emptyList()
-        addBook(edition.isbn)
+        lookUp(edition.isbn)
     }
 
     /**
-     * Confirms the current [confirmationResult], resolving it to an ISBN and initiating ingestion.
+     * Resolves a search result's edition to an ISBN and looks it up for review.
      *
-     * Resolution happens via [searchProvider]. If successful, feeds the ISBN to [addBook]. If
+     * Resolution happens via [searchProvider]. If successful, feeds the ISBN to [lookUp]. If
      * resolution fails, the error is surfaced in [searchState] so the search UI can show the
      * failure without leaving the flow.
      */
-    public fun confirmSelection() {
-        val result = _confirmationResult.value ?: return
-        _confirmationResult.value = null
-
-        val editionKey = result.coverEditionKey ?: return // Already guarded by selectSearchResult
-
+    private fun resolveEditionAndLookUp(editionKey: String) {
         val provider = searchProvider ?: return
         _searchState.value = AddSearchState.Searching
 
@@ -216,9 +212,9 @@ public class AddBookViewModel(
                             _searchState.value =
                                 AddSearchState.Error(AddSearchErrorReason.MissingIsbn)
                         } else {
-                            // Successfully resolved — now add the book.
+                            // Successfully resolved — now look the book up for review.
                             _searchState.value = AddSearchState.Idle
-                            addBook(isbn)
+                            lookUp(isbn)
                         }
                     }
 
@@ -254,22 +250,52 @@ public class AddBookViewModel(
     }
 
     /**
-     * Runs ingestion for [isbn]. If a submission is already in flight
-     * ([AddBookUiState.Loading]), this call is silently ignored — guards against a double-tap
-     * firing two concurrent inserts. Callers must [reset] (or wait for the in-flight submission
-     * to finish) before a retry is accepted.
+     * Looks [isbn] up and opens it for review ([AddBookUiState.Reviewing]); nothing is saved until
+     * [saveReview] (#214). Ignored while a lookup is in flight or a review is open -- guards against
+     * a double tap firing two lookups, or a second pick replacing the review the user is editing.
      */
-    public fun addBook(isbn: String) {
-        if (_uiState.value is AddBookUiState.Loading) return
+    public fun lookUp(isbn: String) {
+        val current = _uiState.value
+        if (current is AddBookUiState.Loading || current is AddBookUiState.Reviewing) return
 
         _uiState.value = AddBookUiState.Loading
         viewModelScope.launch {
             _uiState.value =
-                when (val result = addBookByIsbnUseCase.execute(isbn)) {
-                    is Resource.Success -> AddBookUiState.Success(result.data)
+                when (val result = addBookByIsbnUseCase.lookup(isbn)) {
+                    is Resource.Success -> AddBookUiState.Reviewing(result.data)
                     is Resource.Error -> AddBookUiState.Error(result.message)
                 }
         }
+    }
+
+    /**
+     * Saves the reviewed book with [values] as the user left them. Ignored unless a review is open
+     * and not already saving, so a double-tapped Save adds the book once. A rejected save keeps the
+     * review open with its message, so nothing the user typed is lost.
+     */
+    public fun saveReview(values: BookFormValues) {
+        val reviewing = _uiState.value as? AddBookUiState.Reviewing ?: return
+        if (reviewing.isSaving) return
+
+        _uiState.value = reviewing.copy(isSaving = true, errorMessage = null)
+        viewModelScope.launch {
+            _uiState.value =
+                when (val result = addBookByIsbnUseCase.save(reviewing.draft, values)) {
+                    is Resource.Success -> AddBookUiState.Success(result.data)
+                    is Resource.Error -> reviewing.copy(isSaving = false, errorMessage = result.message)
+                }
+        }
+    }
+
+    /**
+     * Closes the review without saving, back to the search or ISBN entry it came from -- the
+     * query and results are untouched. Ignored while a save is in flight: that write is already
+     * happening, and closing the review over it would leave the user unsure whether it landed.
+     */
+    public fun cancelReview() {
+        val reviewing = _uiState.value as? AddBookUiState.Reviewing ?: return
+        if (reviewing.isSaving) return
+        _uiState.value = AddBookUiState.Idle
     }
 
     /** Resets state back to [AddBookUiState.Idle], e.g. after the UI has consumed a terminal state. */

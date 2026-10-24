@@ -54,7 +54,6 @@ class AddBookScreenGoldenTest {
             onSearchQueryChange = {},
             onSelectSearchResult = {},
             onClearSearch = {},
-            onConfirmSelection = {},
             onCancelSelection = {},
             onSelectEdition = {},
         )

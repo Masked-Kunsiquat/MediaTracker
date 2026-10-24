@@ -15,8 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Picking a show from search no longer adds it straight away either. Its form shows what TMDB found, including how many seasons and episodes, and nothing is saved until you tap Save. (#214)
 - Adding a show by hand uses the same form as editing one, with your seasons in their own card and Cancel and Save pinned to the bottom. (#214)
 - A new film or show's form no longer marks the empty title in red before you've typed anything. (#214)
+- Picking a book's edition, or entering an ISBN, no longer adds it straight away. It opens the same form as editing a book, filled in from Open Library and showing its cover, so you can fix the page count, format or status before you tap Save. Cancel takes you back to your search. (#214)
+- The "Add this book?" question is gone: the form is where you confirm. (#214)
 
 ### Fixed
+- Turning your phone while editing a book no longer throws away what you've typed. (#214)
 - After importing films or shows, the import summary now offers to fetch their posters and details too, not just books' covers. Each button says which it starts. (#149)
 - An import no longer attaches a reading session to a film or show; it skips the row and says why. (#117)
 - Choosing a backup to restore no longer leaves stray files behind in the app's cache, and the app clears any that earlier versions left. (#210)

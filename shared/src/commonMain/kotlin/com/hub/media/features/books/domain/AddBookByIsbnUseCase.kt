@@ -2,6 +2,8 @@ package com.hub.media.features.books.domain
 
 import com.hub.media.core.database.entities.BookFormat
 import com.hub.media.core.database.entities.IdentifierProvider
+import com.hub.media.core.database.entities.ReadingStatus
+import com.hub.media.core.database.entities.TrackingMode
 import com.hub.media.core.database.entities.joinAuthors
 import com.hub.media.core.storage.LocalImageStorageManager
 import com.hub.media.core.util.AppLogger
@@ -28,8 +30,53 @@ private val ISBN_13_REGEX = Regex("^\\d{13}$")
  * and no disk I/O.
  */
 public interface BookIngestionUseCase {
-    /** See [AddBookByIsbnUseCase.execute]. */
-    public suspend fun execute(isbn: String): Resource<String>
+    /** See [AddBookByIsbnUseCase.lookup]. */
+    public suspend fun lookup(isbn: String): Resource<BookDraft>
+
+    /** See [AddBookByIsbnUseCase.save]. */
+    public suspend fun save(
+        draft: BookDraft,
+        values: BookFormValues,
+    ): Resource<String>
+}
+
+/**
+ * A book looked up and waiting on the user's review (#214): everything the save needs that the
+ * form does not show -- the normalized ISBN, the provider and work keys, the authors -- plus the
+ * cover's bytes.
+ *
+ * The cover is downloaded **once**, at lookup, and held here in memory: the review header shows it,
+ * and the save stores these same bytes. Downloading it again at Save would spend a second request
+ * against Open Library's rate limit on every add; storing it at lookup would leave a file behind for
+ * every review the user cancels. `null` when there is no cover or it could not be fetched -- a book
+ * is complete without one.
+ *
+ * A plain class rather than a data class, because a [ByteArray] property breaks a data class's
+ * `equals`.
+ */
+public class BookDraft(
+    public val normalizedIsbn: String,
+    public val metadata: BookMetadata,
+    public val coverBytes: ByteArray?,
+) {
+    /**
+     * The form's starting values: what the lookup found, To read, and page tracking when the page
+     * count is known (percent otherwise -- the signal [BookRepository.addBook]'s own default uses).
+     *
+     * Format is not knowable from ISBN metadata alone -- an ISBN identifies a print, audio or ebook
+     * edition, but the providers used here don't reliably say which -- so it starts at
+     * [BookFormat.PHYSICAL], which the review now lets the user correct before the book is saved.
+     */
+    public fun initialValues(): BookFormValues =
+        BookFormValues(
+            title = metadata.title,
+            releaseYear = metadata.releaseYear,
+            purchasePrice = null,
+            totalPages = metadata.pageCount,
+            format = BookFormat.PHYSICAL,
+            status = ReadingStatus.TO_READ,
+            trackingMode = if (metadata.pageCount != null) TrackingMode.PAGES else TrackingMode.PERCENT,
+        )
 }
 
 /** Log tag for this use case's adoption sites (ROADMAP Task 15 Phase C). */
@@ -57,43 +104,14 @@ public class AddBookByIsbnUseCase(
     private val logger: Logger = AppLogger,
 ) : BookIngestionUseCase {
     /**
-     * Runs the full ingestion flow for [isbn]:
-     * 1. Normalizes and validates [isbn] (strips hyphens/spaces; requires 10 or 13 digits, with
-     *    an optional trailing `X` check digit for ISBN-10). Invalid input short-circuits before
-     *    any network call.
-     * 2. Fetches metadata via [metadataProvider]. A lookup failure (not found, network error,
-     *    malformed response) is propagated as-is and nothing is written to the database.
-     * 3. If the metadata carries a [BookMetadata.coverImageUrl], downloads and saves it via
-     *    [coverDownloader] / [imageStorage]. **By design, cover failures never fail ingestion**:
-     *    a 404/timeout/corrupt-image response simply leaves the book's `coverImageHash` null so
-     *    the user still gets their book row instead of a spurious top-level error (AGENTS.md §5 —
-     *    prefer degraded success over a crash/failure for a non-essential asset). No cover URL at
-     *    all means no download is attempted.
-     * 4. Persists the media item, book details, and external identifiers atomically via
-     *    [BookRepository.addBook]. Two identifier rows are recorded when available: the
-     *    provider-native id (`metadata.provider` -> `metadata.externalId`) and the normalized
-     *    ISBN under [IdentifierProvider.ISBN]. If the metadata's own provider *is* ISBN, only one
-     *    row is written to avoid a duplicate (mediaId, provider) composite key.
-     *
-     * Format is not knowable from ISBN metadata alone, so newly ingested books default to
-     * [BookFormat.PHYSICAL] (an ISBN identifies a specific print/audio/ebook edition, but the
-     * providers used here don't reliably expose which); users can correct this after the fact.
-     *
-     * Tracking mode (schema v4, ROADMAP Task 7 Phase A) is likewise not passed explicitly here —
-     * [BookRepository.addBook]'s own default derives it from whether [BookMetadata.pageCount] is
-     * known (`PAGES` when known, `PERCENT` otherwise), which is exactly the signal available at
-     * this call site, so there is nothing for this use case to add on top of that default.
-     *
-     * [BookMetadata.authors] (schema v5, ROADMAP Task 9 Phase A) IS passed explicitly, via
-     * [joinAuthors] — both providers already resolve author names (Open Library makes an extra
-     * `/authors/{key}` round-trip specifically for this), so keeping them is simply a matter of not
-     * discarding data already being paid for in network calls.
+     * Looks [isbn] up and returns it as a [BookDraft] for the user to review (#214). Writes nothing:
+     * no row, and no cover file -- the cover's bytes are fetched and held in the draft.
      *
      * @param isbn Raw ISBN-10 or ISBN-13, with or without hyphens/spaces.
-     * @return [Resource.Success] with the new media ID, or [Resource.Error] describing why
-     *   ingestion failed. Never throws.
+     * @return [Resource.Error] for an invalid ISBN or a failed lookup. A cover that cannot be fetched
+     *   is not a failed lookup: the draft simply has none. Never throws.
      */
-    public override suspend fun execute(isbn: String): Resource<String> {
+    public override suspend fun lookup(isbn: String): Resource<BookDraft> {
         val normalizedIsbn = normalizeIsbn(isbn)
         if (!isValidIsbn(normalizedIsbn)) {
             return Resource.Error("Invalid ISBN: '$isbn'")
@@ -105,7 +123,7 @@ public class AddBookByIsbnUseCase(
         }
         val metadata = metadataResult.data
 
-        val coverImageHash = metadata.coverImageUrl?.let { url -> downloadAndStoreCover(url) }
+        val coverBytes = metadata.coverImageUrl?.let { url -> downloadCover(url) }
 
         // Lifecycle tracing (ROADMAP Task 15 Phase C). Adding a book is the app's most common
         // deliberate action and traced nothing at all, so an ingestion that silently came back
@@ -114,39 +132,61 @@ public class AddBookByIsbnUseCase(
         // it "never includes your titles, authors, or notes".
         logger.info(TAG) {
             "Book lookup resolved via ${metadata.provider}: " +
-                "authors=${metadata.authors.size}, cover=${coverImageHash != null}, " +
+                "authors=${metadata.authors.size}, cover=${coverBytes != null}, " +
                 "workKey=${metadata.workKey != null}, pageCount=${metadata.pageCount != null}"
         }
-
-        return bookRepository.addBook(
-            title = metadata.title,
-            releaseYear = metadata.releaseYear,
-            purchasePrice = null,
-            format = BookFormat.PHYSICAL,
-            totalPages = metadata.pageCount,
-            isbn = normalizedIsbn,
-            coverImageHash = coverImageHash,
-            externalIdentifiers = buildExternalIdentifiers(metadata, normalizedIsbn),
-            authors = joinAuthors(metadata.authors),
-        )
+        return Resource.Success(BookDraft(normalizedIsbn, metadata, coverBytes))
     }
 
     /**
-     * Downloads the cover at [url] and saves it to content-addressed storage. Returns null (not
-     * an error) on any failure — see [execute]'s KDoc for why cover failures don't fail
-     * ingestion.
+     * Adds the reviewed book: [values] as the user left them, plus the [draft]'s identifiers and
+     * authors, and its cover stored now that the book is being kept. A cover that cannot be stored
+     * is logged and the book saved without one -- by design a cover never fails an add.
+     *
+     * The media item, details and identifiers are written atomically by [BookRepository.addBook].
+     * Two identifier rows when available, plus the work key: the provider-native id and the
+     * normalized ISBN, deduplicated when the provider *is* ISBN (see [buildExternalIdentifiers]).
+     * [BookMetadata.authors] is kept via [joinAuthors]: both providers already resolve author names,
+     * so keeping them is simply not discarding data already paid for in network calls.
+     *
+     * @return [Resource.Success] with the new media ID, or [Resource.Error]. Never throws.
      */
-    private suspend fun downloadAndStoreCover(url: String): String? {
-        val downloadResult = coverDownloader.download(url)
-        if (downloadResult !is Resource.Success) return null
-        // getOrNull() drops the cause on the floor. Not failing ingestion over a cover is right
-        // (see execute's KDoc), but doing it silently leaves "why has this book got no cover?"
-        // unanswerable -- the same silent-drop shape as OpenLibraryClient.fetchAuthorName.
-        return imageStorage
-            .saveImage(downloadResult.data)
-            .onFailure { logger.warn(TAG, it) { "Cover save failed during ingestion" } }
-            .getOrNull()
+    public override suspend fun save(
+        draft: BookDraft,
+        values: BookFormValues,
+    ): Resource<String> {
+        val coverImageHash = draft.coverBytes?.let { storeCover(it) }
+        return bookRepository.addBook(
+            title = values.title,
+            releaseYear = values.releaseYear,
+            purchasePrice = values.purchasePrice,
+            format = values.format,
+            totalPages = values.totalPages,
+            isbn = draft.normalizedIsbn,
+            coverImageHash = coverImageHash,
+            externalIdentifiers = buildExternalIdentifiers(draft.metadata, draft.normalizedIsbn),
+            status = values.status,
+            trackingMode = values.trackingMode,
+            authors = joinAuthors(draft.metadata.authors),
+        )
     }
+
+    /** Downloads the cover at [url]; `null` (logged by the downloader, not an error) on any failure. */
+    private suspend fun downloadCover(url: String): ByteArray? =
+        (coverDownloader.download(url) as? Resource.Success)?.data
+
+    /**
+     * Saves [bytes] to content-addressed storage. Returns null (not an error) on failure: a book is
+     * complete without a cover.
+     */
+    private suspend fun storeCover(bytes: ByteArray): String? =
+        // getOrNull() drops the cause on the floor. Not failing the add over a cover is right, but
+        // doing it silently leaves "why has this book got no cover?" unanswerable -- the same
+        // silent-drop shape as OpenLibraryClient.fetchAuthorName.
+        imageStorage
+            .saveImage(bytes)
+            .onFailure { logger.warn(TAG, it) { "Cover save failed while adding a book" } }
+            .getOrNull()
 
     /**
      * Builds the external identifier rows for [metadata]: the provider-native id, the work key

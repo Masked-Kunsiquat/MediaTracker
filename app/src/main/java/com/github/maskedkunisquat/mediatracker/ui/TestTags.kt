@@ -120,7 +120,16 @@ object TestTags {
         const val SEARCH_FIELD = "addBook:search"
         const val ISBN_FIELD = "addBook:isbn"
         const val RESULTS = "addBook:results"
+        const val REVIEW_FORM = "addBook:reviewForm"
+        const val REVIEW_SAVE = "addBook:reviewSave"
+        const val REVIEW_CANCEL = "addBook:reviewCancel"
     }
+
+    /**
+     * A looked-up book's cover in the review header, shown from memory before it is saved (#214).
+     * Tagged because an image with no content description has no perceivable identity of its own.
+     */
+    const val EDIT_HEADER_UNSAVED_COVER = "editHeader:unsavedCover"
 
     object EditBook {
         const val FORM = "editBook:form"

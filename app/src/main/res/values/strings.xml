@@ -703,9 +703,6 @@
         <item quantity="other">%1$d editions</item>
     </plurals>
     <string name="add_book_search_thumbnail_content_description">Book thumbnail</string>
-    <string name="add_book_search_confirm_title">Add this book?</string>
-    <string name="add_book_search_confirm_message">Would you like to add \'%1$s\' to your library?</string>
-    <string name="add_book_search_confirm_button">Add Book</string>
     <string name="add_book_search_select_edition_title">Select Edition</string>
     <string name="add_book_search_resolving_editions_hint">Resolving editions…</string>
     <string name="add_book_search_no_editions_found_hint">No editions with ISBN found for this work.</string>

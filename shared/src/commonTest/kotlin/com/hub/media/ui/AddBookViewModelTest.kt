@@ -3,6 +3,8 @@ package com.hub.media.ui
 import com.hub.media.core.database.entities.IdentifierProvider
 import com.hub.media.core.database.entities.MediaType
 import com.hub.media.core.util.Resource
+import com.hub.media.features.books.domain.BookDraft
+import com.hub.media.features.books.domain.BookFormValues
 import com.hub.media.features.books.domain.BookIngestionUseCase
 import com.hub.media.features.books.domain.ResolveWorkToEditionsUseCase
 import com.hub.media.features.books.network.BookEditionSearchResult
@@ -23,6 +25,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * [AddBookViewModel] tests against hand-rolled fakes — no Ktor engine, no Room database, no disk
@@ -76,7 +79,7 @@ class AddBookViewModelTest {
     }
 
     @Test
-    fun addBook_emitsIdleThenLoadingThenSuccess() =
+    fun lookUp_emitsIdleThenLoadingThenReviewing_andSavesNothing() =
         runTest {
             val fake =
                 FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
@@ -86,21 +89,23 @@ class AddBookViewModelTest {
 
             assertEquals(AddBookUiState.Idle, viewModel.uiState.value)
 
-            viewModel.addBook("9780135957059")
+            viewModel.lookUp("9780135957059")
             assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
 
             fake.release()
-            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
-            assertEquals(AddBookUiState.Success("media-1"), finalState)
+            val reviewing = viewModel.uiState.first { it is AddBookUiState.Reviewing }
+            assertIs<AddBookUiState.Reviewing>(reviewing)
+            assertEquals("Fake Book", reviewing.draft.metadata.title)
+            assertTrue(fake.saves.isEmpty(), "picking a book must not add it before Save (#214)")
         }
 
     @Test
-    fun addBook_useCaseError_setsErrorState() =
+    fun lookUp_useCaseError_setsErrorState() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase(result = Resource.Error("Invalid ISBN: 'bad'"))
             val viewModel = newViewModel(fake)
 
-            viewModel.addBook("bad")
+            viewModel.lookUp("bad")
 
             val finalState = viewModel.uiState.first { it is AddBookUiState.Error }
             assertIs<AddBookUiState.Error>(finalState)
@@ -108,7 +113,7 @@ class AddBookViewModelTest {
         }
 
     @Test
-    fun addBook_concurrentSubmissionWhileLoading_isIgnored() =
+    fun lookUp_concurrentSubmissionWhileLoading_isIgnored() =
         runTest {
             val fake =
                 FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply {
@@ -116,15 +121,15 @@ class AddBookViewModelTest {
                 }
             val viewModel = newViewModel(fake)
 
-            viewModel.addBook("9780135957059")
+            viewModel.lookUp("9780135957059")
             assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
 
             // Second submission while the first is still in flight must be a no-op.
-            viewModel.addBook("9780132350884")
+            viewModel.lookUp("9780132350884")
             assertEquals(1, fake.callCount)
 
             fake.release()
-            viewModel.uiState.first { it is AddBookUiState.Success }
+            viewModel.uiState.first { it is AddBookUiState.Reviewing }
             assertEquals(1, fake.callCount)
         }
 
@@ -134,8 +139,8 @@ class AddBookViewModelTest {
             val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
             val viewModel = newViewModel(fake)
 
-            viewModel.addBook("9780135957059")
-            viewModel.uiState.first { it is AddBookUiState.Success }
+            viewModel.lookUp("9780135957059")
+            viewModel.saveTheReview()
 
             viewModel.reset()
 
@@ -143,16 +148,16 @@ class AddBookViewModelTest {
         }
 
     @Test
-    fun addBook_afterReset_isAcceptedAgain() =
+    fun lookUp_afterReset_isAcceptedAgain() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
             val viewModel = newViewModel(fake)
 
-            viewModel.addBook("9780135957059")
-            viewModel.uiState.first { it is AddBookUiState.Success }
+            viewModel.lookUp("9780135957059")
+            viewModel.saveTheReview()
             viewModel.reset()
-            viewModel.addBook("9780132350884")
-            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
+            viewModel.lookUp("9780132350884")
+            val finalState = viewModel.saveTheReview()
 
             assertEquals(2, fake.callCount)
             assertIs<AddBookUiState.Success>(finalState)
@@ -320,7 +325,7 @@ class AddBookViewModelTest {
         }
 
     @Test
-    fun selectEdition_initiatesIngestion() =
+    fun selectEdition_looksUpAndOpensTheReview() =
         runTest {
             val addFake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
             val searchFake = FakeSearchMediaUseCase()
@@ -341,14 +346,14 @@ class AddBookViewModelTest {
 
             viewModel.selectEdition(edition)
 
-            // Await success state instead of reading .value immediately (AGENTS.md §7)
-            val finalState = viewModel.uiState.first { it is AddBookUiState.Success }
-            assertIs<AddBookUiState.Success>(finalState)
-            assertEquals(1, addFake.callCount)
+            // Await the state instead of reading .value immediately (AGENTS.md §7)
+            viewModel.uiState.first { it is AddBookUiState.Reviewing }
+            assertEquals(listOf("9780547928227"), addFake.lookups)
+            assertTrue(addFake.saves.isEmpty(), "choosing an edition must not add the book before Save (#214)")
         }
 
     @Test
-    fun selectSearchResult_resolvesEditionToIsbn_andAddBook() =
+    fun selectSearchResult_withNoWorkKey_resolvesItsIsbnAndOpensTheReview_withNoConfirmation() =
         runTest {
             val result = bookSearchResult("The Hobbit").copy(coverEditionKey = "OL51711263M")
             val addFake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
@@ -361,14 +366,13 @@ class AddBookViewModelTest {
             advanceUntilIdle()
             assertEquals(1, viewModel.searchResults.value.size)
 
+            // #214: no "Add this book?" dialog first -- the review that follows is the confirmation.
             viewModel.selectSearchResult(result)
-            assertEquals(result, viewModel.confirmationResult.value, "confirmationResult should be populated")
-
-            viewModel.confirmSelection()
             advanceUntilIdle()
 
-            // After selection and resolution, addBook should have been called
-            assertEquals(1, addFake.callCount, "addBook should have been called once")
+            assertEquals(null, viewModel.confirmationResult.value, "there is no confirmation to answer")
+            viewModel.uiState.first { it is AddBookUiState.Reviewing }
+            assertEquals(listOf("9780547928227"), addFake.lookups, "the resolved ISBN is looked up once")
 
             // Verify the edition key was resolved
             assertEquals(1, providerFake.resolveCallCount, "resolveEditionToIsbn should have been called once")
@@ -415,7 +419,6 @@ class AddBookViewModelTest {
             assertEquals(1, viewModel.searchResults.value.size)
 
             viewModel.selectSearchResult(result)
-            viewModel.confirmSelection()
             advanceUntilIdle()
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value, "expected Error state")
@@ -442,7 +445,6 @@ class AddBookViewModelTest {
             advanceUntilIdle()
 
             viewModel.selectSearchResult(result)
-            viewModel.confirmSelection()
             advanceUntilIdle()
 
             assertIs<AddSearchState.Error>(viewModel.searchState.value)
@@ -465,7 +467,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
             // Start an add operation
-            viewModel.addBook("9780135957059")
+            viewModel.lookUp("9780135957059")
             assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
 
             // Try to select a search result while add is in flight
@@ -489,7 +491,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
             // Start an add operation
-            viewModel.addBook("9780135957059")
+            viewModel.lookUp("9780135957059")
             assertEquals(AddBookUiState.Loading, viewModel.uiState.value)
 
             // Try to search while add is in flight
@@ -508,7 +510,7 @@ class AddBookViewModelTest {
             val viewModel = newViewModelWithSearch(addFake, searchFake, providerFake)
 
             // 1. Fail an add operation
-            viewModel.addBook("9780135957059")
+            viewModel.lookUp("9780135957059")
             viewModel.uiState.first { it is AddBookUiState.Error }
 
             // 2. Start a search
@@ -521,19 +523,143 @@ class AddBookViewModelTest {
         }
 
     @Test
-    fun cancelSelection_clearsConfirmationResult() =
+    fun cancelSelection_clearsTheWorkBeingResolved() =
         runTest {
             val fake = FakeAddBookByIsbnUseCase()
             val searchFake = FakeSearchMediaUseCase()
             val providerFake = FakeBookSearchProvider()
             val viewModel = newViewModelWithSearch(fake, searchFake, providerFake)
 
-            val result = bookSearchResult("The Hobbit")
-            viewModel.selectSearchResult(result)
-            assertEquals(result, viewModel.confirmationResult.value)
+            // A work opens the edition picker, which is the one selection that still waits on the user.
+            val result = bookSearchResult("The Hobbit").copy(workKey = "/works/OL27482W")
+            val withEditions =
+                newViewModelWithSearch(fake, searchFake, providerFake, ResolveWorkToEditionsUseCase(providerFake))
+            withEditions.selectSearchResult(result)
+            assertEquals(result, withEditions.confirmationResult.value)
+
+            withEditions.cancelSelection()
+            assertEquals(null, withEditions.confirmationResult.value)
+        }
+
+    @Test
+    fun cancelSelection_withNothingSelected_isHarmless() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase()
+            val viewModel = newViewModelWithSearch(fake, FakeSearchMediaUseCase(), FakeBookSearchProvider())
 
             viewModel.cancelSelection()
             assertEquals(null, viewModel.confirmationResult.value)
+        }
+
+    // ============ The review (#214) ============
+
+    /** Awaits the review a lookup opens, saves it as it stands, and awaits the result. */
+    private suspend fun AddBookViewModel.saveTheReview(): AddBookUiState.Success {
+        val reviewing = uiState.first { it is AddBookUiState.Reviewing } as AddBookUiState.Reviewing
+        saveReview(reviewing.draft.initialValues())
+        return uiState.first { it is AddBookUiState.Success } as AddBookUiState.Success
+    }
+
+    @Test
+    fun saveReview_savesTheValuesTheUserLeft() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
+            val viewModel = newViewModel(fake)
+            viewModel.lookUp("9780135957059")
+            val reviewing = viewModel.uiState.first { it is AddBookUiState.Reviewing } as AddBookUiState.Reviewing
+
+            viewModel.saveReview(reviewing.draft.initialValues().copy(totalPages = 412))
+
+            assertEquals(AddBookUiState.Success("media-1"), viewModel.uiState.first { it is AddBookUiState.Success })
+            assertEquals(412, fake.saves.single().totalPages)
+        }
+
+    @Test
+    fun saveReview_failure_keepsTheReviewOpenWithTheMessage() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1"))
+            val failing =
+                object : BookIngestionUseCase by fake {
+                    override suspend fun save(
+                        draft: BookDraft,
+                        values: BookFormValues,
+                    ): Resource<String> = Resource.Error("Title must not be blank")
+                }
+            val viewModel = newViewModel(failing)
+            viewModel.lookUp("9780135957059")
+            val reviewing = viewModel.uiState.first { it is AddBookUiState.Reviewing } as AddBookUiState.Reviewing
+
+            viewModel.saveReview(reviewing.draft.initialValues())
+
+            val after = viewModel.uiState.first { (it as? AddBookUiState.Reviewing)?.errorMessage != null }
+            assertIs<AddBookUiState.Reviewing>(after)
+            assertEquals("Title must not be blank", after.errorMessage)
+            assertEquals(false, after.isSaving)
+        }
+
+    @Test
+    fun cancelReview_savesNothingAndKeepsTheResults() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase()
+            val searchFake = FakeSearchMediaUseCase(results = listOf(bookSearchResult("Found")))
+            val viewModel = newViewModelWithSearch(fake, searchFake, FakeBookSearchProvider())
+            viewModel.search("hobbit")
+            advanceUntilIdle()
+            viewModel.lookUp("9780135957059")
+            viewModel.uiState.first { it is AddBookUiState.Reviewing }
+
+            viewModel.cancelReview()
+
+            assertEquals(AddBookUiState.Idle, viewModel.uiState.first { it is AddBookUiState.Idle })
+            assertEquals(1, viewModel.searchResults.value.size, "Cancel returns to the results it came from")
+            assertTrue(fake.saves.isEmpty())
+        }
+
+    @Test
+    fun cancelReview_whileSaving_isIgnored_andTheSaveLands() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply { awaitSaveGate = true }
+            val viewModel = newViewModel(fake)
+            viewModel.lookUp("9780135957059")
+            val reviewing = viewModel.uiState.first { it is AddBookUiState.Reviewing } as AddBookUiState.Reviewing
+            viewModel.saveReview(reviewing.draft.initialValues())
+            viewModel.uiState.first { (it as? AddBookUiState.Reviewing)?.isSaving == true }
+
+            viewModel.cancelReview()
+            // cancelReview is synchronous: the review must still be open over the write it is saving.
+            assertIs<AddBookUiState.Reviewing>(viewModel.uiState.value, "Back during a save must not close the review")
+            fake.releaseSave()
+
+            assertEquals(AddBookUiState.Success("media-1"), viewModel.uiState.first { it !is AddBookUiState.Reviewing })
+        }
+
+    @Test
+    fun saveReview_twice_savesOnce() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase(result = Resource.Success("media-1")).apply { awaitSaveGate = true }
+            val viewModel = newViewModel(fake)
+            viewModel.lookUp("9780135957059")
+            val reviewing = viewModel.uiState.first { it is AddBookUiState.Reviewing } as AddBookUiState.Reviewing
+
+            viewModel.saveReview(reviewing.draft.initialValues())
+            viewModel.saveReview(reviewing.draft.initialValues())
+            fake.releaseSave()
+
+            viewModel.uiState.first { it is AddBookUiState.Success }
+            assertEquals(1, fake.saves.size, "a double-tapped Save must add the book once")
+        }
+
+    @Test
+    fun lookUp_whileReviewing_isIgnored() =
+        runTest {
+            val fake = FakeAddBookByIsbnUseCase()
+            val viewModel = newViewModel(fake)
+            viewModel.lookUp("9780135957059")
+            viewModel.uiState.first { it is AddBookUiState.Reviewing }
+
+            viewModel.lookUp("9780132350884")
+
+            assertEquals(1, fake.callCount, "a review is open; a second lookup must not replace it")
         }
 
     private companion object {
